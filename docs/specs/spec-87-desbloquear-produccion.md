@@ -3,7 +3,7 @@
 > **Related:** [spec-57](spec-57-qa-gate-before-production.md) (hizo de QA la precondición de producción), [spec-56](spec-56-pickup-contract-phase.md) (**el precedente: un índice único que pasa CI y muere con datos de producción**), [spec-79](spec-79-dispatch-handoff-integrity.md) (dueña de 5 de las 12 migraciones pendientes, y de una de las dos entradas de cuarentena), [spec-78](spec-78-despacho-tablet-anden.md) (dueña de la otra entrada de cuarentena — ver `apps/frontend/e2e/quarantine.json`), [spec-80](spec-80-recogida-movil-cierre-de-carga.md) y [spec-85](spec-85-discrepancias.md) (dueñas de las tres migraciones del 2026-09-13, sumadas al listado tras la corrección de fase 3 abajo)
 
 **Status:** in progress
-**Verify:** unit, e2e-qa
+**Verify:** unit, sql, e2e-qa
 
 _Date: 2026-09-07_
 
@@ -371,10 +371,15 @@ resto de esta fase.
 > en verde. Producción llevaba parada desde el 2 de septiembre.
 >
 > **Lo que sigue pendiente de esta fase, y no está hecho:**
-> - **El backfill manual** (`SELECT public.spec79_backfill_loaded_route_id();`). La función
->   está desplegada y **nadie la ha invocado**. Aquí sí aplica el riesgo de timeout: es un
->   `UPDATE` real sobre `packages` con ~112k dispatches detrás, y la función **no es
->   resumible internamente**. Debe correrse a mano y en sub-lotes.
+> - **El backfill manual.** La función original (`spec79_backfill_loaded_route_id()`) está
+>   desplegada y **nadie la ha invocado** — sigue aplicando el riesgo de timeout que su propia
+>   migración documenta (`UPDATE` de una sola pasada, ~112k dispatches, no resumible
+>   internamente). **2026-09-08, Tarea C (abajo): el usuario autorizó explícitamente correrlo
+>   ("por mí no hay problema, córrelo"), y el mecanismo por lotes que Tarea B había diseñado y
+>   dejado sin implementar ahora existe** — migración `20260921000001` (staging table + función
+>   batched) y el workflow `prod-backfill-loaded-route-id.yml` (`environment: production`,
+>   `dry_run` por defecto). Probado localmente contra `spec52-pg`; **nadie lo ha disparado
+>   contra producción todavía** — eso sigue siendo lo único que cierra esta fase.
 > - ~~Confirmar en producción que `routes_one_vehicle_per_day` NO existe (`pg_indexes`). El
 >   agente no tiene credenciales de producción; queda sin verificar, no verificado en
 >   silencio.~~ **Corregido 2026-09-08: esta frase era falsa y se retracta explícitamente,
@@ -561,6 +566,111 @@ más de manifiestos subcontados para carga histórica.
 **Resumen de lo entregado en este PR sobre Tarea B:** diseño completo y razonado, sin ejecutar
 nada — ni el `UPDATE` original ni ninguna versión por lotes. El SQL de la función batched de
 arriba es una propuesta para la siguiente fase, no una migración aplicada.
+
+---
+
+#### 2026-09-08 — Tarea C: el diseño de Tarea B, construido y probado localmente; el disparo sigue siendo del usuario
+
+**Lo que autorizó el usuario, textual:** _"por mí no hay problema, córrelo"_ — la aprobación
+explícita para correr el backfill manual contra producción que la Tarea A/B dejaron diseñado y
+sin ejecutar. Lo que cambia con esta tarea no es la autorización (ya estaba dada): es que **el
+mecanismo para ejercerla no existía**. No se disparó nada contra producción en este PR — ver
+"Antes de reportar" en la instrucción de esta tarea, y el propio gate `environment: production`
+que el workflow nuevo exige.
+
+**Qué se construyó, exactamente lo que Tarea B dejó diseñado, sin adivinar nada nuevo:**
+
+- **`packages/database/supabase/migrations/20260921000001_spec87_fase4_backfill_batching.sql`** —
+  el staging table + las dos funciones que Tarea B ya había especificado línea por línea
+  (`spec79_loaded_route_backfill_candidates`, `spec79_populate_loaded_route_backfill_candidates()`,
+  `spec79_backfill_loaded_route_id_batch(p_batch_size)`). **No toca**
+  `spec79_backfill_loaded_route_id()` (20260909000001/20260910000001) — esa función queda exactamente
+  como la dejó su última migración, callable por separado si alguna vez hace falta contra una base
+  chica. La única diferencia frente al diseño de Tarea B: el `DELETE ... RETURNING` que alimenta el
+  `UPDATE` va en una sola sentencia (una CTE), no en dos pasos separados con una tabla temporal —
+  más simple, y evita la trampa real de Postgres de leer una tabla base modificada por otra CTE del
+  mismo `WITH` en vez de a través del nombre de la CTE.
+  `operator_id` incluido en la tabla de staging, sin excepción, aunque `order_id` solo ya basta
+  para el join — la regla de `CLAUDE.md` no la exceptúa por ser una tabla interna.
+- **`.github/workflows/prod-backfill-loaded-route-id.yml`** — `workflow_dispatch` nuevo, separado
+  de `prod-readonly-query.yml` (ese archivo no se tocó, tal como pide la instrucción), con
+  `environment: production` en el único job — el mismo gate manual de `approve-production` en
+  `deploy.yml`. Dos modos:
+  - `dry_run` (input por defecto): corre tres `SELECT` — el conteo de `packages` elegibles con el
+    mismo `FROM`/`WHERE` que el `UPDATE` batched, el tamaño actual de la tabla de staging, y el
+    total de `packages` con `loaded_route_id IS NULL` — y se detiene. No escribe nada.
+  - `execute` (input explícito, con `batch_size` configurable, default 2000 — la cifra que Tarea B
+    ya había argumentado como punto de partida): puebla la tabla de staging una vez
+    (`spec79_populate_loaded_route_backfill_candidates()`, seguro de llamar más de una vez) y
+    después hace un loop de bash llamando
+    `spec79_backfill_loaded_route_id_batch(batch_size)` repetidamente hasta que
+    `remaining_count = 0`, imprimiendo `updated`/`remaining`/`total` en cada vuelta. Cada llamada es
+    su propia invocación de `psql -c` — su propia conexión, su propia transacción autocommit — nunca
+    una transacción larga envolviendo varios lotes, que es exactamente lo que pedía la instrucción
+    ("commit entre lotes, no en una transacción única"). Un tope de 1000 iteraciones falla en rojo
+    (`::error::`) si el backlog nunca converge, en vez de declarar éxito en silencio.
+  Mismo patrón de seguridad que `prod-readonly-query.yml`: `PGPASSWORD` como variable de entorno
+  pasada a `psql`, nunca interpolada en un comando que se imprima; sólo se echoan filas de
+  resultado. Mismos secretos (`SUPABASE_DB_PASSWORD`, `SUPABASE_PROJECT_REF`) que
+  `verify-prod-migrations` ya usa. No toca el VPS — producción es Supabase gestionado.
+
+**Por qué no "envoltorio frágil" sobre la función original:** la instrucción pedía parar y
+declarar el bloqueo si la función no admitía lotes en su forma actual, en vez de inventar algo
+frágil. `spec79_backfill_loaded_route_id()` en efecto no admite lotes — es un `UPDATE` de una sola
+pasada sin `LIMIT`/`OFFSET`, y Postgres no soporta `LIMIT` en `UPDATE`. Pero la respuesta a "párate
+y dilo" ya estaba escrita: Tarea B, en el mismo spec, ya había diseñado y razonado la migración
+nueva que lo hace loteable (staging table + función batched), explícitamente como "diseño completo,
+sin ejecutar nada — trabajo nuevo para una fase siguiente". Esta tarea es esa fase siguiente:
+implementa ese diseño ya aprobado por el razonamiento del propio spec, no uno inventado aquí. La
+única decisión nueva tomada en esta tarea (no cubierta por Tarea B) fue el mecanismo de
+`DELETE ... RETURNING` de una sola sentencia en vez de una tabla temporal de dos pasos — más simple
+y con menos superficie para el error de lectura de CTE mencionado arriba.
+
+**Verificado localmente contra `spec52-pg` (Docker) — no contra producción:**
+
+- **La función original existe y sigue intacta.** `spec79_loaded_route_id.test.sql` (10
+  aserciones) sigue en verde después de aplicar la migración nueva — no se tocó su definición.
+- **El staging table y las dos funciones nuevas existen y hacen lo que dicen.**
+  `spec87_fase4_backfill_batching.test.sql`, 5 aserciones nuevas:
+  1. `populate` + un solo `batch` backfillean una orden inequívoca y drenan la tabla de staging a 0.
+  2. Una orden ambigua (dos rutas activas distintas) nunca entra a la tabla de staging.
+  3. `p_batch_size` limita de verdad cuántas órdenes se drenan por llamada — 3 órdenes elegibles,
+     tamaño de lote 1, exactamente 3 llamadas para drenar, cada una actualizando exactamente 1 fila.
+  4. Reanudabilidad: drenar por completo, volver a llamar `populate()` (no duplica la fila por
+     `ON CONFLICT DO NOTHING`), y una segunda pasada de `batch()` no vuelve a escribir sobre un
+     paquete que ya tiene `loaded_route_id` — 0 filas actualizadas, valor sin cambios.
+  5. Existencia de esquema: tabla, primary key, y ambas funciones.
+  Mutante verificado a mano: se quitó el guardia `p.loaded_route_id IS NULL` del `UPDATE` batched
+  y el TEST 4 (reanudabilidad) lo detectó de inmediato (`expected second pass to update 0 rows
+  ..., got 1`); se restauró la versión correcta y ambas suites volvieron a verde.
+  `node scripts/check-migration-safety.mjs` sobre la migración nueva: `OK` — no marca el `UPDATE`
+  dentro de la función batched como backfill top-level peligroso, igual que con
+  `20260909000001`.
+- **El loop de bash del workflow, simulado literalmente contra el contenedor** (no sólo el SQL):
+  se insertaron 5 fixtures reales (operador/rutas/orden/dispatch/paquete), se llamó `populate()`
+  (devolvió 5), y se corrió el mismo loop de bash del workflow con `batch_size=2` invocando
+  `psql -tA -F',' -c "SELECT * FROM spec79_backfill_loaded_route_id_batch(2);"` por cada vuelta:
+  drenó en 3 lotes (`2,3,2,1,1,0`, en el orden updated/remaining por lote), total 5 actualizados,
+  y los 5 `packages` quedaron con el `loaded_route_id` correcto. Fixtures borrados después
+  (contenedor compartido).
+
+**Estimación de filas en producción: no la tengo, y no se puede tener sin acceso a producción.**
+El primer `SELECT` del modo `dry_run` del workflow nuevo es exactamente el instrumento para
+conseguirla — el mismo que Tarea A ya dejó listo en `prod-readonly-query.yml` sin disparar. Cuando
+el usuario dispare `prod-backfill-loaded-route-id.yml` en modo `dry_run`, ese número entra aquí y
+decide si 2000 sigue siendo un tamaño de lote razonable o si conviene ajustarlo antes de pasar a
+`execute`.
+
+**Qué falta, y por qué sigue siendo `awaiting_user_test` y no `[done]`:** el mecanismo está
+construido y probado localmente, pero **nadie ha corrido nada de esto contra producción** — ése es
+el criterio de cierre real de esta fase, y sólo lo puede ejercer una persona con el botón
+"Run workflow" y la aprobación del `environment: production`. Verificación después de correrlo,
+en dos pasos:
+1. `dry_run` primero, siempre — anotar aquí el conteo de `eligible_packages` que devuelve.
+2. `execute` después, con el `batch_size` que ese número sugiera — anotar aquí cuántos lotes corrió,
+   el total de filas actualizadas, y el resultado del paso final "Confirm the backlog is drained"
+   (candidatos restantes debe ser 0; el total de `packages` con `loaded_route_id IS NULL` debe haber
+   bajado y estabilizarse en el resto ambiguo, nunca subir).
 
 ### Fase 5 — Guardarraíles `[done]`
 
