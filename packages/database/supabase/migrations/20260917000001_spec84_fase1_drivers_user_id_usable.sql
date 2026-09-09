@@ -56,16 +56,44 @@
 
 -- 1. Reemplaza el índice no-único de 20260318000004:278 por uno único, global,
 --    parcial sobre filas activas con user_id fijado.
+--
+-- Pre-check en el patrón h5c (20260911000002): drivers.user_id no tiene hoy
+-- ningún poblador (seed-qa.sql y create-qa-users.sh, esta misma fase, son los
+-- primeros escritores; nada en producción lo toca — ver inventario en el
+-- spec), así que no debería haber conflictos. El pre-check existe para que,
+-- si esa premisa resultara falsa, la migración avise con un NOTICE y siga en
+-- vez de abortar el deploy con un unique_violation crudo a mitad de camino.
 DROP INDEX IF EXISTS public.idx_drivers_user_id;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_drivers_user_id
-  ON public.drivers (user_id)
-  WHERE user_id IS NOT NULL AND deleted_at IS NULL;
+DO $$
+DECLARE
+  v_conflict_count BIGINT;
+BEGIN
+  SELECT COUNT(*) INTO v_conflict_count
+  FROM (
+    SELECT user_id
+      FROM public.drivers
+     WHERE deleted_at IS NULL
+       AND user_id IS NOT NULL
+     GROUP BY user_id
+    HAVING COUNT(*) > 1
+  ) conflicts;
 
-COMMENT ON INDEX public.idx_drivers_user_id IS
-  'Unicidad GLOBAL (no por operador) de drivers.user_id — ver razonamiento '
-  'en 20260917000001_spec84_fase1_drivers_user_id_usable.sql. Parcial: '
-  'excluye user_id NULL y filas soft-deleted.';
+  IF v_conflict_count > 0 THEN
+    RAISE NOTICE 'spec-84 fase 1: % user_id value(s) already shared by more than one active driver — skipping idx_drivers_user_id creation. Reconcile those drivers by hand, then run this migration''s CREATE UNIQUE INDEX statement directly.', v_conflict_count;
+  ELSE
+    EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_drivers_user_id '
+      || 'ON public.drivers (user_id) '
+      || 'WHERE user_id IS NOT NULL AND deleted_at IS NULL';
+
+    EXECUTE 'COMMENT ON INDEX public.idx_drivers_user_id IS '
+      || quote_literal(
+           'Unicidad GLOBAL (no por operador) de drivers.user_id -- ver '
+           'razonamiento en 20260917000001_spec84_fase1_drivers_user_id_usable.sql. '
+           'Parcial: excluye user_id NULL y filas soft-deleted.'
+         );
+  END IF;
+END $$;
 
 -- =============================================================================
 -- 2. Política RLS: admin/operations_manager pueden gestionar drivers de su
@@ -92,7 +120,12 @@ COMMENT ON POLICY "drivers_admin_write" ON public.drivers IS
   'drivers de su propio operador. Sin esta policy, el GRANT UPDATE a '
   'authenticated de 20260318000005 es letra muerta bajo RLS.';
 
--- Smoke test
+-- Smoke test. The index check is a NOTICE, not an EXCEPTION: the pre-check
+-- above can legitimately skip creating it (existing conflicting data), and
+-- that is a "reconcile by hand" outcome, not a broken migration — failing
+-- the whole deploy over it would be the exact overreach h5c's own comment
+-- warns against. The policy has no such skip path, so it stays a hard
+-- assertion.
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -100,7 +133,7 @@ BEGIN
      WHERE schemaname = 'public' AND tablename = 'drivers'
        AND indexname = 'idx_drivers_user_id'
   ) THEN
-    RAISE EXCEPTION 'idx_drivers_user_id not found after migration!';
+    RAISE NOTICE 'spec-84 fase 1: idx_drivers_user_id was NOT created (see the NOTICE above) — reconcile conflicting drivers, then run its CREATE UNIQUE INDEX directly.';
   END IF;
 
   IF NOT EXISTS (
@@ -111,5 +144,5 @@ BEGIN
     RAISE EXCEPTION 'drivers_admin_write policy not found after migration!';
   END IF;
 
-  RAISE NOTICE '✓ spec-84 fase 1: idx_drivers_user_id is UNIQUE, drivers_admin_write policy created';
+  RAISE NOTICE '✓ spec-84 fase 1: drivers_admin_write policy created';
 END $$;

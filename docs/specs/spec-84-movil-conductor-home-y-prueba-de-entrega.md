@@ -108,11 +108,18 @@ Ver arriba. Reparto móvil no tiene ronda propia.
       comentario de esa migración argumenta por qué (`public.users.operator_id`
       es `NOT NULL`, así que `user_id` ya trae un tenant consigo; permitir el
       mismo `user_id` en dos operadores sólo reintroduciría la ambigüedad que
-      la fase existe para cerrar). Test pgTAP en
-      `spec84_fase1_drivers_user_id.test.sql` cubre same-operator (TEST 2),
-      cross-operator (TEST 3) y soft-delete liberando el `user_id` (TEST 4).
-      **No ejecutado** — Docker Desktop estaba caído (500 en todo comando)
-      durante esta implementación; `scripts/pgtap-local.sh` no pudo
+      la fase existe para cerrar). Sigue el patrón h5c
+      (`20260911000002_spec79_h5c_vehicle_per_day_index.sql`) — un pre-check
+      `COUNT(*) ... HAVING > 1` decide si crea el índice o avisa por `NOTICE`
+      y sigue, en vez de reventar el deploy con un `unique_violation` crudo
+      (`scripts/check-migration-safety.mjs` marcó la primera versión sin este
+      guard como advertencia en CI; corregido antes de mergear). No hace falta
+      backfill: la columna está 100% `NULL` hoy (nadie la escribe todavía),
+      así que el guard es defensivo, no una corrección de datos reales. Test
+      pgTAP en `spec84_fase1_drivers_user_id.test.sql` cubre same-operator
+      (TEST 2), cross-operator (TEST 3) y soft-delete liberando el `user_id`
+      (TEST 4). **No ejecutado** — Docker Desktop estaba caído (500 en todo
+      comando) durante esta implementación; `scripts/pgtap-local.sh` no pudo
       construir/aplicar/correr nada. Pendiente de correr antes de confiar en
       este archivo.
 - [x] `drivers.user_id` se puebla vía admin, no por backfill masivo — decisión
