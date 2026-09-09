@@ -1,10 +1,10 @@
 # Spec-93: Paridad QA ↔ producción — que el verde de QA signifique algo
 
-> **Related:** [spec-92](spec-92-gate-prod-diferenciado.md) (el gate diferenciado descansa **entero** sobre la premisa que este spec pone a prueba), [spec-88](spec-88-anon-security-definer-audit.md) (fase 3 es la instancia medida que abre este spec), [spec-57](spec-57-qa-gate-before-production.md) (el gate original y el clic humano que spec-92 retira), [spec-87](spec-87-desbloquear-produccion.md) (`verify-prod-migrations`, el precedente de un check que compara dos entornos)
+> **Related:** spec-92 (el gate de producción diferenciado — todavía en la rama `feat/spec-92-gate-prod-diferenciado`, sin mergear; el gate descansa **entero** sobre la premisa que este spec pone a prueba), [spec-88](spec-88-anon-security-definer-audit.md) (fase 3 es la instancia medida que abre este spec), [spec-57](spec-57-qa-gate-before-production.md) (el gate original y el clic humano que spec-92 retira), [spec-87](spec-87-desbloquear-produccion.md) (`verify-prod-migrations`, el precedente de un check que compara dos entornos)
 
 **Status:** backlog
 **Verify:** unit + e2e
-**Downstream:** [spec-92](spec-92-gate-prod-diferenciado.md) — si este spec encuentra superficies de divergencia además de la de auth, la tabla «clase de cambio → cobertura» de spec-92 tiene que crecer con ellas
+**Downstream:** spec-92 (aún sin mergear, ver Related) — si este spec encuentra superficies de divergencia además de la de auth, la tabla «clase de cambio → cobertura» de spec-92 tiene que crecer con ellas
 **Depende de:** ninguno. Puede empezar hoy.
 
 _Date: 2026-09-09_
@@ -49,6 +49,32 @@ real vía GoTrue, ejercitando este hook tal cual lo hace producción».
 
 En palabras del review: **«El pipeline no impone nada aquí; sólo lo parece.»**
 
+### La segunda instancia, medida al intentar cerrar la primera
+
+Al arreglar lo anterior apareció una divergencia **más profunda y más
+general**, y ésta no es de configuración sino de despliegue:
+
+**`deploy-qa.sh` no recrea el contenedor `auth` nunca.** Sólo hace
+`docker compose ... up -d functions` (`infra/supabase-qa/deploy-qa.sh:255-256`).
+El `up -d` completo vive en `setup-qa.sh:156`, que es el bootstrap manual de
+una sola vez y que `deploy-qa.sh` **no invoca**. El propio comentario de
+`deploy-qa.sh:248-252` explica por qué esto importa —un `restart` reutiliza
+la configuración que el contenedor ya tenía— pero la lección se aplicó sólo
+a `functions`.
+
+Consecuencia: **un cambio en `infra/supabase-qa/docker-compose.yml` puede
+mergearse, desplegarse y no llegar nunca al servicio que modifica.** El
+entorno declarado y el que corre divergen en silencio, y el siguiente que
+lea el compose creerá que QA está configurado así.
+
+Esto generaliza el problema: no basta con que QA *declare* las superficies de
+producción — el despliegue de QA tiene que **aplicarlas**. La fase 1 tiene
+que medir contra el contenedor vivo, nunca contra el YAML.
+
+Un tercer detalle del mismo review, para la fase 4: `sql_tests_check`
+(`deploy-qa.sh:466`) es **advisory** — un pgTAP en rojo contra QA no tumba el
+deploy. La única red que bloquea de verdad hoy es `e2e-qa`.
+
 Eso es lo peligroso. No es que falte cobertura — es que la cobertura *se
 declara* y nadie la mide, así que el siguiente que lea el PR hereda la
 afirmación. Es el mismo patrón que un check verde que no vio nada.
@@ -84,6 +110,8 @@ distinto y no se resuelve haciendo QA más grande.
 
 ### Fase 1 — Inventario medido de divergencia `[pending]`
 
+**Archivos:** `docs/specs/spec-93-paridad-qa-produccion.md` (la tabla del inventario vive aquí), `docs/qa-environment.md`
+
 Enumerar, **midiendo contra los dos entornos, no leyendo el compose**, qué
 superficies de configuración existen en producción y no en QA. Como mínimo:
 
@@ -108,6 +136,8 @@ lo que sea consulta, en `BEGIN`/`ROLLBACK`.
 
 ### Fase 2 — Cerrar la divergencia de auth `[pending]`
 
+**Archivos:** `infra/supabase-qa/docker-compose.yml`, `apps/frontend/e2e/support/spec52-fixture.ts`
+
 > **Ojo, solapa con spec-88 fase 3, que está en vuelo.** Si el PR #710 ya
 > trajo el registro del hook en el compose de QA y el assert de JWT en el
 > e2e, esta fase se cierra como `[done]` referenciando ese PR. **Compruébalo
@@ -124,12 +154,16 @@ Lo que tiene que quedar cierto, venga de donde venga:
 
 ### Fase 3 — El resto del inventario `[pending]`
 
+**Archivos:** por determinar en la fase 1 — depende de qué superficies aparezcan. `docs/specs/spec-93-paridad-qa-produccion.md` y `docs/qa-environment.md` en todo caso.
+
 Cerrar las divergencias que la fase 1 encuentre, **o declararlas
 explícitamente como aceptadas**, cada una con su motivo y con qué clase de
 cambio queda sin cobertura. Una divergencia aceptada y escrita es un riesgo
 gestionado; una no escrita es una trampa.
 
 ### Fase 4 — Guardarraíl determinista `[pending]`
+
+**Archivos:** `.github/workflows/deploy.yml`, `scripts/` (el comparador nuevo)
 
 Que esto no pueda volver a descubrirse por accidente en un review.
 
@@ -144,6 +178,8 @@ check corre **desde un workflow**, no desde la máquina de nadie.
 
 ### Fase 5 — Realimentar spec-92 `[pending]`
 
+**Archivos:** el fichero de spec-92 en `docs/specs/`, `docs/specs/spec-93-paridad-qa-produccion.md`
+
 La tabla «clase de cambio → cobertura exigida» de spec-92 se escribió
 asumiendo que QA ejercita lo que producción ejecuta. Cada divergencia
 aceptada de la fase 3 es una clase de cambio que **no** puede auto-aprobarse.
@@ -157,7 +193,7 @@ Actualizar spec-92 con ellas.
 - `apps/frontend/e2e/support/spec52-fixture.ts`
 - `.github/workflows/deploy.yml` (fase 4)
 - `docs/qa-environment.md`
-- `docs/specs/spec-92-gate-prod-diferenciado.md` (fase 5)
+- el fichero de spec-92, cuando exista en `docs/specs/` (fase 5)
 
 ## Lo que NO hay que hacer
 
