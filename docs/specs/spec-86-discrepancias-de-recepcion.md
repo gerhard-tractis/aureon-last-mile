@@ -419,7 +419,7 @@ registro del faltante.
 > producción** — sólo en QA (que sí replay cada migración en cada merge, per
 > `docs/specs/CLAUDE.md`).
 
-### Fase 2a — Resolver: el bulto aparece `[pending]`
+### Fase 2a — Resolver: el bulto aparece `[in_progress]`
 
 **Archivos:** migración (`trg_reception_scan_advance_package_status`, `CREATE OR REPLACE` sobre la última definición, `packages/database/supabase/migrations/20260812000002_spec52_package_state_engine.sql`), test pgTAP en `packages/database/supabase/tests/`
 
