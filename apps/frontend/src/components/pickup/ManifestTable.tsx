@@ -4,7 +4,7 @@ import { Check, Printer } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /**
- * spec-54 phase 4.4 — the manifest table on Recogida (mock 1l).
+ * spec-54 phase 4.4 — the manifest table on Recogida (mock `5a`).
  *
  * The mock's last column is a pickup window ("09:00–13:00", "cierra 12:30" in
  * red), with the row's left border coloured by how close that close-time is.

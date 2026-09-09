@@ -49,6 +49,17 @@ describe('PickupRouteDraftPanel', () => {
     expect(screen.getByRole('button', { name: /iniciar ruta/i })).toBeInTheDocument();
   });
 
+  // spec-83 fase 4 (round 2 review) — the mock (Recogida.dc.html:238) shows
+  // "Falabella · La Florida · 42 paq." for a manifest in the route being
+  // assembled. The pickup point was missing from the row: it was only ever
+  // rendered in the manifest table next to this panel, even though it has
+  // been on `ManifestRow` since spec-54.
+  it('shows the pickup point alongside the retailer and package count', () => {
+    render(<PickupRouteDraftPanel {...baseProps()} />);
+    const draftRow = screen.getByTestId('draft-manifest');
+    expect(draftRow.textContent).toContain('Easy · Easy Vespucio · 12 paq.');
+  });
+
   /**
    * spec-61 Task 5 — `1l` has its own start affordance, so gating only the
    * mobile 3j screen left a pickup_crew user on a laptop looking at a button
