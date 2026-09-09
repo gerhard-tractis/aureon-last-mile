@@ -230,6 +230,24 @@ export async function teardown(): Promise<void> {
      OR manifest_id IN
        (SELECT id FROM manifests WHERE external_load_id LIKE $1)`, [like]);
   await db().query(
+    // spec-86 fase 1 made complete_route_reception write a public.discrepancies
+    // row (operation_type='reception') for every package missing at close —
+    // exactly what reception-mobile.spec.ts's LEFT_BEHIND scenario and this
+    // fixture's own LEFT_BEHIND (E2E52-A1-P2) both trigger. discrepancies.
+    // route_reception_id and .manifest_id have no ON DELETE clause (NO
+    // ACTION), so the hard DELETEs below now fail with
+    // discrepancies_route_reception_id_fkey / _manifest_id_fkey once a row
+    // references them. Clear both sides — manifest_id covers close_manifest's
+    // own discrepancies (spec-80 fase 2), same latent FK, so a future pickup
+    // discrepancy in this fixture doesn't reopen this exact failure — before
+    // either delete below.
+    `DELETE FROM discrepancies WHERE route_reception_id IN
+       (SELECT rr.id FROM route_receptions rr
+          JOIN pickup_routes pr ON pr.id = rr.pickup_route_id
+         WHERE pr.vehicle_id IN (SELECT id FROM vehicles WHERE plate = $1))
+     OR manifest_id IN (SELECT id FROM manifests WHERE external_load_id LIKE $2)`,
+    [PLATE, like]);
+  await db().query(
     `DELETE FROM route_receptions WHERE pickup_route_id IN
        (SELECT id FROM pickup_routes WHERE vehicle_id IN
          (SELECT id FROM vehicles WHERE plate = $1))`, [PLATE]);
