@@ -7,45 +7,73 @@
 > **Para agentes:** usa `superpowers:test-driven-development` en cada fase.
 > Los tokens de fase van al final de cada heading — ver `docs/specs/CLAUDE.md`.
 
-**Goal:** un merge a `main` cuyo `e2e-qa` está verde **y** cuyo run es el más
-reciente contra la punta actual de `main` llega a producción sin esperar un
-clic humano. Todo lo demás — `e2e-qa` rojo, un run superado por uno más
-nuevo, o cualquier fallo al determinarlo — no se aprueba. Un vigilante
+**Goal:** un merge a `main` cuyo `e2e-qa` está verde, cuyo run es el más
+reciente contra la punta actual de `main`, y cuyo diff no toca el hook de
+auth, llega a producción sin esperar un clic humano. Todo lo demás —
+`e2e-qa` rojo, un run superado por uno más nuevo, un cambio al hook de auth,
+o cualquier fallo al determinarlo — sigue esperando el clic. Un vigilante
 detecta y avisa cuando un run se queda parado sin resolverse.
 
 ---
 
-## Decisión de diseño — revisada a mitad de implementación
+## Decisión de diseño — revisada dos veces durante la implementación
 
-La primera versión de este spec proponía distinguir migraciones del resto
-del diff, conservando el clic humano sólo para cambios que tocaran
-`packages/database/supabase/migrations/`. **Esa distinción se descartó**
-antes de escribir código, verificada contra el pipeline real:
+**Revisión 1.** La primera versión de este spec proponía distinguir
+migraciones del resto del diff, conservando el clic humano sólo para
+cambios que tocaran `packages/database/supabase/migrations/`. **Esa
+distinción se descartó** antes de escribir código: `deploy-qa` aplica la
+migración a QA, `e2e-qa` corre contra esa migración ya aplicada, y
+`approve-production` exige `needs.e2e-qa.result == 'success'` — la
+migración ya se prueba en QA antes de que producción sea alcanzable, y
+`check-migration-safety.sh` ya caza el patrón DDL+backfill en CI sobre el
+PR. Más decisivo: el clic lo daba el orquestador, que no audita SQL con más
+criterio que el que ya aplica ese chequeo automático. Un control que nadie
+ejerce con criterio propio no es un control.
 
-`deploy-qa` (`.github/workflows/deploy.yml`) corre
-`infra/supabase-qa/deploy-qa.sh`, que aplica la migración a QA. `e2e-qa`
-(`needs: [changes, deploy-qa]`) corre **contra esa migración ya aplicada**.
-`approve-production` exige `needs.e2e-qa.result == 'success'`. **La
-migración ya se prueba en QA antes de que producción sea alcanzable** —
-antes de que exista ningún clic. Y `check-migration-safety.sh` corre en CI
-sobre el PR (`ci.yml`), cazando el patrón DDL+backfill antes del merge. La
-red de seguridad automática ya cubre lo que el clic pretendía cubrir, y es
-más fuerte: corre siempre, no depende de que alguien esté despierto.
+**Revisión 2 — la migración no es la única clase de cambio que QA no
+ejercita.** Un review adversarial sobre la revisión 1, ya con el auto-approve
+sin excepciones implementado, midió esto:
 
-Más decisivo aún: **el clic lo daba el orquestador**, que no tiene forma de
-auditar una migración — no revisa el SQL con más criterio que el que ya
-aplica `check-migration-safety.sh`. Un control que nadie ejerce con
-criterio propio no es un control; es una pausa.
+`custom_access_token_hook` es un hook de GoTrue que producción invoca en
+**cada login** para inyectar `operator_id`, `role` y `permissions` en el
+JWT. En QA:
 
-Este spec por tanto **no distingue por tipo de cambio**. Auto-aprueba el
-camino verde siempre: `e2e-qa` verde, y el run vigente.
+1. **No está registrado.** `infra/supabase-qa/docker-compose.yml:152-189`
+   no declara ninguna variable `GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_*`; `git
+   grep -i hook -- infra/` no encuentra nada. `docs/specs/spec-88-anon-security-definer-audit.md:191-193`
+   ya lo dejó dicho: en QA el hook es código muerto del lado del login.
+2. **Y aunque lo estuviera, el E2E no lo vería.**
+   `apps/frontend/e2e/support/spec52-fixture.ts:346-364` — `signIn()` hace
+   `waitForURL` y nunca lee el JWT. El hook termina en `EXCEPTION WHEN
+   OTHERS THEN RAISE WARNING …; RETURN event;`
+   (`20260312190110_fix_hook_role_overwrite.sql:60-63`), así que un hook
+   degradado emite un token sin claims y el login **sigue siendo verde**.
+
+Para un cambio que toque el hook, `deploy-qa` + `e2e-qa` no ejercitan nada
+— «el pipeline no impone nada aquí; sólo lo parece». Este spec por tanto
+**sí distingue una clase de cambio**, pero no por el criterio original
+(migración sí/no): por **si existe una ruta de QA que ejercite lo que
+cambió**. Auto-aprobar exige que exista una prueba que ejercite la ruta
+afectada — no que exista una prueba en QA en general. Detección concreta
+(ver Fase 1): un archivo cuyo nombre o ruta case con
+`custom_access_token_hook`, o una migración cuyo diff toque
+`supabase_auth_admin` (cómo el hook queda conectado).
+
+`docs/specs/spec-93-paridad-qa-produccion.md` (otra sesión, no tocar aquí)
+cierra esta clase de divergencia de raíz: inventario medido de superficies
+de configuración QA↔prod y un check en CI que rompa el build ante una
+nueva. Este spec referencia spec-93 como el que irá vaciando, con el
+tiempo, la lista de excepciones de aquí — hoy sólo hay una entrada
+(el hook de auth), verificada y concreta, no un riesgo genérico.
 
 ## Por qué esto no contradice a spec-57 — lo afina
 
 spec-57 (`completed`) introdujo `approve-production` para arreglar un
 estado medido así: *"merge a `main` = producción, ~10 minutos después, con
 cero checkpoint humano"*. Sigue teniendo razón sobre ese problema — el
-checkpoint sigue existiendo. Lo que cambia es **quién es el checkpoint**:
+checkpoint sigue existiendo para la clase de cambio que de verdad lo
+necesita. Lo que cambia es **quién es el checkpoint para casi todo lo
+demás**:
 
 1. **`e2e-qa` no existía cuando se escribió la Fase 1 de spec-57.** El
    propio spec lo dice: *"los tests E2E existen pero nunca corren"*. El
@@ -57,15 +85,16 @@ checkpoint sigue existiendo. Lo que cambia es **quién es el checkpoint**:
    existiera.
 2. El otro hallazgo de spec-57 — *"la base de datos es forward-only:
    `supabase db push`, sin rollback automático"* — sigue siendo cierto,
-   pero no es un argumento a favor del clic: el clic nunca verificó eso
-   tampoco. Lo que de verdad falta ahí (escala de producción, divergencia
-   de entorno) se declara sin tapar más abajo, en vez de fingir que un
-   clic humano lo cubría.
+   pero no es un argumento a favor del clic universal: el clic nunca
+   verificó eso tampoco, ni verificaba el hook de auth hasta que este spec
+   lo hizo explícito. Lo que de verdad falta (escala de producción,
+   divergencia de entorno más allá del hook) se declara sin tapar más
+   abajo, en vez de fingir que un clic humano genérico lo cubría.
 
-Con esos dos hechos, el checkpoint de spec-57 no desaparece — se vuelve
-`e2e-qa`, que es más consistente que un humano (corre siempre, no se
-olvida, no depende de quién esté de turno) para exactamente lo que el clic
-podía comprobar.
+Con esos hechos, el checkpoint de spec-57 no desaparece — se reparte: para
+la mayoría de los cambios se vuelve `e2e-qa` (más consistente que un
+humano: corre siempre, no se olvida), y para la clase de cambio que QA no
+puede ejercitar todavía, sigue siendo el clic.
 
 ## El problema, medido
 
@@ -73,210 +102,214 @@ podía comprobar.
 excepción. En una sesión se acumularon **cuatro runs sin aprobar**;
 durante horas se creyó que producción estaba al día porque los checks de
 CI estaban verdes. El costo no fue evitar un despliegue malo: fue no darse
-cuenta de que uno bueno no había llegado — y el que debía notarlo no podía
-ejercer ningún criterio que el pipeline no aplicara ya.
+cuenta de que uno bueno no había llegado — y para la mayoría de esos
+cuatro runs, el que debía notarlo no podía ejercer ningún criterio que el
+pipeline no aplicara ya.
 
 Dos riesgos distintos:
 
 | Riesgo | Defensa antes de este spec | Defensa después |
 |---|---|---|
-| Algo malo llega a producción sin que nadie/nada mire | clic humano (spec-57) | `e2e-qa` verde + freshness check (obligatorios, estructurales) |
+| Algo malo llega a producción sin que nadie/nada mire | clic humano universal (spec-57) | `e2e-qa` verde + freshness check + clic sólo si toca el hook de auth |
 | Algo bueno no llega y todos creen que sí | ninguna | vigilante (Fase 3) |
 
-## Decisión: sin pausa de GitHub Environment — un chequeo dentro del job
+## Decisión: `environment:` condicional, no una llamada a la API
 
-`approve-production` deja de declarar un `environment:` con revisores
-requeridos. No hay pausa que forzar ni API de aprobación que llamar — la
-opción de aprobar programáticamente vía `gh api .../pending_deployments`
-se descartó: requiere que el actor (`github-actions[bot]`) esté en la
-lista de revisores del entorno, y GitHub no admite bots como revisores
-requeridos. Intentarlo habría cambiado "nadie aprueba" por "el bot se
-autoaprueba siempre", que no es una comprobación — es teatro con una
-llamada de red de más de la que depender, y una superficie nueva de "qué
-hago si `gh api` falla" que la regla de fallar cerrado obliga a resolver
-en "no aprobar", el mismo estado que ya existe sin tocar nada.
+Dos formas de decidir la pausa se evaluaron:
 
-En su lugar, `approve-production` sigue siendo el job por el que pasa todo
-despliegue de producción (sin cambios en esa parte de la arquitectura de
-spec-57), pero:
+**A. Un job que aprueba `pending_deployment` vía `gh api` — descartada.**
+Requiere que el actor (`github-actions[bot]`) esté en la lista de
+revisores del entorno, y GitHub no admite bots como revisores requeridos.
+Intentarlo habría cambiado "nadie aprueba" por "el bot se autoaprueba
+siempre", que no es una comprobación — es teatro con una llamada de red de
+más de la que depender, y una superficie nueva de "qué hago si `gh api`
+falla" que la regla de fallar cerrado obliga a resolver en "no aprobar",
+el mismo estado que ya existe sin tocar nada.
 
-1. **Su `if:` sigue exigiendo `needs.e2e-qa.result == 'success'`** — sin
-   cambios respecto a spec-57 Fase 2.
-2. **Gana un paso nuevo: "Verify this run is current"**, que compara
-   `DEPLOY_SHA` contra la punta actual de `main` (`gh api
-   repos/:owner/:repo/commits/main --jq .sha`) y **falla el job** si no
-   coinciden. Un run que perdió la carrera contra un merge posterior no
-   despliega código viejo encima de uno más nuevo — el riesgo que spec-57
-   documentó y nunca cerró ("Known consequence… approving an older queued
-   run after a newer one has deployed would put older code in
-   production").
-3. El entorno `production` (con `required_reviewers`, creado en spec-57)
-   **se despoja de esa regla de protección** — cambio de configuración
-   viva de GitHub, no de este YAML. Post-merge, manual, igual que spec-57
-   Task 5 lo fue en sentido inverso. **No se ejecuta en esta sesión** —
-   ver Fase 1, último paso, marcado explícitamente para el orquestador o
-   el usuario.
+**B. `environment:` resuelto por expresión — elegida.** GitHub Actions
+evalúa expresiones en `jobs.<job>.environment` (contexto `needs` incluido)
+antes de decidir si el job debe pausar:
 
-Con eso, `approve-production` corre sin pausar en cuanto sus dos
-condiciones (E2E verde, run vigente) se cumplen — sin excepción por tipo
-de cambio, sin llamada a ninguna API de aprobación, sin nada que dependa
-de que alguien lea algo.
+```yaml
+environment: ${{ needs.changes.outputs.auth_hook == 'true' && 'production' || 'production-auto' }}
+```
 
-**Reusa, no duplica, el cálculo de "qué tocó esto".** Ninguna condición
-nueva de este spec vuelve a calcular un diff de paths — la única señal
-nueva es la comparación de SHA contra `main`, que no tiene equivalente
-existente en el repo.
+- `production` — el entorno que ya existe desde spec-57, con
+  `required_reviewers`. Sin cambios en su configuración.
+- `production-auto` — nuevo, sin protection rules. GitHub lo crea
+  automáticamente la primera vez que un job lo referencia; no hace falta
+  aprovisionarlo a mano ni llamar a la API para crearlo.
+
+Cuando el merge toca el hook de auth, el job resuelve a `production` y
+pausa para el clic — igual que hoy. Cuando no, resuelve a
+`production-auto`, sin revisores, y el job corre sin pausa. Nada llama a
+la API para aprobar nada; la aprobación "ocurre" porque el entorno elegido
+no la exige. Determinista, no depende de que nadie lea nada.
+
+**Reusa, no duplica, el cálculo de "qué tocó esto".** La condición nueva
+(`auth_hook`) es un output más del mismo job `changes` (`Detect changed
+paths`) que ya calcula `database`, `edge_functions`, `worker`, etc. — no
+una cuarta forma de responder "qué tocó esto" (deuda ya declarada en
+spec-90).
 
 **Fail-closed, explícito en cada punto nuevo:**
-- Si el paso de "Verify this run is current" no puede determinar la punta
-  de `main` (la llamada a `gh api` falla), el paso debe fallar el job —
-  nunca asumir "soy el vigente" por defecto. Ver Fase 1, Paso 2.
-- Si `e2e-qa` no puede determinarse (el job no corrió, fue cancelado), la
-  condición `needs.e2e-qa.result == 'success'` ya es `false` para
-  cualquier cosa que no sea exactamente `'success'` — sin cambios,
-  heredado de spec-57.
+- El operador `&&`/`||` no tiene tercer estado: si `changes` falla, la
+  cadena `deploy-qa` (exige `needs.changes.result == 'success'`) →
+  `approve-production` (exige `needs.deploy-qa.result == 'success'`) ya
+  detiene todo antes de que la expresión del entorno se evalúe siquiera —
+  no hace falta un chequeo adicional para eso, es la misma cadena que ya
+  existía en spec-57.
+- El paso "Verify this run is current" (ver abajo) no usa `|| true` ni
+  `continue-on-error`; si la llamada a `gh api` falla, el job falla, en
+  ambos caminos (auto-aprobado o humanamente aprobado).
+
+## Decisión: la comprobación de "run vigente" corre en ambos caminos
+
+`approve-production` gana un paso nuevo, "Verify this run is current", que
+compara `DEPLOY_SHA` contra la punta real de `main` (`gh api
+repos/:owner/:repo/commits/main --jq .sha`) y falla el job si no
+coinciden. Corre **después** de que el entorno resuelva — en el camino
+`production`, eso significa después de que un humano apruebe. Así, una
+aprobación concedida tarde, después de que un merge más nuevo ya
+aterrizara, tampoco despliega código viejo — el riesgo que spec-57
+documentó y nunca cerró ("Known consequence… approving an older queued run
+after a newer one has deployed would put older code in production").
 
 ## Decisión: X = 60 minutos para runs sin resolver, cron cada 15
 
 El vigilante nuevo (Fase 3) reporta cuando el run de `deploy.yml` que
 corresponde a la punta actual de `main` lleva más de X minutos sin
-terminar en éxito — ya sea porque sigue corriendo, porque falló (E2E rojo,
-freshness check, cualquier job de la cadena), o porque fue cancelado.
-`qa-drift-watchdog.yml` ya usa una ventana de 20 minutos para drift de QA,
-pero esa ventana mide *tiempo desde el merge* para un proceso que en
-condiciones normales tarda minutos. El incidente medido en este spec fueron
-**horas** de cuatro runs acumulados. 60 minutos separa "todavía corriendo
-en su orden normal" de "esto se olvidó", sin gritar en cada deploy que
-tarda un poco por cola. Cron cada 15 minutos, igual que
-`qa-drift-watchdog.yml`, para que el retraso máximo de detección sea 75
-minutos.
+terminar en éxito — corriendo, fallado (E2E rojo, freshness check),
+cancelado, o esperando un clic que nadie dio. `qa-drift-watchdog.yml` ya
+usa una ventana de 20 minutos para drift de QA, pero mide *tiempo desde el
+merge* para un proceso que en condiciones normales tarda minutos. El
+incidente medido en este spec fueron **horas** de cuatro runs acumulados.
+60 minutos separa "todavía corriendo/esperando revisión normal" de "esto
+se olvidó", sin gritar en cada deploy con hook de auth que tarda un poco
+en que alguien lo revise. Cron cada 15 minutos, igual que
+`qa-drift-watchdog.yml`, retraso máximo de detección 75 minutos.
 
 ## Qué NO se auto-aprueba
 
 - **`e2e-qa` rojo** — `approve-production` no corre (su `if:` lo exige).
   Sin cambios de spec-57.
+- **Un cambio que toca el hook de auth** — `environment:` resuelve a
+  `production`, con revisor requerido. Detección: ruta de archivo que casa
+  con `custom_access_token_hook`, o una migración cuyo diff toca
+  `supabase_auth_admin`.
 - **Un run superado por uno más nuevo** — el paso "Verify this run is
-  current" (Fase 1) lo falla explícitamente. El vigilante (Fase 3) además
-  señala cuándo hay más de un run sin resolver a la vez.
-- **Cualquier fallo al determinarlo** — la llamada a `gh api` para leer la
-  punta de `main` falla, el job `changes` falla, lo que sea: el paso nuevo
-  falla cerrado, nunca asume que puede continuar.
+  current" lo falla explícitamente, en ambos caminos. El vigilante (Fase
+  3) además señala cuándo hay más de un run sin resolver a la vez.
+- **Cualquier fallo al determinarlo** — `changes` falla, la llamada a `gh
+  api` del freshness check falla: todo cae del lado seguro (más pausa o
+  job fallido, nunca deploy silencioso).
 
-## Los huecos que el clic tampoco tapaba — declarados, no construidos aquí
+## Los huecos que siguen sin comprobación automática — declarados, no construidos aquí
 
-El clic humano nunca fue una defensa real contra estas dos clases de
-fallo, y auto-aprobar no las empeora — sólo dejan de tener siquiera la
-ilusión de cobertura:
+El auth hook fue el primero medido; hay al menos otra clase para la que
+"el clic" tampoco era, en rigor, una defensa real — sólo dejan de tener
+siquiera la ilusión de cobertura al auto-aprobar:
 
-| Hueco | Por qué el clic no lo cubría | Qué lo cubriría (fase futura, no construida aquí) |
+| Hueco | Por qué ni el clic ni `auth_hook` lo cubren | Qué lo cubriría (fase futura, no construida aquí) |
 |---|---|---|
-| **Escala de producción** — ~112k despachos, ~61k paquetes; un backfill que expira ahí y en ningún otro entorno (QA no tiene ese volumen) | Nadie mide el volumen de una tabla al hacer clic; es información que no está en pantalla | Un chequeo en `check-migration-safety.mjs` que, para migraciones con `UPDATE`/`DELETE` masivo sin `WHERE` acotado sobre tablas nombradas en una lista de "grandes" (o mejor, consultadas contra `pg_stat_user_tables` de producción antes de aprobar), avise en el PR — no en el deploy |
-| **Divergencia QA/producción** — QA es self-hosted, producción es Supabase gestionado; el modo de GUC de PostgREST y el hook de auth difieren, y un review reciente bloqueó un PR precisamente por inferir QA→prod | El clic ocurría mirando QA; nunca comparó configuración contra producción, porque no hay dónde mirar eso en la UI de aprobación | Un job de paridad que, antes de aprobar, compare valores de configuración conocidos-divergentes (modo GUC, versión de PostgREST) entre ambos proyectos vía API de Supabase, y bloquee sólo si la divergencia no es la ya documentada como esperada |
+| **Escala de producción** — ~112k despachos, ~61k paquetes; un backfill que expira ahí y en ningún otro entorno (QA no tiene ese volumen) | Nadie medía el volumen de una tabla al hacer clic; es información que no está en pantalla, y no es una superficie de config QA↔prod que `spec-93` vaya a inventariar | Un chequeo en `check-migration-safety.mjs` que, para migraciones con `UPDATE`/`DELETE` masivo sin `WHERE` acotado sobre tablas nombradas en una lista de "grandes", avise en el PR — no en el deploy |
+| **Divergencia QA/producción, superficies distintas del hook de auth** — QA es self-hosted, producción es Supabase gestionado; el modo de GUC de PostgREST y otras diferencias de configuración pueden existir sin haberse medido todavía | `spec-93` es exactamente el inventario que cierra esto de raíz — pero mientras no exista, cualquier otra superficie de config divergente que aún no se ha medido tiene el mismo problema que tenía el hook antes de este spec | `spec-93` — su check en CI de "superficie nueva detectada" es lo que iría vaciando esta fila |
 
 Ninguna de las dos se construye en este spec — declararlas es el
 entregable; construirlas requiere decidir umbrales y falsos positivos que
-no se pueden resolver leyendo el código actual.
+no se pueden resolver leyendo el código actual, y en el caso de la
+segunda, requiere el inventario que `spec-93` está construyendo aparte.
 
 ## File structure
 
 | Archivo | Responsabilidad | Cambio |
 |---|---|---|
-| `.github/workflows/deploy.yml` | `approve-production` sin pausa de entorno, con freshness check | Modificar |
-| `scripts/check-deploy-gating-autoapprove.mjs` | Invariantes nuevas: freshness check presente y con fail-closed, `e2e-qa` sigue siendo obligatorio | Crear |
-| `scripts/check-deploy-gating.mjs` | Importa y agrega los errores del archivo anterior | Modificar |
+| `.github/workflows/deploy.yml` | `changes` gana el output `auth_hook`; `approve-production` resuelve `environment:` condicional + freshness check | Modificar |
+| `scripts/check-deploy-gating-autoapprove.mjs` | Invariantes nuevas: polaridad del condicional, freshness step con fail-closed, ningún `PROD_JOBS` con `environment:` propio | Crear |
+| `scripts/check-deploy-gating.mjs` | Relaja su chequeo de `environment:` para aceptar también la forma condicional válida; importa y agrega los errores del archivo anterior | Modificar |
 | `scripts/check-deploy-gating-autoapprove.test.sh` | Tests + mutation-test de las invariantes nuevas | Crear |
 | `.github/workflows/ci.yml` | Corre el test nuevo | Modificar |
 | `scripts/deploy-approval-watchdog.mjs` | Decisión pura: ¿el run de la punta de `main` lleva > X sin resolverse? | Crear |
 | `scripts/deploy-approval-watchdog.test.mjs` | Tests del anterior | Crear |
 | `.github/workflows/deploy-approval-watchdog.yml` | Cron 15min, reúne estado vía `gh api`, abre/actualiza un único issue | Crear |
 | `.github/workflows/README.md` | Diagrama y tabla de jobs actualizados | Modificar |
-| `docs/runbooks/approve-production-deploy.md` | Reescrito: ya no hay pantalla de aprobación en el camino normal | Modificar |
+| `docs/runbooks/approve-production-deploy.md` | Reescrito: la pausa ahora es la excepción (hook de auth), no la norma | Modificar |
 
 ---
 
-### Fase 1 — sin pausa: `approve-production` se autoaprueba en el camino verde `[pending]`
+### Fase 1 — `changes` gana `auth_hook`; `approve-production` se autoaprueba salvo esa clase `[in_progress]`
 
 **Archivos:**
 - Modificar: `.github/workflows/deploy.yml`
 
-- [ ] Quitar `environment: production` del job `approve-production`.
-- [ ] Añadir un paso `Verify this run is current` **antes** del paso
-  existente, que:
-  - lee la punta real de `main` vía
-    `gh api repos/${{ github.repository }}/commits/main --jq .sha`
-  - compara contra `DEPLOY_SHA`
-  - si no coinciden, o si la llamada a `gh api` falla (fail-closed:
-    `set -euo pipefail`, sin `|| true`), termina el job con `exit 1` y un
-    mensaje explicando que un run más nuevo superó a este
-- [ ] Actualizar el comentario del job explicando el nuevo comportamiento y
-  citando este spec en vez de (o adicional a) spec-57.
-- [ ] `node -e "require('js-yaml').load(...)"` para confirmar que el YAML
-  sigue parseando.
-- [ ] Commit.
-- [ ] **Paso manual, post-merge — NO ejecutar en esta sesión:** quitar la
-  regla de `required_reviewers` del entorno `production` en GitHub
-  (`gh api -X PUT repos/:owner/:repo/environments/production -f
-  'reviewers=[]'` o equivalente desde la UI). Documentado aquí para quien
-  mergee, siguiendo el mismo patrón de spec-57 Task 5 (orden importa:
-  mergear primero, cambiar la config después, para que el propio PR no
-  quede esperando una pausa que ya no debería existir en el YAML pero que
-  la config vieja todavía impondría).
+**Implementado** — commit `8c077a2` en esta rama.
+
+- [x] `changes` job: nuevo output `auth_hook`, calculado en el paso
+  "Filter paths" — verdadero si algún path cambiado casa con
+  `custom_access_token_hook`, o si el diff de
+  `packages/database/supabase/migrations/` contiene `supabase_auth_admin`.
+- [x] `approve-production.environment` pasa de `production` a
+  `${{ needs.changes.outputs.auth_hook == 'true' && 'production' ||
+  'production-auto' }}`.
+- [x] Nuevo paso "Verify this run is current": lee la punta real de `main`
+  vía `gh api repos/${{ github.repository }}/commits/main --jq .sha`,
+  compara contra `DEPLOY_SHA`, `exit 1` si no coincide o si la llamada
+  falla (`set -euo pipefail`, sin `|| true`).
+- [x] Comentarios del job y del header del workflow reescritos citando
+  este spec y explicando la exención del hook de auth.
+- [x] YAML verificado con `js-yaml` (parsea).
+- [ ] **Paso manual, post-merge — NO se ejecuta en esta sesión:** ninguno.
+  A diferencia de la Revisión 1 (que retiraba `required_reviewers` de
+  `production`), esta versión **conserva** esa configuración sin cambios
+  — `production` sigue existiendo con su revisor tal como spec-57 lo dejó,
+  y `production-auto` la crea GitHub automáticamente al primer uso. No hay
+  ninguna acción de infraestructura pendiente.
 
 ---
 
-### Fase 2 — el guardarraíl aprende la regla nueva `[pending]`
+### Fase 2 — el guardarraíl aprende la regla nueva `[in_progress]`
 
-TDD estricto: escribe primero los tests contra fixtures YAML, corre y
-observa que fallan por la razón correcta, luego implementa.
+**Implementado** — commit `8c077a2` en esta rama.
+`scripts/check-deploy-gating-autoapprove.mjs`,
+`scripts/check-deploy-gating-autoapprove.test.sh` (14/14 verde),
+`scripts/check-deploy-gating.mjs` modificado (su chequeo de `environment:`
+ahora acepta también la forma condicional válida — un `'production'`
+literal sigue siendo válido porque es estrictamente más cauto, no una
+regresión de seguridad), añadido a `ci.yml`.
 
-**Archivos:**
-- Crear: `scripts/check-deploy-gating-autoapprove.mjs`
-- Crear: `scripts/check-deploy-gating-autoapprove.test.sh`
-- Modificar: `scripts/check-deploy-gating.mjs` (importa y agrega errores,
-  mismo patrón que `check-deploy-gating-quarantine.mjs`)
-- Modificar: `.github/workflows/ci.yml`
+**Invariantes que afirma**, cada una con fixture rojo antes de la
+implementación (ver el test file):
 
-Invariantes nuevas a afirmar — cada una con un fixture que falla sin el
-chequeo:
+1. `approve-production.environment`, si es una expresión condicional, debe
+   mapear exactamente `needs.changes.outputs.auth_hook == 'true'` a
+   `'production'` y el resto a `'production-auto'` — nunca invertida,
+   nunca sobre otro output, nunca `'production-auto'` incondicional.
+2. `approve-production` debe contener un paso cuyo `run:` compare
+   `DEPLOY_SHA` contra `commits/main` y haga `exit 1` en discrepancia, sin
+   `continue-on-error: true` ni un `|| true` que lo neutralice. Sólo se
+   exige cuando la fixture declara `steps:` en absoluto (convención de
+   esta familia de tests: fixtures mínimas a propósito; el `deploy.yml`
+   real siempre tiene `steps:`).
+3. Ningún job de `PROD_JOBS` puede declarar su propio `environment:`.
 
-1. **`approve-production` debe contener un paso cuyo `run:` compare
-   `DEPLOY_SHA`/`github.sha` contra la punta de `main` vía `gh api
-   .../commits/main`**, y ese paso no puede llevar `continue-on-error:
-   true` ni un `|| true` al final de su `run:` — cualquiera de los dos
-   convertiría un "no pude determinarlo" en "sigo adelante", exactamente
-   lo que la regla de fallar cerrado prohíbe.
-2. **`approve-production` sigue exigiendo `needs.e2e-qa.result ==
-   'success'`** — invariante ya cubierta por `check-deploy-gating.mjs`
-   desde spec-57/spec-87; este spec no la debilita, así que el fixture
-   `GOOD` de este archivo nuevo debe seguir pasando el chequeo existente
-   también (test de integración entre ambos archivos).
-3. **Ningún job de `PROD_JOBS` puede declarar su propio `environment:`
-   con revisores** — si alguno reintrodujera una pausa por su cuenta,
-   rompería la garantía de "sin excepción" sin que el chequeo de arriba lo
-   viera, porque ese job nunca pasa por el paso de freshness de
-   `approve-production`.
+**Mutation-test manual, contra el `deploy.yml` real (6/6 mutantes
+cazados):**
 
-- [ ] Escribir `check-deploy-gating-autoapprove.test.sh` con fixtures
-  `GOOD` (paso de freshness presente, sin `continue-on-error`, sin
-  `|| true`), `NO_FRESHNESS_STEP` (falta el paso — debe fallar),
-  `SWALLOWED_FRESHNESS` (`continue-on-error: true` en el paso — debe
-  fallar), `SILENCED_FRESHNESS` (`|| true` al final del `run:` — debe
-  fallar), `PROD_JOB_OWN_ENV` (un job de `PROD_JOBS` con `environment:`
-  propio — debe fallar).
-- [ ] Correr, confirmar rojo por "no such file" o por falta del chequeo,
-  no por un error de fixture.
-- [ ] Implementar `check-deploy-gating-autoapprove.mjs`, exportando una
-  función que reciba `jobs` y devuelva un array de errores, mismo estilo
-  que `check-deploy-gating-quarantine.mjs`.
-- [ ] Conectar en `check-deploy-gating.mjs`.
-- [ ] Verde.
-- [ ] **Mutation-test manual:** contra el YAML real de Fase 1, revertir
-  cada uno de los tres chequeos uno por uno (quitar el paso, añadirle
-  `continue-on-error: true`, añadirle `|| true`, darle su propio
-  `environment:` a un `PROD_JOBS`) y confirmar que el guard se pone rojo
-  en cada caso. Documentar el resultado en el reporte de esta fase.
-- [ ] Añadir a `ci.yml` junto a los demás `check-deploy-gating*.test.sh`.
-- [ ] Commit.
+| Mutación | Resultado |
+|---|---|
+| Invertir el condicional (`auth_hook == 'true'` → `production-auto`) | ROJO — "not the expected shape" |
+| Condicional sobre `database` en vez de `auth_hook` | ROJO — mismo mensaje |
+| Quitar el paso "Verify this run is current" | ROJO — "no freshness step" |
+| Añadir `continue-on-error: true` al paso | ROJO — "continue-on-error: true" |
+| Añadir `\|\| true` al final del `run:` del paso | ROJO — "ends with `\|\| true`" |
+| `environment: production-auto` en `deploy-vercel` | ROJO — "declares its own environment" |
+
+**Sin regresión en las suites existentes:** las 8 familias de
+`check-deploy-gating*.test.sh` preexistentes (`check-deploy-gating.test.sh`,
+`-always`, `-concurrency`, `-quarantine`, `-quarantine-r4/r5/r6`,
+`-quarantine-differential`) siguen en verde sin modificar ninguna de sus
+fixtures — el chequeo relajado en `check-deploy-gating.mjs` acepta el
+`'production'` literal que todas ellas usan.
 
 **Verify:** unit
 
@@ -302,21 +335,21 @@ GitHub, no de leer un checkout en el VPS.
   - no existe ningún run para la punta de `main` → `action: alert`
     ("nada se está desplegando para este commit")
   - el run de la punta de `main` está `completed`/`success` → `action: ok`
-  - el run sigue sin `completed`, dentro de los 60 min desde
-    `mainCommittedAt` → `action: in_flight`
+  - el run sigue sin `completed` (incluye "esperando aprobación del hook
+    de auth"), dentro de los 60 min desde `mainCommittedAt` → `action:
+    in_flight`
   - el run sigue sin `completed`, o terminó en `failure`/`cancelled`,
     ≥ 60 min desde `mainCommittedAt` → `action: alert`, con el número de
     run y minutos transcurridos en el motivo
   - dos o más runs sin `completed` simultáneos para commits distintos →
     `action: alert` señalando cuál corresponde a la punta actual y
     recomendando cancelar los demás (el riesgo de spec-57 nunca cerrado:
-    aprobar/dejar correr el viejo tras el nuevo despliega código viejo)
+    dejar correr/aprobar el viejo tras el nuevo despliega código viejo)
   - **estado incompleto o inválido** (falta `mainSha`, `runs` no es
     array, etc.) → nunca `ok` ni `alert` con datos inventados; exit code
-    distinto de 0 y 1, mismo patrón que `qa-drift-check.mjs` línea de
-    validación de campos obligatorios — fallar cerrado ante un error
-    propio, no confundir "no pude preguntar" con "no hay nada que
-    reportar"
+    distinto de 0 y 1, mismo patrón que `qa-drift-check.mjs` — fallar
+    cerrado ante un error propio, no confundir "no pude preguntar" con
+    "no hay nada que reportar"
 - [ ] Confirmar rojo por "no such file", implementar
   `deploy-approval-watchdog.mjs` (función pura + CLI, mismo estilo que
   `qa-drift-check.mjs`).
@@ -344,18 +377,17 @@ GitHub, no de leer un checkout en el VPS.
 - Modificar: `.github/workflows/README.md`
 - Modificar: `docs/runbooks/approve-production-deploy.md`
 
-- [ ] Actualizar el diagrama de flujo: ya no hay pausa humana en el camino
-  normal; `approve-production` corre automáticamente si `e2e-qa` está
-  verde y el run es vigente.
-- [ ] Reescribir el runbook: ya no describe cómo aprobar manualmente en el
-  caso normal. Explica: cuándo un run **no** avanza (E2E rojo, run
-  superado), qué significa el issue de `deploy-approval-stale`, y cómo
-  investigar un run atascado (sigue existiendo el escape manual de
-  `docs/runbooks/manual-deployment.md`).
-- [ ] Añadir la tabla de huecos declarados (escala, divergencia QA/prod)
-  de este spec al runbook o dejarla enlazada — que quien investigue un
-  incidente de producción sepa que esas dos clases de fallo no tienen
-  comprobación automática todavía.
+- [ ] Actualizar el diagrama de flujo: `approve-production` corre
+  automáticamente si `e2e-qa` está verde, el run es vigente, y el diff no
+  toca el hook de auth; pausa sólo en ese último caso.
+- [ ] Reescribir el runbook: la pausa deja de ser el caso normal.
+  Explicar cuándo aparece (hook de auth), cuándo un run no avanza sin
+  pausa visible (E2E rojo, run superado), qué significa el issue de
+  `deploy-approval-stale`, y cómo investigar un run atascado (sigue
+  existiendo el escape manual de `docs/runbooks/manual-deployment.md`).
+- [ ] Añadir la tabla de huecos declarados (escala, divergencia QA/prod
+  más allá del hook) al runbook o dejarla enlazada, y referenciar
+  `spec-93` como el trabajo que la va vaciando.
 - [ ] Commit.
 
 **Verify:** unit
@@ -366,9 +398,9 @@ GitHub, no de leer un checkout en el VPS.
 
 | Riesgo | Mitigación |
 |---|---|
-| El entorno `production` sigue con `required_reviewers` en GitHub porque el paso manual de Fase 1 no se ejecutó | El PR mergeado no se auto-despliega — sigue pausando, visiblemente, hasta que alguien corra ese paso. Falla hacia el lado seguro (más pausa, no menos). |
+| La detección de `auth_hook` (regex de ruta + grep de `supabase_auth_admin`) tiene falsos negativos si el hook se referencia de una forma que no casa ninguno de los dos patrones | Ambos patrones son deliberadamente amplios (nombre de función, no una ruta de archivo específica). `spec-93` es la mitigación estructural: un inventario medido, no un detector ad-hoc, que cierra esto de raíz en vez de parche a parche. |
 | El paso de freshness introduce una llamada a red más por deploy (`gh api .../commits/main`) | Barata, de sólo lectura, ya usada por `qa-drift-watchdog.yml` para lo mismo — no es infraestructura nueva. |
-| Escala de producción y divergencia QA/prod, huecos reales | Declarados arriba, no fingidos como cubiertos. Cualquier incidente de esa clase es evidencia para priorizar la fase futura correspondiente, no una sorpresa. |
+| Escala de producción, huecos reales fuera de lo que `spec-93` cubre | Declarado arriba, no fingido como cubierto. Cualquier incidente de esa clase es evidencia para priorizar la fase futura correspondiente, no una sorpresa. |
 | El vigilante de Fase 3 se queda mudo si `gh api` falla | Sigue la regla de fallar cerrado: un fallo de la consulta no cierra el issue existente ni reporta `ok` — ver el caso de test dedicado en Fase 3. |
 
 ## Out of scope
@@ -376,7 +408,8 @@ GitHub, no de leer un checkout en el VPS.
 - Aprobar vía `gh api .../pending_deployments` (descartado arriba —
   requiere un revisor que GitHub no permite que sea un bot).
 - Construir las dos comprobaciones de la tabla de huecos declarados
-  (escala, divergencia QA/prod) — quedan como fases futuras con su
-  argumento, no como trabajo pendiente de este spec.
+  (escala, resto de divergencia QA/prod) — quedan como fases futuras con
+  su argumento, no como trabajo pendiente de este spec.
+- El inventario y check de `spec-93` — otra sesión, no tocar aquí.
 - Cambiar el criterio de `e2e-qa` o su quarantine (spec-87) — sin cambios.
 - Promover o degradar cualquier otro job del pipeline.
