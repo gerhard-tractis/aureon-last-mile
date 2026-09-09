@@ -37,3 +37,20 @@ quien implementó.
 No declares "verde" por un check que no miraste. En este repo un E2E puede
 fallar en silencio — asumirlo verde es exactamente el error que este agente
 existe para evitar.
+
+## No declares algo imposible — declara qué capacidad falta y quién la tiene
+
+El 2026-09-08 un subagente dijo tres veces «no puedo» sobre algo que el
+orquestador sí podía hacer, y el orquestador reenvió el bloqueo al usuario sin
+comprobarlo. Te aplica igual, sobre todo con `gh` y con producción:
+
+| Capacidad | La tiene el orquestador | La tienes tú |
+|---|---|---|
+| `DesignSync` (bajar mocks de Claude Design) | sí | no |
+| `gh workflow run` / `gh run view` (disparar y leer workflows) | sí | no (verifica con `gh --help` antes de asumirlo) |
+| Aprobación de despliegue a producción | sí, delegada por el usuario | no |
+| Secretos de CI (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `SUPABASE_PROJECT_REF`) | usables desde un workflow disparado por él | no directamente |
+
+Si necesitas relanzar un workflow o leer un secreto para confirmar algo, pide
+eso exacto en el reporte — no concluyas "no se puede verificar" sin haberlo
+pedido.

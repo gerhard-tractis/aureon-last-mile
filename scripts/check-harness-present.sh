@@ -57,6 +57,15 @@ for a in $REQUIRED_AGENTS; do
     echo "::error file=$f::Falta 'description:' en el frontmatter. Sin ella el orquestador no sabe cuándo delegar en este agente."
     FAILED=1
   fi
+
+  # spec-90: el 2026-09-08 tres subagentes declararon algo imposible que el
+  # orquestador sí podía hacer, y el bloqueo se reenvió al usuario sin
+  # comprobarlo. Cada agente necesita la sección que le dice a quién escalar
+  # en vez de asumir que no se puede.
+  if ! grep -qE '^## No declares algo imposible' "$f"; then
+    echo "::error file=$f::Falta la sección '## No declares algo imposible — declara qué capacidad falta y quién la tiene'. Ver docs/specs/spec-90-bloqueos-verificables.md."
+    FAILED=1
+  fi
 done
 
 for h in $REQUIRED_HOOKS; do

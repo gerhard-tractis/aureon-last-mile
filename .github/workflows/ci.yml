@@ -181,6 +181,102 @@ jobs:
       - name: Test the spec-fields guard
         run: bash ./scripts/check-spec-fields.test.sh
 
+      # spec-90: una fase [blocked] necesita la misma evidencia que una
+      # [done] — qué se intentó, contra qué se verificó, cuándo, y quién
+      # desbloquea. Sólo sobre los specs tocados en este PR, igual que el
+      # guard de arriba y por la misma razón de transición.
+      #
+      # Round 2 (S4): igual que el guard de migraciones de arriba, la cola de
+      # merge dispara `merge_group`, no `pull_request` —
+      # `github.event.pull_request.base.sha` está vacío ahí, y ese "vacío" se
+      # confundía con "no es un PR, no hay nada que validar" justo en la
+      # corrida que decide el merge. Mismo fallback de tres niveles.
+      #
+      # Round 2, segunda vuelta (y round 3, que encontró que ésta también
+      # estaba mal): el problema real no era QUÉ commit usar como base, sino
+      # que **cualquier diff con `git` de dos puntos entre una base y una
+      # cabeza que no comparten punta muestra deuda ajena, en un sentido o en
+      # el otro**. En `pull_request`, `actions/checkout` resuelve HEAD a
+      # `refs/pull/<N>/merge` — el merge sintético de esta rama con el `main`
+      # del momento del checkout. El primer intento (diffear contra
+      # `pull_request.base.sha`, una foto vieja) horneaba hacia adelante todo
+      # lo que `main` ganó después de esa foto. El segundo intento (diffear
+      # dos puntos contra `pull_request.head.sha`, el commit real de la rama)
+      # parecía arreglarlo pero sólo por coincidencia: si `base.sha` es
+      # ancestro directo de `head.sha` (como lo era en ese momento), dos
+      # puntos y tres puntos dan lo mismo. En cuanto `main` avanza más allá de
+      # esa foto —cosa que pasa varias veces por hora en este repo— dos
+      # puntos deja de coincidir con el merge-base real y vuelve a mostrar,
+      # ahora en sentido inverso, todo lo que `main` ganó y esta rama no
+      # tiene: el mismo síntoma (specs ajenos con `[blocked]` sin evidencia
+      # nombrados como si esta rama los hubiera tocado), la misma causa raíz.
+      #
+      # Arreglo real: no diffear con `git` en absoluto para `pull_request` —
+      # la lista de ficheros de la API de GitHub es autoritativa, la calcula
+      # GitHub contra el estado real del PR, y es inmune al shallow clone y
+      # al merge-ref inflado por definición (no depende de qué haya en el
+      # disco del runner).
+      #
+      # Round 4: el camino sin PR (`push`) tenía el MISMO bug por una vía
+      # distinta — no el merge-ref, sino `github.event.before` como base de
+      # un diff de TRES puntos. Un `git merge origin/main` en la propia rama
+      # (exactamente lo que hace este spec cada vez que sincroniza) mete en
+      # el rango `before...HEAD` todo lo que `main` trajo consigo. Medido
+      # sobre el commit real de sincronización de esta rama (`3a3892f`,
+      # `before=09bfa69`): 10 specs en el diff, 4 de ellos `[blocked]` sin
+      # `> Bloqueo:` — el guard habría fallado nombrando specs que esta rama
+      # nunca tocó, el síntoma exacto de las rondas 1 y 2, sólo que en el
+      # evento `push` en vez de `pull_request`. No disparó porque ningún
+      # push de esta rama hasta ahora traía una fusión de `main` de por
+      # medio — el próximo `git merge main` sí lo habría hecho.
+      #
+      # Se salta en `push` en vez de arreglar la base ahí: la corrida de
+      # `pull_request` (vía API, arriba) es la autoritativa y cubre el caso
+      # real — mismo criterio que ya usa el guard hermano ("Check spec
+      # fields on touched specs", más abajo), que hace exactamente esto.
+      # `merge_group` se mantiene con diff por `git` (no confirmado si le
+      # afecta el mismo bug; `merge_group` no está activo todavía en este
+      # repo — ver *Decisión explícita* en spec-90).
+      - name: Check blocked-phase evidence on touched specs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          if [ -n "$PR_NUMBER" ]; then
+            RAW_FILES="$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/files" --paginate --jq '.[].filename')" || API_RC=$?
+            if [ -n "${API_RC:-}" ]; then
+              echo "check-blocked-evidence: no se pudo obtener la lista de ficheros del PR vía API (exit $API_RC). Fallando cerrado — un fallo de API no es evidencia de que no hay nada que revisar." >&2
+              exit 1
+            fi
+            FILES="$(printf '%s\n' "$RAW_FILES" | grep -E '^docs/specs/spec-.*\.md$' || true)"
+            if [ -n "$FILES" ]; then
+              bash ./scripts/check-blocked-evidence.sh $FILES
+            else
+              echo "check-blocked-evidence: ningún spec tocado."
+            fi
+            exit $?
+          fi
+          BASE="${{ github.event.merge_group.base_sha }}"
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "No es un pull_request ni una corrida de merge_group; este guard valida los specs de un PR. Saltando — el diff de \`push\` contra \`before\` puede abarcar una fusión entera de main (round 4, ver spec-90)."
+            exit 0
+          fi
+          git fetch --no-tags --depth=1 origin "$BASE" 2>/dev/null || git fetch --no-tags --unshallow 2>/dev/null || true
+          bash ./scripts/check-blocked-evidence.sh --base "$BASE"
+
+      - name: Test the blocked-evidence guard
+        run: bash ./scripts/check-blocked-evidence.test.sh
+
+      # spec-90: avisa (no rompe) cuando un `> Bloqueo:` lleva más de 30 días
+      # verificado, o cuando falta del todo — sobre TODOS los specs, no sólo
+      # los tocados, porque un bloqueo puede caducar sin que nadie vuelva a
+      # tocar ese archivo.
+      - name: Check blocked-phase freshness (repo-wide, warn-only)
+        run: bash ./scripts/check-blocked-freshness.sh
+
+      - name: Test the blocked-freshness guard
+        run: bash ./scripts/check-blocked-freshness.test.sh
+
       # El harness de orquestación tiene que seguir existiendo EN EL REPO.
       # El 2026-09-07 los tres subagentes desaparecieron a mitad de sesión
       # porque vivían sólo como archivos sin trackear en un checkout viejo:

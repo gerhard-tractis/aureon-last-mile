@@ -178,6 +178,75 @@ cerrar después; una casilla marcada en falso, no.
 `scripts/check-spec-fields.sh` lo aplica en CI. Exentos `closed` y `superseded`:
 son historia, y pedirles evidencia obligaría a inventarla.
 
+## `> Bloqueo:` — evidencia para abrir una fase como bloqueada
+
+Un bloqueo declarado se propaga sin verificarse, y la afirmación no verificada
+se vuelve permanente porque el siguiente que la lee la hereda. Pasó de verdad
+el 2026-09-08: dos specs afirmaron que `public.users` y `public.drivers` no
+tenían nada que las ligara, cuando `20260318000004_agent_suite_tables.sql:253-254`
+ya las ligaba desde marzo — esa única afirmación sin comprobar paró cuatro
+fases. Igual que `[done]` necesita evidencia para cerrarse, `[blocked]` la
+necesita para abrirse: **toda fase `[blocked]` lleva, en su cuerpo, un bloque
+`> Bloqueo:`** con las cuatro cosas que ese día demostró que faltaban. Puede
+ser una sola línea o varias líneas de blockquote consecutivas (sin línea en
+blanco de por medio) — el guard concatena el bloque completo antes de leer
+los campos, así que repartirlo en varias líneas para que quepa sin desbordar
+es válido, no un adorno:
+
+```
+### Fase 3 — Asignación `[blocked]`
+
+> Bloqueo: se intentó resolver "asignados a ti" contra manifests.assigned_to_user_id
+> — verificado en el esquema QA: la columna existe y está NULL en todas las filas
+> — 2026-09-08 — desbloquea: usuario (quién asigna y desde dónde: spec-82 §1)
+```
+
+- **Qué se intentó** — no «falta X», sino «se intentó Y y devolvió Z».
+- **Contra qué se verificó** — fichero:línea, una consulta, o la salida de un comando.
+- **Cuándo** — fecha real, `YYYY-MM-DD`.
+- **Quién puede desbloquearlo** — `usuario` (decisión de producto), `agente`
+  (trabajo tomable por otro agente) o `dependencia` (otra fase, **nombrada**:
+  `dependencia (spec-81)`).
+
+**«No tengo acceso a X» no es un bloqueo válido por sí solo.** Sólo lo es si
+la línea trae evidencia de que se escaló al orquestador y no llegó — «qué se
+intentó» tiene que decir a quién se escaló, y «contra qué se verificó» tiene
+que decir qué contestó (o que no contestó nada). El 2026-09-08 se usó "no
+tengo acceso" tres veces para bajar el listón de verificación sin escalar
+nada, y las tres veces el orquestador sí tenía la capacidad que el subagente
+decía no tener. Una negación vacía con las palabras correctas puestas
+("se intentó nada y no se verificó nada") **no** cuenta — el guard la rechaza
+explícitamente.
+
+**Escape hatch, igual que `**Depende de:**` (spec-91):** si de verdad no se
+puede articular todavía contra qué se verificó, `(indeterminado — <razón
+real>)` reemplaza los dos primeros campos sin reemplazar los otros dos —
+fecha y quién desbloquea siguen siendo exigibles porque sí se conocen:
+
+```
+> Bloqueo: (indeterminado — la pantalla de indemnización no está diseñada
+> todavía, no se puede evaluar el efecto aguas abajo) — 2026-09-09 —
+> desbloquea: usuario
+```
+
+Un relleno («razón», «TODO», «???») no cuenta como razón real — el guard lo
+rechaza igual que rechazaría un campo vacío. Y no es una puerta trasera para
+reabrir el caso de arriba: si la razón dice «no tengo acceso»/«no puedo»/«sin
+acceso», también tiene que nombrar a quién se escaló — sólo `(indeterminado —
+no tengo acceso a producción)`, sin más, sigue siendo inválido.
+
+`scripts/check-blocked-evidence.sh` lo aplica en CI, sólo sobre los specs que
+toca el PR — igual que `**Verify:**`, los antiguos migran cuando se los toca.
+
+Un bloqueo caducado no es un error — es una revisión pendiente.
+`scripts/check-blocked-freshness.sh` corre sobre **todos** los specs en cada
+CI (no sólo los tocados) y avisa, sin romper el build, cuando un `> Bloqueo:`
+lleva más de 30 días verificado (mismo horizonte que la cuarentena de
+`check-quarantine-validate.mjs`) o cuando falta del todo. El aviso usa
+`::warning file=…,line=…::` — sin `file=`/`line=` es invisible en `gh pr
+checks` y en el diff, que es justo donde hace falta verlo en un flujo con
+auto-merge.
+
 ## El harness tiene que existir en el repo
 
 `scripts/check-harness-present.sh` verifica que los tres agentes
@@ -195,6 +264,24 @@ sin a quién delegar y siguió implementando él mismo.
 Ningún guard puede impedir que alguien borre archivos de su disco. Lo que sí
 impide es que salgan del repo: mientras estén trackeados y CI lo verifique,
 cualquier checkout limpio los recupera.
+
+### El orquestador verifica un bloqueo antes de trasladarlo al usuario
+
+El 2026-09-08 pasó tres veces: un subagente declaró algo imposible («no tengo
+acceso a Claude Design», «solo tú puedes lanzar este workflow», «no tengo
+credenciales de producción») y el orquestador **reenvió el bloqueo al usuario
+sin comprobarlo**. Las tres veces era falso *para el orquestador* — tiene
+`DesignSync`, tiene `gh workflow run`/`gh run view`, y el pipeline trae los
+secretos de producción usables desde un workflow disparado por él.
+
+**Regla simétrica a la de los agentes (`.claude/agents/*.md`): antes de
+escribir un bloqueo en `.claude/BLOCKED.md` o de escalarlo al usuario, el
+orquestador comprueba si él mismo tiene la capacidad que el subagente dice
+que falta**, contra la tabla de capacidades de esos mismos archivos. Sólo si
+ni él la tiene, el bloqueo es real y pasa al usuario — con la misma evidencia
+que exige `> Bloqueo:` más arriba: qué se intentó, contra qué se verificó, y
+que se comprobó también desde el asiento del orquestador, no sólo desde el
+del subagente.
 
 ## `**Downstream:**` — los specs que dependen de lo que éste implemente
 

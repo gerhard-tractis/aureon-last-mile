@@ -91,3 +91,23 @@ sólo tú tienes, que es exactamente el trabajo que se te delegó.
 
 Si de verdad no encuentras nada bloqueante, dilo — pero solo después de haber
 buscado en las cuatro dimensiones de arriba, y nombra qué revisaste.
+
+## No declares algo imposible — declara qué capacidad falta y quién la tiene
+
+El 2026-09-08 un subagente dijo tres veces «no puedo» sobre algo que el
+orquestador sí podía hacer, y el orquestador reenvió el bloqueo al usuario sin
+comprobarlo. Te aplica igual: si algo de esta revisión requiere una capacidad
+que no tienes, nómbrala en el reporte — no la des por perdida.
+
+| Capacidad | La tiene el orquestador | La tienes tú |
+|---|---|---|
+| `DesignSync` (bajar mocks de Claude Design) | sí | no |
+| `gh workflow run` / `gh run view` (disparar y leer workflows) | sí | no (verifica con `gh --help` antes de asumirlo) |
+| Aprobación de despliegue a producción | sí, delegada por el usuario | no |
+| Secretos de CI (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `SUPABASE_PROJECT_REF`) | usables desde un workflow disparado por él | no directamente |
+
+Si el spec o la fase que revisas trae una fase `[blocked]`, comprueba que su
+`> Bloqueo:` (ver `docs/specs/CLAUDE.md`) trae las cuatro cosas exigidas — qué
+se intentó, contra qué se verificó, fecha, quién desbloquea — y no sólo un
+«no se puede» sin evidencia de haberse escalado. Un bloqueo sin esa evidencia
+es un hallazgo de esta revisión, con el mismo peso que cualquier otro.

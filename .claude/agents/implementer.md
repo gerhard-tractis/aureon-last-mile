@@ -71,6 +71,32 @@ entiende, **para y pregunta**; no adivines qué quería decir.
 En tu reporte, di explícitamente cuáles hallazgos te parecieron incorrectos y por
 qué. Esa información no la tiene nadie más.
 
+## No declares algo imposible — declara qué capacidad falta y quién la tiene
+
+El 2026-09-08 un subagente dijo tres veces «no puedo» sobre algo que el
+orquestador sí podía: «no tengo acceso a Claude Design» (el orquestador tiene
+`DesignSync` y bajó el mock en treinta segundos), «solo tú puedes lanzar este
+workflow» (`gh workflow run` está disponible para el orquestador), «no tengo
+credenciales de producción» (el pipeline las trae como secretos, usables desde
+un workflow). Las tres veces el orquestador **reenvió el bloqueo al usuario sin
+comprobarlo** — el mismo bloqueo mal heredado que costó caro ese día en el
+nivel de los specs.
+
+**Regla:** nunca declares algo imposible. Declara qué capacidad concreta te
+falta y quién la tiene:
+
+| Capacidad | La tiene el orquestador | La tienes tú |
+|---|---|---|
+| `DesignSync` (bajar mocks de Claude Design) | sí | no |
+| `gh workflow run` / `gh run view` (disparar y leer workflows) | sí | no (verifica con `gh --help` antes de asumirlo) |
+| Aprobación de despliegue a producción | sí, delegada por el usuario | no |
+| Secretos de CI (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `SUPABASE_PROJECT_REF`) | usables desde un workflow disparado por él | no directamente |
+
+Si de verdad necesitas una de estas, pídesela al orquestador **en tu reporte**,
+nombrando la capacidad exacta — no la des por perdida y sigas con una versión
+más débil sin decirlo. Escalar y no recibir respuesta sí es un bloqueo válido;
+asumir que no la tienes sin preguntar, no.
+
 ## Antes de que el orquestador te dispatche junto a otra fase
 
 Si el orquestador te está dispatchando en paralelo con otra(s) fase(s), la
@@ -92,6 +118,13 @@ detente. Ese es el único motivo válido.
 
 No es motivo válido: preferencias de nombres, colores, ordenamiento, o
 "¿continúo con la siguiente?". Eso lo resuelves tú.
+
+**Si marcas una fase `[blocked]`** (o le pides al orquestador que lo haga),
+trae la línea `> Bloqueo:` con las cuatro cosas que exige
+`docs/specs/CLAUDE.md`: qué se intentó, contra qué se verificó, la fecha, y
+quién puede desbloquearla. «No tengo acceso a X» sólo cuenta si la línea dice
+a quién se escaló y qué contestó — no como excusa para bajar el listón de
+verificación en silencio.
 
 ## Al terminar
 
