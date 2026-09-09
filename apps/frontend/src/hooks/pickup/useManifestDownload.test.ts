@@ -1,0 +1,209 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { renderHook, waitFor, act } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import React from 'react';
+import { db } from '@/lib/db';
+import {
+  useDownloadedManifestIds,
+  useDownloadManifest,
+  useCachedManifestSnapshot,
+} from './useManifestDownload';
+
+const mockFrom = vi.fn();
+
+vi.mock('@/lib/supabase/client', () => ({
+  createSPAClient: () => ({
+    from: mockFrom,
+  }),
+}));
+
+function createWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    return React.createElement(QueryClientProvider, { client: queryClient }, children);
+  };
+}
+
+function mockManifestChain(data: unknown, error: unknown = null) {
+  const chain: Record<string, ReturnType<typeof vi.fn>> = {};
+  chain.select = vi.fn().mockReturnValue(chain);
+  chain.eq = vi.fn().mockReturnValue(chain);
+  chain.is = vi.fn().mockReturnValue(chain);
+  chain.single = vi.fn().mockResolvedValue({ data, error });
+  return chain;
+}
+
+function mockOrdersChain(data: unknown[], error: unknown = null) {
+  const chain: Record<string, ReturnType<typeof vi.fn>> = {};
+  chain.select = vi.fn().mockReturnValue(chain);
+  chain.eq = vi.fn().mockReturnValue(chain);
+  chain.is = vi.fn().mockReturnValue(chain);
+  chain.order = vi.fn().mockResolvedValue({ data, error });
+  return chain;
+}
+
+const OPERATOR_A = 'operator-a';
+const LOAD_1 = 'CARGA-99817';
+
+describe('useDownloadedManifestIds', () => {
+  beforeEach(async () => {
+    await db.manifest_cache.clear();
+  });
+
+  it('returns an empty list once resolved, when nothing was downloaded', async () => {
+    const { result } = renderHook(() => useDownloadedManifestIds(OPERATOR_A), {
+      wrapper: createWrapper(),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual([]);
+  });
+
+  it('does not fetch when operatorId is null', () => {
+    const { result } = renderHook(() => useDownloadedManifestIds(null), {
+      wrapper: createWrapper(),
+    });
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(result.current.data).toBeUndefined();
+  });
+});
+
+describe('useDownloadManifest', () => {
+  beforeEach(async () => {
+    mockFrom.mockReset();
+    await db.manifest_cache.clear();
+  });
+
+  it('fetches manifest + orders and saves a snapshot retrievable offline', async () => {
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'manifests') {
+        return mockManifestChain({
+          id: 'manifest-1',
+          total_packages: 25,
+          pickup_route_id: 'route-1',
+          retailer_name: 'Ripley',
+          pickup_location: 'Parque Arauco',
+        });
+      }
+      if (table === 'orders') {
+        return mockOrdersChain([
+          {
+            id: 'order-1',
+            order_number: 'ORD-1',
+            customer_name: 'Juan Pérez',
+            comuna: 'Ñuñoa',
+            delivery_address: 'Calle Falsa 123',
+            packages: [
+              {
+                id: 'pkg-1',
+                label: 'PKG-1',
+                package_number: '1/1',
+                sku_items: [],
+                declared_weight_kg: 1,
+                deleted_at: null,
+              },
+            ],
+          },
+        ]);
+      }
+      throw new Error(`unexpected table ${table}`);
+    });
+
+    const { result } = renderHook(() => useDownloadManifest(OPERATOR_A), {
+      wrapper: createWrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync(LOAD_1);
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const snapshot = await db.manifest_cache
+      .where('[operatorId+externalLoadId]')
+      .equals([OPERATOR_A, LOAD_1])
+      .first();
+    expect(snapshot?.retailerName).toBe('Ripley');
+    expect(snapshot?.orders).toHaveLength(1);
+  });
+
+  it('invalidates useDownloadedManifestIds after a successful download', async () => {
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'manifests') {
+        return mockManifestChain({
+          id: 'manifest-1',
+          total_packages: 25,
+          pickup_route_id: 'route-1',
+          retailer_name: 'Ripley',
+          pickup_location: 'Parque Arauco',
+        });
+      }
+      return mockOrdersChain([]);
+    });
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client: queryClient }, children);
+
+    const { result: listResult } = renderHook(() => useDownloadedManifestIds(OPERATOR_A), {
+      wrapper,
+    });
+    await waitFor(() => expect(listResult.current.data).toEqual([]));
+
+    const { result: downloadResult } = renderHook(() => useDownloadManifest(OPERATOR_A), {
+      wrapper,
+    });
+    await act(async () => {
+      await downloadResult.current.mutateAsync(LOAD_1);
+    });
+
+    await waitFor(() => expect(listResult.current.data).toEqual([LOAD_1]));
+  });
+
+  it('does not write anything to manifest_cache when the manifest fetch fails', async () => {
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'manifests') {
+        return mockManifestChain(null, { message: 'network down' });
+      }
+      return mockOrdersChain([]);
+    });
+
+    const { result } = renderHook(() => useDownloadManifest(OPERATOR_A), {
+      wrapper: createWrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync(LOAD_1).catch(() => {});
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    const rows = await db.manifest_cache.toArray();
+    expect(rows).toHaveLength(0);
+  });
+});
+
+describe('useCachedManifestSnapshot', () => {
+  beforeEach(async () => {
+    await db.manifest_cache.clear();
+  });
+
+  it('resolves to null (a known answer, not "still loading") for a carga never downloaded', async () => {
+    const { result } = renderHook(
+      () => useCachedManifestSnapshot(OPERATOR_A, 'CARGA-NUNCA'),
+      { wrapper: createWrapper() },
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toBeNull();
+  });
+
+  it('is undefined ("todavía no lo sé") before resolving, never a fabricated null', () => {
+    const { result } = renderHook(
+      () => useCachedManifestSnapshot(OPERATOR_A, 'CARGA-NUNCA'),
+      { wrapper: createWrapper() },
+    );
+    expect(result.current.data).toBeUndefined();
+    expect(result.current.isLoading).toBe(true);
+  });
+});
