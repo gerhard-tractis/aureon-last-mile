@@ -419,7 +419,7 @@ registro del faltante.
 > producción** — sólo en QA (que sí replay cada migración en cada merge, per
 > `docs/specs/CLAUDE.md`).
 
-### Fase 2a — Resolver: el bulto aparece `[pending]`
+### Fase 2a — Resolver: el bulto aparece `[in_progress]`
 
 **Archivos:** migración (`trg_reception_scan_advance_package_status`, `CREATE OR REPLACE` sobre la última definición, `packages/database/supabase/migrations/20260812000002_spec52_package_state_engine.sql`), test pgTAP en `packages/database/supabase/tests/`
 
@@ -432,6 +432,150 @@ escritores del mismo estado es como se producen los desacuerdos.
 
 No depende de nada pendiente: `resolve_discrepancy` existe y el disparador de
 avance de estado ya vive en producción.
+
+> **Nota de implementación (2026-09-09).** El texto de arriba dice que la
+> discrepancia pasa a `resolved` "vía `resolve_discrepancy`" — **no es lo que
+> se construyó**, a propósito. `resolve_discrepancy` (20260913000003/
+> 20260913000005) resuelve `auth.jwt()->>'sub'` para el actor y exige rol
+> elevado sólo para `lost` — pero el propio disparador de escaneo no tiene
+> garantía de traer esa sesión (un reintento de la cola offline de spec-81
+> podría reproducir el `INSERT` sobre `reception_scans` sin el mismo JWT). En
+> vez de llamar al RPC, `trg_reception_scan_advance_package_status`
+> (`CREATE OR REPLACE` sobre la última definición real,
+> `20260812000002_spec52_package_state_engine.sql:124`) gana una segunda
+> `UPDATE`, independiente de la que avanza el paquete a `en_bodega`, que
+> replica a mano el mismo guard de "no reabrir una fila cerrada"
+> (`status = 'open'`) y usa `NEW.scanned_by` como `resolved_by_user_id` en vez
+> de `auth.jwt()` — mismo patrón que los dos triggers de spec-52 ya usan
+> (`NEW.operator_id`, no `get_operator_id()`, para el tenant).
+>
+> **Hallazgo de la ronda de mutation-testing, corregido en el mismo commit:**
+> el comentario original de la migración afirmaba que `operation_type =
+> 'reception'` era el guard que protegía a una discrepancia `pickup` del
+> mismo paquete (probado, se pensó, con un fixture `d4`). Mutado y
+> re-corrido: **sobrevivió 14/14** — el fixture no lo mataba. La razón real:
+> `discrepancy_source_matches_operation` (CHECK, `20260913000001`) ya obliga
+> a que una fila `pickup` tenga `route_reception_id IS NULL`, así que nunca
+> puede igualar `NEW.reception_id` (siempre no-NULL en esta rama) sin importar
+> ese predicado — es defensa en profundidad, igual que `operator_id =
+> NEW.operator_id` (que también sobrevivió 14/14, y por la misma razón
+> estructural: `route_reception_id` ya determina el operador vía su propia
+> FK). Los cuatro guards restantes (`package_id`, `route_reception_id`,
+> `status = 'open'`, `deleted_at IS NULL`) sí matan exactamente una aserción
+> cada uno, probados uno a uno, restaurando entre cada corrida — no en bloque.
+>
+> **Ronda 2 de review (PR #722).** Cinco hallazgos, cuatro cerrados con
+> correcciones sólo en el test (`+8` líneas de fixtures/aserciones), uno
+> declarado como deuda a propósito:
+>
+> - **A1 — la independencia de las dos `UPDATE` no la probaba nadie.**
+>   Mutante: encadenar la segunda `UPDATE` a la primera con `IF NOT FOUND THEN
+>   RETURN NEW`. Sobrevivía 14/14. Añadidos `d9` (paquete `extraviado`,
+>   terminal) y `d10` (paquete `asignado`, ya pasado `en_bodega`): en ambos el
+>   avance de estado está bloqueado por `spec52_may_advance_status`, y la
+>   discrepancia debe resolverse igual — un bulto declarado extraviado que
+>   luego aparece y se escanea es exactamente el flujo de esta fase. Mutado y
+>   confirmado: muere **sólo** en las dos aserciones de `d9`/`d10`.
+> - **A2 — el comentario sobre `operator_id` era demostrablemente falso.**
+>   La versión anterior de esta nota (y del test) afirmaba que
+>   `route_reception_id` ya determina el operador vía su propia FK, así que el
+>   guard `operator_id = NEW.operator_id` era inalcanzable. Falso:
+>   `discrepancies.route_reception_id REFERENCES route_receptions(id)`
+>   (`20260913000001:63`) es una FK sobre `id` a secas, sin componente
+>   `operator_id` — nada la ata al tenant de la fila referenciada. Fixture
+>   `d11`: una discrepancia de un operador Z forjada para apuntar a la
+>   `route_reception` del operador A; el usuario de A escanea el mismo
+>   `package_id` (de Z) como recibido en A. Sin el guard, la evidencia de Z se
+>   cierra y queda estampada como resuelta por el usuario de A —
+>   exactamente el tipo de escritura cruzada de tenant contra la tabla que
+>   spec-85 llama "la evidencia contra una indemnización". Mutado y
+>   confirmado: muere **sólo** en las dos aserciones de `d11`. El guard ya
+>   existía y es correcto — sólo el comentario que lo describía como
+>   redundante era incorrecto, y quedaba invitando a que una migración futura
+>   lo quitara "por limpieza". Corregido en la cabecera del test.
+> - **B2 — nadie probaba que un escaneo NO `received` deje la discrepancia
+>   abierta.** Mutante: `NEW.scan_result = 'received'` → `NEW.scan_result IS
+>   NOT NULL`. Sobrevivía toda la suite (ésta, `spec52_state_engine` y
+>   `spec86_fase1` enteras). Añadido `d12`, escaneado como `route_mismatch`
+>   (el caso normal de spec-52, "llegó en otro camión" — mismo fixture que
+>   `d7` en fase 1). El `IF` es preexistente (20260318000001), pero esta fase
+>   le cambia el significado: antes sólo decidía "avanzar estado"; ahora
+>   también decide "cerrar evidencia". Mutado y confirmado: muere en las dos
+>   aserciones de `d12` (paquete Y discrepancia, porque el mismo `IF` gobierna
+>   ambas `UPDATE`).
+> - **C1 — la justificación para no llamar a `resolve_discrepancy()` era
+>   incompleta/parcialmente falsa.** El comentario original decía que "un
+>   reintento de la cola offline de spec-81 podría reproducir el `INSERT`
+>   sin el mismo JWT". Verificado contra el código: esa cola (`db.ts`,
+>   `PickupQueueOperationType`) sólo cubre `pickup_scan | close_manifest |
+>   manifest_photo` — `reception_scans` no tiene cola offline hoy;
+>   `useReceptionScan.ts:48-57` inserta siempre online. **La decisión de no
+>   llamar al RPC es correcta de todos modos, por razones distintas y sí
+>   verificadas:** `resolve_discrepancy` arranca con
+>   `get_operator_id()` y lanza `42501` si es NULL — cualquier `INSERT` sin
+>   JWT de operador (service_role, seed, backfill) abortaría el escaneo
+>   entero; y si la fila ya está `resolved`/`lost`, lanza `23505`
+>   (`DISCREPANCY_ALREADY_RESOLVED`) — un trigger que llamara al RPC
+>   **reventaría el `INSERT` del escaneo** cada vez que la discrepancia ya
+>   estuviera cerrada, justo el caso que hoy es un no-op benigno.
+>   **Corrección (ronda 3):** esta nota decía "no se modificó la migración
+>   (ya mergeada en la ronda 1)" — falso: al escribir esto el PR seguía
+>   `OPEN`, sin mergear (`gh pr view 722`), así que la migración sí se podía
+>   tocar, y la cabecera todavía citaba la razón desmentida de la cola
+>   offline en tres sitios. Corregida en la migración misma (los tres
+>   comentarios que decían "spec-81"/"offline-queue replay" ahora dan las dos
+>   razones reales de arriba); no hubo cambio de comportamiento, sólo de
+>   texto — el próximo que lea la cabecera de la función, no esta nota
+>   enterrada, ve la razón correcta.
+> - **B1 — declarado, no arreglado (decisión de producto, no de esta fase).**
+>   Con una discrepancia `lost`, el paquete pasa a `en_bodega`, pero la
+>   discrepancia **sigue `lost` para siempre**: `resolve_discrepancy` rechaza
+>   cualquier transición fuera de `open` con `23505` ("una discrepancia
+>   cerrada es evidencia"), y esta fase no tiene ningún camino de reapertura.
+>   No es silencioso (fase 3 sigue listando `lost` en el panel, `status <>
+>   'resolved'`) y no es una regresión de esta fase (el estado ya era
+>   alcanzable antes) — pero esta fase sí lo convierte en la única excepción
+>   visible: "el bulto aparece" cierra solo, salvo cuando el bulto era el
+>   caro. Es la misma pregunta que fase 2b (`[parked]`) ya tiene abierta con
+>   el usuario sobre el efecto aguas abajo de `lost`; no se resuelve aquí.
+>
+> Test actualizado: 22/22 (antes 14/14), mismos cuatro guards de la ronda 1
+> reverificados sin cambios (`package_id`→muere sólo aserción 12,
+> `route_reception_id`→sólo 6, `status='open'`→sólo 11, `deleted_at IS
+> NULL`→sólo 13) más los tres mutantes nuevos de arriba, cada uno restaurado
+> antes del siguiente. Regresión repetida sin fallos.
+>
+> Migración: `packages/database/supabase/migrations/20261001000001_spec86_fase2a_resolve_discrepancy_on_reception_scan.sql`
+> (sin cambios de comportamiento en las rondas 2 y 3 — la lógica ya era
+> correcta desde la ronda 1; la ronda 3 sí tocó tres comentarios de la
+> cabecera, ver más abajo).
+> Test pgTAP: `packages/database/supabase/tests/spec86_fase2a_resolve_discrepancy_on_reception_scan.test.sql`
+> (22/22, `psql -tA -f` crudo contra `spec52-pg`, y vía `scripts/pgtap-local.sh`).
+> Regresión sin fallos: `spec52_state_engine`, `spec52_unexpected_count`,
+> `spec52_open_route_reception`, `spec52_migration_reconciliation`,
+> `spec86_fase1_complete_route_reception_discrepancies` (18/18),
+> `spec85_discrepancies_rpcs` (29/29), `spec85_discrepancies_schema`,
+> `spec86_fase3_ops_control_discrepancies_view`.
+>
+> **Ronda 3 de review (PR #722) — mergeable, un único hallazgo real:** la
+> cabecera de la migración seguía citando la razón desmentida en la ronda 2
+> ("un reintento de la cola offline de spec-81…") en tres sitios distintos
+> (líneas 61-67, 76-81 y 104-110 del archivo antes de esta corrección) — la
+> ronda 2 corrigió la razón en esta nota del spec, pero no en la cabecera de
+> la función, que es lo que lee quien la toque después sin bajar hasta esta
+> nota (el mismo patrón que ya costó una ronda en la fase 1 de este spec).
+> Los tres comentarios se reemplazaron por las dos razones reales (`42501`
+> sin JWT de operador, `23505` si la fila ya está cerrada); reaplicado y
+> reverificado: 22/22, regresión de las cuatro suites relacionadas sin
+> fallos. Sin cambio de comportamiento — sólo texto.
+>
+> No se tocó ningún archivo de frontend — esta fase es puramente SQL
+> (trigger existente, ya invocado hoy por `useReceptionScan.ts` en cada
+> `INSERT` a `reception_scans`); no hay `node_modules` en este worktree y no
+> se corrió `npm install`/`ci` por la regla del repo, así que Vitest no se
+> ejecutó aquí — nada en `apps/frontend` cambió.
+>
+> Implementado por: implementer — rama `feat/spec-86-fase-2a-resolver-bulto-aparece`, SHA `6a6c504`.
 
 ### Fase 2b — Perdida e indemnización `[parked]`
 
