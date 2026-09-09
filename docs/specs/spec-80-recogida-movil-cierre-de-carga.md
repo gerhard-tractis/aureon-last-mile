@@ -627,9 +627,21 @@ pestaña Completados en absoluto.
 - [ ] Tests primero.
 - [ ] Cablear a `review/[loadId]` (fase 2, ya construida) como destino final.
 
-### Fase 3 — `5f` firma y fotos `[pending]`
+### Fase 3 — `5f` firma y fotos `[in_progress]`
 
-**Archivos:** migración `manifest_documents`, `app/app/pickup/complete/[loadId]/page.tsx` (reescritura contra `5f`), `components/pickup/ManifestPhotoStrip.tsx`
+> **Corrección (2026-09-08) a la nota de abajo sobre la leyenda offline.**
+> El checklist original decía que «Todo queda en el teléfono y se sube al
+> recuperar señal» **no se muestra hasta spec-81**, para no prometer una cola
+> que no existía. Eso ya no es cierto: **spec-81 fase 2 mergeó** y añadió
+> exactamente esa cola sobre esta misma pantalla — clasificación de errores
+> (`classifyCloseManifestError`), la rama `idempotent`, la línea estática
+> literal del mock, y el disparo de `PICKUP_QUEUE_WAKE_EVENT` tras encolar.
+> El revisor de esa fase midió **750 segundos sin señal con la firma
+> sobreviviendo y subiendo** — la promesa de la leyenda es verdad hoy, no
+> aspiracional. Esta fase **preserva** todo ese comportamiento (no se tocó
+> ninguna rama de `handleComplete`); sólo reordena el layout alrededor de él.
+
+**Archivos:** migración `manifest_documents`, `app/app/pickup/complete/[loadId]/page.tsx` (cambio quirúrgico contra `5f` — no una reescritura, ver nota de ronda 2 abajo), `components/pickup/ManifestPhotoStrip.tsx`, `components/pickup/ClientSignatureSection.tsx` y `components/pickup/OperatorSignatureSection.tsx` (extraídos de `page.tsx` en ronda 2, seguimiento de tamaño de archivo)
 
 Tabla nueva:
 
@@ -649,9 +661,212 @@ CREATE TABLE public.manifest_documents (
 
 `operator_id` en la tabla y en la RLS, como toda tabla del repo. Borrado suave. Ruta en el bucket `manifests`, prefijada por `operator_id/manifest_id/`.
 
-- [ ] Migración + test pgTAP de aislamiento por operador.
-- [ ] Reescritura de la pantalla contra `5f`: bloque de fotos arriba, `FIRMA DEL LOCAL` y `TU FIRMA` debajo, CTA **«Confirmar y cerrar carga»**. `SignaturePad` se conserva; es lo único de spec-19 que el mock mantiene.
-- [ ] La leyenda «Todo queda en el teléfono y se sube al recuperar señal» **no se muestra hasta spec-81**. Prometer una cola que no existe es peor que no prometerla.
+> **Corrección (ronda 2 de review del PR #706) — el `UNIQUE` de arriba es literal
+> del spec y está mal para borrado suave.** `UNIQUE(manifest_id, sheet_number)` como
+> constraint de tabla sobrevive al `deleted_at`: borrar la hoja 1 de 2 no libera el
+> número 1, así que una futura hoja "1" colisiona para siempre contra la fila
+> muerta. Implementado en su lugar (y no corregido aquí arriba, para no reescribir
+> historia) como **índice único parcial**:
+> ```sql
+> CREATE UNIQUE INDEX uniq_manifest_documents_manifest_sheet
+>   ON public.manifest_documents (manifest_id, sheet_number)
+>   WHERE deleted_at IS NULL;
+> ```
+> Consecuencia en el código: el "siguiente número de hoja" no puede ser
+> `documents.length + 1` (con un hueco por borrado, colisiona) — es
+> `MAX(sheet_number) + 1` sobre las filas vivas. `ManifestPhotoStrip.tsx` ya lo
+> hace así. **Quien copie este patrón (spec-84 fase 3 antes de quedar `[parked]`,
+> o cualquier spec futuro) debe copiar el índice parcial, no el `UNIQUE` de
+> arriba.**
+
+- [x] Migración + test pgTAP de aislamiento por operador.
+- [x] Bloque de fotos arriba, `FIRMA DEL LOCAL` y `TU FIRMA` debajo, CTA
+      **«Confirmar y cerrar carga»**. `SignaturePad` se conserva; es lo único de
+      spec-19 que el mock mantiene. **Precisión de ronda 2:** no es una
+      "reescritura" de `complete/[loadId]/page.tsx` — el diff real es quirúrgico
+      (inserción del photo strip, reordenado de dos bloques existentes, un
+      renombrado de CTA), lo que el reviewer de ronda 2 verificó línea por línea
+      contra `origin/main` para confirmar que la cola offline de spec-81 fase 2
+      seguía intacta. "Reescritura" en la primera versión de esta nota
+      exageraba el alcance real del cambio.
+- [x] ~~La leyenda … no se muestra hasta spec-81~~ — ya la muestra desde spec-81 fase 2 (ver corrección arriba); esta fase la deja donde estaba y sólo la reordena bajo el bloque de fotos.
+
+> Implementado por: sesión de agente, rama `feat/spec-80-fase-3-firma-y-fotos`.
+> `manifest_documents` (migración `20260918000001`, mismo patrón que
+> `discrepancy_notes` — `FOR ALL`/`WITH CHECK` sobre `operator_id`, GRANT a
+> `authenticated`, REVOKE de `anon` — **client-writable**, no un RPC
+> `SECURITY DEFINER` como `discrepancies`/spec-85, porque el móvil sube cada
+> foto directamente al capturarla). `useManifestDocuments.ts` (lista +
+> mutación de subida, mismo patrón que `useCameraIntake.ts`: sube al bucket
+> `manifests` primero, sólo inserta la fila si la subida no falló).
+> `ManifestPhotoStrip.tsx` — grid de 3 columnas, tile «hoja N» por foto
+> capturada + tile «Agregar» con borde discontinuo, literal del mock.
+>
+> **Hallazgo declarado, no inventado:** el mock `5f` no dibuja la captura en
+> sí — sólo el resultado final (2 hojas ya subidas). La captura real con
+> encuadre de cámara y paso de revisión (`5g`/`5h`) es fase 4. Para que esta
+> fase entregue un botón "Agregar" funcional sin adelantar ese trabajo, usa
+> el mismo patrón ya existente en el repo (`useCameraIntake.ts`/
+> `CameraIntake.tsx`): un `<input type="file" accept="image/*"
+> capture="environment">` oculto que sube directo, sin paso de revisión
+> intermedio. Fase 4 sustituye ese disparo por la hoja de cámara + revisión
+> sin tocar `useUploadManifestDocument` (la subida en sí).
+>
+> `complete/[loadId]/page.tsx`: `<ManifestPhotoStrip>` montado antes de la
+> línea de seguridad offline (bloque de fotos arriba, per mock). Las dos
+> secciones de firma se reordenaron a FIRMA DEL LOCAL (opcional, con el
+> checkbox existente) primero, TU FIRMA (operador, obligatoria) segunda —
+> el mock las dibuja en ese orden; el código las tenía al revés (operador
+> primero). El CTA cambió de «Completar y generar recibo» a **«Confirmar y
+> cerrar carga»**, literal del mock. Ninguna rama de `handleComplete` se
+> tocó: la cola offline de spec-81 fase 2 (clasificación de errores, rama
+> `idempotent`, `PICKUP_QUEUE_WAKE_EVENT`) queda intacta — se leyó el
+> archivo entero antes de tocarlo, como pedía el encargo.
+>
+> `apps/frontend/src/lib/types.ts`: añadida la entrada `manifest_documents`
+> a los tipos generados de Supabase (Row/Insert/Update/Relationships) — sin
+> esto `tsc` rechaza `.from('manifest_documents')` porque el nombre de tabla
+> no está en la unión de tablas conocidas.
+>
+> **Ronda 2 de review del PR #706 (2026-09-09) — dos bloqueantes, un mayor, tres
+> tests sin cobertura, corregidos todos en la misma rama:**
+>
+> - **Bloqueante 1 (la leyenda offline mentía sobre fotos):** `ManifestPhotoStrip`
+>   se monta en la misma pantalla que promete «Las fotos también» sobreviven sin
+>   señal, pero `useUploadManifestDocument` no tenía ninguna ruta offline — si
+>   `upload` fallaba, la foto se perdía con un `toast.error(err.message)` en
+>   inglés crudo (la misma lección de F3, ronda 2 de PR #679, sobre esta misma
+>   pantalla). Corregido: mensaje fijo en español («Esta foto no se guardó.
+>   Reintenta con señal.», nunca el texto crudo del error) y un comentario
+>   explícito en `page.tsx` y en este spec documentando que la promesa completa
+>   depende de `lib/offline/photos.ts` (spec-81 fase 5, `[pending]`) — declarado,
+>   no resuelto en silencio ni prometido de más.
+> - **Bloqueante 2 (huérfano en el bucket por doble toque):** `isPending` vuelve
+>   a `false` en cuanto la mutación resuelve, un round-trip ANTES de que el
+>   refetch de `documents` llegue — un segundo toque en esa ventana recalculaba
+>   el mismo `sheetNumber`, el `upload` tenía éxito, y el `insert` reventaba con
+>   23505, dejando el archivo huérfano para siempre (sin `storage.remove()` en
+>   ninguna rama de error). Corregido: `useUploadManifestDocument` borra el
+>   objeto recién subido si el `insert` falla; `ManifestPhotoStrip` deshabilita
+>   "Agregar" también mientras `isFetching` (no sólo `isPending`).
+> - **Mayor 1 (patrón de discrepancy_notes copiado a medias):** faltaban el
+>   trigger de auditoría y el `REVOKE DELETE` — sobre una tabla cuyo propio
+>   `COMMENT` dice "no se borra físicamente". Verificado con sonda real antes
+>   del fix: un `authenticated` normal podía `DELETE` físico y reescribir
+>   `storage_path`/`uploaded_by`/`captured_at` sin dejar rastro. Corregido en la
+>   MISMA migración (aún no mergeada, no hace falta una nueva): `REVOKE DELETE
+>   … FROM authenticated`, trigger `audit_manifest_documents_changes` idéntico
+>   al de `discrepancy_notes`, y `WITH CHECK` atando `uploaded_by = auth.uid()`
+>   (impersonación de fotógrafo rechazada). De paso, el `UNIQUE` de tabla pasó a
+>   índice único parcial `WHERE deleted_at IS NULL` (ver nota arriba).
+> - **M2:** TEST 2/3 sólo ejercitaban `WITH CHECK`; con la policy mutada a
+>   `USING(true)` (WITH CHECK intacto) seguían en verde mientras un
+>   `UPDATE`/`DELETE` en bloque sí tocaba filas ajenas — verificado con sonda
+>   real. TEST 6 nuevo: `UPDATE` en bloque (sin `WHERE`) por el operador A debe
+>   afectar 0 filas del operador B.
+> - **M3:** el reordenado de firmas (uno de los tres ítems del checklist) no
+>   tenía ningún test — intercambiar `ClientSignatureSection`/
+>   `OperatorSignatureSection` dejaba los 21 tests en verde. Test nuevo:
+>   `FIRMA DEL LOCAL` antes que `TU FIRMA` en orden de documento.
+> - **M4:** `useManifestDocuments.test.ts` nunca aseveraba sobre
+>   `eq.mock.calls` — borrar `.eq('operator_id', ...)` del hook dejaba los 6
+>   tests en verde. Test nuevo: `chain.eq` llamado con `'operator_id'` Y con
+>   `'manifest_id'`.
+> - **Seguimiento:** `page.tsx` (411 líneas) se partió en
+>   `ClientSignatureSection.tsx`/`OperatorSignatureSection.tsx` antes de fase 4,
+>   no después. `nextSheetNumber` pasó de `documents.length + 1` a
+>   `MAX(sheet_number) + 1` (test dedicado con un hueco simulado). El toast de
+>   error de `ManifestPhotoStrip` ahora tiene test propio. El botón "Agregar"
+>   (no sólo el `<input>` oculto) se verifica deshabilitado cuando falta
+>   `manifestId` o mientras se refetchea la lista.
+>
+> Tests finales: `useManifestDocuments.test.ts` (8, +2: eq scoping, orphan
+> cleanup), `ManifestPhotoStrip.test.tsx` (8, +3: MAX(sheet_number), gate por
+> isFetching, mensaje de error fijo), `ClientSignatureSection.test.tsx` (4,
+> nuevo), `OperatorSignatureSection.test.tsx` (3, nuevo),
+> `complete/[loadId]/page.test.tsx` (22, +1: orden FIRMA DEL LOCAL/TU FIRMA) —
+> **no es una "reescritura"**: ~6 sustituciones del texto del CTA en asserts ya
+> existentes más 2 tests nuevos en la ronda 1, +1 en la ronda 2. pgTAP
+> (`spec80_fase3_manifest_documents.test.sql`): 10 tests, +4 en ronda 2 (TEST
+> 6 USING, TEST 7 ACL DELETE, TEST 8 DELETE sobre fila propia, TEST 9
+> auditoría, TEST 10 impersonación de uploaded_by — son 5 nuevos, TEST 3 ya
+> traía dos partes). `tsc --noEmit` y `eslint` limpios sobre todos los
+> archivos tocados, incluidos los nuevos.
+>
+> Mutation-testeado, ronda 2 incluida: (SQL, todo dentro de `\i` + `ROLLBACK`,
+> nunca persistido en el contenedor compartido) policy a `USING(true)` mata
+> TEST 1 y TEST 6 (WITH CHECK del insert ya no basta, el UPDATE en bloque pasa);
+> `GRANT DELETE` de vuelta a `authenticated` mata TEST 7 y TEST 8; quitar el
+> trigger de auditoría mata TEST 9; quitar la cláusula `uploaded_by` del `WITH
+> CHECK` mata TEST 10; `GRANT SELECT` a `anon` mata TEST 5. (Frontend) revertir
+> el CTA mata 8/22; mover `<ManifestPhotoStrip>` tras la línea offline mata el
+> test de orden dedicado; intercambiar las dos secciones de firma mata el test
+> de orden FIRMA DEL LOCAL/TU FIRMA; quitar `.eq('operator_id', …)` mata el
+> test de scoping; revertir `storage.remove()` en la rama de error del insert
+> mata el test de huérfano; volver a `documents.length + 1` mata el test de
+> hueco por borrado; volver a gatear sólo por `isPending` (sin `isFetching`)
+> mata el test de doble toque; volver al `err.message` crudo mata el test del
+> mensaje fijo en español.
+>
+> QA: **pendiente** — falta PR, `gh pr checks` y lectura de `e2e-qa`. La
+> fase queda en `[in_progress]`, no en `[done]`; la cierra el orquestador
+> tras review y CI.
+> Downstream: revisado spec-81, spec-82, spec-83, spec-86 sin cambios; spec-84
+> corregido arriba tras #703 (fase 3 quedó `[parked]`, no depende de este
+> patrón) — ver "Impacto downstream de la fase 3" más abajo, también
+> actualizada.
+>
+> **Ronda 3 de review del PR #706 (aprobado: "¿Mergeable? Sí", con tres
+> seguimientos exigidos antes de mergear porque el spec instruye copiar esta
+> migración como plantilla en f4):**
+>
+> 1. **TEST 6 no probaba lo que decía.** Postgres aplica siempre las policies de
+>    `SELECT` a las filas que un `UPDATE` necesita leer — así que
+>    `manifest_documents_tenant_select` tapaba el agujero antes de que el
+>    `USING` del `FOR ALL` llegara a evaluarse, y re-aplicar la mutación de
+>    ronda 1 (`USING(true)` en el `FOR ALL`, `WITH CHECK` intacto) daba 10/10
+>    en verde. Corregido con una aserción ESTRUCTURAL sobre `pg_policy`
+>    (`pg_get_expr(polqual, polrelid)` no puede ser `'true'` ni dejar de
+>    mencionar `get_operator_id()`) — lee el catálogo, no depende de qué otra
+>    policy tape el hueco en runtime. El test de runtime se conservó como
+>    TEST 6b, documental, con el crédito puesto donde es real (la policy de
+>    SELECT, no el FOR ALL).
+> 2. **La propia corrección de índice parcial no tenía test.** TEST 11 nuevo:
+>    borrado suave de la hoja 1, reinsertar hoja 1 → debe tener éxito. Revertir
+>    a un `UNIQUE` de tabla normal mata este test (verificado por mutación:
+>    `duplicate key value violates unique constraint`).
+> 3. **La migración no era re-aplicable sobre una base que ya corrió ronda 1.**
+>    Dos huecos, no uno — el segundo lo encontró el propio proceso de arreglar
+>    el primero: (a) faltaba `DROP CONSTRAINT IF EXISTS
+>    manifest_documents_manifest_id_sheet_number_key` antes de crear el índice
+>    parcial (`CREATE TABLE IF NOT EXISTS` nunca toca una tabla existente); (b)
+>    la policy `manifest_documents_tenant_isolation` seguía en el patrón
+>    `CREATE POLICY ... EXCEPTION WHEN duplicate_object THEN NULL`, que es
+>    correcto para una policy que nunca cambia pero **no** para ésta — su
+>    `WITH CHECK` sí cambió entre ronda 1 y ronda 2 (se le añadió la cláusula
+>    de `uploaded_by`), así que sobre una base en la forma de ronda 1 la
+>    excepción tragaba el choque de nombre y la policy vieja (sin protección
+>    de `uploaded_by`) seguía vigente. **No se dedujo — se verificó**: simulé
+>    la forma exacta de ronda 1 en el contenedor pgTAP, forcé esta migración
+>    encima con `\i`, y TEST 10 falló de verdad (`operator A inserted a row
+>    claiming a different user uploaded it`) antes del fix, y pasó después.
+>    Corregido a `DROP POLICY IF EXISTS` + `CREATE POLICY` sin captura de
+>    excepción.
+>
+> Spec: añadido "Riesgo aceptado" en la sección de Riesgos documentando que
+> `manifest_documents` es auditada pero no inmutable frente a su propio
+> dueño (un `authenticated` con `uploaded_by = auth.uid()` puede seguir
+> reescribiendo `storage_path`/`captured_at` de su propia fila) — quien
+> copie el patrón en un spec futuro hereda esa misma decisión.
+>
+> Verificado, los tres arreglos, contra el contenedor pgTAP compartido:
+> aplicación limpia desde cero (13 aserciones, 0 error), aplicación forzada
+> sobre la forma simulada de ronda 1 (13 aserciones, 0 error, sin el
+> `UNIQUE` viejo coexistiendo), y mutación de TEST 6 (`ALTER POLICY ...
+> USING (true)` → falla con el mensaje correcto) y TEST 11 (revertir al
+> `UNIQUE` de tabla → falla con `duplicate key value violates unique
+> constraint`) — las tres corridas dentro de transacciones con `ROLLBACK`,
+> nunca persistidas en el contenedor compartido.
 
 ### Fase 4 — `5g`/`5h` cámara y revisión `[pending]`
 
@@ -675,8 +890,71 @@ El bloque «Guardado en el teléfono — N registros y N fotos esperan señal» 
 
 ---
 
+## Impacto downstream de la fase 3
+
+Releído cada spec downstream contra lo que **realmente** se mergeó en esta fase, no contra lo planeado:
+
+- **spec-81 (cola offline).** Su fase 5 (`Fotos`, `[pending]`) ya declara explícitamente
+  que integrará con `ManifestPhotoStrip` (spec-80 fase 3) y exige "`manifest_documents`
+  se inserta **después** de que la subida confirme, nunca antes". Verificado: es
+  exactamente lo que `useUploadManifestDocument` hace hoy — `supabase.storage...upload()`
+  primero, `throw` si falla, `insert` en `manifest_documents` sólo si la subida tuvo
+  éxito. **Sin cambios de contrato de datos** para esa fase futura: puede envolver la
+  llamada a `mutateAsync` con la cola de IndexedDB sin que cambie la forma de
+  `ManifestPhotoStrip` ni de `useManifestDocuments.ts`.
+  **Corrección (ronda 2 de review del PR #706) — esto miraba el contrato de datos y
+  omitía la costura de producto.** Mientras spec-81 fase 5 siga `[pending]`, esta
+  pantalla **ya** monta `ManifestPhotoStrip` y **ya** produce exactamente el fallo que
+  esa fase existe para cerrar: sin señal, una foto que falla al subir se pierde (no
+  hay ruta offline para fotos hoy). No es "sin cambios" sin más — es una ventana real
+  entre que esta fase aterriza y que spec-81 fase 5 cierra el hueco. Mitigado, no
+  cerrado, en esta misma ronda: el error ahora es explícito y en español («Esta foto
+  no se guardó. Reintenta con señal.») en vez de perder la foto en silencio con un
+  toast en inglés crudo; y tanto `page.tsx` como este spec documentan la ventana en
+  vez de callarla. La leyenda «Todo queda en el teléfono…» (fase 2 de spec-81, ya
+  `[done]`) tampoco cambió de código: esta fase no tocó ninguna rama de
+  `handleComplete`, sólo reordenó JSX alrededor de él — pero su alcance semántico
+  ("las fotos también") es ahora una promesa a medias mientras fase 5 siga pendiente.
+- **spec-82 (asignación y ruta).** Cero menciones a `manifest_documents`, `5f`, `close_manifest`
+  o `ManifestPhotoStrip` en su spec, y superficie de archivos disjunta (confirmado antes
+  de empezar con `check-phase-overlap.mjs`, per el encargo). Sin cambios.
+- **spec-83 (escritorio, datos faltantes).** Su única mención relacionada es sobre el
+  alcance de `close_manifest` fase 1 (qué persiste `record_discrepancies` vs qué
+  devuelve el RPC) — esta fase no tocó `close_manifest` en absoluto, sólo el layout de
+  `5f` y la tabla `manifest_documents`. Sin cambios.
+- **spec-84 (conductor home y prueba de entrega).** Corrección sobre lo que yo mismo
+  había escrito aquí en la ronda 1: mi rama sale de `f9110b4`; **PR #703 aterrizó
+  después** (`121ab3e`, 2026-09-09) y cambió el terreno. En `origin/main` hoy,
+  `spec-84` está **`closed`** — decisión del usuario: *"Con respecto a Reparto,
+  déjalo, todo reparto usará la app DispatchTrack por parte del tenant."* Su fase 3
+  (la que iba a "reusar el patrón de `manifest_documents`") quedó **`[parked]`**: no
+  hay patrón que copiar porque no hay pantalla que construir — la prueba de entrega
+  la genera DispatchTrack y llega por webhook, no por una pantalla de esta
+  plataforma. **No es culpa de esta fase** (yo no tenía #703 al escribir la ronda 1),
+  pero afirmar downstream sin corregirlo lo dejaría leyéndose como instrucción viva
+  sobre trabajo que el usuario decidió que nunca se construye. El patrón de
+  `manifest_documents` (migración `20260918000001`, mismo patrón que
+  `discrepancy_notes`: `FOR ALL`/`WITH CHECK` sobre `operator_id`, GRANT/REVOKE,
+  auditoría, client-writable sin RPC) queda documentado aquí igualmente, por si algún
+  spec *nombrado* futuro sí necesita copiarlo — pero spec-84 no es ese spec.
+- **spec-86 (discrepancias de recepción).** Cero menciones a `manifest_documents`, `5f`
+  o `ManifestPhotoStrip`. Su superficie es `complete_route_reception` y lo que cuelgue
+  de recepción — ningún archivo tocado por esta fase. Sin cambios.
+
 ## Riesgos
 
 - **La fase 0 cambia el flujo bajo los pies de quien esté probando en QA.** Es el objetivo, pero conviene avisar antes de mergear.
 - **La fase 2 depende de spec-85.** Se decidió no tocar `package_status_enum`: la discrepancia es una fila resoluble, no un estado. Empezar la fase 2 antes de que exista `record_discrepancies` obliga a inventar un registro provisional que habría que migrar después.
 - **`5a`–`5d` se construyeron contra los mocks viejos** (`1l`, `1h`, `1i`, `3j`). Este spec no los revalida; eso es spec-82 y spec-83.
+- **Riesgo aceptado, fase 3 (ronda 3 de review del PR #706) — `manifest_documents` no
+  es inmutable frente a su propio dueño.** Un `authenticated` con `uploaded_by =
+  auth.uid()` en la fila puede seguir reescribiendo `storage_path` y `captured_at` de
+  su propia evidencia vía PostgREST (`UPDATE` sigue concedido, per el patrón
+  client-writable — no un RPC `SECURITY DEFINER`). Ya no es invisible: el trigger de
+  auditoría (Mayor 1) deja rastro de quién lo hizo y cuándo, en `audit_logs`. Pero
+  "auditado" no es "impedido" — es lo que separa esta tabla de una tabla verdaderamente
+  inmutable como la construiría un RPC. **Aceptado conscientemente**, no un descuido:
+  la razón de no usar RPC sigue siendo válida (el móvil sube foto a foto, y un RPC no
+  ayuda con la subida al bucket en sí). **Quien copie este patrón en un spec futuro
+  hereda esta misma decisión** — si la evidencia necesita ser literalmente inmutable
+  (no sólo auditada), ese spec necesita un RPC, no este patrón.
