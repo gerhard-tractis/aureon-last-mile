@@ -81,4 +81,20 @@ describe('StagePanel', () => {
     );
     expect(screen.getByText(/Tiempo real/)).toBeInTheDocument();
   });
+
+  it('omits the freshness indicator entirely when liveLabel is null', () => {
+    // spec-86 fase 3, ronda 2 (#715): a panel with no Realtime subscription
+    // (Discrepancias) must not claim "Tiempo real" just because it is the
+    // default.
+    render(
+      <StagePanel title="T" subtitle="S" deepLink={null} kpis={KPIS} page={1} pageCount={1} onPageChange={() => {}} lastSyncAt={null} liveLabel={null}>
+        <div />
+      </StagePanel>
+    );
+    expect(screen.queryByText(/Tiempo real/)).toBeNull();
+    // Ronda 3 (#715, menor): not just "no text" — no element at all. An
+    // empty <span data-testid="stage-panel-freshness" /> would also fail the
+    // text query above while still being a real (if invisible) regression.
+    expect(screen.queryByTestId('stage-panel-freshness')).toBeNull();
+  });
 });
