@@ -27,8 +27,15 @@ trap 'rm -rf "$STUB_DIR"' EXIT
 pass=0
 fail=0
 
+# grep via a here-string, NOT `printf | grep -q`. With `set -o pipefail` (set
+# at the top of this file) that pipeline is a coin flip on a large haystack:
+# `grep -q` exits the instant it matches, printf then dies of SIGPIPE (141),
+# and pipefail hands the pipeline printf's status — so a MATCHING assertion
+# reports FAIL. check_not_contains had the mirror bug: the same SIGPIPE turned
+# a real match into a silent pass. Both were observed flapping between runs on
+# the VPS once this file grew. A here-string has no second process.
 check_contains() { # $1 name, $2 haystack, $3 needle
-  if printf '%s' "$2" | grep -q -- "$3"; then
+  if grep -q -- "$3" <<< "$2"; then
     pass=$((pass + 1)); echo "  ok   $1"
   else
     fail=$((fail + 1)); echo "  FAIL $1 — expected to find '$3' in:"
@@ -37,7 +44,7 @@ check_contains() { # $1 name, $2 haystack, $3 needle
 }
 
 check_not_contains() { # $1 name, $2 haystack, $3 needle
-  if printf '%s' "$2" | grep -q -- "$3"; then
+  if grep -q -- "$3" <<< "$2"; then
     fail=$((fail + 1)); echo "  FAIL $1 — did not expect '$3' in:"
     printf '%s\n' "$2" | sed 's/^/         /'
   else
@@ -287,6 +294,10 @@ else
   chmod u+w "$DENIED_DIR/ghost" 2>/dev/null || true  # let the EXIT trap clean up
   check_eq "an unremovable entry fails the function" "1" "$rc"
   check_contains "the error names the surviving path" "$out" "ghost/index.ts"
+  # The message must SHOW the reason, not infer it from ownership: the first
+  # draft of this guard blamed the uid for a failure that was really find
+  # being unable to read its starting directory.
+  check_contains "the error quotes what the wipe itself reported" "$out" "Permission denied"
   check_contains "the error names the owning uid" "$out" "uid"
   check_contains "the error gives the exact remediation" "$out" "chown -R"
 fi

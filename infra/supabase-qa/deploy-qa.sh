@@ -299,20 +299,28 @@ npm_ci_once() {
 # cannot delete is by definition foreign and will keep failing every future
 # deploy until a human intervenes — hence the explicit remediation.
 clear_merge_dir() { # $1 = dir to empty
-  local dir="$1" survivors
-  # find's status does not reflect rm's, and rm's own stderr lands in a
-  # different stream than our log; both are handled by the explicit re-check.
-  find "$dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+  local dir="$1" survivors wipe_err
+  # The wipe's own stderr is captured rather than dropped: the reason a delete
+  # failed is the whole point of this function, and guessing it from the file
+  # ownership alone gets it wrong (a find that cannot read its starting cwd
+  # fails with a message that has nothing to do with permissions on $dir).
+  wipe_err="$( { find "$dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} + ; } 2>&1 >/dev/null || true )"
   survivors="$(find "$dir" -mindepth 1 -printf '  %p (owner uid %U, mode %m)
 ' 2>/dev/null || true)"
   [ -n "$survivors" ] || return 0
   err "cannot clear ${dir} — these entries survived the wipe:"
   printf '%s
 ' "$survivors" >&2
+  if [ -n "$wipe_err" ]; then
+    err "what the wipe itself reported:"
+    printf '%s
+' "$wipe_err" | sed 's/^/  /' >&2
+  fi
   err "This directory is rebuilt from the repo on every deploy, so it must be"
   err "entirely owned by the runner user ($(id -un)). Entries owned by another"
-  err "uid come from a manual copy that preserved numeric ids, or from a"
-  err "container writing as root."
+  err "uid come from a manual copy that preserved numeric ids — uid 197609, a"
+  err "Windows host, is what caused run 34388997942 — or from a container"
+  err "writing as root."
   err "Fix on the VPS, as root:  chown -R $(id -un):$(id -gn) ${dir}"
   return 1
 }
