@@ -289,6 +289,17 @@ describe('CompletionPage', () => {
     expect(strip.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  // M3, ronda 2 de review del PR #706 — el reordenado de firmas es uno de
+  // los tres ítems del checklist de esta fase y no tenía ni un test:
+  // volver a intercambiar los bloques (deshacer exactamente lo que esta
+  // fase entrega) dejaba los demás tests en verde.
+  it('renders FIRMA DEL LOCAL before TU FIRMA, matching the 5f mock order', async () => {
+    render(<CompletionPage />);
+    const local = await screen.findByText('FIRMA DEL LOCAL');
+    const tuya = await screen.findByText('TU FIRMA');
+    expect(local.compareDocumentPosition(tuya) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('has responsive padding', async () => {
     const { container } = render(<CompletionPage />);
     const wrapper = container.firstElementChild;

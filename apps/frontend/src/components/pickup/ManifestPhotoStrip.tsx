@@ -26,9 +26,15 @@ interface ManifestPhotoStripProps {
  * sin tocar la subida en sí (useUploadManifestDocument).
  */
 export function ManifestPhotoStrip({ operatorId, manifestId, userId }: ManifestPhotoStripProps) {
-  const { data: documents = [] } = useManifestDocuments(operatorId, manifestId);
+  const { data: documents = [], isFetching } = useManifestDocuments(operatorId, manifestId);
   const { mutateAsync, isPending } = useUploadManifestDocument();
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Bloqueante 2, ronda 2 de review del PR #706 — MAX(sheet_number)+1, no
+  // documents.length+1: con un hueco (una hoja borrada en el medio, cuando
+  // exista borrado), length+1 puede reutilizar un número ya usado por una
+  // fila viva y colisionar contra UNIQUE(manifest_id, sheet_number).
+  const nextSheetNumber = documents.reduce((max, doc) => Math.max(max, doc.sheet_number), 0) + 1;
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -40,16 +46,27 @@ export function ManifestPhotoStrip({ operatorId, manifestId, userId }: ManifestP
         operatorId,
         manifestId,
         userId,
-        sheetNumber: documents.length + 1,
+        sheetNumber: nextSheetNumber,
         file,
       });
     } catch (err) {
+      // Bloqueante 1, ronda 2 de review del PR #706 — mismo criterio que F3
+      // (ronda 2 de review del PR #679) sobre esta misma pantalla: nunca
+      // pintar texto crudo de Postgres/red en una PWA en español. Mensaje
+      // fijo y accionable en vez de err.message.
       console.error('Failed to upload manifest document:', err);
-      toast.error(err instanceof Error ? err.message : 'No se pudo subir la foto');
+      toast.error('Esta foto no se guardó. Reintenta con señal.');
     }
   };
 
   const disabled = !operatorId || !manifestId || !userId;
+  // Bloqueante 2, ronda 2 de review del PR #706 — `isPending` vuelve a
+  // `false` en cuanto la mutación resuelve, un round-trip ANTES de que el
+  // refetch de la lista (invalidateQueries en onSuccess) actualice
+  // `documents`. Sin gatear también por `isFetching`, un segundo toque en
+  // esa ventana recalcula el MISMO nextSheetNumber, el upload tiene éxito, y
+  // el insert revienta con 23505 — huérfano permanente en el bucket.
+  const addDisabled = disabled || isPending || isFetching;
 
   return (
     <div className="space-y-3">
@@ -93,7 +110,7 @@ export function ManifestPhotoStrip({ operatorId, manifestId, userId }: ManifestP
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          disabled={disabled || isPending}
+          disabled={addDisabled}
           className="aspect-[3/4] rounded-xl border-2 border-dashed border-accent/40 flex flex-col items-center justify-center gap-1.5 disabled:opacity-50"
         >
           {isPending ? (

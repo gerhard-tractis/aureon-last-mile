@@ -3,12 +3,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MetricCard } from '@/components/metrics/MetricCard';
-import { SignaturePad } from '@/components/pickup/SignaturePad';
 import { ManifestPhotoStrip } from '@/components/pickup/ManifestPhotoStrip';
+import { ClientSignatureSection } from '@/components/pickup/ClientSignatureSection';
+import { OperatorSignatureSection } from '@/components/pickup/OperatorSignatureSection';
 import { usePickupScans } from '@/hooks/pickup/usePickupScans';
 import { useMissingPackages } from '@/hooks/pickup/useDiscrepancies';
 import { classifyCloseManifestError } from '@/lib/pickup/closeManifestErrors';
@@ -323,6 +322,17 @@ export default function CompletionPage() {
         `handleComplete`) se queda como confirmación de que el cierre se
         encoló — esta línea es la promesa hecha ANTES de decidir firmar, no
         un reemplazo de esa confirmación.
+
+        Bloqueante 1, ronda 2 de review del PR #706 — "Las fotos también" es
+        HOY una promesa a medias. La firma (`close_manifest`) SÍ sobrevive
+        sin señal desde spec-81 fase 2 (encolada en IndexedDB, drenada al
+        volver la conexión). Las fotos NO: `useUploadManifestDocument` sube
+        directo al bucket sin ninguna ruta offline, y si `upload` falla el
+        archivo se pierde — `lib/offline/photos.ts` (spec-81 fase 5,
+        `[pending]`) es quien cierra ese hueco, no esta fase. Declarado aquí
+        y en el spec en vez de resuelto en silencio; mientras tanto,
+        `ManifestPhotoStrip` al menos falla en español y sin ambigüedad
+        (ver su propio comentario) en lugar de perder la foto callado.
       */}
       <div className="flex items-center gap-3 p-3 rounded-lg bg-status-warning-bg border border-status-warning-border">
         <p className="text-sm text-status-warning-text">
@@ -330,52 +340,18 @@ export default function CompletionPage() {
         </p>
       </div>
 
-      {/* Client ("del local") Signature (optional) — el mock `5f` la coloca
-          ANTES de la firma del operario; se conserva el checkbox opcional
-          (spec-80 fase 1: "la del local es opcional, el mock permite cerrar
-          sin ella"), que el mock (una captura ya llena) no contempla. */}
-      <div className="space-y-2">
-        <span className="text-xs font-semibold tracking-wide text-text-secondary uppercase">
-          FIRMA DEL LOCAL
-        </span>
-        <label htmlFor="client-sig" className="flex items-center gap-2">
-          <Checkbox
-            id="client-sig"
-            checked={showClientSig}
-            onCheckedChange={(checked) => setShowClientSig(checked === true)}
-          />
-          <span className="text-sm text-text">Agregar firma del cliente</span>
-        </label>
-        {showClientSig && (
-          <div className="space-y-2 ml-6">
-            <Input
-              value={clientName}
-              onChange={(e) => setClientName(e.target.value)}
-              placeholder="Nombre del cliente"
-              className="text-sm"
-              aria-label="Nombre del cliente"
-            />
-            <SignaturePad
-              label="Firma del cliente (opcional)"
-              onChange={setClientSignature}
-            />
-          </div>
-        )}
-      </div>
+      <ClientSignatureSection
+        showClientSig={showClientSig}
+        onToggleShowClientSig={setShowClientSig}
+        clientName={clientName}
+        onClientNameChange={setClientName}
+        onClientSignatureChange={setClientSignature}
+      />
 
-      {/* Operator ("tu firma") Signature (required) */}
-      <div className="space-y-2">
-        <span className="text-xs font-semibold tracking-wide text-text-secondary uppercase">
-          TU FIRMA
-        </span>
-        <p className="text-sm text-text-secondary">
-          Operador: <strong className="text-text">{operatorName}</strong>
-        </p>
-        <SignaturePad
-          label="Firma del operador (obligatoria)"
-          onChange={setOperatorSignature}
-        />
-      </div>
+      <OperatorSignatureSection
+        operatorName={operatorName}
+        onOperatorSignatureChange={setOperatorSignature}
+      />
 
       {/* Complete Button with Confirmation Dialog */}
       <AlertDialog>
