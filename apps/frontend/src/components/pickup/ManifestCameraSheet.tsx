@@ -2,14 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { X, Camera as CameraIcon } from 'lucide-react';
-
-// Debe seguir exactamente a la definición del bucket privado `manifests`
-// (packages/database/supabase/migrations/20260430000001_create_manifests_storage_bucket.sql,
-// `file_size_limit`/`allowed_mime_types`) — si diverge, el rechazo pasa de
-// "aquí, con el operario delante" a "horas después, drenando la cola de
-// spec-81, sin nadie para repetir la foto".
-const MANIFEST_BUCKET_MAX_BYTES = 10 * 1024 * 1024; // 10 MiB
-const MANIFEST_BUCKET_ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+import { validateManifestPhotoFile } from '@/lib/pickup/manifestPhotoValidation';
 
 interface ManifestCameraSheetProps {
   /** "CARGA-99814" — used in the header and (via fallback input) the file name. */
@@ -23,19 +16,13 @@ interface ManifestCameraSheetProps {
   onCapture: (file: File) => void;
   onDone: () => void;
   /**
-   * Ronda 2 de review del PR #713 (M1) — la convención local de
-   * `components/pickup/*Sheet.tsx` es Radix `open`/`onOpenChange`, montado
-   * siempre. Esta pantalla NO sigue esa convención por defecto: pide la
-   * cámara en el efecto de montaje y la libera en el de desmontaje, así que
-   * "renderizar condicionalmente" (dejar de montarla) es la forma esperada
-   * de cerrarla. `open` existe para quien SÍ quiera montarla siempre:
-   * en `false` libera el stream sin desmontar; en `true` (o al montar) lo
-   * vuelve a pedir. Por defecto `true` — mantiene el contrato de "quien la
-   * monta, la cierra desmontándola".
-   *
-   * `5g` y `5h` nunca deben estar abiertas/montadas a la vez — ambas son
-   * `fixed inset-0 z-50`, y quien las cablee (fuera de esta fase, ver el
-   * spec) es responsable de esa exclusión mutua.
+   * PR #713, M1/B2 — para quien monte esta pantalla siempre (convención
+   * Radix `open`/`onOpenChange` del resto de `*Sheet.tsx`) en vez de
+   * renderizarla condicionalmente. En `false`: libera el stream y no
+   * renderiza nada (antes dejaba un overlay negro `fixed inset-0 z-50`
+   * tapando la app). En `true` (default): pide cámara y renderiza.
+   * `5g`/`5h` nunca deben estar abiertas a la vez — ambas son
+   * `fixed inset-0 z-50`; quien las cablee es responsable de esa exclusión.
    */
   open?: boolean;
 }
@@ -45,20 +32,18 @@ interface ManifestCameraSheetProps {
  *
  * El mock pide `expo-camera` (app Expo dormida, `apps/mobile`); esta es la
  * PWA. El respaldo con `<input type="file" capture="environment">` sigue el
- * patrón ya probado de `useCameraIntake.ts`/`CameraIntake.tsx` para este
- * mismo bucket — pero el encuadre en vivo con `getUserMedia` **no tiene
- * precedente en este repo**: ningún hook ni componente existente lo usa.
- * Ronda 2 de review del PR #713 — el comentario anterior afirmaba lo
- * contrario; verificado que no es así.
+ * patrón de `useCameraIntake.ts`/`CameraIntake.tsx` para este mismo bucket
+ * — el encuadre en vivo con `getUserMedia` no tiene otro precedente en el
+ * repo.
  *
  * No sube nada: `onCapture` entrega el frame como `File` a quien la monte
  * (5h, la revisión), que decide si sube de inmediato o encola sin red. Ese
  * cableado a `ManifestPhotoStrip`/`useUploadManifestDocument` queda fuera de
  * esta fase — ver el spec.
  *
- * M4, ronda 2 de review del PR #713 (seguimiento, no bloqueante) — sin
- * trampa de foco, sin manejo de `Escape`/atrás de Android. Anotado en el
- * spec; no se implementa aquí.
+ * M4 (seguimiento, tracked como checklist item en spec-80 fase 4) —
+ * `role="dialog"`/`aria-modal` sí están; trampa de foco y manejo de
+ * `Escape`/atrás de Android siguen sin implementarse.
  */
 export function ManifestCameraSheet({
   loadLabel,
@@ -74,23 +59,23 @@ export function ManifestCameraSheet({
   const streamRef = useRef<MediaStream | null>(null);
   const fallbackInputRef = useRef<HTMLInputElement>(null);
   const [useFallbackInput, setUseFallbackInput] = useState(false);
-  // Bloqueante 1, ronda 2 de review del PR #713 — el obturador NO puede
-  // habilitarse hasta que el <video> reporte frames reales
-  // (`loadedmetadata`, videoWidth/videoHeight > 0). Antes de esto estaba
-  // habilitado desde el primer render, durante todo el diálogo de permiso
-  // del sistema: un toque ahí capturaba un canvas 1080×1440 sin señal —
-  // negro sólido, ~1.5MB, un File "válido" que es la evidencia de custodia
-  // (spec-80) sin ninguna información real.
+  // B1 — el obturador NO se habilita hasta que el <video> reporte frames
+  // reales (`loadedmetadata`, ambos ejes > 0). Antes estaba habilitado
+  // desde el primer render, durante el diálogo de permiso del sistema: un
+  // toque ahí producía un canvas sin señal — negro sólido, ~1.5MB, un File
+  // "válido" como evidencia de custodia sin ninguna información real.
   const [videoReady, setVideoReady] = useState(false);
   const [fallbackError, setFallbackError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open) {
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-      setVideoReady(false);
-      return;
-    }
+    // Ronda 3 de review del PR #713 — antes había un bloque `if (!open) {
+    // stop tracks...; return; }` aquí. Era código muerto: React ejecuta la
+    // limpieza del efecto ANTERIOR (que ya para el stream y limpia
+    // `streamRef`) antes de correr este cuerpo con `open=false`, así que
+    // `streamRef.current` ya es `null` para cuando esta rama se alcanzaría.
+    // Verificado por mutación (borrarle el `stop()` a esa rama seguía en
+    // verde). El único trabajo real que hacía falta era no pedir cámara.
+    if (!open) return;
 
     let cancelled = false;
     const mediaDevices = typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined;
@@ -99,6 +84,19 @@ export function ManifestCameraSheet({
       setUseFallbackInput(true);
       return;
     }
+
+    // M-A — cuando la pista termina a mitad de sesión (permiso revocado,
+    // segundo plano en iOS) un navegador real NO pone las dimensiones del
+    // <video> a 0: queda congelado en el último frame. El chequeo de
+    // dimensiones de `handleShutter` no detecta eso — saldría una foto
+    // PLAUSIBLE del frame anterior (p.ej. la hoja ya subida), indistinguible
+    // a simple vista en `5h`. Escuchar el fin de la pista sí lo detecta.
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') setVideoReady(false);
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    const trackCleanupFns: Array<() => void> = [];
 
     mediaDevices
       .getUserMedia({ video: { facingMode: 'environment' } })
@@ -111,6 +109,16 @@ export function ManifestCameraSheet({
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
+
+        const handleTrackEnded = () => setVideoReady(false);
+        stream.getVideoTracks().forEach((track) => {
+          track.addEventListener('ended', handleTrackEnded);
+          track.addEventListener('mute', handleTrackEnded);
+          trackCleanupFns.push(() => {
+            track.removeEventListener('ended', handleTrackEnded);
+            track.removeEventListener('mute', handleTrackEnded);
+          });
+        });
       })
       .catch(() => {
         // Permiso denegado, sin cámara, o navegador sin soporte real detrás
@@ -121,6 +129,8 @@ export function ManifestCameraSheet({
 
     return () => {
       cancelled = true;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      trackCleanupFns.forEach((cleanup) => cleanup());
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
       setVideoReady(false);
@@ -131,10 +141,11 @@ export function ManifestCameraSheet({
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
-    // Comprobación defensiva además del gate del botón (`disabled`
-    // más abajo): si el track termina entre que el botón se habilitó y el
-    // toque llega, `videoWidth` vuelve a 0 y NO hay que inventarse un
-    // tamaño por defecto — eso es exactamente lo que producía la foto negra.
+    // Comprobación defensiva de última línea (defensa en profundidad, no el
+    // detector principal — ver M-A arriba): si por lo que sea `videoWidth`/
+    // `videoHeight` fueran 0 aquí (p.ej. una carrera justo tras
+    // `loadedmetadata`), NO hay que inventarse un tamaño por defecto — eso
+    // es exactamente lo que producía la foto negra en B1.
     if (video.videoWidth === 0 || video.videoHeight === 0) return;
 
     canvas.width = video.videoWidth;
@@ -146,10 +157,9 @@ export function ManifestCameraSheet({
     canvas.toBlob(
       (blob) => {
         if (!blob) return;
-        // Menor, ronda 2 de review del PR #713 — el tipo del File viene del
-        // Blob que realmente produjo `toBlob`, no de un literal hardcodeado:
-        // si el mime real cambiara, el File no debe mentir sobre su
-        // contenido en el Content-Type que ve Supabase Storage.
+        // El tipo del File viene del Blob que `toBlob` realmente produjo,
+        // no de un literal hardcodeado — no debe mentir sobre su contenido
+        // en el Content-Type que ve Supabase Storage.
         onCapture(new File([blob], `sheet-${sheetNumber}-${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' }));
       },
       'image/jpeg',
@@ -162,24 +172,25 @@ export function ManifestCameraSheet({
     if (fallbackInputRef.current) fallbackInputRef.current.value = '';
     if (!file) return;
 
-    // M3, ronda 2 de review del PR #713 — el camino getUserMedia siempre
-    // produce JPEG bajo el límite; el fallback pasa un File crudo de la
-    // cámara nativa, que hoy en un teléfono moderno ronda 4-8MB y puede
-    // superar los 10MiB del bucket con facilidad. Rechazar aquí, con el
-    // operario delante y la hoja todavía en la mano, no tras drenar la cola
-    // de spec-81 horas después sin nadie para repetir la foto.
-    if (!MANIFEST_BUCKET_ALLOWED_MIME.includes(file.type)) {
-      setFallbackError('Formato no soportado. Usa una foto JPEG, PNG, WEBP o HEIC.');
-      return;
-    }
-    if (file.size > MANIFEST_BUCKET_MAX_BYTES) {
-      setFallbackError('La foto pesa demasiado (máx. 10MB). Repite con menos resolución.');
+    // M3/M-B — el fallback pasa un File crudo de la cámara nativa, que
+    // puede superar los 10MiB del bucket o venir con `type` vacío (varios
+    // WebViews de Android). Validar aquí, con el operario delante — ver
+    // lib/pickup/manifestPhotoValidation.ts.
+    const result = validateManifestPhotoFile(file);
+    if (!result.ok) {
+      setFallbackError(result.error);
       return;
     }
 
     setFallbackError(null);
-    onCapture(file);
+    onCapture(result.file);
   };
+
+  // B2 — el efecto ya liberaba el stream con `open=false`, pero el JSX
+  // nunca lo consultaba: dejaba un overlay negro tapando la PWA. Debe ir
+  // DESPUÉS de todos los hooks — un return antes rompería las reglas de
+  // hooks de React.
+  if (!open) return null;
 
   return (
     <div
@@ -225,29 +236,33 @@ export function ManifestCameraSheet({
             )}
           </>
         ) : (
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            data-testid="manifest-camera-video"
-            onLoadedMetadata={(e) => {
-              const v = e.currentTarget;
-              setVideoReady(v.videoWidth > 0 && v.videoHeight > 0);
-            }}
-            className="h-full w-full object-cover"
-          />
+          <>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              data-testid="manifest-camera-video"
+              onLoadedMetadata={(e) => {
+                const v = e.currentTarget;
+                setVideoReady(v.videoWidth > 0 && v.videoHeight > 0);
+              }}
+              className="h-full w-full object-cover"
+            />
+            <span className="absolute left-[26px] top-[74px] w-[38px] h-[38px] border-l-[3px] border-t-[3px] border-[#e6c15c] rounded-tl-md" />
+            <span className="absolute right-[26px] top-[74px] w-[38px] h-[38px] border-r-[3px] border-t-[3px] border-[#e6c15c] rounded-tr-md" />
+            <span className="absolute left-[26px] bottom-[74px] w-[38px] h-[38px] border-l-[3px] border-b-[3px] border-[#e6c15c] rounded-bl-md" />
+            <span className="absolute right-[26px] bottom-[74px] w-[38px] h-[38px] border-r-[3px] border-b-[3px] border-[#e6c15c] rounded-br-md" />
+            {/* Ronda 3 de review del PR #713 — vivía fuera del ternario y se
+                pintaba encima del mensaje de error del fallback (ambos
+                `absolute ... bottom-[26px]`). Sólo tiene sentido junto al
+                visor en vivo, así que se mueve a esta rama. */}
+            <span className="absolute left-0 right-0 bottom-[26px] text-center text-[13.5px] font-medium leading-snug text-[#e8d9bd]">
+              Encuadra la hoja completa, con la firma visible
+            </span>
+          </>
         )}
         <canvas ref={canvasRef} className="hidden" data-testid="manifest-camera-canvas" />
-
-        <span className="absolute left-[26px] top-[74px] w-[38px] h-[38px] border-l-[3px] border-t-[3px] border-[#e6c15c] rounded-tl-md" />
-        <span className="absolute right-[26px] top-[74px] w-[38px] h-[38px] border-r-[3px] border-t-[3px] border-[#e6c15c] rounded-tr-md" />
-        <span className="absolute left-[26px] bottom-[74px] w-[38px] h-[38px] border-l-[3px] border-b-[3px] border-[#e6c15c] rounded-bl-md" />
-        <span className="absolute right-[26px] bottom-[74px] w-[38px] h-[38px] border-r-[3px] border-b-[3px] border-[#e6c15c] rounded-br-md" />
-
-        <span className="absolute left-0 right-0 bottom-[26px] text-center text-[13.5px] font-medium leading-snug text-[#e8d9bd]">
-          Encuadra la hoja completa, con la firma visible
-        </span>
       </div>
 
       <div className="flex-none flex flex-col gap-3.5 px-5 pt-4 pb-7">

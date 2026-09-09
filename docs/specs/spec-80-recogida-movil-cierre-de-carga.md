@@ -917,6 +917,7 @@ El mock dice «expo-camera», que es la app Expo dormida (`apps/mobile`, ver `ls
 
 - [x] Tests con `getUserMedia` mockeado.
 - [ ] Verificación en dispositivo real: `awaiting_user_test`, la cierra una persona con el teléfono.
+- [ ] **M4 (accesibilidad, seguimiento no bloqueante, PR #713):** trampa de foco y manejo de `Escape`/atrás de Android en `5g`/`5h`. `role="dialog"`/`aria-modal` ya están. Sin dueño ni fase propia todavía — se resuelve junto con el cableado de `5g`/`5h` a `ManifestPhotoStrip` (ver la nota de coordinación del PR #713 sobre ese cableado).
 
 **Pendiente aparte del checklist de arriba — con dueño: lo cierra quien cablee `5g`/`5h` a `ManifestPhotoStrip.tsx` (M3, review del PR #712; nota de coordinación: este párrafo vive separado de la lista de checkboxes a propósito, para no chocar con la línea que #713 modifica).** `#713` entrega `5g`/`5h` **sin cablear**: `onUsePhoto` le pasa el `File` capturado al caller, y `ManifestPhotoStrip.tsx` queda intacto, con su `<input>` oculto — a propósito, para que la decisión de subir-o-encolar la tome quien una las dos piezas, no quien construyó la cámara. Esa unión debe llamar a `enqueueManifestPhoto` (`lib/offline/photos.ts`, spec-81 fase 5 — blob a IndexedDB, subida diferida con reintento, huérfano imposible), no a `useUploadManifestDocument` directo (la ruta ONLINE, sin salida sin señal): es lo que hace verdad «Las fotos también» (`5f`) en el código que corre, no sólo en la infraestructura que exista para recibirla.
 
@@ -947,6 +948,45 @@ El mock dice «expo-camera», que es la app Expo dormida (`apps/mobile`, ver `ls
 > ronda 2 señaló como sobrevivientes (calidad JPEG, `capture`, bytes del
 > `File`, mime derivado del blob real, y los nuevos guards de B1/M1/M3) —
 > todos mueren contra su test.
+>
+> **Ronda 3 de review del PR #713 — B2 cerrado (bloqueante), M-A y M-B
+> cerrados, menores cerrados.** B1/M3/`capture="environment"` verificados
+> vivos por mutación en esta ronda (dos correcciones del reviewer a su
+> propia ronda 2, a favor de la implementación: el mutante de `capture`
+> **sí** moría, y la lista de MIME de `manifestPhotoValidation.ts` es la
+> segunda copia del bucket, no la tercera — `photos.ts` de spec-81 sólo
+> tiene el tope de bytes).
+> B2 (bloqueante): `open` paraba el stream pero el JSX nunca lo consultaba —
+> `open={false}` dejaba un overlay `fixed inset-0 z-50` negro, con
+> `aria-modal="true"`, tapando la PWA entera. Arreglado con
+> `if (!open) return null` después de todos los hooks.
+> M-A: el chequeo de dimensiones no detecta una pista muerta a mitad de
+> sesión (un navegador real no pone `videoWidth`/`videoHeight` a 0 cuando la
+> pista termina — se queda congelado en el último frame, lo que producía una
+> foto PLAUSIBLE pero de la hoja equivocada, no una foto negra obvia).
+> Arreglado escuchando `ended`/`mute` en las pistas y `visibilitychange` en
+> el documento para devolver `videoReady` a `false`; el chequeo de
+> dimensiones queda como defensa en profundidad, no como detector principal.
+> M-B: un `file.type` vacío (varios WebViews de Android, para el resultado
+> de `capture`) se trataba como formato rechazado sin salida posible.
+> Arreglado infiriendo el mime por la extensión antes de rechazar
+> (`lib/pickup/manifestPhotoValidation.ts`, extraído de
+> `ManifestCameraSheet.tsx` para poder testear la validación sin DOM y
+> mantener el componente bajo 300 líneas).
+> Menores cerrados: `>`→`>=` en el tope de 10MiB, `accept="image/*"`,
+> `setVideoReady(false)` en la limpieza del efecto (el estado de React
+> sobrevive a que el JSX devuelva `null`, no es un desmontaje),
+> `role="dialog"`/`aria-modal` sin test en ambas pantallas,
+> `useEffect(..., [photo]) → []` en `PhotoReviewSheet.tsx`, el solapamiento
+> de la leyenda de encuadre con el mensaje de error del fallback (ambos
+> `absolute ... bottom-[26px]`, la leyenda vivía fuera del ternario), y el
+> JSDoc de `PhotoReviewSheet.tsx` que afirmaba "sin `role=dialog`" tres
+> líneas por encima del `role="dialog"` ya añadido en la ronda 2.
+> El hueco M4 pasó de prosa suelta dentro de este blockquote a un
+> `- [ ]` con dueño en la checklist de arriba.
+> Mutation-testing repetido sobre cada guard nuevo de esta ronda (B2, los
+> tres detectores de M-A, M-B, y los 6 menores) — todos mueren contra su
+> test.
 
 ### Fase 5 — `5i` carga cerrada `[pending]`
 

@@ -1,14 +1,22 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { ManifestCameraSheet } from './ManifestCameraSheet';
 
+/** Un track "vivo" que soporta addEventListener('ended'|'mute', ...), como un MediaStreamTrack real. */
+class FakeTrack extends EventTarget {
+  stop = vi.fn();
+}
+
 function makeFakeStream() {
-  const stop = vi.fn();
-  const track = { stop };
+  const track = new FakeTrack();
   return {
-    stream: { getTracks: () => [track] } as unknown as MediaStream,
-    stop,
+    stream: {
+      getTracks: () => [track],
+      getVideoTracks: () => [track],
+    } as unknown as MediaStream,
+    stop: track.stop,
+    track,
   };
 }
 
@@ -140,7 +148,7 @@ describe('ManifestCameraSheet', () => {
       resolveGetUserMedia(makeFakeStream().stream);
     });
 
-    it('enables the shutter once the video reports real dimensions, and captures using those dimensions (not a hardcoded default)', async () => {
+    it('enables the shutter once the video reports real dimensions, and the canvas is sized from those dimensions', async () => {
       const { stream } = makeFakeStream();
       getUserMedia.mockResolvedValue(stream);
       const onCapture = vi.fn();
@@ -159,7 +167,30 @@ describe('ManifestCameraSheet', () => {
       expect(canvas.height).toBe(480);
     });
 
-    it('rejects the capture defensively if the video dimensions drop to zero after becoming ready (e.g. the track ended)', async () => {
+    // Ronda 3 de review del PR #713 — el eje del alto no lo miraba ningún
+    // test, y `makeVideoReady` siempre fijaba dimensiones no nulas antes
+    // del evento, así que nunca existía un `loadedmetadata` 0×N ni N×0 (el
+    // caso real de Safari que motiva la condición `&&`). `setVideoReady(true)`
+    // incondicional sobrevivía.
+    it.each([
+      ['width', 0, 480],
+      ['height', 640, 0],
+    ])('does not enable the shutter if loadedmetadata reports a zero %s', async (_axis, width, height) => {
+      const { stream } = makeFakeStream();
+      getUserMedia.mockResolvedValue(stream);
+      render(<ManifestCameraSheet {...baseProps} />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+
+      makeVideoReady(width, height);
+      expect(screen.getByRole('button', { name: /capturar/i })).toBeDisabled();
+    });
+
+    // Ronda 3 — esto es defensa en profundidad sobre `handleShutter`
+    // directamente, NO una simulación de "la pista terminó a mitad de
+    // sesión": ningún navegador real vuelve `videoWidth`/`videoHeight` a 0
+    // cuando una pista termina (ver M-A más abajo, que sí cubre ese caso
+    // real con eventos de la pista).
+    it('handleShutter itself refuses to capture if the video dimensions are ever zero at click time', async () => {
       const { stream } = makeFakeStream();
       getUserMedia.mockResolvedValue(stream);
       const onCapture = vi.fn();
@@ -169,12 +200,65 @@ describe('ManifestCameraSheet', () => {
       const video = makeVideoReady(640, 480);
       await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).not.toBeDisabled());
 
-      // Simulate the track dying mid-session without another loadedmetadata event.
+      // Force dimensions to 0 without another loadedmetadata event — the
+      // button stays enabled (its own state doesn't know), but the click
+      // handler must still refuse.
       Object.defineProperty(video, 'videoWidth', { value: 0, configurable: true });
       Object.defineProperty(video, 'videoHeight', { value: 0, configurable: true });
 
       fireEvent.click(screen.getByRole('button', { name: /capturar/i }));
       expect(onCapture).not.toHaveBeenCalled();
+    });
+  });
+
+  // M-A, ronda 3 de review del PR #713 — cuando la pista muere a mitad de
+  // sesión, un navegador real NO pone las dimensiones del <video> a 0: se
+  // queda congelado en el último frame. El único detector real es
+  // escuchar el fin de la pista, no las dimensiones.
+  describe('M-A — la pista puede morir sin que las dimensiones del <video> lo delaten', () => {
+    it('disables the shutter again when the live track ends', async () => {
+      const { stream, track } = makeFakeStream();
+      getUserMedia.mockResolvedValue(stream);
+      const onCapture = vi.fn();
+      render(<ManifestCameraSheet {...baseProps} onCapture={onCapture} />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+      makeVideoReady();
+      await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).not.toBeDisabled());
+
+      act(() => track.dispatchEvent(new Event('ended')));
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).toBeDisabled());
+      fireEvent.click(screen.getByRole('button', { name: /capturar/i }));
+      expect(onCapture).not.toHaveBeenCalled();
+    });
+
+    it('disables the shutter again when the live track mutes', async () => {
+      const { stream, track } = makeFakeStream();
+      getUserMedia.mockResolvedValue(stream);
+      render(<ManifestCameraSheet {...baseProps} />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+      makeVideoReady();
+      await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).not.toBeDisabled());
+
+      act(() => track.dispatchEvent(new Event('mute')));
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).toBeDisabled());
+    });
+
+    it('disables the shutter when the document is backgrounded (visibilitychange)', async () => {
+      const { stream } = makeFakeStream();
+      getUserMedia.mockResolvedValue(stream);
+      render(<ManifestCameraSheet {...baseProps} />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+      makeVideoReady();
+      await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).not.toBeDisabled());
+
+      Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+      act(() => document.dispatchEvent(new Event('visibilitychange')));
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).toBeDisabled());
+
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
     });
   });
 
@@ -283,6 +367,54 @@ describe('ManifestCameraSheet', () => {
       rerender(<ManifestCameraSheet {...baseProps} open />);
       await waitFor(() => expect(getUserMedia).toHaveBeenCalledOnce());
     });
+
+    // B2, ronda 3 de review del PR #713 (bloqueante) — el efecto ya
+    // liberaba el stream con open=false, pero el JSX nunca lo consultaba:
+    // quedaba un overlay `fixed inset-0 z-50` negro, con
+    // `aria-modal="true"`, tapando la PWA entera con "Listo" y una X.
+    it('renders nothing while open=false — no dialog, no "Listo", no framing caption', async () => {
+      render(<ManifestCameraSheet {...baseProps} open={false} />);
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.queryByText('Listo')).not.toBeInTheDocument();
+      expect(
+        screen.queryByText('Encuadra la hoja completa, con la firma visible')
+      ).not.toBeInTheDocument();
+    });
+
+    // Menor, ronda 3 — quitar `setVideoReady(false)` de la limpieza del
+    // efecto sobrevivía: el estado de React persiste entre renders aunque
+    // el JSX devuelva `null` (no es un desmontaje), así que sin el reset
+    // explícito el obturador seguiría "listo" del stream anterior al
+    // reabrir, antes de que el nuevo stream tenga ningún frame real.
+    it('does not leave the shutter enabled when reopened — videoReady resets on teardown', async () => {
+      const { stream: stream1 } = makeFakeStream();
+      getUserMedia.mockResolvedValueOnce(stream1);
+      const { rerender } = render(<ManifestCameraSheet {...baseProps} open />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(1));
+      makeVideoReady();
+      await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).not.toBeDisabled());
+
+      rerender(<ManifestCameraSheet {...baseProps} open={false} />);
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+      const { stream: stream2 } = makeFakeStream();
+      getUserMedia.mockResolvedValueOnce(stream2);
+      rerender(<ManifestCameraSheet {...baseProps} open />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+
+      expect(screen.getByRole('button', { name: /capturar/i })).toBeDisabled();
+    });
+  });
+
+  // M4, ronda 3 de review del PR #713 — "role=dialog en 5g ... sobreviven,
+  // lo que entregaste como M4 no tiene un solo test."
+  it('exposes itself as a dialog with an aria-modal label', async () => {
+    const { stream } = makeFakeStream();
+    getUserMedia.mockResolvedValue(stream);
+    render(<ManifestCameraSheet {...baseProps} />);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAccessibleName('Hoja 3 de CARGA-99814');
   });
 
   it('disables the shutter button once it has fallen back to the file input', async () => {
@@ -291,6 +423,19 @@ describe('ManifestCameraSheet', () => {
     render(<ManifestCameraSheet {...baseProps} />);
     await screen.findByTestId('manifest-camera-fallback-input');
     expect(screen.getByRole('button', { name: /capturar/i })).toBeDisabled();
+  });
+
+  // Ronda 3 de review del PR #713 — la leyenda de encuadre vivía fuera del
+  // ternario y se pintaba encima del mensaje de error del fallback (ambos
+  // `absolute ... bottom-[26px]`). Sólo tiene sentido junto al visor en vivo.
+  it('does not show the live-viewfinder caption while showing the fallback tile', async () => {
+    // @ts-expect-error - simulate a browser/PWA without camera stream support
+    delete global.navigator.mediaDevices;
+    render(<ManifestCameraSheet {...baseProps} />);
+    await screen.findByTestId('manifest-camera-fallback-input');
+    expect(
+      screen.queryByText('Encuadra la hoja completa, con la firma visible')
+    ).not.toBeInTheDocument();
   });
 
   it('does not call onCapture when the canvas has no 2D context', async () => {
@@ -400,5 +545,32 @@ describe('ManifestCameraSheet', () => {
     render(<ManifestCameraSheet {...baseProps} />);
     const input = await screen.findByTestId('manifest-camera-fallback-input');
     expect(input).toHaveAttribute('capture', 'environment');
+  });
+
+  // Menor, ronda 3 de review del PR #713 — accept="image/*" → "*/*" sobrevivía.
+  it('sets accept="image/*" on the fallback input', async () => {
+    // @ts-expect-error - simulate a browser/PWA without camera stream support
+    delete global.navigator.mediaDevices;
+    render(<ManifestCameraSheet {...baseProps} />);
+    const input = await screen.findByTestId('manifest-camera-fallback-input');
+    expect(input).toHaveAttribute('accept', 'image/*');
+  });
+
+  // M-B, ronda 3 de review del PR #713 — smoke test end-to-end del wiring
+  // a validateManifestPhotoFile; los casos exhaustivos viven en
+  // lib/pickup/manifestPhotoValidation.test.ts.
+  it('accepts a fallback file with an empty type but a recognizable extension (Android WebView quirk)', async () => {
+    // @ts-expect-error - simulate a browser/PWA without camera stream support
+    delete global.navigator.mediaDevices;
+    const onCapture = vi.fn();
+    render(<ManifestCameraSheet {...baseProps} onCapture={onCapture} />);
+    const input = await screen.findByTestId('manifest-camera-fallback-input');
+
+    const noType = new File(['data'], 'IMG_0001.JPG', { type: '' });
+    fireEvent.change(input, { target: { files: [noType] } });
+
+    expect(onCapture).toHaveBeenCalledOnce();
+    const file = onCapture.mock.calls[0][0] as File;
+    expect(file.type).toBe('image/jpeg');
   });
 });

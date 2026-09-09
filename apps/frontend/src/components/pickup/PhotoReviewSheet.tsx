@@ -35,9 +35,9 @@ interface PhotoReviewSheetProps {
  * (fuera de esta fase) quien decide si sube de inmediato o la encola sin
  * red — ver "diseña asumiendo que la subida puede diferirse" en el spec.
  *
- * M4, ronda 2 de review del PR #713 (seguimiento, no bloqueante) — sin
- * `role="dialog"`, sin trampa de foco, sin manejo de `Escape`/atrás de
- * Android. Anotado en el spec; no se implementa aquí.
+ * M4 (seguimiento, tracked como checklist item en spec-80 fase 4) —
+ * `role="dialog"`/`aria-modal` sí están; trampa de foco y manejo de
+ * `Escape`/atrás de Android siguen sin implementarse.
  */
 export function PhotoReviewSheet({
   loadLabel,

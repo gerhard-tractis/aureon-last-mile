@@ -123,4 +123,57 @@ describe('PhotoReviewSheet', () => {
     expect(screen.getByRole('button', { name: 'Repetir' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /usar foto/i })).toBeDisabled();
   });
+
+  // M4, ronda 3 de review del PR #713 — "role=dialog en ... 5h ...
+  // sobreviven, lo que entregaste como M4 no tiene un solo test."
+  it('exposes itself as a dialog with an aria-modal label', () => {
+    render(
+      <PhotoReviewSheet
+        loadLabel="CARGA-99814"
+        sheetNumber={3}
+        photo={makePhoto()}
+        onRetake={vi.fn()}
+        onUsePhoto={vi.fn()}
+      />
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAccessibleName('Revisar hoja 3');
+  });
+
+  // Ronda 3 — `useEffect(..., [photo]) → []` seguía vivo desde la ronda 1:
+  // sin este test, nada distingue "vuelve a crear la preview en cada
+  // renderizado" de "sólo la crea cuando `photo` de verdad cambia" (y sin
+  // el segundo, repetir una foto en 5g dejaría la vista atascada mirando la
+  // primera).
+  it('regenerates the preview URL (and revokes the old one) when the photo prop changes', () => {
+    const firstPhoto = makePhoto();
+    const secondPhoto = new File(['other'], 'sheet-3-retake.jpg', { type: 'image/jpeg' });
+    createObjectURL.mockReturnValueOnce('blob:first').mockReturnValueOnce('blob:second');
+
+    const { rerender } = render(
+      <PhotoReviewSheet
+        loadLabel="CARGA-99814"
+        sheetNumber={3}
+        photo={firstPhoto}
+        onRetake={vi.fn()}
+        onUsePhoto={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId('photo-review-preview')).toHaveAttribute('src', 'blob:first');
+
+    rerender(
+      <PhotoReviewSheet
+        loadLabel="CARGA-99814"
+        sheetNumber={3}
+        photo={secondPhoto}
+        onRetake={vi.fn()}
+        onUsePhoto={vi.fn()}
+      />
+    );
+
+    expect(createObjectURL).toHaveBeenCalledWith(secondPhoto);
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:first');
+    expect(screen.getByTestId('photo-review-preview')).toHaveAttribute('src', 'blob:second');
+  });
 });
