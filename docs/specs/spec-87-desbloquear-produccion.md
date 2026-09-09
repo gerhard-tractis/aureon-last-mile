@@ -748,6 +748,80 @@ production-deploy, cancel-in-progress: false}` en el job.
   vitest en el checkout primario rancio ya destruyó 1599 ficheros una vez. Queda abierto,
   explícitamente, no como "resuelto por CI verde".
 
+---
+
+#### 2026-09-09 — Ronda 3 de review (PR #705): **aprobado, «mergeable con una corrección de una
+línea»**, y el veredicto sobre el disparo cambió a favor
+
+El reviewer verificó de forma independiente y el resultado fue **mejor de lo predicho**:
+
+- **10/10 mutantes muertos** (había predicho 6 de 7; mata los 7, más los tres que ya había
+  reproducido esta sesión). Señaló que los casos **E** (dispatch soft-deleted en ruta activa
+  distinta) y **F** (dispatch vivo apuntando a una ruta soft-deleted) del fixture de `TEST 6`
+  **no estaban en su lista sugerida** — se añadieron en esta sesión — y son los que cierran los
+  mutantes sobre `dd.deleted_at IS NULL` y `r.deleted_at IS NULL` respectivamente.
+- Validó explícitamente las **guardas anti-vacuidad** de `TEST 6` (que A haya escrito la ruta
+  correcta, B siga `NULL`, C haya escrito la ruta activa —no la completada—, D haya escrito, J
+  conserve su valor preexistente): sin ellas, una comparación de equivalencia donde ninguna
+  implementación escribe nada pasaría trivialmente en verde. Es la diferencia entre un test y un
+  adorno.
+- **`candidate_orders == staging_table_rows`** verificado numéricamente (7 = 7, frente a
+  `eligible_packages = 6`) — confirma que la unidad documentada en la cabecera del workflow es la
+  real.
+- **Cero ocurrencias de `inputs.batch_size` interpolado en texto de script** — enumeró todas las
+  interpolaciones del fichero una por una. El step *Validate* (el vulnerable en ronda 1) usa
+  `env:` + `[[ "$BATCH_SIZE" =~ ^[0-9]+$ ]]`.
+- **TEST 3 reescrito**: ya no depende del estado del contenedor compartido, y sigue matando los
+  mismos dos mutantes que la versión frágil mataba — confirmado en tabla, no asumido.
+
+**La única corrección exigida — `concurrency:` afirmaba una protección que no existía.**
+`group: production-deploy` (ronda 2) no coincide con ningún grupo real del repo:
+`deploy.yml` usa `production-deploy-supabase` / `-edge-functions` / `-vercel` / `-worker` /
+`-agents` / `-solver` / `qa-deploy`, todos con guion y sufijo — GitHub empareja por string exacto.
+`approve-production` **no tiene bloque `concurrency`**. Lo único que el string inventado lograba
+era serializar corridas de *este* workflow entre sí (el riesgo principal de la Corrección 4 de
+ronda 2, genuinamente cerrado) — **no** serializaba contra `deploy-supabase`, el job que aplica
+migraciones y toma locks sobre `packages`/`dispatches`. Y el comentario lo afirmaba como si sí lo
+hiciera, en el workflow y repetido en la cabecera de la migración. Corregido: `group:
+production-deploy-supabase` — el string exacto que `deploy.yml` ya usa para ese job — así que
+ahora backfill y migración de verdad se turnan. `cancel-in-progress: false` sin cambios.
+Ambos comentarios (workflow + migración) reescritos para dejar constancia del error, no
+reemplazados en silencio.
+
+**Residuales, incorporados:**
+- **El techo real no es `MAX_ITERATIONS`, es `timeout-minutes: 30`.** `MAX_ITERATIONS` escala con
+  `batch_size`, pero el límite del job no — cada iteración es un `psql` (~0,3-0,5s de round-trip
+  contra producción), así que 30 minutos son del orden de 3.500-6.000 iteraciones sin importar a
+  cuánto escale `MAX_ITERATIONS`. La trampa no desaparece con un `batch_size` chico: cambia de
+  forma, de un `::error:: did not converge` diagnóstico a un job matado por la plataforma por
+  timeout, que dice menos. Regla operativa añadida a la cabecera del workflow:
+  `candidate_orders / batch_size` debe quedar bajo ~3000. Para cualquier `candidate_orders`
+  plausible a la escala documentada (≤ ~200.000), `batch_size = 2000` da ≤ 100 lotes.
+- **Asimetría de `statement_timeout` corregida.** Estaba en las dos consultas del `dry_run` y en
+  `populate()`, no en el loop de drenado (heredaba el default del rol `postgres` de Supabase, sin
+  documentar). Añadido `SET statement_timeout = '900s'` también ahí, con `-tAq` (no sólo `-tA`)
+  para que el tag `SET` no ensucie el parseo de `updated,remaining` — verificado contra el
+  contenedor local que la salida sigue siendo una sola línea limpia.
+- **Nit del recuento de líneas corregido.** La ronda 2 afirmó "los dos ficheros bajo 300 líneas";
+  falso — `spec87_fase4_backfill_equivalence.test.sql` sí (289), pero
+  `spec87_fase4_backfill_batching.test.sql` quedó en 351 (las TESTs 1-5 no encogieron cuando la
+  TEST 6 se fue). Corregido en la cabecera de ambos ficheros para decir la cifra real.
+- **F7 (nada dropea el staging) ya estaba documentado** en el bullet "Nada dropea la tabla de
+  staging" de la ronda 2, arriba — no requería cambio nuevo, sólo confirmarlo aquí.
+
+**Su procedimiento de disparo, ahora a favor, no por defecto:**
+1. `dry_run` primero. Anotar `candidate_orders` (C) y `eligible_packages` (E) — un verde ahí es
+   evidencia real de que el barrido sobrevive, acotado por `statement_timeout = '900s'`.
+2. `execute` con `batch_size` tal que `C / batch_size` quede bajo ~3000 iteraciones — para
+   cualquier C plausible, `batch_size = 2000` da ≤ 100 lotes, un par de minutos de drenado.
+3. No bajar `batch_size` "por prudencia" — la cabecera del workflow ya lo advierte, y es
+   precisamente lo que aumentaría el riesgo de fallo, no lo bajaría.
+
+**Verificación final local, después de la corrección de una línea:** el loop de bash exacto del
+workflow (con `-tAq` + `SET statement_timeout`) simulado de nuevo contra 5 fixtures reales,
+`batch_size=2`: drena en 3 lotes, total 5, los 5 `packages` con el `loaded_route_id` correcto,
+fixtures borrados después. `node scripts/check-migration-safety.mjs` sobre la migración: `OK`.
+
 **Qué falta, y por qué sigue siendo `awaiting_user_test` y no `[done]`:** el mecanismo está
 construido y probado localmente, pero **nadie ha corrido nada de esto contra producción** — ése es
 el criterio de cierre real de esta fase, y sólo lo puede ejercer una persona con el botón

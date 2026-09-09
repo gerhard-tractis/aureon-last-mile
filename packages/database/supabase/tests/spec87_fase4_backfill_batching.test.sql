@@ -19,8 +19,9 @@
 -- eligibility subquery is a deliberate SEPARATE copy of the original
 -- function's own, which can silently diverge without anything here
 -- noticing) lives in the sibling file
--- spec87_fase4_backfill_equivalence.test.sql, split out to keep both under
--- this repo's ~300-line guideline.
+-- spec87_fase4_backfill_equivalence.test.sql, split out toward this repo's
+-- ~300-line guideline (that file is under it; this one is still ~350 —
+-- closer, not there — TESTs 1-5 below did not shrink when TEST 6 left).
 --
 -- Run against a local Supabase instance:
 --   ./scripts/pgtap-local.sh sync && ./scripts/pgtap-local.sh apply

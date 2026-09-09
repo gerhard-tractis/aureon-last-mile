@@ -4,9 +4,10 @@
 -- single-pass spec79_backfill_loaded_route_id() (20260909000001, fixed by
 -- 20260910000001).
 --
--- Split out of spec87_fase4_backfill_batching.test.sql to keep both files
--- under this repo's ~300-line guideline (same reasoning as the
--- check-migration-safety*.test.sql split).
+-- Split out of spec87_fase4_backfill_batching.test.sql toward this repo's
+-- ~300-line guideline (same reasoning as the check-migration-safety*.test.sql
+-- split). This file is under it (~290 lines); the sibling is still ~350 —
+-- closer, not fully there, since TESTs 1-5 did not shrink.
 --
 -- Why this test exists: spec79_populate_loaded_route_backfill_candidates()'s
 -- eligibility subquery is a SEPARATE copy of the original function's own

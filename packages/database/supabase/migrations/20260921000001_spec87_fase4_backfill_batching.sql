@@ -89,9 +89,16 @@
 --     break out of the intended shell syntax inside a job holding
 --     `SUPABASE_DB_PASSWORD`. Fixed: `batch_size` now only ever arrives via
 --     `env: BATCH_SIZE: ${{ inputs.batch_size }}`, referenced as `"$BATCH_SIZE"`.
---   - Corrección 4 (workflow): added `concurrency: {group: production-deploy,
---     cancel-in-progress: false}`, the same slot `deploy.yml`'s
---     `approve-production` reserves.
+--   - Corrección 4 (workflow): added a `concurrency:` block. Round-2
+--     review caught that the first attempt (`group: production-deploy`,
+--     claimed to be "the same slot approve-production reserves") was
+--     FALSE — GitHub matches concurrency groups by exact string,
+--     `approve-production` carries no `concurrency:` block at all, and no
+--     workflow in this repo used that literal string. Fixed by reusing
+--     `deploy.yml`'s own `group: production-deploy-supabase` (the
+--     `deploy-supabase` job, which actually applies migrations and takes
+--     locks on `packages`/`dispatches`) — the workflow now genuinely
+--     serializes against the one job it could race with.
 -- =============================================================================
 
 BEGIN;

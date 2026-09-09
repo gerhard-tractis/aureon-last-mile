@@ -62,6 +62,21 @@ name: Production Backfill — loaded_route_id (spec-87 fase 4)
 # with no reservations; execute only with batch_size = 2000 unless
 # candidate_orders says otherwise.
 #
+# THE ACTUAL BINDING CEILING: `timeout-minutes: 30` on the job, NOT
+# MAX_ITERATIONS. MAX_ITERATIONS scales with batch_size, but the job's own
+# wall-clock limit does not — each iteration is one `psql` round-trip
+# (TLS handshake + query, roughly 0.3-0.5s against production), so 30
+# minutes is only on the order of 3,500-6,000 iterations regardless of how
+# high MAX_ITERATIONS computes to. The same trap described above does not
+# disappear at a too-small batch_size — it just changes shape, from a loud
+# `::error:: did not converge` to a job silently killed by the platform on
+# timeout, which says less about how far the drain got. Concrete operating
+# rule: pick batch_size so that `candidate_orders / batch_size` stays
+# comfortably under ~3000 (round number, matches the 30-minute/iteration-
+# cost arithmetic above with margin). For any plausible candidate_orders at
+# this repo's documented production scale (≤ ~200,000), batch_size = 2000
+# gives ≤ 100 batches — a couple of minutes, nowhere near either ceiling.
+#
 # SECURITY — same pattern as prod-readonly-query.yml, plus one new lesson
 # --------------------------------------------------------------
 # PGPASSWORD is passed as an env var to psql, never interpolated into a
@@ -84,13 +99,28 @@ name: Production Backfill — loaded_route_id (spec-87 fase 4)
 # NEVER touches the VPS. Production is managed Supabase — no SSH, no docker.
 
 concurrency:
-  # Same slot deploy.yml's approve-production reserves. Two `execute` runs at
-  # once, or one racing a deploy.yml migration apply, are not memory-unsafe
-  # (every write here is idempotent — see the migration's own header) but can
-  # burn through MAX_ITERATIONS on artificial contention and fail a run that
-  # would otherwise have finished. cancel-in-progress: false — a queued
-  # second run should wait its turn, not cancel a backfill mid-drain.
-  group: production-deploy
+  # Round-2 review correction: an earlier version of this block used
+  # `group: production-deploy` and claimed it was "the same slot
+  # approve-production reserves" — false on both counts. GitHub Actions
+  # concurrency groups match on the EXACT string, `approve-production` in
+  # deploy.yml carries no `concurrency:` block at all, and no workflow in
+  # this repo used the literal string `production-deploy`. The comment
+  # asserted a protection that did not exist.
+  #
+  # `deploy-supabase` (deploy.yml) is the job that actually applies pending
+  # migrations to production and takes locks on `packages`/`dispatches` —
+  # the real thing this backfill could race with. It already reserves
+  # `group: production-deploy-supabase`. Reusing that EXACT string here
+  # makes GitHub serialize this workflow against it for real: a backfill
+  # run and a migration-applying deploy can no longer run at the same time.
+  # Neither write is memory-unsafe either way (everything here is
+  # idempotent — see the migration's own header), but without this a
+  # concurrent deploy taking a lock mid-drain could hang or time out a
+  # `psql` call and fail the run in the middle of a batch loop — a red run,
+  # not corrupted data, but an avoidable one.
+  # cancel-in-progress: false — a queued run (either side) waits its turn
+  # instead of getting cancelled mid-drain or mid-deploy.
+  group: production-deploy-supabase
   cancel-in-progress: false
 
 on:
@@ -238,7 +268,17 @@ jobs:
               exit 1
             fi
 
-            RESULT=$(psql "$CONN" -tA -F',' -c "SELECT * FROM public.spec79_backfill_loaded_route_id_batch($BATCH_SIZE);")
+            # -q (quiet) suppresses the "SET" command tag that would
+            # otherwise land as a stray line in $RESULT ahead of the actual
+            # "updated,remaining" row and break the `cut` parsing below.
+            # statement_timeout here is for symmetry with the dry_run/populate
+            # queries, not because this call is expected to need it: each
+            # batch is already bounded by LIMIT BATCH_SIZE, so its risk
+            # profile is nothing like the full-table sweep those pay for.
+            RESULT=$(psql "$CONN" -tAq -F',' -c "
+              SET statement_timeout = '900s';
+              SELECT * FROM public.spec79_backfill_loaded_route_id_batch($BATCH_SIZE);
+            ")
             UPDATED=$(echo "$RESULT" | cut -d',' -f1)
             REMAINING=$(echo "$RESULT" | cut -d',' -f2)
 
