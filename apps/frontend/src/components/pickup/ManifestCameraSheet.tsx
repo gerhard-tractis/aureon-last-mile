@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { X, Camera as CameraIcon } from 'lucide-react';
 import { validateManifestPhotoFile } from '@/lib/pickup/manifestPhotoValidation';
+import { isVideoReady } from '@/lib/pickup/cameraReadiness';
 
 interface ManifestCameraSheetProps {
   /** "CARGA-99814" — used in the header and (via fallback input) the file name. */
@@ -57,24 +58,20 @@ export function ManifestCameraSheet({
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const trackRef = useRef<MediaStreamTrack | null>(null);
   const fallbackInputRef = useRef<HTMLInputElement>(null);
   const [useFallbackInput, setUseFallbackInput] = useState(false);
-  // B1 — el obturador NO se habilita hasta que el <video> reporte frames
-  // reales (`loadedmetadata`, ambos ejes > 0). Antes estaba habilitado
-  // desde el primer render, durante el diálogo de permiso del sistema: un
-  // toque ahí producía un canvas sin señal — negro sólido, ~1.5MB, un File
-  // "válido" como evidencia de custodia sin ninguna información real.
+  // B1 — el obturador NO se habilita hasta que `isVideoReady` sea cierto.
+  // Antes estaba habilitado desde el primer render (foto negra, ~1.5MB,
+  // "válida" como evidencia de custodia sin información real).
   const [videoReady, setVideoReady] = useState(false);
   const [fallbackError, setFallbackError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Ronda 3 de review del PR #713 — antes había un bloque `if (!open) {
-    // stop tracks...; return; }` aquí. Era código muerto: React ejecuta la
-    // limpieza del efecto ANTERIOR (que ya para el stream y limpia
-    // `streamRef`) antes de correr este cuerpo con `open=false`, así que
-    // `streamRef.current` ya es `null` para cuando esta rama se alcanzaría.
-    // Verificado por mutación (borrarle el `stop()` a esa rama seguía en
-    // verde). El único trabajo real que hacía falta era no pedir cámara.
+    // Ronda 3 — un bloque `if (!open) { stop tracks...; return; }` aquí era
+    // código muerto: la limpieza del efecto ANTERIOR ya para el stream
+    // antes de que este cuerpo corra con `open=false` (verificado por
+    // mutación). Sólo hace falta no pedir cámara.
     if (!open) return;
 
     let cancelled = false;
@@ -85,14 +82,21 @@ export function ManifestCameraSheet({
       return;
     }
 
-    // M-A — cuando la pista termina a mitad de sesión (permiso revocado,
-    // segundo plano en iOS) un navegador real NO pone las dimensiones del
-    // <video> a 0: queda congelado en el último frame. El chequeo de
-    // dimensiones de `handleShutter` no detecta eso — saldría una foto
-    // PLAUSIBLE del frame anterior (p.ej. la hoja ya subida), indistinguible
-    // a simple vista en `5h`. Escuchar el fin de la pista sí lo detecta.
+    // M-A — un navegador real no pone las dimensiones del <video> a 0
+    // cuando la pista muere a mitad de sesión (permiso revocado, segundo
+    // plano en iOS): queda congelado en el último frame. Escuchar la pista
+    // (no las dimensiones) sí lo detecta.
+    //
+    // Bloqueante, ronda 4 — los dos detectores necesitan su contrario:
+    // `loadedmetadata` no vuelve a disparar al volver de segundo plano (es
+    // de una vez por carga), así que sin la rama `visible` el obturador
+    // quedaba muerto para siempre; igual con `mute` sin `unmute` (iOS
+    // silencia la pista en una interrupción y la devuelve viva). Ambas
+    // ramas re-derivan con `isVideoReady` — misma función que habilita.
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') setVideoReady(false);
+      setVideoReady(
+        document.visibilityState === 'hidden' ? false : isVideoReady(videoRef.current, trackRef.current)
+      );
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
@@ -110,13 +114,17 @@ export function ManifestCameraSheet({
           videoRef.current.srcObject = stream;
         }
 
-        const handleTrackEnded = () => setVideoReady(false);
+        const handleTrackDown = () => setVideoReady(false);
+        const handleTrackUp = () => setVideoReady(isVideoReady(videoRef.current, trackRef.current));
         stream.getVideoTracks().forEach((track) => {
-          track.addEventListener('ended', handleTrackEnded);
-          track.addEventListener('mute', handleTrackEnded);
+          trackRef.current = track;
+          track.addEventListener('ended', handleTrackDown);
+          track.addEventListener('mute', handleTrackDown);
+          track.addEventListener('unmute', handleTrackUp);
           trackCleanupFns.push(() => {
-            track.removeEventListener('ended', handleTrackEnded);
-            track.removeEventListener('mute', handleTrackEnded);
+            track.removeEventListener('ended', handleTrackDown);
+            track.removeEventListener('mute', handleTrackDown);
+            track.removeEventListener('unmute', handleTrackUp);
           });
         });
       })
@@ -133,6 +141,7 @@ export function ManifestCameraSheet({
       trackCleanupFns.forEach((cleanup) => cleanup());
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
+      trackRef.current = null;
       setVideoReady(false);
     };
   }, [open]);
@@ -141,11 +150,9 @@ export function ManifestCameraSheet({
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
-    // Comprobación defensiva de última línea (defensa en profundidad, no el
-    // detector principal — ver M-A arriba): si por lo que sea `videoWidth`/
-    // `videoHeight` fueran 0 aquí (p.ej. una carrera justo tras
-    // `loadedmetadata`), NO hay que inventarse un tamaño por defecto — eso
-    // es exactamente lo que producía la foto negra en B1.
+    // Defensa en profundidad (no el detector principal — ver M-A arriba):
+    // NO inventarse un tamaño por defecto si las dimensiones son 0 aquí —
+    // eso es lo que producía la foto negra en B1.
     if (video.videoWidth === 0 || video.videoHeight === 0) return;
 
     canvas.width = video.videoWidth;
@@ -243,10 +250,7 @@ export function ManifestCameraSheet({
               playsInline
               muted
               data-testid="manifest-camera-video"
-              onLoadedMetadata={(e) => {
-                const v = e.currentTarget;
-                setVideoReady(v.videoWidth > 0 && v.videoHeight > 0);
-              }}
+              onLoadedMetadata={() => setVideoReady(isVideoReady(videoRef.current, trackRef.current))}
               className="h-full w-full object-cover"
             />
             <span className="absolute left-[26px] top-[74px] w-[38px] h-[38px] border-l-[3px] border-t-[3px] border-[#e6c15c] rounded-tl-md" />

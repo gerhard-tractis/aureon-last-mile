@@ -3,9 +3,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { ManifestCameraSheet } from './ManifestCameraSheet';
 
-/** Un track "vivo" que soporta addEventListener('ended'|'mute', ...), como un MediaStreamTrack real. */
+/**
+ * Un track "vivo" que soporta addEventListener('ended'|'mute'|'unmute', ...)
+ * y las propiedades `readyState`/`muted` reales de un MediaStreamTrack —
+ * necesarias para `isVideoReady` (ronda 4 de review del PR #713).
+ */
 class FakeTrack extends EventTarget {
   stop = vi.fn();
+  readyState: 'live' | 'ended' = 'live';
+  muted = false;
 }
 
 function makeFakeStream() {
@@ -148,7 +154,14 @@ describe('ManifestCameraSheet', () => {
       resolveGetUserMedia(makeFakeStream().stream);
     });
 
-    it('enables the shutter once the video reports real dimensions, and the canvas is sized from those dimensions', async () => {
+    // Ronda 4 de review del PR #713 — `canvas.width = video.videoWidth ||
+    // 1080` sigue vivo, tercera ronda: `expect(canvas.width).toBe(640)` no
+    // puede detectar ese mutante porque `640 || 1080 === 640`. El guard de
+    // arriba (dimensiones cero → 0 capturas, cubierto por
+    // `it.each` y por el test siguiente) ya protege el caso real; esta
+    // aserción sólo confirma que el canvas usa las dimensiones reales
+    // cuando SÍ las hay — no es, por sí sola, prueba contra el default.
+    it('sizes the canvas from the video real dimensions once the shutter is enabled', async () => {
       const { stream } = makeFakeStream();
       getUserMedia.mockResolvedValue(stream);
       const onCapture = vi.fn();
@@ -209,6 +222,26 @@ describe('ManifestCameraSheet', () => {
       fireEvent.click(screen.getByRole('button', { name: /capturar/i }));
       expect(onCapture).not.toHaveBeenCalled();
     });
+
+    // Ronda 4 — el guard defensivo reducido a `videoWidth === 0` (sin el
+    // `|| videoHeight === 0`) pasaba: el eje del alto no lo ejercitaba
+    // ningún test de esta descripción (el anterior fuerza los dos a 0 a la
+    // vez, que no distingue `||` de `&&` de un solo operando).
+    it('handleShutter refuses to capture if only the height drops to zero at click time', async () => {
+      const { stream } = makeFakeStream();
+      getUserMedia.mockResolvedValue(stream);
+      const onCapture = vi.fn();
+      render(<ManifestCameraSheet {...baseProps} onCapture={onCapture} />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+
+      const video = makeVideoReady(640, 480);
+      await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).not.toBeDisabled());
+
+      Object.defineProperty(video, 'videoHeight', { value: 0, configurable: true });
+
+      fireEvent.click(screen.getByRole('button', { name: /capturar/i }));
+      expect(onCapture).not.toHaveBeenCalled();
+    });
   });
 
   // M-A, ronda 3 de review del PR #713 — cuando la pista muere a mitad de
@@ -225,6 +258,8 @@ describe('ManifestCameraSheet', () => {
       makeVideoReady();
       await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).not.toBeDisabled());
 
+      // Un navegador real fija readyState='ended' antes de disparar el evento.
+      track.readyState = 'ended';
       act(() => track.dispatchEvent(new Event('ended')));
 
       await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).toBeDisabled());
@@ -240,6 +275,7 @@ describe('ManifestCameraSheet', () => {
       makeVideoReady();
       await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).not.toBeDisabled());
 
+      track.muted = true;
       act(() => track.dispatchEvent(new Event('mute')));
 
       await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).toBeDisabled());
@@ -259,6 +295,134 @@ describe('ManifestCameraSheet', () => {
       await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).toBeDisabled());
 
       Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    });
+
+    // Bloqueante, ronda 4 de review del PR #713 — los dos detectores
+    // anteriores no tenían su contrario: `visibilitychange` sólo tenía la
+    // rama `hidden` y `loadedmetadata` no vuelve a disparar al recuperar el
+    // foco (es de una vez por carga), así que el obturador se quedaba
+    // deshabilitado PARA SIEMPRE tras volver de segundo plano — el operario
+    // ve el visor moviéndose de nuevo pero el botón queda gris, sin ninguna
+    // pista visual de por qué. Verificado con el mutante que el propio
+    // reviewer señaló: `setVideoReady(false)` incondicional en el handler
+    // de `visibilitychange` sobrevivía a la suite completa porque nada
+    // ejercitaba la vuelta a `visible`.
+    it('re-enables the shutter when the document becomes visible again, if the frame is still real', async () => {
+      const { stream } = makeFakeStream();
+      getUserMedia.mockResolvedValue(stream);
+      render(<ManifestCameraSheet {...baseProps} />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+      makeVideoReady();
+      await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).not.toBeDisabled());
+
+      Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+      act(() => document.dispatchEvent(new Event('visibilitychange')));
+      await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).toBeDisabled());
+
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+      act(() => document.dispatchEvent(new Event('visibilitychange')));
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).not.toBeDisabled());
+    });
+
+    // La misma reversibilidad para `mute`: iOS silencia la pista en una
+    // interrupción (llamada, bloqueo de pantalla) y la devuelve viva con
+    // `unmute` al recuperar el foco — sin el listener de `unmute`, el visor
+    // vuelve a moverse pero el botón se queda gris.
+    it('re-enables the shutter when the track unmutes after an interruption', async () => {
+      const { stream, track } = makeFakeStream();
+      getUserMedia.mockResolvedValue(stream);
+      render(<ManifestCameraSheet {...baseProps} />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+      makeVideoReady();
+      await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).not.toBeDisabled());
+
+      track.muted = true;
+      act(() => track.dispatchEvent(new Event('mute')));
+      await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).toBeDisabled());
+
+      track.muted = false;
+      act(() => track.dispatchEvent(new Event('unmute')));
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).not.toBeDisabled());
+    });
+
+    // Ronda 4 — `ended` debe engancharse también a un segundo stream tras
+    // un ciclo open true→false→true, no sólo al primero.
+    it('detects ended on the second stream after an open close/reopen cycle', async () => {
+      const { stream: stream1 } = makeFakeStream();
+      const { stream: stream2, track: track2 } = makeFakeStream();
+      getUserMedia.mockResolvedValueOnce(stream1).mockResolvedValueOnce(stream2);
+      const { rerender } = render(<ManifestCameraSheet {...baseProps} open />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(1));
+
+      rerender(<ManifestCameraSheet {...baseProps} open={false} />);
+      rerender(<ManifestCameraSheet {...baseProps} open />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+      makeVideoReady();
+      await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).not.toBeDisabled());
+
+      track2.readyState = 'ended';
+      act(() => track2.dispatchEvent(new Event('ended')));
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).toBeDisabled());
+    });
+
+    // Menores, ronda 4 — sin esto, quitar el `removeEventListener`/
+    // `trackCleanupFns.forEach` de la limpieza deja la suite en verde: hoy
+    // el código es correcto (medido), pero nada lo protegía de la próxima
+    // refactorización.
+    it('removes exactly the visibilitychange listener it added, once, on teardown', async () => {
+      const addSpy = vi.spyOn(document, 'addEventListener');
+      const removeSpy = vi.spyOn(document, 'removeEventListener');
+      const { stream } = makeFakeStream();
+      getUserMedia.mockResolvedValue(stream);
+      const { unmount } = render(<ManifestCameraSheet {...baseProps} />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+
+      const addCalls = addSpy.mock.calls.filter((c) => c[0] === 'visibilitychange').length;
+      expect(addCalls).toBe(1);
+
+      unmount();
+
+      const removeCalls = removeSpy.mock.calls.filter((c) => c[0] === 'visibilitychange').length;
+      expect(removeCalls).toBe(1);
+      addSpy.mockRestore();
+      removeSpy.mockRestore();
+    });
+
+    it('removes the ended/mute/unmute listeners from the track it attached them to on teardown', async () => {
+      const { stream, track } = makeFakeStream();
+      getUserMedia.mockResolvedValue(stream);
+      const removeSpy = vi.spyOn(track, 'removeEventListener');
+      const { unmount } = render(<ManifestCameraSheet {...baseProps} />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+
+      unmount();
+
+      expect(removeSpy.mock.calls.map((c) => c[0]).sort()).toEqual(['ended', 'mute', 'unmute']);
+    });
+
+    // getVideoTracks() → getTracks() sobrevivía: con un stream cuyos dos
+    // métodos devuelven tracks DISTINTOS, sólo el de getVideoTracks() debe
+    // recibir los listeners de encuadre.
+    it('attaches the ended/mute listeners via getVideoTracks(), not getTracks()', async () => {
+      const videoTrack = new FakeTrack();
+      const nonVideoTrack = new FakeTrack();
+      const stream = {
+        getTracks: () => [nonVideoTrack],
+        getVideoTracks: () => [videoTrack],
+      } as unknown as MediaStream;
+      getUserMedia.mockResolvedValue(stream);
+      render(<ManifestCameraSheet {...baseProps} />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+      makeVideoReady();
+      await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).not.toBeDisabled());
+
+      videoTrack.readyState = 'ended';
+      act(() => videoTrack.dispatchEvent(new Event('ended')));
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /capturar/i })).toBeDisabled());
     });
   });
 

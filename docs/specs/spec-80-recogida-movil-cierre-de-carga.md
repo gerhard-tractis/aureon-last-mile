@@ -917,7 +917,8 @@ El mock dice «expo-camera», que es la app Expo dormida (`apps/mobile`, ver `ls
 
 - [x] Tests con `getUserMedia` mockeado.
 - [ ] Verificación en dispositivo real: `awaiting_user_test`, la cierra una persona con el teléfono.
-- [ ] **M4 (accesibilidad, seguimiento no bloqueante, PR #713):** trampa de foco y manejo de `Escape`/atrás de Android en `5g`/`5h`. `role="dialog"`/`aria-modal` ya están. Sin dueño ni fase propia todavía — se resuelve junto con el cableado de `5g`/`5h` a `ManifestPhotoStrip` (ver la nota de coordinación del PR #713 sobre ese cableado).
+
+> **M4 (accesibilidad, seguimiento no bloqueante, PR #713) — no gatea el cierre de esta fase.** Trampa de foco y manejo de `Escape`/atrás de Android en `5g`/`5h`; `role="dialog"`/`aria-modal` ya están. Ronda 4 de review: vivía como `- [ ]` de esta checklist, lo que bloqueaba `[done]` de fase 4 por un cableado (5g/5h → `ManifestPhotoStrip`) que pertenece a una fase todavía sin número — movido a prosa sin checkbox precisamente para no atarlo a esa dependencia inexistente. Se retoma cuando se cree la fase que hace ese cableado.
 
 **Pendiente aparte del checklist de arriba — con dueño: lo cierra quien cablee `5g`/`5h` a `ManifestPhotoStrip.tsx` (M3, review del PR #712; nota de coordinación: este párrafo vive separado de la lista de checkboxes a propósito, para no chocar con la línea que #713 modifica).** `#713` entrega `5g`/`5h` **sin cablear**: `onUsePhoto` le pasa el `File` capturado al caller, y `ManifestPhotoStrip.tsx` queda intacto, con su `<input>` oculto — a propósito, para que la decisión de subir-o-encolar la tome quien una las dos piezas, no quien construyó la cámara. Esa unión debe llamar a `enqueueManifestPhoto` (`lib/offline/photos.ts`, spec-81 fase 5 — blob a IndexedDB, subida diferida con reintento, huérfano imposible), no a `useUploadManifestDocument` directo (la ruta ONLINE, sin salida sin señal): es lo que hace verdad «Las fotos también» (`5f`) en el código que corre, no sólo en la infraestructura que exista para recibirla.
 
@@ -982,11 +983,49 @@ El mock dice «expo-camera», que es la app Expo dormida (`apps/mobile`, ver `ls
 > `absolute ... bottom-[26px]`, la leyenda vivía fuera del ternario), y el
 > JSDoc de `PhotoReviewSheet.tsx` que afirmaba "sin `role=dialog`" tres
 > líneas por encima del `role="dialog"` ya añadido en la ronda 2.
-> El hueco M4 pasó de prosa suelta dentro de este blockquote a un
-> `- [ ]` con dueño en la checklist de arriba.
+> El hueco M4 pasó de prosa suelta dentro de este blockquote a un `- [ ]`
+> (ronda 4: movido otra vez, ver más abajo — no tenía fase de destino real).
 > Mutation-testing repetido sobre cada guard nuevo de esta ronda (B2, los
-> tres detectores de M-A, M-B, y los 6 menores) — todos mueren contra su
-> test.
+> tres detectores de M-A, M-B, y los 6 menores señalados) — verificado uno a
+> uno que cada uno muere contra su test; no leído como "no queda ningún
+> mutante vivo en el fichero" (la ronda 4 encontró más).
+>
+> **Ronda 4 de review del PR #713 — el único bloqueante era que los dos
+> detectores reversibles no tenían su contrario.** `visibilitychange` sólo
+> tenía la rama `hidden`: al volver de segundo plano el obturador quedaba
+> deshabilitado para siempre, porque `loadedmetadata` no vuelve a disparar
+> (es de una vez por carga). Igual con `mute` sin `unmute` — iOS silencia la
+> pista en una interrupción (llamada, bloqueo de pantalla) y la devuelve
+> viva con `unmute`; sin el listener, el visor se movía de nuevo pero el
+> botón quedaba gris permanentemente. Ambos casos tenían salida hoy (cerrar
+> y reabrir), por eso no bloqueaban, pero eran indescubribles.
+> Arreglado con `isVideoReady(video, track)` (extraído a
+> `lib/pickup/cameraReadiness.ts`, 7 tests propios): deriva de dimensiones +
+> `track.readyState === 'live'` + `!track.muted`, y es la misma función que
+> usan las tres rutas de habilitación (`loadedmetadata`, `unmute`, `visible`)
+> y las tres de deshabilitación (`ended`, `mute`, `hidden`) — ninguna rama
+> tiene ida sin vuelta.
+> M-B: un fichero con `type` vacío y sin extensión resoluble (algunos
+> DocumentsProvider de Android) ya no es un callejón sin salida — se asume
+> JPEG, válido porque esta función sólo se llama desde el fallback de
+> captura. Documentado y no resuelto (alcanzabilidad baja, sin magic-byte
+> sniffing a propósito): un `File` con `type` vacío, nombre de imagen y
+> contenido real distinto se reetiqueta igual — Supabase Storage valida el
+> Content-Type declarado, no los bytes.
+> Menores cerrados: spies sobre `document.addEventListener`/
+> `removeEventListener` y sobre `track.removeEventListener` confirmando que
+> la limpieza del efecto hace exactamente lo que dice (antes la suite
+> quedaba verde sin ellos); `getVideoTracks()` vs `getTracks()` distinguido
+> con streams que devuelven tracks distintos por cada método; el eje del
+> alto del guard defensivo de `handleShutter` cubierto por separado; el
+> título del test de dimensiones del canvas corregido para no afirmar que
+> prueba el default `|| 1080` (sigue siendo equivalente-por-diseño: el guard
+> de arriba ya lo hace inalcanzable, y eso es correcto, no un hueco).
+> El hueco M4 se sacó de la checklist de fase 4 (no debía gatear su cierre
+> por una dependencia — el cableado a `ManifestPhotoStrip` — que vive en una
+> fase todavía sin número) y quedó como nota sin checkbox más arriba.
+> Mutation-testing repetido sobre los cinco arreglos de esta ronda — todos
+> mueren contra su test correspondiente.
 
 ### Fase 5 — `5i` carga cerrada `[pending]`
 

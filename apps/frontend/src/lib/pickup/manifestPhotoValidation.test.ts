@@ -57,8 +57,22 @@ describe('validateManifestPhotoFile', () => {
     if (result.ok) expect(result.file.type).toBe('image/jpeg');
   });
 
-  it('rejects a file with an empty type and an unrecognizable extension', () => {
+  // Ronda 4 de review del PR #713 — algunos DocumentsProvider de Android
+  // devuelven un nombre SIN extensión además de `type` vacío. Esta función
+  // sólo se llama desde el fallback de captura (nunca de una selección de
+  // fichero genérica), así que asumir JPEG es razonable en vez de dejar un
+  // callejón sin salida.
+  it('accepts a file with an empty type and no extension, defaulting to JPEG', () => {
     const file = makeFile('IMG_0001', '');
+    const result = validateManifestPhotoFile(file);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.file.type).toBe('image/jpeg');
+  });
+
+  // Un `type` explícito NUNCA se sobrescribe — ni siquiera para uno
+  // rechazado (`application/pdf`) con extensión de imagen en el nombre.
+  it('never overrides an explicit type, even when the name has an image extension', () => {
+    const file = makeFile('x.jpg', 'application/pdf');
     const result = validateManifestPhotoFile(file);
     expect(result.ok).toBe(false);
   });

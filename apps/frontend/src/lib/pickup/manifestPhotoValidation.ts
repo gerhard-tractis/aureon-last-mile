@@ -45,14 +45,34 @@ const UNSUPPORTED_FORMAT_ERROR = 'Formato no soportado. Usa una foto JPEG, PNG, 
 const TOO_LARGE_ERROR = 'La foto pesa demasiado (máx. 10MB). Repite con menos resolución.';
 
 /**
- * Valida tamaño y mime contra el bucket `manifests`. Si `file.type` viene
- * vacío pero la extensión resuelve un mime soportado (M-B), devuelve un
- * `File` equivalente con ese mime — para que quien suba a Supabase Storage
- * (fuera de esta fase) no reciba un Content-Type vacío.
+ * Ronda 4 de review del PR #713 — algunos DocumentsProvider de Android
+ * devuelven un nombre SIN extensión además de `type` vacío (`IMG_0042`).
+ * `inferMimeFromFileName` no puede resolver eso, y rechazar es el mismo
+ * callejón sin salida que M-B ya cerró para el caso con extensión: esta
+ * función sólo se llama desde el fallback de `<input capture>`
+ * (`ManifestCameraSheet.tsx`), que **únicamente** produce fotos de cámara
+ * — asumir JPEG ahí es una apuesta razonable, no una validación genérica.
+ *
+ * Contrapartida documentada, no resuelta aquí (alcanzabilidad baja): un
+ * `File` con `type` vacío, nombre `factura.jpg` y contenido real
+ * `%PDF-1.7` se reetiqueta `image/jpeg` igual — Supabase Storage valida el
+ * Content-Type declarado, no los bytes, así que no lo rechazará. Detectarlo
+ * exigiría leer los primeros bytes del fichero (magic-byte sniffing), que
+ * deliberadamente NO se implementa aquí.
+ */
+function resolveMimeForEmptyType(file: File): string {
+  return inferMimeFromFileName(file.name) ?? 'image/jpeg';
+}
+
+/**
+ * Valida tamaño y mime contra el bucket `manifests`. Un `file.type`
+ * explícito nunca se sobrescribe — sólo se infiere cuando viene vacío
+ * (M-B) — para que quien suba a Supabase Storage (fuera de esta fase) no
+ * reciba un Content-Type vacío.
  */
 export function validateManifestPhotoFile(file: File): ManifestPhotoValidationResult {
-  const effectiveMime = file.type || inferMimeFromFileName(file.name);
-  if (!effectiveMime || !MANIFEST_BUCKET_ALLOWED_MIME.includes(effectiveMime)) {
+  const effectiveMime = file.type || resolveMimeForEmptyType(file);
+  if (!MANIFEST_BUCKET_ALLOWED_MIME.includes(effectiveMime)) {
     return { ok: false, error: UNSUPPORTED_FORMAT_ERROR };
   }
   if (file.size > MANIFEST_BUCKET_MAX_BYTES) {
