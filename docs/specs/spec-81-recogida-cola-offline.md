@@ -172,7 +172,7 @@ Lógica pura y testeable sin navegador: encolar, listar pendientes, reclamar par
 - [x] **Ronda 5 de review — n6 (nitpick):** el docstring de `claimPending` decía que el token era "el único dato que distingue mi reclamación de la de otro drenador" sin acotar el alcance. Corregido: es único por entrada y milisegundo, no globalmente — inerte para este módulo (todo comparador acota primero por `:id`), pero no serviría como clave de un `Map<token, request>` entre entradas distintas.
 - [x] **Ronda 5 de review — comentario del test de N3:** el test negativo de H5/N3 también mata una "cuarta vía" (`toArray()` + filtro en memoria) sin un cuarto spy, porque Dexie implementa `Table.toArray()` como `this.toCollection().toArray()`. Documentado en el comentario del test para que no se lea como una enumeración incompleta.
 
-### Fase 2 — Drenado `[in_progress]`
+### Fase 2 — Drenado `[done]`
 
 **Archivos:** `apps/frontend/src/hooks/useOfflineQueue.ts`, `+ test`
 
@@ -882,7 +882,31 @@ para la misma razón (stalls en frío bajo contención de CPU entre ficheros
 de test en paralelo). No cambia lo que se prueba: lo programado sigue
 siendo un único `setTimeout` real que dispara solo.
 
-### Fase 3 — Idempotencia en el servidor `[in_progress]`
+> Cierre (2026-09-08, orquestador). Esta fase se declaraba `[in_progress]`
+> con el PR todavía abierto al empezar esta tarea de cierre de tokens; en el
+> curso de la sesión, PR #679 (rama `feat/spec-81-fase-2-drenado`, SHA
+> `72f16f3c`) mergeó (merge `a169dfb0`, 2026-09-08T23:34:57Z) tras su séptima
+> ronda de review — se cierra aquí también, aunque no estaba en la lista
+> original de seis, porque dejarla en `[in_progress]` habría sido exactamente
+> el mismo tipo de token rancio que esta tarea existe para corregir.
+> Implementado por: rama `feat/spec-81-fase-2-drenado`, SHA `72f16f3c`, PR #679.
+> Review: siete rondas adversariales, todas cerradas en la misma rama (ver
+> arriba) — de un `classifyCloseManifestError` que nunca veía la forma real
+> del error de `postgrest-js` (ronda 1) a un hueco final de una línea en
+> `remainingManifestIds`, que excluía manifiestos cuya única entrada propia
+> estaba `sending` (ronda 7, "mergea al cerrar").
+> QA: `gh pr checks 679` verde (Lint/Type-Check/Test/Build en ambos jobs,
+> Vercel deploy). Citado en el PR: `vitest run` — 5943 passed, 45 skipped, 0
+> failed sobre `@aureon/frontend`. `e2e-qa`/`Verify Production Migrations`:
+> no verificado en esta sesión — el merge es demasiado reciente para que un
+> run de `Deploy Production` posterior lo confirme; sin migración propia (el
+> único cambio de esquema de esta fase lo trae fase 3, ya verificado
+> arriba), así que no aplica `Verify Production Migrations`.
+> Downstream: revisado spec-82 — sin cambios; spec-82 fase 2 (`DESCARGAR`)
+> sigue bloqueada por la misma dependencia declarada (spec-81 fase 1, ya
+> `[done]`), no por esta fase.
+
+### Fase 3 — Idempotencia en el servidor `[done]`
 
 **Archivos:** `packages/database/supabase/migrations/20260913000007_spec81_fase3_pickup_scans_idempotency.sql`,
 `packages/database/supabase/tests/spec81_fase3_pickup_scans_idempotency.test.sql`,
@@ -1089,9 +1113,30 @@ review):**
   ausencia de backfill es la razón de otra cosa (por qué no hace falta el
   patrón COUNT(*)-guard). Corregido en `20260913000007:194-204`.
 
-> Implementación en curso en `feat/spec-81-fase-3-idempotencia-servidor`. Ronda 2
-> de review corregida (M-1 bloqueante, M-2/M-3/M-4/m-5/n-8, TEST 1/2
-> convertidos a pgTAP). Falta PR y QA antes de poder marcar esta fase `[done]`.
+> Implementado por: rama `feat/spec-81-fase-3-idempotencia-servidor`, SHA
+> `a5dfaee9`, PR #678 (merge `a93941f7`, 2026-09-08T12:22:00Z).
+> Review: rondas 1 y 2 de review, ambas cerradas en la misma rama — ronda 1
+> (B1 bloqueante: colisión de lote sin `package_id` en la clave; B2: tipos
+> generados) y ronda 2 (M-1 bloqueante: TEST 6 se había vuelto vacuo tras
+> añadir `package_id`, corregido dándole a ambas filas el mismo `package_id`
+> para que `operator_id` siga siendo la única columna discriminante; M-2 a
+> M-4, m-5, n-8 y la conversión de TEST 1/2 de `RAISE EXCEPTION` a
+> aserciones pgTAP, documentadas arriba). Límites conocidos m5/m6/n7 y el
+> residual de dos operarios generando el mismo UUID quedan declarados, no
+> resueltos, por decisión explícita (ver arriba).
+> QA: `gh pr checks 678` verde (Lint/Type-Check/Test/Build en ambos jobs,
+> Vercel deploy). La migración `20260913000007` está aplicada en
+> producción — confirmado `git merge-base --is-ancestor a93941f7 32667d0d`,
+> el `headSha` del run `34265192142` ("Deploy Production"), cuyo job
+> `Verify Production Migrations` cerró en verde. `e2e-qa` no aplica como
+> pantalla nueva — verificado en su lugar con `scripts/pgtap-local.sh`: 15
+> aserciones nuevas, mutation-testeadas (índice sin `operator_id`, sin el
+> predicado `deleted_at IS NULL`, índice ausente), más 12 tests SQL
+> downstream (spec-47, 53, 61, 64, 80, 85) re-corridos en verde según el PR.
+> Downstream: revisado spec-82 — sin cambios; spec-82 fase 1 no toca
+> `pickup_scans` ni ningún fichero de la cola offline (confirmado arriba,
+> en la propia fase 1 de spec-82). Revisado también spec-80 (fase 2, en
+> paralelo) — coordinado explícitamente en el PR para no compartir archivos.
 
 ### Fase 4 — Chip de sync `[pending]`
 

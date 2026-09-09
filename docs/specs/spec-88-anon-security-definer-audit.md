@@ -233,7 +233,7 @@ Ordenadas por riesgo y por lo que se puede hacer sin arriesgar el login.
 | **5 — Defensa en profundidad del resto** | `REVOKE` sobre las 17 funciones guardadas-pero-nunca-revocadas — sin urgencia, sin riesgo, cierre de higiene | no |
 | **6 — `set_config` deja de ser un bypass genérico de GUC** | Allowlist de `setting_name` o `REVOKE` de `authenticated`, según lo que muestre el inventario de llamantes reales — cierra la vía hallada en el review de la fase 2 (no alcanzable por HTTP, sí por sesión Postgres directa) | no |
 
-### Fase 1 — REVOKE mecánico `[in_progress]`
+### Fase 1 — REVOKE mecánico `[done]`
 
 **Archivos:** migración nueva en `packages/database/supabase/migrations/`, `packages/database/supabase/tests/spec88_fase1_revoke_anon.test.sql`
 
@@ -251,7 +251,26 @@ Cierra, con una sola migración (`CREATE OR REPLACE` no es necesario donde el cu
 
 **Excepción declarada al límite de 300 líneas por archivo:** `packages/database/supabase/tests/spec88_fase1_revoke_anon.test.sql` es SQL repetitivo — cada una de las 16 funciones necesita su propio `has_function()` + de 2 a 4 aserciones `aclexplode()` casi idénticas (PUBLIC, `anon`, a veces `authenticated`/`service_role`), y partirlo por grupo (A/B/C) rompería la sección `plan(N)` única que pgTAP exige por transacción. Se deja como un solo archivo en vez de dividirlo artificialmente.
 
-### Fase 2 — Reescritura de `assert_operator_access` `[in_progress]`
+> Implementado por: rama `feat/spec-88-fase-1-revoke-anon`, SHA `a9aeb646`,
+> PR #675 (merge `d77fe792`, 2026-09-08T10:38:42Z).
+> Review: al menos una ronda — corrigió la clasificación de
+> `start_pickup_route` (la firma viva `uuid,uuid[]` estaba mal marcada como
+> "ya cerrada"; el total de funciones subió a 16) y confirmó por test, no
+> por suposición, que `assert_operator_access` sigue funcionando como guard
+> interno tras el `REVOKE` (`SECURITY DEFINER` ejecuta con los privilegios
+> del dueño, no del rol del llamante).
+> QA: `gh pr checks 675` verde (Lint/Type-Check/Test/Build en ambos jobs,
+> Vercel deploy). La migración está aplicada en producción — confirmado
+> `git merge-base --is-ancestor d77fe792 32667d0d`, el `headSha` del run
+> `34265192142` ("Deploy Production"), cuyo job `Verify Production
+> Migrations` cerró en verde. ACL real verificado en QA antes/después,
+> citado en el PR (`aclexplode` sobre las 16 funciones).
+> Downstream: ninguno declarado para este spec (`**Downstream:** ninguno
+> todavía`, cabecera). Fase 2 de este mismo spec depende de que
+> `assert_operator_access` siga revocada de PUBLIC/anon/authenticated tras
+> esta fase — sin cambios sobre esa premisa.
+
+### Fase 2 — Reescritura de `assert_operator_access` `[done]`
 
 **Archivos:** `packages/database/supabase/migrations/20260913000008_spec88_fase2_assert_operator_access_service_role.sql`, `packages/database/supabase/tests/spec88_fase2_assert_operator_access_service_role.test.sql`, `packages/database/supabase/tests/cross_tenant_definer_rpcs_test.sql`
 
@@ -267,6 +286,28 @@ Implementa la distinción `service_role` real vs. `anon`/ausencia de sesión, pr
 **Probado contra QA con ambos roles:** no se probó contra QA en vivo (sin credenciales VPS en esta sesión de implementación) — probado contra el contenedor `spec52-pg` local (pgTAP). `service_role` con `role` confirmado en el JWT sigue pasando cross-tenant (`spec88_fase2_assert_operator_access_service_role.test.sql`, tests 4-5), incluido el caso donde sólo el GUC legacy `request.jwt.claim.role` está poblado y `request.jwt.claims` no existe en absoluto (test 6, `lives_ok`); `anon`/sin sesión/`role:anon` ahora falla con 42501 en vez de `RETURN` silencioso (mismo archivo, tests 1-3, y `cross_tenant_definer_rpcs_test.sql` TEST 5, reescrito porque codificaba la premisa vieja "sin `sub` = service-role"); un caller `authenticated` con `operator_id` ajeno sigue rechazado (test 8, ancla el `IF p_operator_id IS DISTINCT FROM get_operator_id()` que TEST 4/7 por sí solo no cubría). Mutation-testeado: instalar el cuerpo con sólo `request.jwt.claims ->> 'role'` (la primera versión de esta fase, antes del review) hace fallar exactamente el test 6, ningún otro; instalar el cuerpo con el segundo `IF` borrado hace fallar exactamente el test 8. Quien mergee y despliegue a QA real debe confirmar el mismo comportamiento ahí antes de dar la fase por cerrada — ver `> QA:` pendiente.
 
 **Alcance real de "cierra la clase de bug" — acotado tras review (PR #683):** esta fase cierra la inferencia de `service_role` por ausencia de `auth.uid()` — el bug original. No cierra `public.set_config(text,text,boolean)`: es `SECURITY DEFINER`, sin allowlist de nombre de GUC, y conserva `GRANT EXECUTE ... TO authenticated` desde la fase 1 (`20260913000006:134`). Un caller `authenticated` puede ejecutar `SELECT public.set_config('request.jwt.claims','{"role":"service_role"}',true)` y la siguiente llamada en la misma sesión pasaría el guard de esta fase. No es una regresión de esta fase (el cuerpo viejo con `RETURN` temprano lograba el mismo resultado) y **no es alcanzable por HTTP real**: PostgREST abre una transacción nueva por request y refija los claims JWT en cada una, así que no hay una segunda llamada dentro de la misma sesión donde el `set_config` del paso anterior siga vigente. Sigue siendo una vía real desde `psql`/cualquier cliente directo a Postgres autenticado como `authenticated`. Ver fase 6.
+
+> Implementado por: rama `feat/spec-88-fase-2-assert-operator-access`, SHA
+> `291a5e76`, PR #683 (merge `ffcf5972`, 2026-09-08T17:47:04Z).
+> Review: dos rondas. La ronda 1 bloqueó porque el discriminador leía sólo
+> el GUC JSON individual (`request.jwt.claim.role`, que nunca se puebla con
+> `PGRST_DB_USE_LEGACY_GUCS=false`); se cambió a `auth.role()`, que coalesce
+> ambas fuentes. El reviewer reprodujo el RED (`not ok 6` sólo con el cuerpo
+> viejo) y comparó el comportamiento de `auth.role()` contra un contenedor
+> Supabase de otro proyecto con la imagen oficial — hash del `prosrc`
+> idéntico. Esa misma ronda abrió la fase 6 (`set_config`) al acotar la
+> afirmación de "cierra la clase de bug" a lo que de verdad cierra (arriba).
+> QA: `gh pr checks 683` verde (Lint/Type-Check/Test/Build en ambos jobs,
+> Vercel deploy). La migración `20260913000008` está aplicada en
+> producción — confirmado `git merge-base --is-ancestor ffcf5972 32667d0d`,
+> el `headSha` del run `34265192142` ("Deploy Production"), cuyo job
+> `Verify Production Migrations` cerró en verde — cierra el "ver `> QA:`
+> pendiente" que dejó el párrafo de arriba: no se probó contra QA en vivo en
+> el momento de implementar (sin credenciales VPS en esa sesión), pero la
+> migración sí llegó a producción y su verificación de ledger pasó. Suites
+> citadas en el PR: 8/8, 64/64, 4/4, 5/5, sobre salida cruda de `psql`.
+> Downstream: ninguno declarado para este spec (`**Downstream:** ninguno
+> todavía`, cabecera).
 
 ### Fase 3 — `custom_access_token_hook` `[blocked]`
 
