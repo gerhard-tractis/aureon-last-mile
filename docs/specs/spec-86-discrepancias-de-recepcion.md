@@ -521,16 +521,24 @@ que están recibidas sería falso.
 > certeza, fila por paquete — declarado en el comentario de cabecera de la
 > migración, no escondido.
 >
-> **Divergencia declarada con spec-83:** el panel de cierres de Recogida
+> ~~**Divergencia declarada con spec-83:** el panel de cierres de Recogida
 > cuenta merma con `status <> 'resolved'` (un `lost` sigue siendo merma). Esta
-> vista, en cambio, lista únicamente `status = 'open'` por defecto — es una
-> cola de "qué le falta actuar a Ops", no un contador de merma histórica; un
-> `lost` ya tiene desenlace y resolución, no acción pendiente. El RPC acepta
-> `p_status` (incluido `NULL`, todos los estados) para que una vista de
-> histórico futura no necesite otro RPC.
+> vista, en cambio, lista únicamente `status = 'open'` por defecto...~~
+> **Corregido en la ronda 2 de review (#715, B1) — esto era un error, no una
+> divergencia deliberada.** `p_status='open'` como igualdad literal excluía
+> `lost` de la cola por defecto: declarar una pérdida real (el disparador de
+> indemnización, spec-85) hacía que la baldosa se pintara en verde justo en
+> ese momento — exactamente el fallo que `20260917000002` (spec-83) ya había
+> identificado y revertido el 2026-09-08, con su propia nota de cabecera
+> explicándolo. Esta fase lo reabrió sin saberlo. `get_discrepancies_ops_control`
+> ahora reinterpreta `p_status='open'` como `status <> 'resolved'` (incluye
+> `lost`); `p_status='resolved'` y `p_status='lost'` siguen siendo igualdad
+> literal, y `NULL` sigue devolviendo todo. Coincide con spec-83, no diverge
+> de él.
 >
 > **Downstream:** revisado spec-85 (no cambia nada de su superficie propia,
-> sólo la consume), spec-83 (su conteo de merma no se toca). Ninguna otra
+> sólo la consume), spec-83 (su conteo de merma no se toca, y ahora además
+> comparten la misma semántica de "qué cuenta como sin resolver"). Ninguna otra
 > fase de este spec depende de lo aquí construido.
 
 ---
@@ -584,8 +592,9 @@ que están recibidas sería falso.
   `operator_id`. Se verifican en local con `scripts/pgtap-local.sh` (no corren
   en CI).
 - **Vitest** — la hoja de cierre lista los esperados sin escanear y manda las
-  razones; el panel muestra abiertas y oculta resueltas; `statusStage()` para
-  una orden `verificado` con carga `received`.
+  razones; el panel muestra abiertas y **perdidas** y oculta resueltas
+  (corregido en ronda 2, #715 B1 — un `lost` es acción pendiente, no un cierre
+  limpio); `statusStage()` para una orden `verificado` con carga `received`.
 - **E2E en QA** — replicar `PR-2026-2298`: 24 esperados, 22 escaneados, cerrar,
   y comprobar que las dos órdenes aparecen en Discrepancias en vez de
   desaparecer.
