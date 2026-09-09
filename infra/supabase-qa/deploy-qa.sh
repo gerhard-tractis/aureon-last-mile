@@ -396,7 +396,10 @@ db_check() {
 # process exit status, which stays 0 even when a statement inside the script
 # errored (that is what ON_ERROR_STOP=1 would change, and we don't set it).
 # pgTAP failures don't raise, so pgTAP sections are additionally grepped for
-# TAP's "not ok " failure marker.
+# TAP's "not ok N" failure marker. Matched as "not ok [0-9]", not "not ok "
+# (trailing space) — pgTAP prints a bare "not ok N" with no trailing space
+# or description for a one/two-arg assertion (`ok(false)`, `is(a, b)`), and
+# the space-anchored form used to miss it silently (see scripts/pgtap-local.sh).
 # --------------------------------------------------------------------------
 sql_tests_check() {
   local pw; pw="$(env_get POSTGRES_PASSWORD)"
@@ -450,7 +453,7 @@ sql_tests_check() {
     if printf '%s' "$section" | grep -q "SKIPPED-NO-PGTAP"; then
       skip=$((skip + 1))
       record_advisory "sql: $base" SKIP "pgtap extension not installed on QA"
-    elif printf '%s' "$section" | grep -qE "ERROR|not ok "; then
+    elif printf '%s' "$section" | grep -qE "ERROR|not ok [0-9]"; then
       fail=$((fail + 1))
       # Echo the failing lines. Without this the summary row says "see the
       # deploy log" and the log does not contain it — the section lives only in
@@ -459,7 +462,7 @@ sql_tests_check() {
       # advisory, so the log IS the whole product.
       log "--- $base failed, first 20 offending lines:"
       printf '%s
-' "$section" | grep -E "ERROR|not ok |EXCEPTION" | head -20 | sed 's/^/    /'
+' "$section" | grep -E "ERROR|not ok [0-9]|EXCEPTION" | head -20 | sed 's/^/    /'
       record_advisory "sql: $base" FAIL "see the block above this table"
     else
       pass=$((pass + 1))

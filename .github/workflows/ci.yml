@@ -160,6 +160,45 @@ jobs:
           bash ./infra/supabase-qa/deploy-qa.sql-tests.test.sh
           bash ./infra/supabase-qa/deploy-qa.functions.test.sh
 
+      # scripts/pgtap-local.sh's `run` case is the only gate the 83 real SQL
+      # test files under packages/database/supabase/tests have — those files
+      # never run in CI (see the comment at the top of pgtap-local.sh), so a
+      # wrapper that reports PASS on a failing pgTAP assertion silently
+      # nulls out every piece of "pgTAP N/N verde" evidence produced with it
+      # (round 2 review of #717). This proves it isn't blind, on its own
+      # fixtures — a fresh, throwaway container, never the shared local-dev
+      # spec52-pg (that one is reused across worktrees on a developer's
+      # machine and is not available here anyway).
+      - name: Test the pgtap-local wrapper — TAP parsing (own throwaway container)
+        run: |
+          set -uo pipefail
+          CT=pgtap-selftest-ci
+          docker rm -f "$CT" >/dev/null 2>&1 || true
+          docker run -d --name "$CT" -e POSTGRES_PASSWORD=pgtap supabase/postgres:15.8.1.060 >/dev/null
+          # supabase/postgres restarts postgres at least once during its own
+          # init (extensions, roles) — a "select 1" that succeeds once can
+          # still be followed by a dropped connection moments later.
+          # pgtap-local.sh's own `up` handles this the same way: succeed,
+          # sleep, succeed again before treating it as ready.
+          ok=0
+          for i in $(seq 1 60); do
+            docker exec "$CT" psql -U postgres -d postgres -tAc "select 1" >/dev/null 2>&1 \
+              && sleep 3 \
+              && docker exec "$CT" psql -U postgres -d postgres -tAc "select 1" >/dev/null 2>&1 \
+              && { ok=1; break; }
+            sleep 2
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "::error::pgtap-selftest-ci never became ready"
+            docker rm -f "$CT" >/dev/null 2>&1 || true
+            exit 1
+          fi
+          docker exec "$CT" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c "CREATE EXTENSION pgtap;"
+          rc=0
+          PGTAP_LOCAL_CONTAINER="$CT" bash ./scripts/pgtap-local.test.sh || rc=$?
+          docker rm -f "$CT" >/dev/null 2>&1 || true
+          exit "$rc"
+
       # Los tokens de fase y el campo **Verify:** de un spec son leidos por
       # maquina: los hooks de .claude/hooks/ deciden si queda trabajo y
       # scripts/verify.sh decide que jueces correr. Un spec con fases pero sin

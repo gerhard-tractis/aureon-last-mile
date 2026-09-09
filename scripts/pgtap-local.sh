@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Local pgTAP harness for spec-52 (docker). NOT used by CI — CI runs only
-# lint/type-check/test:run/build, so SQL must be verified here by hand.
+# Local pgTAP harness for spec-52 (docker). The 83 real test files under
+# packages/database/supabase/tests are NOT run in CI — CI runs only
+# lint/type-check/test:run/build, so those must be verified here by hand.
+# (This wrapper's OWN correctness is a separate story: its self-test,
+# scripts/pgtap-local.test.sh, does run in CI, against a throwaway
+# container — see .github/workflows/ci.yml.)
 #
 #   ./scripts/pgtap-local.sh up              rebuild the container from scratch
 #   ./scripts/pgtap-local.sh sync            copy migrations+tests into it
@@ -10,7 +14,9 @@
 #   ./scripts/pgtap-local.sh down            remove the container
 set -uo pipefail
 
-C=spec52-pg
+# Overridable so CI (and this wrapper's own self-test) can point at a
+# throwaway container instead of the shared local-dev spec52-pg.
+C="${PGTAP_LOCAL_CONTAINER:-spec52-pg}"
 IMG=supabase/postgres:15.8.1.060
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DB="postgres/postgres"
@@ -154,34 +160,43 @@ case "${1:-}" in
       #   2. `psql: error: could not open file...` — the file itself is
       #      missing/unreadable.
       #   3. Real pgTAP TAP output (`plan()`/`ok()`/`finish()`, ~12 of the 83
-      #      test files use it): a failed assertion prints `not ok N - ...`
-      #      and psql's own exit code stays 0 — no ERROR: line, nothing the
-      #      first two checks can see. A `1..N` plan whose count of executed
-      #      `ok`/`not ok` lines falls short (the script died mid-file, e.g.
-      #      an unhandled exception outside a DO block) is caught the same
-      #      way, via pgTAP's own "# Looks like you planned N tests but ran M"
-      #      diagnostic in finish()'s output.
+      #      test files use it): a failed assertion prints `not ok N` and
+      #      psql's own exit code stays 0 — no ERROR: line, nothing the
+      #      first two checks can see. Matched as `not ok [0-9]+($| )`, NOT
+      #      `not ok [0-9]+ ` (a required trailing space) — a one/two-arg
+      #      assertion (`ok(false)`, `is(a, b)` with no description) prints a
+      #      bare `not ok N` with nothing after the number, and the
+      #      space-anchored form missed it (round 2 review, A-1).
+      #      A `1..N` plan whose executed `ok`+`not ok` line count doesn't
+      #      match N — in EITHER direction, over or under — is also a
+      #      failure: read straight off the `1..N` line itself, not off
+      #      pgTAP's English "Looks like you..." diagnostic, because that
+      #      diagnostic is only printed by `finish()` — a file that dies
+      #      before `finish()` runs (no RAISE, e.g. someone deletes the
+      #      `finish()` call, or a step upstream of it just returns early)
+      #      leaves no diagnostic line at all and would otherwise pass
+      #      silently (round 2 review, A-2/A-3).
       hard_error=""
       echo "$out" | grep -qE "ERROR:|^psql: error:" && hard_error=1
-      ok_n=$(echo "$out" | grep -cE '^ok [0-9]+ ')
-      notok_n=$(echo "$out" | grep -cE '^not ok [0-9]+ ')
-      plan_diag=$(echo "$out" | grep -E '^# Looks like you planned [0-9]+ tests? but ran [0-9]+' | head -1)
-      missing_n=0
-      if [ -n "$plan_diag" ]; then
-        planned_n=$(echo "$plan_diag" | grep -oE 'planned [0-9]+' | grep -oE '[0-9]+')
-        ran_n=$(echo "$plan_diag" | grep -oE 'ran [0-9]+' | grep -oE '[0-9]+')
-        missing_n=$((planned_n - ran_n))
-        [ "$missing_n" -lt 0 ] && missing_n=0
+      ok_n=$(echo "$out" | grep -cE '^ok [0-9]+($| )')
+      notok_n=$(echo "$out" | grep -cE '^not ok [0-9]+($| )')
+      ran_n=$((ok_n + notok_n))
+      plan_n=$(echo "$out" | grep -oE '^[0-9]+\.\.[0-9]+$' | head -1)
+      plan_n="${plan_n#*..}"
+      mismatch_n=0
+      if [ -n "$plan_n" ] && [ "$plan_n" -ne "$ran_n" ]; then
+        if [ "$plan_n" -gt "$ran_n" ]; then mismatch_n=$((plan_n - ran_n))
+        else mismatch_n=$((ran_n - plan_n)); fi
       fi
       if [ -n "$hard_error" ]; then
         # Transaction aborted — partial TAP counts inside it aren't
         # trustworthy, so count the file as one failure, matching the
         # non-TAP (RAISE EXCEPTION style) files' granularity.
         fail=$((fail+1)); echo "FAIL"; echo "$out" | grep -E "ERROR:|^psql: error:" | head -2 | sed 's/^/      /'
-      elif [ "$notok_n" -gt 0 ] || [ "$missing_n" -gt 0 ]; then
-        fail=$((fail + notok_n + missing_n)); [ "$ok_n" -gt 0 ] && pass=$((pass + ok_n))
+      elif [ "$notok_n" -gt 0 ] || [ "$mismatch_n" -gt 0 ]; then
+        fail=$((fail + notok_n + mismatch_n)); [ "$ok_n" -gt 0 ] && pass=$((pass + ok_n))
         echo "FAIL"
-        echo "$out" | grep -E '^not ok [0-9]+ |^# Looks like you' | head -3 | sed 's/^/      /'
+        echo "$out" | grep -E '^not ok [0-9]+($| )|^# Looks like you' | head -3 | sed 's/^/      /'
       elif [ "$ok_n" -gt 0 ]; then
         # Real TAP output, every assertion passed — count assertions, not
         # the file, so the summary reflects real asserts run.
@@ -195,7 +210,11 @@ case "${1:-}" in
     echo "── pass=$pass fail=$fail ──"
     [ "$fail" -eq 0 ]
     ;;
-  psql) shift; psq "$@" ;;
+  # -i (dexi/psqi), not dex/psq: docker exec without -i silently drops stdin,
+  # so piping a query in (`echo "select 1" | pgtap-local.sh psql -tA`) prints
+  # nothing and exits 0 — a false negative of the exact shape this file
+  # exists to catch (round 2 review, A-8).
+  psql) shift; psqi "$@" ;;
   down) docker rm -f "$C" >/dev/null 2>&1; echo "removed $C" ;;
   *) sed -n '2,12p' "$0"; exit 1 ;;
 esac
