@@ -1026,6 +1026,32 @@ El mock dice «expo-camera», que es la app Expo dormida (`apps/mobile`, ver `ls
 > fase todavía sin número) y quedó como nota sin checkbox más arriba.
 > Mutation-testing repetido sobre los cinco arreglos de esta ronda — todos
 > mueren contra su test correspondiente.
+>
+> **Ronda 4 aprobada — mergeable sin condiciones.** Verificado por el
+> reviewer: las dos transiciones de vuelta (`mute → unmute`, `hidden →
+> visible`) dan `true`; el mutante que delató el bug original muere; y tres
+> sondas de falso positivo salen limpias (`visible` tras `ended` no
+> rehabilita, `unmute` de la pista del ciclo anterior tampoco, `visible`
+> antes de que `getUserMedia` resuelva tampoco). Extraer `isVideoReady`
+> como fuente única para habilitar y deshabilitar cerró la clase entera de
+> bug, no sólo los dos casos reportados.
+>
+> **Tres lagunas de cobertura anotadas, no perseguidas — código hoy
+> correcto, test que no lo distingue de una versión rota:**
+> - `handleTrackUp` puesto a `setVideoReady(true)` a pelo (sin re-derivar)
+>   pasa la suite completa: el test de `unmute` sólo cubre el camino feliz
+>   (dimensiones ya válidas), no distingue "re-deriva con `isVideoReady`"
+>   de "pone `true` sin más".
+> - `trackRef.current = null` en la limpieza del efecto no está cubierto —
+>   misma laguna: falta el caso "evento disparado por una pista que ya no
+>   es la actual" (p.ej. tras un ciclo `open` cerrar/reabrir).
+> - `resolveMimeForEmptyType` (`lib/pickup/manifestPhotoValidation.ts`) es
+>   más ancha que su JSDoc: `factura.pdf`/`VID_001.mp4` con `type` vacío
+>   también se aceptan como `image/jpeg`, no sólo `IMG_0042` sin extensión
+>   — un `null` por extensión desconocida es indistinguible de un `null`
+>   por no tener extensión. El `type` explícito sigue mandando (alcanzabilidad
+>   baja), pero la documentación promete menos de lo que el código hace.
+>   Cierre si algún día importa: `?? (tieneExtensión ? null : 'image/jpeg')`.
 
 ### Fase 5 — `5i` carga cerrada `[pending]`
 
