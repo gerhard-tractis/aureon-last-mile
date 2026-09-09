@@ -211,6 +211,11 @@ jobs:
       - name: Test the phase-overlap CLI (real temp git repo, not fixtures)
         run: bash ./scripts/check-phase-overlap.test.sh
 
+      # **Depende de:** (spec-91 fase 3/4): orden entre fases, separado del
+      # solapamiento de superficie.
+      - name: Test the phase-overlap dependency field
+        run: node ./scripts/check-phase-overlap-depends.test.mjs
+
       - name: Lint
         run: npx turbo run lint
 

@@ -417,6 +417,103 @@ assert_exit 0 "docs/** exclusion through the real CLI path: two sibling branches
   "docs/specs/spec-95-x.md#Fase 1@feat/spec-95-fase-1-a" \
   "docs/specs/spec-95-x.md#Fase 1@feat/spec-95-fase-1-b"
 
+# ── spec-91 fase 3: **Depende de:** — chequeo de orden, exit 4 ─────────────
+# spec-97 fase 1 declares it depends on spec-98 fase 1, which is [pending]
+# (not [done]) in this fixture — must refuse with exit 4, BEFORE even
+# computing surface overlap (their **Archivos:** are disjoint on purpose,
+# so exit 4 proves the dependency check runs first, not that it masks a
+# real conflict).
+cat > "$REPO/docs/specs/spec-97-x.md" <<'MD'
+### Fase 1 — depende de spec-98 `[pending]`
+
+**Depende de:** spec-98 fase 1
+
+**Archivos:** `apps/frontend/src/lib/offline/queue.ts`
+MD
+cat > "$REPO/docs/specs/spec-98-x.md" <<'MD'
+### Fase 1 — todavía no aterriza `[pending]`
+
+**Archivos:** `apps/frontend/src/lib/offline/db.ts`
+MD
+(cd "$REPO" && git add -A && git commit -q -m "add spec-97 (depends on spec-98 fase 1) and spec-98 (still pending)")
+
+assert_exit 4 "declared dependency on a non-done phase: refuses (exit 4), not the surface-overlap codes" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-97-x.md#Fase 1" \
+  "docs/specs/spec-98-x.md#Fase 1"
+
+assert_contains "no despachable todavía" "unmet dependency: message says explicitly it's an order problem" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-97-x.md#Fase 1" \
+  "docs/specs/spec-98-x.md#Fase 1"
+
+assert_contains "spec-98 fase 1" "unmet dependency: message names the blocking phase" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-97-x.md#Fase 1" \
+  "docs/specs/spec-98-x.md#Fase 1"
+
+# Mark spec-98 fase 1 as [done]: the same declared dependency now resolves
+# clean, and the CLI proceeds to the normal (disjoint) surface verdict.
+sed -i "s/\[pending\]/[done]/" "$REPO/docs/specs/spec-98-x.md"
+(cd "$REPO" && git add -A && git commit -q -m "spec-98 fase 1: done")
+assert_exit 0 "once the declared dependency IS [done], surface overlap proceeds normally" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-97-x.md#Fase 1" \
+  "docs/specs/spec-98-x.md#Fase 1"
+
+# "ninguna" (explicit no-dependency) and an absent field must never trigger
+# exit 4 — only an actual declared, unresolved reference does.
+cat > "$REPO/docs/specs/spec-99-x.md" <<'MD'
+### Fase 1 — sin dependencias `[pending]`
+
+**Depende de:** ninguna
+
+**Archivos:** `apps/frontend/src/lib/offline/deepest.ts`
+MD
+(cd "$REPO" && git add -A && git commit -q -m "add spec-99 with an explicit ninguna")
+assert_exit 0 "explicit 'ninguna' never triggers the dependency check" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-99-x.md#Fase 1" \
+  "docs/specs/spec-88-x.md#Fase 2"
+
+# ── Real acceptance case, NOT a fixture: spec-84 fase 3 declares it depends
+# on spec-80 fase 3, which is genuinely [pending] in this repo today. Runs
+# against the actual worktree's docs/specs/, not a copy — this is the exact
+# case from the spec: "el guard dictaminó superficies disjuntas para spec-84
+# fase 3 junto a spec-80 fase 3", which was wrong because it ignored order.
+REAL_REPO="$(cd "$(dirname "$SCRIPT")/.." && pwd)"
+assert_exit 4 "REAL REPO: spec-84 fase 3 depends on spec-80 fase 3, still [pending] — exit 4, not 'disjoint'" \
+  bash "$SCRIPT" --repo "$REAL_REPO" \
+  "docs/specs/spec-84-movil-conductor-home-y-prueba-de-entrega.md#Fase 3" \
+  "docs/specs/spec-80-recogida-movil-cierre-de-carga.md#Fase 3"
+
+assert_contains "spec-80 fase 3" "REAL REPO: message names the real blocking phase" \
+  bash "$SCRIPT" --repo "$REAL_REPO" \
+  "docs/specs/spec-84-movil-conductor-home-y-prueba-de-entrega.md#Fase 3" \
+  "docs/specs/spec-80-recogida-movil-cierre-de-carga.md#Fase 3"
+
+# ── spec-91 fase 4: heuristic net — warns (::warning::) about an undeclared
+# spec-N fase M mention, never blocks (exit stays whatever the rest of the
+# run would have been).
+cat > "$REPO/docs/specs/spec-100-x.md" <<'MD'
+### Fase 1 — menciona otra fase sin declararla `[pending]`
+
+**Archivos:** `apps/frontend/src/lib/offline/deepest.ts`
+
+Nota: esto en realidad depende de que aterrice spec-98 fase 1 primero, pero
+nadie rellenó **Depende de:** todavía.
+MD
+(cd "$REPO" && git add -A && git commit -q -m "add spec-100 with an undeclared prose reference")
+assert_contains "spec-98 fase 1" "heuristic net: warns about an undeclared prose reference" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-100-x.md#Fase 1" \
+  "docs/specs/spec-82-x.md#Fase 1"
+
+assert_exit 0 "heuristic net: the warning does not turn into a block by itself" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-100-x.md#Fase 1" \
+  "docs/specs/spec-82-x.md#Fase 1"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

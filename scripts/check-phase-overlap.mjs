@@ -19,15 +19,26 @@
  *   0  sin conflicto duro (puede haber acoplamiento blando — se imprime, no bloquea)
  *   1  conflicto duro: dos targets escriben el mismo fichero
  *   2  error de uso (menos de 2 targets, spec o fase no encontrados)
- *   3  no se puede juzgar: algún target no declara **Archivos:** y su rama
- *      (si se dio) no tiene commits — no hay ninguna superficie con la que
- *      comparar. Nunca se informa como "disjunto": eso sería decir "lo
- *      comprobé y está limpio" cuando en realidad no se comprobó nada.
+ *   3  no se puede juzgar la superficie: dos causas posibles, distinguidas en
+ *      el mensaje —
+ *        (a) el target no declara **Archivos:** y su rama (si se dio) no
+ *            tiene commits — no hay ninguna superficie con la que comparar;
+ *        (b) **Archivos:** SÍ está declarado, pero su contenido no resolvió
+ *            a ningún fichero ni directorio (p.ej. "(indeterminado — ...)",
+ *            ver spec-91 fase 2 / PR #695) — el campo existe, sólo no
+ *            resuelve.
+ *      Nunca se informa como "disjunto": eso sería decir "lo comprobé y está
+ *      limpio" cuando en realidad no se comprobó nada.
+ *   4  dependencia declarada en **Depende de:** no satisfecha (spec-91 fase
+ *      3): un target depende de otra fase que no está `[done]`. Se calcula
+ *      ANTES que el solapamiento de superficie — si el orden no está listo,
+ *      la pregunta de si los ficheros chocan todavía no toca.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { parseTarget, extractArchivosFiles, normalizeFrontendPath } from './check-phase-overlap-parse.mjs';
+import { extractDependsField, findPhaseTokenByNumber, scanUndeclaredReferences } from './check-phase-overlap-depends.mjs';
 import { buildClosure, computeOverlap } from './check-phase-overlap-closure.mjs';
 
 function usageError(msg) {
@@ -185,6 +196,20 @@ function buildTarget(targetStr, { repo, base, maxDepth }) {
   const declared = declaredRaw.map(normalizeFrontendPath);
   const name = `${specPath}#${faseMatch}`;
 
+  // spec-91 fase 3/4: id propio del spec (para no autorreferenciarse al
+  // escanear) + estado declarado de **Depende de:**.
+  const ownSpecId = (path.basename(specPath).match(/^spec-(\d+[a-z]?)-/i) || [])[1] || null;
+  const depends = extractDependsField(specMd, faseMatch);
+
+  // Red heurística (fase 4): avisa, no bloquea — el campo tarda en
+  // backfillearse. Sólo nombra lo que NO está ya en **Depende de:**.
+  const undeclaredRefs = scanUndeclaredReferences(specMd, faseMatch, ownSpecId);
+  for (const r of undeclaredRefs) {
+    console.error(
+      `::warning:: ${name} — menciona spec-${r.specId} fase ${r.faseNum} en prosa pero no la declara en **Depende de:**. Si es una dependencia de orden real, decláralo.`,
+    );
+  }
+
   // Blocker 5 (review round 1): a rejected/degraded **Archivos:** entry
   // (a bare filename with no directory to inherit, a directory declaration)
   // must be visible, not silently absorbed into nothing. `resolveContent`
@@ -218,10 +243,34 @@ function buildTarget(targetStr, { repo, base, maxDepth }) {
     // **Archivos:**" a una fase que ya lo hizo.
     archivosFieldPresent,
     archivosRaw,
+    ownSpecId,
+    depends,
     diffFiles,
     writeSet,
     closure,
   };
+}
+
+/**
+ * Resuelve una entrada de **Depende de:** (spec-91 fase 3) contra el repo
+ * real: busca `docs/specs/spec-<N>-*.md` y lee el token de su fase `M`. Lee
+ * SIEMPRE del disco de trabajo (no de una rama/ref) — el estado de "¿está
+ * [done]?" de OTRA fase es una propiedad del repo, no de la rama del target
+ * que se está evaluando.
+ */
+function resolveDependency(repo, dep) {
+  const dir = path.join(repo, 'docs', 'specs');
+  let files;
+  try {
+    files = readdirSync(dir);
+  } catch {
+    return { specFound: false };
+  }
+  const match = files.find((f) => f === `spec-${dep.specId}.md` || f.startsWith(`spec-${dep.specId}-`));
+  if (!match) return { specFound: false };
+  const md = readFileSync(path.join(dir, match), 'utf8');
+  const tokenInfo = findPhaseTokenByNumber(md, dep.faseNum);
+  return { specFound: true, specFile: match, ...tokenInfo };
 }
 
 function printReport(targets, overlap) {
@@ -289,6 +338,35 @@ function main() {
   }
 
   const targets = targetStrs.map((s) => buildTarget(s, { repo, base, maxDepth }));
+
+  // spec-91 fase 3: chequeo de ORDEN, antes que el de superficie. Si una
+  // fase declara **Depende de:** una fase que no está [done], discutir si
+  // sus ficheros chocan con otra es una pregunta que todavía no toca — así
+  // que este chequeo corre primero y, si encuentra algo, ni siquiera llega
+  // a calcular solapamiento (exit 4 gana sobre 1/3).
+  const unmetDeps = [];
+  for (const t of targets) {
+    if (!t.depends || !t.depends.fieldPresent || t.depends.explicitNone || t.depends.indeterminate) {
+      continue; // ausente, "ninguna", o "(indeterminado — ...)": nada que chequear aquí
+    }
+    for (const dep of t.depends.entries) {
+      const res = resolveDependency(repo, dep);
+      if (!res.specFound) {
+        unmetDeps.push({ target: t.name, dep, reason: `spec-${dep.specId} no existe en docs/specs/` });
+      } else if (!res.found) {
+        unmetDeps.push({ target: t.name, dep, reason: `spec-${dep.specId} fase ${dep.faseNum} no se encontró en ${res.specFile}` });
+      } else if (res.token !== 'done') {
+        unmetDeps.push({ target: t.name, dep, reason: `sigue \`[${res.token}]\`` });
+      }
+    }
+  }
+  if (unmetDeps.length > 0) {
+    console.error('check-phase-overlap: no despachable todavía — dependencia(s) declarada(s) sin satisfacer:');
+    for (const u of unmetDeps) {
+      console.error(`  ${u.target} depende de spec-${u.dep.specId} fase ${u.dep.faseNum}, que ${u.reason}.`);
+    }
+    process.exit(4);
+  }
 
   // Blocker 3 (review round 1): a target with no **Archivos:** and no
   // committed branch has an EMPTY write set — there is nothing to compare it

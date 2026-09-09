@@ -128,6 +128,8 @@ Ver arriba. Reparto móvil no tiene ronda propia.
 > queda es orden: depende de que aterrice spec-80 fase 3
 > (`manifest_documents`, `[pending]`), no de una persona.
 
+**Depende de:** spec-80 fase 3
+
 **Archivos:** migración nueva en `packages/database/supabase/migrations/` (tabla de documentos de prueba de entrega, patrón `manifest_documents`; deprecar/eliminar `assignments.pod_photo_url` en la misma migración), test pgTAP en `packages/database/supabase/tests/`
 
 - [ ] Reusar el patrón de `manifest_documents` (spec-80 fase 3), no inventar uno nuevo.
