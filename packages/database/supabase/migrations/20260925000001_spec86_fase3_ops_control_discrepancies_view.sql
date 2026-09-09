@@ -67,9 +67,43 @@
 -- ya lo garantiza), así que el orden de la COALESCE era un mutante
 -- estructuralmente imposible de matar con un test -- el CASE lo hace
 -- imposible de confundir en vez de imposible de probar.
+--
+-- Ronda 3 (#715), M3 -- LIMIT 500 sin visibilidad era "una fecha, no un
+-- límite": con la cola creciendo monótona (nada saca una discrepancia de
+-- 'open' a escala hoy -- fase 2a `[pending]`, spec-85 fase 3b `[parked]`,
+-- resolve_discrepancy es fila a fila), lo que se caía con ORDER BY
+-- detected_at DESC eran justo las más VIEJAS -- las que "Abierta hace" existe
+-- para destacar. total_count = COUNT(*) OVER() se computa ANTES del LIMIT
+-- (Postgres aplica funciones de ventana antes de LIMIT/OFFSET en su pipeline
+-- de ejecución), así que refleja el total real aunque LIMIT 500 trunque las
+-- filas devueltas. El frontend compara total_count contra el número de filas
+-- recibidas para decidir si avisa "500 de 617".
+--
+-- Ronda 3, menor -- por qué `<> 'resolved'` y no una lista explícita de
+-- estados: cualquier valor NUEVO que el enum discrepancy_status_enum llegue
+-- a tener (hoy sólo open/resolved/lost, spec-85) cae del lado permisivo --
+-- se sigue mostrando en la cola de acción pendiente en vez de desaparecer en
+-- silencio. Es la misma elección que 20260917000002:10 ya hizo para
+-- get_completed_manifests, por la misma razón: una cola de acción que se
+-- equivoca mostrando de más es más segura que una que se equivoca ocultando.
+--
+-- Ronda 3, menor -- los buckets de p_status se solapan a propósito, no por
+-- descuido: p_status='open' (open+lost) y p_status='lost' (sólo lost) NO son
+-- disjuntos -- una fila 'lost' aparece en los dos. Sumar sus conteos cuenta
+-- esa fila dos veces. Quien construya la vista de histórico que este
+-- comentario prometía (arriba) necesita saberlo antes de sumar buckets.
 -- =============================================================================
 
 BEGIN;
+
+-- Ronda 3 (#715, M3) added total_count to the RETURNS TABLE -- a return-type
+-- change, which CREATE OR REPLACE rejects outright ("cannot change return
+-- type of existing function... Use DROP FUNCTION first"). Same pattern as
+-- 20260920000001 (spec-86 fase 1) for complete_route_reception's parameter
+-- change. This migration is not yet on main as of this edit (still on this
+-- PR's branch), so DROP + CREATE here replaces the function within its own
+-- migration rather than adding a second one.
+DROP FUNCTION IF EXISTS public.get_discrepancies_ops_control(public.discrepancy_status_enum);
 
 CREATE OR REPLACE FUNCTION public.get_discrepancies_ops_control(
   p_status public.discrepancy_status_enum DEFAULT 'open'
@@ -84,7 +118,11 @@ CREATE OR REPLACE FUNCTION public.get_discrepancies_ops_control(
   package_label  VARCHAR,
   carga          TEXT,
   ruta           TEXT,
-  closed_by_name VARCHAR
+  closed_by_name VARCHAR,
+  -- Ronda 3 (#715, M3): total de filas que matchean el filtro ANTES del
+  -- LIMIT 500 de abajo -- igual en cada fila devuelta (misma window), así el
+  -- frontend no necesita una segunda llamada para saber si lo que ve es todo.
+  total_count    BIGINT
 )
 LANGUAGE sql
 STABLE
@@ -107,7 +145,8 @@ AS $$
       WHEN 'pickup'    THEN prp.code
       WHEN 'reception' THEN prr.code
     END AS ruta,
-    u.full_name AS closed_by_name
+    u.full_name AS closed_by_name,
+    COUNT(*) OVER() AS total_count
   FROM public.discrepancies d
   LEFT JOIN public.packages p
     ON p.id = d.package_id AND p.operator_id = public.get_operator_id()
@@ -181,7 +220,11 @@ cabecera de este archivo sobre por qué esta vista no compara un agregado que
 puede desincronizarse de las filas reales de discrepancies. SECURITY
 INVOKER: discrepancies y cada tabla unida aquí ya tienen RLS + GRANT SELECT
 a authenticated; el filtro por operator_id en cada join es defensa en
-profundidad, mismo patrón que get_discrepancies (20260913000003).';
+profundidad, mismo patrón que get_discrepancies (20260913000003).
+total_count (#715 M3) es el total ANTES de LIMIT 500 -- COUNT(*) OVER() se
+computa antes de aplicar LIMIT, así que refleja el total real aunque las
+filas devueltas estén truncadas; igual en cada fila, permite al frontend
+avisar "500 de 617" sin una segunda llamada.';
 
 REVOKE ALL ON FUNCTION public.get_discrepancies_ops_control(public.discrepancy_status_enum) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_discrepancies_ops_control(public.discrepancy_status_enum) TO authenticated;

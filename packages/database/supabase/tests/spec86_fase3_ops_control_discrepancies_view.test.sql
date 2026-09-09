@@ -42,7 +42,7 @@
 -- tenant. An empty operator B cannot distinguish "the join-level operator_id
 -- filters work" from "there was nothing to leak" (ronda 2, B3).
 BEGIN;
-SELECT plan(20);
+SELECT plan(33);
 
 -- ── Fixtures — operators, users, vehicles ─────────────────────────────────
 INSERT INTO public.operators (id, name, slug) VALUES
@@ -191,6 +191,10 @@ SELECT public.record_discrepancies(
 -- ── 1. Default (p_status = 'open') = pkg1 + pkg2 + pkg3, not pkg6 ────────
 SELECT set_config('request.jwt.claims', '{"sub":"cccccccc-0000-4000-a000-000000000863","operator_id":"cccccccc-cccc-cccc-cccc-000000000863","role":"authenticated"}', true);
 SELECT is((SELECT COUNT(*)::int FROM public.get_discrepancies_ops_control()), 3, 'default filter: pkg1 + pkg2 + pkg3, pkg6 excluded (soft-deleted)');
+SELECT is(
+  (SELECT DISTINCT total_count FROM public.get_discrepancies_ops_control()),
+  3::bigint, 'total_count (#715 M3) matches the real row count and is identical across every returned row'
+);
 
 SELECT is(
   (SELECT order_number || '|' || package_label || '|' || carga || '|' || ruta || '|' || closed_by_name
@@ -258,16 +262,33 @@ SELECT is((SELECT COUNT(*)::int FROM public.get_discrepancies_ops_control(NULL))
 SELECT is((SELECT package_label FROM public.get_discrepancies_ops_control(NULL) LIMIT 1), 'CTN863-B1', 'and it is B''s own package, not one of A''s');
 
 -- ── 4b. A corrupted cross-tenant reference is not enriched with the other
---       tenant's data (ronda 2, B3 — "dale datos a B" alone does not catch
---       a missing operator_id filter inside a join keyed by UUID primary key:
---       two tenants' ids never collide by accident, so the ONLY way the nine
---       per-join operator_id filters are load-bearing is a row whose FK
---       points at the WRONG tenant's object — exactly what
+--       tenant's data (ronda 2, B3 — "dale datos a B" alone does not catch a
+--       missing operator_id filter inside a join keyed by UUID primary key:
+--       two tenants' ids never collide by accident, so the ONLY way any of
+--       the nine per-join operator_id filters is load-bearing is a row whose
+--       FK points at the WRONG tenant's object — exactly what
 --       record_discrepancies' own ownership guard exists to prevent on the
 --       write path (20260913000003), and exactly why this defense-in-depth
 --       read-side filter cannot be exercised through that RPC. Inserted
 --       directly, bypassing it, the way a future bug would actually produce
---       this row. ─────────────────────────────────────────────────────────
+--       this row.
+--
+--       Ronda 3 (#715, M4): this ONE corrupted package_id only proves the
+--       `packages` filter. Measured one predicate at a time (not "all nine
+--       removed together", which the corrupted row above passed on with only
+--       ONE of the nine actually exercised — p becomes NULL first, so o's
+--       own filter is never reached, same masking class M4 caught): 8 more
+--       scenarios below, each corrupting exactly ONE join's target while
+--       keeping every other hop genuinely valid, so each predicate is the
+--       ONLY thing standing between NULL and a leak in its own assertion.
+--       Measured one mutation at a time against spec52-pg (o, pm, prp, prr,
+--       u, ps, m: 7/7 kill on their own assertion and no other). rr is the
+--       exception, declared honestly where its scenario lives below: prr's
+--       own filter already blocks the only column rr's data could leak
+--       through, so rr's removal alone does not flip any assertion —real
+--       defense-in-depth, not independently observable today. 8/9 total
+--       joins now have a scenario that isolates them; the ninth (rr) has a
+--       scenario and an honest note on why it cannot be isolated further. ──
 INSERT INTO public.discrepancies (id, operator_id, kind, operation_type, package_id, manifest_id, detected_by_user_id, note) VALUES
   ('cccccccc-0000-4000-9999-000000000001','cccccccc-cccc-cccc-cccc-000000000863','missing','pickup',
    'dddddddd-0000-4000-d000-000000000863', -- operator B's package_id, on an operator-A row
@@ -277,11 +298,189 @@ INSERT INTO public.discrepancies (id, operator_id, kind, operation_type, package
 SELECT set_config('request.jwt.claims', '{"sub":"cccccccc-0000-4000-a000-000000000863","operator_id":"cccccccc-cccc-cccc-cccc-000000000863","role":"authenticated"}', true);
 SELECT is(
   (SELECT package_label FROM public.get_discrepancies_ops_control(NULL) WHERE id = 'cccccccc-0000-4000-9999-000000000001'),
-  NULL, 'a package_id pointing at another tenant''s package is not enriched with that tenant''s label'
+  NULL, 'p: a package_id pointing at another tenant''s package is not enriched with that tenant''s label'
 );
 SELECT is(
   (SELECT order_number FROM public.get_discrepancies_ops_control(NULL) WHERE id = 'cccccccc-0000-4000-9999-000000000001'),
   NULL, 'nor with that tenant''s order_number, via the same corrupted package_id'
+);
+
+-- ── 4c. The other 8 joins, one corrupted FK per scenario ──────────────────
+INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone, delivery_address, comuna, delivery_date, external_load_id, retailer_name, raw_data, imported_via, imported_at) VALUES
+  ('cccccccc-0000-4000-c000-000000000870','cccccccc-cccc-cccc-cccc-000000000863','ORD-863-7','Cliente 863','+56911111111','Calle 863','Santiago', CURRENT_DATE, 'CARGA-863-7','Retailer 863','{}'::jsonb,'MANUAL', NOW()),
+  ('cccccccc-0000-4000-c000-000000000871','cccccccc-cccc-cccc-cccc-000000000863','ORD-863-8','Cliente 863','+56911111111','Calle 863','Santiago', CURRENT_DATE, 'CARGA-863-8','Retailer 863','{}'::jsonb,'MANUAL', NOW()),
+  ('cccccccc-0000-4000-c000-000000000872','cccccccc-cccc-cccc-cccc-000000000863','ORD-863-9','Cliente 863','+56911111111','Calle 863','Santiago', CURRENT_DATE, 'CARGA-863-9','Retailer 863','{}'::jsonb,'MANUAL', NOW()),
+  ('cccccccc-0000-4000-c000-000000000874','cccccccc-cccc-cccc-cccc-000000000863','ORD-863-11','Cliente 863','+56911111111','Calle 863','Santiago', CURRENT_DATE, 'CARGA-863-11','Retailer 863','{}'::jsonb,'MANUAL', NOW()),
+  ('cccccccc-0000-4000-c000-000000000875','cccccccc-cccc-cccc-cccc-000000000863','ORD-863-12','Cliente 863','+56911111111','Calle 863','Santiago', CURRENT_DATE, 'CARGA-863-12','Retailer 863','{}'::jsonb,'MANUAL', NOW()),
+  ('cccccccc-0000-4000-c000-000000000876','cccccccc-cccc-cccc-cccc-000000000863','ORD-863-8B','Cliente 863','+56911111111','Calle 863','Santiago', CURRENT_DATE, 'CARGA-863-8B','Retailer 863','{}'::jsonb,'MANUAL', NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.packages (id, operator_id, order_id, label, sku_items, raw_data, status) VALUES
+  ('cccccccc-0000-4000-d000-000000000870','cccccccc-cccc-cccc-cccc-000000000863','cccccccc-0000-4000-c000-000000000870','CTN863-7','[]'::jsonb,'{}'::jsonb,'ingresado'),
+  ('cccccccc-0000-4000-d000-000000000871','cccccccc-cccc-cccc-cccc-000000000863','cccccccc-0000-4000-c000-000000000871','CTN863-8','[]'::jsonb,'{}'::jsonb,'ingresado'),
+  ('cccccccc-0000-4000-d000-000000000872','cccccccc-cccc-cccc-cccc-000000000863','cccccccc-0000-4000-c000-000000000872','CTN863-9','[]'::jsonb,'{}'::jsonb,'ingresado'),
+  -- o: an A-owned package whose order_id points at operator B's own order.
+  ('cccccccc-0000-4000-d000-000000000873','cccccccc-cccc-cccc-cccc-000000000863','dddddddd-0000-4000-c000-000000000863','CTN863-10','[]'::jsonb,'{}'::jsonb,'ingresado'),
+  ('cccccccc-0000-4000-d000-000000000874','cccccccc-cccc-cccc-cccc-000000000863','cccccccc-0000-4000-c000-000000000874','CTN863-11','[]'::jsonb,'{}'::jsonb,'verificado'),
+  ('cccccccc-0000-4000-d000-000000000875','cccccccc-cccc-cccc-cccc-000000000863','cccccccc-0000-4000-c000-000000000875','CTN863-12','[]'::jsonb,'{}'::jsonb,'verificado'),
+  ('cccccccc-0000-4000-d000-000000000876','cccccccc-cccc-cccc-cccc-000000000863','cccccccc-0000-4000-c000-000000000876','CTN863-8B','[]'::jsonb,'{}'::jsonb,'ingresado')
+ON CONFLICT (id) DO NOTHING;
+
+UPDATE public.manifests SET status = 'completed', started_at = NOW()
+ WHERE operator_id = 'cccccccc-cccc-cccc-cccc-000000000863'
+   AND external_load_id IN ('CARGA-863-7','CARGA-863-8','CARGA-863-9','CARGA-863-11','CARGA-863-12','CARGA-863-8B');
+
+-- o: pkg10's own order_id (above) already points at B's order — no more
+-- setup needed. A perfectly ordinary discrepancy referencing it.
+SELECT public.record_discrepancies(
+  'pickup'::public.discrepancy_operation_enum,
+  (SELECT id FROM public.manifests WHERE operator_id = 'cccccccc-cccc-cccc-cccc-000000000863' AND external_load_id = 'CARGA-863-1'),
+  jsonb_build_array(jsonb_build_object('kind','missing','package_id','cccccccc-0000-4000-d000-000000000873'))
+);
+SELECT is(
+  (SELECT package_label FROM public.get_discrepancies_ops_control(NULL) WHERE package_label = 'CTN863-10'),
+  'CTN863-10', 'o: the package itself (A''s own) still resolves correctly'
+);
+SELECT is(
+  (SELECT order_number FROM public.get_discrepancies_ops_control(NULL) WHERE package_label = 'CTN863-10'),
+  NULL, 'o: but order_number does not leak operator B''s order, via the package''s own corrupted order_id'
+);
+
+-- pm (+ prp downstream of it): manifest_id points directly at operator B's
+-- real manifest. package_id stays A's own valid pkg7, so a leak here is
+-- attributable to pm specifically, not to an already-NULL package join.
+INSERT INTO public.discrepancies (id, operator_id, kind, operation_type, package_id, manifest_id, detected_by_user_id, note) VALUES
+  ('cccccccc-0000-4000-9999-000000000002','cccccccc-cccc-cccc-cccc-000000000863','missing','pickup',
+   'cccccccc-0000-4000-d000-000000000870',
+   (SELECT id FROM public.manifests WHERE operator_id = 'dddddddd-dddd-dddd-dddd-000000000863' AND external_load_id = 'CARGA-863-B1'),
+   'cccccccc-0000-4000-a000-000000000863','fixture pm corrupto');
+SELECT is(
+  (SELECT package_label FROM public.get_discrepancies_ops_control(NULL) WHERE id = 'cccccccc-0000-4000-9999-000000000002'),
+  'CTN863-7', 'pm: the package (A''s own) still resolves'
+);
+SELECT is(
+  (SELECT carga FROM public.get_discrepancies_ops_control(NULL) WHERE id = 'cccccccc-0000-4000-9999-000000000002'),
+  NULL, 'pm: carga does not leak operator B''s manifest, via a manifest_id pointing straight at it'
+);
+
+-- prp: manifest_id points at an A-owned manifest that resolves fine (pm
+-- correct), but THAT manifest's own pickup_route_id is corrupted to point at
+-- operator B's route — isolates prp's filter from pm's.
+UPDATE public.manifests SET pickup_route_id = 'dddddddd-0000-4000-e000-000000000863'
+ WHERE operator_id = 'cccccccc-cccc-cccc-cccc-000000000863' AND external_load_id = 'CARGA-863-7';
+INSERT INTO public.discrepancies (id, operator_id, kind, operation_type, package_id, manifest_id, detected_by_user_id, note) VALUES
+  ('cccccccc-0000-4000-9999-000000000003','cccccccc-cccc-cccc-cccc-000000000863','missing','pickup',
+   'cccccccc-0000-4000-d000-000000000871',
+   (SELECT id FROM public.manifests WHERE operator_id = 'cccccccc-cccc-cccc-cccc-000000000863' AND external_load_id = 'CARGA-863-7'),
+   'cccccccc-0000-4000-a000-000000000863','fixture prp corrupto');
+SELECT is(
+  (SELECT carga FROM public.get_discrepancies_ops_control(NULL) WHERE id = 'cccccccc-0000-4000-9999-000000000003'),
+  'CARGA-863-7', 'prp: carga (from pm, unaffected) still resolves'
+);
+SELECT is(
+  (SELECT ruta FROM public.get_discrepancies_ops_control(NULL) WHERE id = 'cccccccc-0000-4000-9999-000000000003'),
+  NULL, 'prp: but ruta does not leak operator B''s route code, via the manifest''s own corrupted pickup_route_id'
+);
+
+-- rr: route_reception_id points directly at operator B's real route_reception.
+--
+-- Ronda 3 (#715, M4 follow-up), honestly declared rather than overclaimed:
+-- measured, removing ONLY rr's own operator_id filter does NOT flip this
+-- assertion -- prr's independent filter (confirmed above to kill on its own)
+-- already blocks the route code from propagating, because ruta only ever
+-- reaches the client through prr, never through rr directly. rr's own
+-- operator_id filter is real defense-in-depth (it would matter the moment a
+-- future column selects off rr.* directly, or if prr's filter were ever
+-- weakened at the same time), but it is NOT independently observable through
+-- today's output columns -- the same class of finding as the COALESCE fixed
+-- above by the CASE rewrite, except here restructuring the query to force
+-- independence is not worth doing for a filter with no live column to leak
+-- through. The two assertions below still hold and still regression-test the
+-- no-leak property end to end; they just don't isolate rr from prr.
+INSERT INTO public.discrepancies (id, operator_id, kind, operation_type, package_id, route_reception_id, detected_by_user_id, note) VALUES
+  ('cccccccc-0000-4000-9999-000000000004','cccccccc-cccc-cccc-cccc-000000000863','missing','reception',
+   'cccccccc-0000-4000-d000-000000000872',
+   (SELECT id FROM public.route_receptions WHERE pickup_route_id = 'dddddddd-0000-4000-e000-000000000863'),
+   'cccccccc-0000-4000-a000-000000000864','fixture rr corrupto');
+SELECT is(
+  (SELECT package_label FROM public.get_discrepancies_ops_control(NULL) WHERE id = 'cccccccc-0000-4000-9999-000000000004'),
+  'CTN863-9', 'rr: the package (A''s own) still resolves'
+);
+SELECT is(
+  (SELECT ruta FROM public.get_discrepancies_ops_control(NULL) WHERE id = 'cccccccc-0000-4000-9999-000000000004'),
+  NULL, 'rr+prr: ruta does not leak operator B''s route (see comment above: this pins the pair, not rr alone)'
+);
+
+-- prr: route_reception_id points at A's OWN route_reception (route1's,
+-- otherwise unused so far), which resolves fine (rr correct) -- but THAT
+-- row's own pickup_route_id is corrupted to point at operator B's route.
+-- Isolates prr's filter from rr's. A SECOND B route (routeB2) is needed as
+-- the corruption target -- uniq_route_receptions_pickup_route blocks two
+-- route_receptions pointing at the SAME pickup_route_id, and rrB1 already
+-- points at routeB1.
+INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, vehicle_id, status) VALUES
+  ('dddddddd-0000-4000-e000-000000000864','dddddddd-dddd-dddd-dddd-000000000863','PR-863-B2','dddddddd-0000-4000-b000-000000000863','dddddddd-0000-4000-f000-000000000863','in_progress')
+ON CONFLICT (id) DO NOTHING;
+UPDATE public.route_receptions SET pickup_route_id = 'dddddddd-0000-4000-e000-000000000864'
+ WHERE pickup_route_id = 'cccccccc-0000-4000-e000-000000000863';
+INSERT INTO public.discrepancies (id, operator_id, kind, operation_type, package_id, route_reception_id, detected_by_user_id, note) VALUES
+  ('cccccccc-0000-4000-9999-000000000005','cccccccc-cccc-cccc-cccc-000000000863','missing','reception',
+   'cccccccc-0000-4000-d000-000000000876',
+   -- rr1, the only A-owned route_reception now pointing at B's routeB2.
+   (SELECT id FROM public.route_receptions
+     WHERE pickup_route_id = 'dddddddd-0000-4000-e000-000000000864'
+       AND operator_id = 'cccccccc-cccc-cccc-cccc-000000000863'),
+   'cccccccc-0000-4000-a000-000000000863','fixture prr corrupto');
+SELECT is(
+  (SELECT ruta FROM public.get_discrepancies_ops_control(NULL) WHERE id = 'cccccccc-0000-4000-9999-000000000005'),
+  NULL, 'prr: ruta does not leak operator B''s route, via route1''s reception''s own corrupted pickup_route_id'
+);
+
+-- u: detected_by_user_id points directly at operator B's real user.
+INSERT INTO public.discrepancies (id, operator_id, kind, operation_type, package_id, manifest_id, detected_by_user_id, note) VALUES
+  ('cccccccc-0000-4000-9999-000000000006','cccccccc-cccc-cccc-cccc-000000000863','missing','pickup',
+   'cccccccc-0000-4000-d000-000000000870', -- reuses pkg7; already resolved above (independent column)
+   (SELECT id FROM public.manifests WHERE operator_id = 'cccccccc-cccc-cccc-cccc-000000000863' AND external_load_id = 'CARGA-863-1'),
+   'dddddddd-0000-4000-b000-000000000863','fixture u corrupto');
+SELECT is(
+  (SELECT closed_by_name FROM public.get_discrepancies_ops_control(NULL) WHERE id = 'cccccccc-0000-4000-9999-000000000006'),
+  NULL, 'u: closed_by_name does not leak operator B''s user, via a detected_by_user_id pointing straight at it'
+);
+
+-- ps (inside the LATERAL): the only 'verified' scan for pkg11, on A's own
+-- manifest2/route2 (a genuinely matching route), is owned by operator B.
+SELECT public.record_discrepancies(
+  'reception'::public.discrepancy_operation_enum,
+  (SELECT id FROM public.route_receptions WHERE pickup_route_id = 'cccccccc-0000-4000-e000-000000000864'),
+  jsonb_build_array(jsonb_build_object('kind','missing','package_id','cccccccc-0000-4000-d000-000000000874'))
+);
+INSERT INTO public.pickup_scans (id, operator_id, manifest_id, package_id, barcode_scanned, scan_result, scanned_at) VALUES
+  ('cccccccc-0000-4000-9000-000000000807','dddddddd-dddd-dddd-dddd-000000000863', -- operator B's scan
+   (SELECT id FROM public.manifests WHERE operator_id = 'cccccccc-cccc-cccc-cccc-000000000863' AND external_load_id = 'CARGA-863-2'),
+   'cccccccc-0000-4000-d000-000000000874','CTN863-11-FOREIGNSCAN','verified', NOW());
+SELECT is(
+  (SELECT carga FROM public.get_discrepancies_ops_control(NULL) WHERE package_label = 'CTN863-11'),
+  NULL, 'ps: carga does not leak via a matching scan owned by another tenant, even on A''s own correct manifest/route'
+);
+
+-- m (inside the LATERAL): pkg12's own scan is A-owned and 'verified', but
+-- its manifest_id points at operator B's manifest -- whose pickup_route_id
+-- is corrupted (here) to equal A's route2, so only m's own filter stands
+-- between NULL and a leak.
+UPDATE public.manifests SET pickup_route_id = 'cccccccc-0000-4000-e000-000000000864'
+ WHERE operator_id = 'dddddddd-dddd-dddd-dddd-000000000863' AND external_load_id = 'CARGA-863-B1';
+SELECT public.record_discrepancies(
+  'reception'::public.discrepancy_operation_enum,
+  (SELECT id FROM public.route_receptions WHERE pickup_route_id = 'cccccccc-0000-4000-e000-000000000864'),
+  jsonb_build_array(jsonb_build_object('kind','missing','package_id','cccccccc-0000-4000-d000-000000000875'))
+);
+INSERT INTO public.pickup_scans (id, operator_id, manifest_id, package_id, barcode_scanned, scan_result, scanned_at) VALUES
+  ('cccccccc-0000-4000-9000-000000000808','cccccccc-cccc-cccc-cccc-000000000863', -- A's own scan
+   (SELECT id FROM public.manifests WHERE operator_id = 'dddddddd-dddd-dddd-dddd-000000000863' AND external_load_id = 'CARGA-863-B1'),
+   'cccccccc-0000-4000-d000-000000000875','CTN863-12-FOREIGNMANIFEST','verified', NOW());
+SELECT is(
+  (SELECT carga FROM public.get_discrepancies_ops_control(NULL) WHERE package_label = 'CTN863-12'),
+  NULL, 'm: carga does not leak via a scan on a manifest owned by another tenant, even one route-matched by coincidence'
 );
 
 -- ── 5. A barcode-only ("unexpected") row never breaks the query ──────────
