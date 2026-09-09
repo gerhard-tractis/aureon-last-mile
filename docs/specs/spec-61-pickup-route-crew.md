@@ -256,7 +256,7 @@ existing form, not a new screen. This plan implements the role.
 | **`create-qa-users.sh` does NOT run on deploy** — `deploy-qa.sh:175` deliberately leaves it in `setup-qa.sh:195`, the one-time bootstrap. Adding a row to the script does not create the user in QA; someone must run it on the VPS | cited files, plus `docs/qa-environment.md:196, 270` |
 | QA's whole pickup scenario is built around `qa-pickup-crew@qa.test` (`…0201`) having **no** active route so it lands on `3j` — that is precisely the account this spec blocks | `packages/database/supabase/seed-qa.sql:326-340, 688-693`; login table at `docs/qa-environment.md:131-140` |
 | The nav badge counts pickup work from `manifests.status IN ('pending','in_progress')` and never calls `get_pending_manifests` — Task 7 does not move it | `20260817000001_spec54_nav_counts.sql:43-49` |
-| CI runs no SQL. DB assertions run through the local docker harness; its `run` marks a test failed when the output contains `ERROR` | `scripts/pgtap-local.sh:2-4, 118-133` |
+| CI runs no SQL. DB assertions run through the local docker harness; its `run` marks a test failed on `ERROR:`/`psql: error:`, on a pgTAP `not ok N` assertion, or on a `1..N` plan whose executed `ok`/`not ok` count doesn't match | `scripts/pgtap-local.sh:2-4, 118-` |
 | Migration version prefixes must be unique or every deploy aborts | `scripts/check-migration-versions.sh` |
 
 ### Decisions this plan makes
