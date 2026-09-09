@@ -199,6 +199,32 @@ export async function manifestHasDeadEntry(
 }
 
 /**
+ * spec-81 fase 4 — el detalle detrás de `getBlockedPickupCount` (`@/lib/db`).
+ * Ese contador cuenta dos cosas distintas como "bloqueado": un `dead` real
+ * (rechazo de negocio irrecuperable, con `lastError`) y una `pending`
+ * bloqueada TEMPORALMENTE detrás de un `dead` o de otro operario
+ * (`manifestIsBlocked`) — esa segunda nunca se intentó, no tiene
+ * `lastError`, y se libera sola. El chip de sync necesita SÓLO la primera
+ * mitad para explicarle al operario qué manifiesto está bloqueado y por
+ * qué; mezclar las dos convertiría "espera unos minutos" en "pide ayuda".
+ *
+ * Deliberadamente sin memoización ni escaneo de manifiestos bloqueados —
+ * a diferencia de `getPendingPickupCount`/`getBlockedPickupCount`, esto no
+ * se llama en cada `POLL_MS`: sólo cuando el operario abre el detalle del
+ * chip (`useBlockedPickupEntries`).
+ */
+export async function listDeadPickupEntries(
+  db: PickupQueueStore,
+  operatorId: string,
+): Promise<PickupQueueEntry[]> {
+  return db.pickup_queue
+    .where("operatorId")
+    .equals(operatorId)
+    .and((entry) => entry.status === "dead")
+    .toArray();
+}
+
+/**
  * Borra las entradas ya confirmadas (`sent`) de un operador. Ver spec-81,
  * "Riesgos" — tope declarado de 500 entradas sin confirmar por operador;
  * `purgeConfirmed` es lo que mantiene la cuota bajo control una vez que

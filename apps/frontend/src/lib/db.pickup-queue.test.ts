@@ -7,13 +7,8 @@
  * nueva (version 2) en la misma base que ya usa `db.scan_queue`.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import {
-  db,
-  getBlockedPickupCount,
-  getPendingPickupCount,
-  listDeadPickupEntries,
-  requestPersistentStorage,
-} from './db';
+import { db, getBlockedPickupCount, getPendingPickupCount, requestPersistentStorage } from './db';
+import { listDeadPickupEntries } from './offline/queue';
 import * as queueBlockingLib from './offline/queue-blocking';
 
 describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
@@ -276,7 +271,7 @@ describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
         },
       ]);
 
-      const entries = await listDeadPickupEntries('op-1');
+      const entries = await listDeadPickupEntries(db, 'op-1');
 
       expect(entries).toHaveLength(1);
       expect(entries[0].clientOperationId).toBe('a');
@@ -302,7 +297,7 @@ describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
         { ...baseEntry, clientOperationId: 'b', operatorId: 'op-1', userId: 'user-a', status: 'pending' },
       ]);
 
-      const entries = await listDeadPickupEntries('op-1');
+      const entries = await listDeadPickupEntries(db, 'op-1');
 
       expect(entries.map((e) => e.clientOperationId)).toEqual(['a']);
     });
@@ -312,7 +307,7 @@ describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
         { ...baseEntry, clientOperationId: 'a', operatorId: 'op-1', userId: 'user-a', status: 'pending' },
       ]);
 
-      await expect(listDeadPickupEntries('op-1')).resolves.toEqual([]);
+      await expect(listDeadPickupEntries(db, 'op-1')).resolves.toEqual([]);
     });
   });
 

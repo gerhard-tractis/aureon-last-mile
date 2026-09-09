@@ -1144,26 +1144,53 @@ review):**
 
 Redacción del handoff: «se guardan en el dispositivo y se envían solos…». Cuenta pendientes, como pide `5i`.
 
-- [ ] Desmontar el `fixed top-0` sin romper auth ni landing, que hoy también lo montan.
-- [ ] **Afordancia humana para `dead` (B3, ronda 2 de review del PR #679 —
+- [x] **Desmontar el `fixed top-0` sin romper auth ni landing.** Ya hecho —
+      no en esta fase: `ConnectionStatusBanner.tsx` fue borrado el
+      2026-08-16 en `0fb4184` (spec-54 fase 4.5, PR #429), reemplazado por
+      `SyncChip.tsx`, montado una única vez en `TopBar` (dentro de
+      `AppLayout`, nunca en `app/auth/layout.tsx` ni en `app/(landing)`).
+      El fichero que este ítem nombra (`components/ConnectionStatusBanner.tsx`)
+      no existe en el árbol — verificado (`git log --follow` sobre ese
+      path, y un grep de `SyncChip`/`scan_queue`/`syncManager` sobre
+      `app/auth/` y `app/(landing)/`, ninguno). El `**Archivos:**` de esta
+      fase queda desactualizado por la misma razón: el archivo real es
+      `components/SyncChip.tsx`.
+- [x] **Afordancia humana para `dead` (B3, ronda 2 de review del PR #679 —
       bloqueante en fase 2, no cerrado del todo ahí).** `dead` es
       deliberadamente permanente — ver el docstring de `manifestHasDeadEntry`
       y la decisión de no revertirlo tomada en la ronda 2: soltar el cierre
       detrás de un escaneo muerto cierra la carga con un bulto de menos, que
-      es el riesgo nº1 del spec. Pero hoy, tras la ronda 2, `dead` sólo dejó
-      de mentir (`getBlockedPickupCount`, separado de `queuedCount`;
-      `SyncChip` ya no lo pinta en verde de éxito) — no tiene ninguna salida.
-      Grep de `'dead'` en todo `apps/frontend/src`: sólo aparece en el tipo,
-      en los guards de `queue-claims.ts`, en `manifestHasDeadEntry` y en
-      `getBlockedPickupCount` (para contarlo). Ninguna pantalla, botón,
-      `markAlive` ni purga manual. Sin esto el operario recibió el toast
-      «tu firma se guardó y el cierre se enviará solo» y nada se lo
-      desmiente nunca — el chip ahora dice «requiere ayuda» pero no dice a
-      quién pedírsela ni qué hacer. Esta fase, que ya toca `SyncChip` y su
-      pantalla, debe: mostrar qué manifiesto está bloqueado y por qué
-      (`lastError`), y dar una vía para que un humano lo resuelva (contactar
-      soporte/operaciones — no necesariamente reintentar solo, dado que
-      `dead` es un rechazo de negocio, no de red).
+      es el riesgo nº1 del spec. Parcialmente cerrado ya antes de esta
+      fase: `retryDead`/`retryBlockedManifest` (fase 2, rondas 4-5 de
+      review del PR #679) y el botón "REQUIERE AYUDA · Toca para
+      reintentar" en `complete/[loadId]/page.tsx` — el grep que este ítem
+      citaba como evidencia de que no había nada ya no es cierto. Lo que
+      seguía faltando, y esta fase entrega: el chip global (`SyncChip`,
+      topbar, visible en TODA pantalla, no sólo en la de cierre) no decía
+      QUÉ manifiesto está bloqueado ni POR QUÉ (`lastError`) — sólo un
+      conteo. Nuevo: `listDeadPickupEntries` (`lib/offline/queue.ts`) +
+      `useBlockedPickupEntries` (hook) + un `<details>` en `SyncChip` que,
+      por cada `dead`, muestra el id del manifiesto, su `lastError`, y —
+      la distinción que el spec pide explícitamente, y que cambió el mismo
+      día que esta fase se implementó (fase 5, ronda 3 de review del PR
+      #712) — si ESE `dead` concreto bloquea el cierre de la carga o no
+      (`deadEntryBlocksManifestClose`: una `manifest_photo` muerta cuenta
+      como bloqueada en `getBlockedPickupCount` pero ya NO frena
+      `close_manifest`; el chip lo dice explícitamente en vez de dejar que
+      el operario asuma que si el badge está en rojo, la carga no puede
+      cerrarse). Vía de resolución: texto "Contacta a soporte u
+      operaciones para resolverlo" — no un botón de reintento nuevo (el
+      spec pide explícitamente "no necesariamente reintentar solo, dado
+      que `dead` es un rechazo de negocio, no de red"; el reintento ya
+      vive en la pantalla de cierre desde fase 2). El detalle también
+      declara lo que NO puede explicar: `getBlockedPickupCount` cuenta
+      también una `pending` bloqueada temporalmente detrás de otro
+      operario (se libera sola, nunca tuvo `lastError`) —
+      `listDeadPickupEntries` no la trae a propósito (mezclar "espera 15
+      minutos" con "pide ayuda" sería la misma mentira al revés), y el
+      panel lo dice explícitamente ("+N más esperando a otro operario; se
+      liberan solas") en vez de hacer desaparecer esa diferencia entre el
+      conteo del badge y las filas listadas.
 
 ### Fase 5 — Fotos `[in_progress]`
 

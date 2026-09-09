@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import type { PickupQueueEntry } from '@/lib/db';
 
 const mockState = {
   status: 'online' as 'online' | 'offline' | 'syncing',
@@ -14,12 +15,28 @@ vi.mock('@/hooks/useSyncQueue', () => ({
   useSyncQueue: () => mockState,
 }));
 
+// spec-81 fase 4 — el detalle detrás de `blockedCount`. Estado propio para
+// que cada test controle exactamente qué ve el panel sin tocar IndexedDB.
+const mockDetail: {
+  status: 'idle' | 'ok' | 'error';
+  entries: Partial<PickupQueueEntry>[];
+} = {
+  status: 'idle',
+  entries: [],
+};
+
+vi.mock('@/hooks/useBlockedPickupEntries', () => ({
+  useBlockedPickupEntries: () => mockDetail,
+}));
+
 import { SyncChip } from './SyncChip';
 
 beforeEach(() => {
   mockState.status = 'online';
   mockState.queuedCount = 0;
   mockState.blockedCount = 0;
+  mockDetail.status = 'idle';
+  mockDetail.entries = [];
 });
 
 describe('SyncChip', () => {
@@ -98,6 +115,93 @@ describe('SyncChip', () => {
       render(<SyncChip />);
       expect(screen.getByText(/3 EN COLA/)).toBeInTheDocument();
       expect(screen.getByText(/1 REQUIERE AYUDA/i)).toBeInTheDocument();
+    });
+  });
+
+  // spec-81 fase 4 — la afordancia completa que la ronda 2 de review del
+  // PR #679 dejó pendiente: qué manifiesto está bloqueado, por qué
+  // (`lastError`), si eso detiene el cierre de esa carga o no (una foto
+  // muerta no lo hace), y una vía para que un humano lo resuelva.
+  describe('blocked detail (afordancia humana)', () => {
+    it('renders no detail disclosure while nothing is blocked', () => {
+      render(<SyncChip />);
+      expect(screen.queryByTestId('sync-chip-detail-toggle')).not.toBeInTheDocument();
+    });
+
+    it('offers a detail disclosure once something is blocked', () => {
+      mockState.blockedCount = 1;
+      render(<SyncChip />);
+      expect(screen.getByTestId('sync-chip-detail-toggle')).toBeInTheDocument();
+    });
+
+    it('names the blocked manifest and the reason it was rejected', () => {
+      mockState.blockedCount = 1;
+      mockDetail.status = 'ok';
+      mockDetail.entries = [
+        { id: 1, manifestId: 'manifest-77', type: 'pickup_scan', lastError: 'MANIFEST_NOT_CLOSABLE' },
+      ];
+      render(<SyncChip />);
+      expect(screen.getByText(/manifest-77/)).toBeInTheDocument();
+      expect(screen.getByText(/MANIFEST_NOT_CLOSABLE/)).toBeInTheDocument();
+    });
+
+    it('says a pickup_scan/close_manifest rejection blocks closing that load', () => {
+      mockState.blockedCount = 1;
+      mockDetail.status = 'ok';
+      mockDetail.entries = [
+        { id: 1, manifestId: 'manifest-77', type: 'pickup_scan', lastError: 'MANIFEST_NOT_CLOSABLE' },
+      ];
+      render(<SyncChip />);
+      expect(screen.getByText(/bloquea el cierre/i)).toBeInTheDocument();
+    });
+
+    // La distinción exacta que la fase 5 (photos-send.ts) introdujo hoy:
+    // una foto muerta SIGUE contando como bloqueada (blockedCount), pero
+    // manifestHasDeadEntry ya no la usa para frenar el close_manifest. El
+    // chip miente si no dice la diferencia.
+    it('says a dead manifest_photo does NOT block closing the load — it is backup, not count', () => {
+      mockState.blockedCount = 1;
+      mockDetail.status = 'ok';
+      mockDetail.entries = [
+        { id: 1, manifestId: 'manifest-77', type: 'manifest_photo', lastError: 'sheet_number collision' },
+      ];
+      render(<SyncChip />);
+      expect(screen.getByText(/no bloquea el cierre/i)).toBeInTheDocument();
+    });
+
+    it('gives a human path to resolve it — contacting support/operations', () => {
+      mockState.blockedCount = 1;
+      mockDetail.status = 'ok';
+      mockDetail.entries = [
+        { id: 1, manifestId: 'manifest-77', type: 'pickup_scan', lastError: 'MANIFEST_NOT_CLOSABLE' },
+      ];
+      render(<SyncChip />);
+      expect(screen.getByText(/soporte|operaciones/i)).toBeInTheDocument();
+    });
+
+    // `getBlockedPickupCount` también cuenta una `pending` esperando
+    // detrás de otro operario (se libera sola) — `listDeadPickupEntries`
+    // no la trae porque nunca tuvo nada que explicar. El panel no puede
+    // desaparecer ese resto silenciosamente: 3 bloqueadas y sólo 1 dead
+    // real tiene que decir dónde están las otras 2, no fingir que sólo
+    // hay 1.
+    it('accounts for blocked entries the detail list cannot explain — waiting on another operator, not dead', () => {
+      mockState.blockedCount = 3;
+      mockDetail.status = 'ok';
+      mockDetail.entries = [
+        { id: 1, manifestId: 'manifest-77', type: 'pickup_scan', lastError: 'MANIFEST_NOT_CLOSABLE' },
+      ];
+      render(<SyncChip />);
+      expect(screen.getByText(/\+2/)).toBeInTheDocument();
+    });
+
+    it('distinguishes a failed read from "nothing is blocked" — never a silent zero', () => {
+      mockState.blockedCount = 1;
+      mockDetail.status = 'error';
+      mockDetail.entries = [];
+      render(<SyncChip />);
+      expect(screen.getByText(/no se pudo cargar/i)).toBeInTheDocument();
+      expect(screen.queryByText(/nada requiere ayuda/i)).not.toBeInTheDocument();
     });
   });
 });

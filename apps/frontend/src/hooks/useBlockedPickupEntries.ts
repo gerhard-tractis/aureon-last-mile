@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { listDeadPickupEntries, type PickupQueueEntry } from '@/lib/db';
+import { db, type PickupQueueEntry } from '@/lib/db';
+import { listDeadPickupEntries } from '@/lib/offline/queue';
 
 /**
  * spec-81 fase 4 — el detalle detrás del contador `blockedCount` de
@@ -39,7 +40,7 @@ export function useBlockedPickupEntries(
       return;
     }
     try {
-      const rows = await listDeadPickupEntries(operatorId);
+      const rows = await listDeadPickupEntries(db, operatorId);
       setEntries(rows);
       setStatus('ok');
     } catch {

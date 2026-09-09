@@ -1,9 +1,6 @@
 export const es: Record<string, string> = {
   'dispatch.coming_soon': 'Despacho — Próximamente',
   'orders.count': '{count} órdenes',
-  'connection.offline': 'Sin conexión',
-  'connection.syncing': 'Sincronizando...',
-  'connection.queued': '{n} escaneos en cola',
   'pickup.all': 'Todos',
   'pickup.nuevo_manifiesto': 'Nuevo Manifiesto',
   'pickup.select_client': 'Selecciona un cliente',

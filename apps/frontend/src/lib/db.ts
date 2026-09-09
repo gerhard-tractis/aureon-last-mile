@@ -248,28 +248,6 @@ function createBlockedChecker(
 }
 
 /**
- * spec-81 fase 4 — el detalle detrás de `getBlockedPickupCount`. Ese
- * contador cuenta dos cosas distintas como "bloqueado": un `dead` real
- * (rechazo de negocio irrecuperable, con `lastError`) y una `pending`
- * bloqueada TEMPORALMENTE detrás de un `dead` o de otro operario
- * (`manifestIsBlocked`) — esa segunda nunca se intentó, no tiene
- * `lastError`, y se libera sola. El chip de sync necesita SÓLO la primera
- * mitad para explicarle al operario qué manifiesto está bloqueado y por
- * qué; mezclar las dos convertiría "espera unos minutos" en "pide ayuda".
- *
- * Deliberadamente sin memoización ni escaneo de manifiestos bloqueados —
- * a diferencia de los dos contadores de arriba, esto no se llama en cada
- * `POLL_MS`: sólo cuando el operario abre el detalle del chip.
- */
-export async function listDeadPickupEntries(operatorId: string): Promise<PickupQueueEntry[]> {
-  return db.pickup_queue
-    .where('operatorId')
-    .equals(operatorId)
-    .and((entry) => entry.status === 'dead')
-    .toArray();
-}
-
-/**
  * Pide al navegador que el origen sea "persistent" en vez de "best-effort".
  * Sin esto, iOS Safari (no instalado) purga IndexedDB a los 7 días sin
  * interacción y Android puede desalojar el origen entero bajo presión de
