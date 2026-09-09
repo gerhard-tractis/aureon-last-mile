@@ -21,16 +21,21 @@
 -- fact (surplus, not shortfall) and spec-54's "2 faltantes de 44" is
 -- specifically about what did NOT show up.
 --
--- Known limitation, accepted rather than fixed here: this COUNTs rows, not
--- DISTINCT package_id. uniq_open_discrepancy_per_package
+-- COUNT(DISTINCT d.package_id), not COUNT(*): uniq_open_discrepancy_per_package
 -- (20260913000001) only blocks two 'open' rows for the same
 -- (package_id, source_id) — it does NOT block an 'open' row coexisting with
 -- a 'lost' or already-'resolved' row for that same package on the same
--- manifest. That combination is rare (it requires two separate
--- record_discrepancies calls against the same still-open manifest) but not
--- impossible, and would inflate missing_count by counting the same physical
--- shortfall twice. Covered, not silently ignored, by this phase's pgTAP
--- (see the CARGA-83-4 fixture).
+-- manifest (e.g. spec-81's offline queue retries a close and records the
+-- 'open' row, then an ops manager confirms the same loss as 'lost' before
+-- the first row resolves). Round-2 review (2026-09-08) first accepted this
+-- as a documented, rare limitation, then reversed that call: the fix is
+-- cheaper than the note justifying skipping it, the failure mode is
+-- overstatement in a figure that can end up in an indemnity dispute (never
+-- an undercount — the merma itself is never hidden), and DISTINCT is safe
+-- here specifically because discrepancy_shape (20260913000001) forces
+-- package_id IS NOT NULL whenever kind='missing', so this subquery's own
+-- kind='missing' filter guarantees no row here has a NULL package_id for
+-- DISTINCT to silently drop.
 --
 -- Template (per CLAUDE.md, latest definition of get_completed_manifests as
 -- of 2026-09-08, verified with
@@ -76,7 +81,7 @@ AS $$
     m.labels_printed_at,
     u.full_name AS labels_printed_by_name,
     COALESCE((
-      SELECT COUNT(*)
+      SELECT COUNT(DISTINCT d.package_id)
         FROM public.discrepancies d
        WHERE d.manifest_id = m.id
          -- Defense in depth, not load-bearing on its own: d.manifest_id
@@ -106,7 +111,7 @@ AS $$
   ORDER BY m.created_at DESC
 $$;
 
-COMMENT ON FUNCTION public.get_completed_manifests() IS 'Completed manifests for the history tab. Sorted by manifest creation date DESC. pickup_point sourced from manifests.pickup_location. spec-53: adds labels_printed_at/labels_printed_by_name. spec-83 fase 1: adds missing_count, a COUNT over public.discrepancies (kind=''missing'', operation_type=''pickup'', not soft-deleted, status <> ''resolved'' — ''lost'' still counts, only ''resolved'' means the shortfall is no longer merma) for this manifest — TodayClosuresPanel uses it to show "N faltantes de M" in the warning palette only when > 0. Counts rows, not DISTINCT package_id — see the comment above the subquery for the accepted double-count edge case.';
+COMMENT ON FUNCTION public.get_completed_manifests() IS 'Completed manifests for the history tab. Sorted by manifest creation date DESC. pickup_point sourced from manifests.pickup_location. spec-53: adds labels_printed_at/labels_printed_by_name. spec-83 fase 1: adds missing_count, a COUNT(DISTINCT package_id) over public.discrepancies (kind=''missing'', operation_type=''pickup'', not soft-deleted, status <> ''resolved'' — ''lost'' still counts, only ''resolved'' means the shortfall is no longer merma) for this manifest — TodayClosuresPanel uses it to show "N faltantes de M" in the warning palette only when > 0. DISTINCT on package_id, not a plain row count, so the same physical shortfall is never counted twice even if it has more than one non-resolved discrepancy row (see the comment above the subquery).';
 
 -- =============================================================================
 -- Verification

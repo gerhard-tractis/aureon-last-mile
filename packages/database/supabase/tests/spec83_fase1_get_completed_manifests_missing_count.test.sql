@@ -26,12 +26,17 @@
 --         regression back to `status = 'open'`: that wrong filter reports 0
 --         here, painting a real loss as a clean close.
 --
---   CARGA-83-4 (5 packages) — the accepted double-count edge case: the SAME
---         package_id has TWO non-resolved discrepancy rows on the SAME
---         manifest (one 'open', one 'lost') — uniq_open_discrepancy_per_package
---         only blocks two 'open' rows, not an 'open' + 'lost' pair. This
---         locks in and documents the known behaviour (COUNT(*) inflates to
---         2), it does not assert this is desirable.
+--   CARGA-83-4 (5 packages) — the SAME package_id has TWO non-resolved
+--         discrepancy rows on the SAME manifest (one 'open', one 'lost') —
+--         uniq_open_discrepancy_per_package only blocks two 'open' rows for
+--         that pair, not an 'open' + 'lost' one (e.g. spec-81's offline
+--         queue retries a close and records the 'open' row, then an ops
+--         manager confirms the same loss as 'lost' before the first
+--         resolves). missing_count must still be 1, not 2: COUNT(DISTINCT
+--         package_id) collapses this pair into the single physical
+--         shortfall it actually is — round-2 review reversed an earlier
+--         "document, don't fix" call on this exact case, because the
+--         overcounted figure can land in an indemnity dispute.
 --
 -- Also asserts labels_printed_at/labels_printed_by_name survive this
 -- CREATE OR REPLACE with a REAL name, not just a NULL check — a NULL check
@@ -167,11 +172,11 @@ INSERT INTO public.discrepancies (
    '00000000-0000-4000-8000-0000000083d4', NULL,
    (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-0000000083f0' AND external_load_id = 'CARGA-83-3'),
    '00000000-0000-4000-8000-0000000083f1', NOW(), '00000000-0000-4000-8000-0000000083f1', 'Confirmado perdido.', NULL),
-  -- CARGA-83-4: accepted double-count edge case — SAME package_id, SAME
-  -- manifest, two non-resolved rows ('open' + 'lost'). Documents that
-  -- COUNT(*) reports 2 here, not 1 — uniq_open_discrepancy_per_package only
-  -- blocks two 'open' rows for the same (package_id, source_id), not an
-  -- 'open' + 'lost' pair.
+  -- CARGA-83-4: SAME package_id, SAME manifest, two non-resolved rows
+  -- ('open' + 'lost') — must still count as ONE shortfall, not two.
+  -- uniq_open_discrepancy_per_package only blocks two 'open' rows for the
+  -- same (package_id, source_id), not an 'open' + 'lost' pair, so
+  -- COUNT(DISTINCT package_id) is what actually collapses this.
   ('00000000-0000-4000-8000-0000000083f0','missing','pickup','open',
    '00000000-0000-4000-8000-0000000083d5', NULL,
    (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-0000000083f0' AND external_load_id = 'CARGA-83-4'),
@@ -220,15 +225,14 @@ SELECT is(
   'CARGA-83-3: a lone ''lost'' discrepancy still counts as missing — ''lost'' is not ''resolved'''
 );
 
--- Documents (does not "fix") the accepted double-count edge case: the same
--- package_id with an 'open' row AND a 'lost' row on the same manifest is
--- counted twice, because uniq_open_discrepancy_per_package only blocks two
--- OPEN rows for that pair.
+-- The same physical shortfall recorded twice (one 'open' row, one 'lost'
+-- row, same package_id, same manifest) must still count as ONE — proves
+-- COUNT(DISTINCT package_id), not a plain row count.
 SELECT is(
   (SELECT missing_count FROM public.get_completed_manifests()
     WHERE external_load_id = 'CARGA-83-4'),
-  2,
-  'CARGA-83-4: known limitation — the same package with an open + a lost row counts as 2, not 1 (documented in the migration, not fixed here)'
+  1,
+  'CARGA-83-4: the same package with an open row AND a lost row counts as 1 shortfall, not 2 (COUNT DISTINCT package_id)'
 );
 
 -- spec-53 contract: labels_printed_at/labels_printed_by_name must survive
