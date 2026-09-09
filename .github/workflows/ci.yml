@@ -175,17 +175,23 @@ jobs:
           CT=pgtap-selftest-ci
           docker rm -f "$CT" >/dev/null 2>&1 || true
           docker run -d --name "$CT" -e POSTGRES_PASSWORD=pgtap supabase/postgres:15.8.1.060 >/dev/null
-          # supabase/postgres restarts postgres at least once during its own
-          # init (extensions, roles) — a "select 1" that succeeds once can
-          # still be followed by a dropped connection moments later.
-          # pgtap-local.sh's own `up` handles this the same way: succeed,
-          # sleep, succeed again before treating it as ready.
+          # supabase/postgres restarts postgres more than once during its own
+          # init (initdb, then extensions/roles bootstrap, then final start)
+          # — a "select 1" that succeeds once, even twice 3s apart, can still
+          # be followed by "the database system is shutting down" moments
+          # later on a cold runner (measured on a GitHub-hosted runner: a
+          # restart landed right as the first pgTAP fixture ran, after the
+          # one-retry check below passed). Require 5 consecutive successes,
+          # 2s apart, before treating it as actually settled.
           ok=0
-          for i in $(seq 1 60); do
-            docker exec "$CT" psql -U postgres -d postgres -tAc "select 1" >/dev/null 2>&1 \
-              && sleep 3 \
-              && docker exec "$CT" psql -U postgres -d postgres -tAc "select 1" >/dev/null 2>&1 \
-              && { ok=1; break; }
+          consec=0
+          for i in $(seq 1 90); do
+            if docker exec "$CT" psql -U postgres -d postgres -tAc "select 1" >/dev/null 2>&1; then
+              consec=$((consec+1))
+            else
+              consec=0
+            fi
+            if [ "$consec" -ge 5 ]; then ok=1; break; fi
             sleep 2
           done
           if [ "$ok" -ne 1 ]; then
