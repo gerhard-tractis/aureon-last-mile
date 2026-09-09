@@ -97,6 +97,19 @@ nombrando la capacidad exacta — no la des por perdida y sigas con una versión
 más débil sin decirlo. Escalar y no recibir respuesta sí es un bloqueo válido;
 asumir que no la tienes sin preguntar, no.
 
+## Antes de que el orquestador te dispatche junto a otra fase
+
+Si el orquestador te está dispatchando en paralelo con otra(s) fase(s), la
+decisión de que las superficies no se pisan **es suya, hecha antes de
+dispatcharte** — con `scripts/check-phase-overlap.mjs` contra los targets
+`<spec>#<fase>[@<rama>]` en vuelo (ver `docs/specs/spec-89-guardarrail-de-paralelismo.md`).
+No repitas ese chequeo dentro de tu worktree: aislado ahí, no tienes forma de
+saber qué otras ramas están activas ahora mismo — esa vista completa la tiene
+sólo el orquestador. Si en tu propio trabajo descubres que dependes del
+contrato de otra fase que sabes que está en curso (un hook, un RPC, un tipo
+compartido) y no hay evidencia de que el orquestador lo haya chequeado,
+dilo en tu reporte — no asumas que ya se comprobó.
+
 ## Cuándo detenerte
 
 Si el spec pide algo que el código no puede sostener honestamente y resolverlo

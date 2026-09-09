@@ -2,7 +2,7 @@
 
 > **Related:** [spec-54](spec-54-ui-rebrand.md) (**su fase 4.4 construyó esta pantalla contra el mock `1l` y difirió estos tres datos con razón escrita**), [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (el cierre que produce la merma que aquí se muestra), [spec-82](spec-82-recogida-movil-asignacion-y-ruta.md) (`5b`/`5c`; la asignación puede aterrizar aquí), [spec-61](spec-61-pickup-route-crew.md) (panel de armado de ruta), [spec-73](spec-73-capacity-ladder-truck-topup.md) (capacidad de vehículo en Despacho — precedente directo)
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit, e2e-qa
 
 > **Nota (2026-09-07).** El punto 1 («Merma en cierres», «2 faltantes de 44»)
@@ -15,6 +15,24 @@
 > que dejaba la merma no consultable) queda descartada.
 
 _Date: 2026-09-07_
+
+## Mock de diseño
+
+Este spec valida contra **`docs/design/Recogida.dc.html`, pantalla `5a`** (la única que cubre —
+escritorio de Recogida). El mock manda en diseño; este spec manda en comportamiento. Si
+discrepan, se implementa el mock y la discrepancia se escribe aquí, no se resuelve en silencio.
+
+Nótese que la pantalla ya construida (fase 4.4 de spec-54) se hizo contra el mock **anterior**,
+`1l` del handoff original — no contra este archivo. Lo que este spec cierra son los tres datos
+que `1l` también pedía y que `5a` vuelve a pedir; la estructura de dos columnas no cambia entre
+una versión y la otra.
+
+Si al implementar aparece un caso que `5a` no contempla — un estado de error de estas tres
+columnas, o qué se muestra mientras la ventana de retiro no tiene dato — es un hallazgo para
+escalar al usuario, no algo que inventar.
+
+Esta referencia caduca con el diseño: si el usuario actualiza los mocks, hay que volver a bajar
+el fichero (`docs/design/README.md`) y comprobar que `5a` sigue siendo la misma pantalla.
 
 ---
 
@@ -43,17 +61,25 @@ Vale la pena citarlo entero, porque el razonamiento sigue vigente y la decisión
 
 `5a`: columna `VENTANA` con `09:00–13:00`, y `cierra 12:30` en rojo cuando aprieta. Subtítulo «cierre de retiros 18:00». El borde izquierdo de la fila se tiñe por proximidad al cierre.
 
-**Dónde vive.** La ventana es del **punto de recogida**, no del manifiesto: el local abre y cierra a la misma hora todos los días. `pickup_points.pickup_locations` es un JSONB `{name, address, comuna}` — el sitio natural es ampliarlo, o una tabla de horarios si se quiere variación por día de la semana.
+**Dónde vive.** La ventana es del **punto de recogida**, no del manifiesto: el local abre y cierra a la misma hora todos los días.
 
-Es una decisión de modelo, no de pantalla:
+**Corrección (2026-09-08).** Esto decía que `pickup_points.pickup_locations`
+es un JSONB `{name, address, comuna}` y presentaba la ventana como una decisión
+de modelo abierta entre tres opciones — (a) fija por punto, (b) por punto y
+día, (c) por manifiesto. Es falso, y la opción (a) **ya está elegida por el
+esquema**: `20260318000004_agent_suite_tables.sql:68-69` declara
+`pickup_locations` como `[{name, address, comuna, lat, lng, contact_name,
+contact_phone, operating_hours}]` — `operating_hours` es exactamente la
+ventana fija por punto de (a). Y `sla_config` (`:64-66` del mismo archivo)
+declara `pickup_cutoff_time`, que es el «cierre de retiros 18:00» del
+subtítulo. Ninguno de los dos campos lo puebla nadie hoy, pero el modelo de
+datos no es la decisión pendiente — poblarlos y leerlos sí lo es.
 
-- **(a) Ventana fija por punto de recogida.** Simple, cubre el 90% (un local tiene horario estable).
-- **(b) Ventana por punto y día de la semana.** Correcto para sábados, más tabla.
-- **(c) Ventana por manifiesto.** Sólo si el retailer la manda en el ingreso, y hoy no la manda.
-
-**Recomendación: (a)**, con (b) como evolución si aparece el caso. Empezar por (c) es modelar una excepción que nadie ha pedido.
-
-Una vez exista, `get_pending_manifests` la devuelve y el borde de la fila deja de ser progreso de escaneo para ser proximidad al cierre — **ojo, es un cambio de significado en un elemento que ya se usa**, no una columna nueva. Hay que decidir cuál gana o dar dos señales distintas.
+La única decisión que sigue abierta, y que sí le toca al usuario: **el
+conflicto del borde izquierdo de la fila.** Hoy significa progreso de escaneo;
+si además debe señalar proximidad al cierre, hay que decidir si se cambia el
+significado o se añade una segunda señal visual. Eso no lo resuelve el
+esquema.
 
 ### 2. Ocupación estimada del vehículo
 
@@ -85,32 +111,109 @@ Si spec-73 no lo resolvió, la posición honesta sigue siendo la de spec-54: **o
 | Fase | Qué entrega | Depende de |
 |---|---|---|
 | **1 — Merma en cierres** | «2 faltantes de 44» | spec-85 fase 2 + spec-80 fase 2 |
-| **2 — Ventana de retiro** | Columna VENTANA y semáforo de cierre | decisión (a)/(b)/(c) |
+| **2 — Ventana de retiro** | Columna VENTANA y semáforo de cierre | decisión sobre el borde izquierdo de la fila (progreso vs. proximidad al cierre) |
 | **3 — Ocupación** | El porcentaje, o su omisión razonada | spec-73 |
 | **4 — Diff visual del resto** | Lo que difiera entre `1l` y `5a` sin datos nuevos | — |
 
-### Fase 1 — Merma `[pending]`
+### Fase 1 — Merma `[done]`
 
 **Archivos:** migración (`get_completed_manifests`), `components/pickup/TodayClosuresPanel.tsx`, tests
 
-Al reescribir el RPC con `CREATE OR REPLACE`, **usar como plantilla la definición de la migración más reciente**, nunca la original (regla de `CLAUDE.md`). La última es `20260428000001_sort_manifests_by_created_at.sql` salvo que algo posterior la haya tocado — comprobar antes de escribir.
+Al reescribir el RPC con `CREATE OR REPLACE`, **usar como plantilla la definición de la migración más reciente**, nunca la original (regla de `CLAUDE.md`).
+
+**Corrección (2026-09-08).** Esto decía que la última era
+`20260428000001_sort_manifests_by_created_at.sql` «salvo que algo posterior la
+haya tocado». Sí la ha tocado, y seguir la instrucción literal habría sido la
+trampa: `20260813000001_spec53_package_labels.sql:234-314` hace `DROP
+FUNCTION` + `CREATE OR REPLACE` de `get_completed_manifests`, añadiendo
+`labels_printed_at` y `labels_printed_by_name` (impresión de etiquetas,
+spec-53). Verificado con `git grep -l get_completed_manifests
+packages/database/supabase/migrations/` (2026-09-08): las cuatro migraciones
+que la tocan son `20260310100002`, `20260427000001`, `20260428000001` y
+`20260813000001`, en ese orden — **`20260813000001` es la plantilla correcta
+hoy**, no `20260428000001`. Usar la de abril habría borrado las dos columnas
+de spec-53 y hecho desaparecer la impresión de etiquetas del panel de cierres.
+Quien tome esta fase debe repetir el `git grep` antes de escribir la
+migración — puede haber otra posterior a `20260813000001` para cuando se lea
+esto.
 
 - [ ] Test pgTAP del RPC con un manifiesto cerrado con faltantes y otro limpio.
 - [ ] Test del panel: paleta warning sólo cuando hay merma.
-- [ ] Implementar.
+- [x] Implementar.
+
+> Implementado por: `feat/spec-83-fase-1-merma`, PR #696 (mergeado 2026-09-09,
+> squash). Migración `20260917000002` — renumerada desde `...0001` por colisión
+> de timestamp con spec-84 fase 1 (#698). Plantilla tomada de
+> `20260813000001_spec53_package_labels.sql`, la más reciente que define
+> `get_completed_manifests`, tras repetir el `git grep` que este spec exige:
+> usar la de abril habría borrado `labels_printed_at`/`labels_printed_by_name`.
+> Review: dos rondas adversariales. Ronda 1 — tres bloqueantes: el pgTAP
+> abortaba en el fixture antes de la primera aserción (una fila `resolved` sin
+> `resolved_at` violaba `discrepancy_resolved_has_when`, inmediato y no
+> diferible: 0 `ok` de 5 planeadas); el filtro de estado faltaba; y la aserción
+> que protege las columnas de spec-53 era vacua (vaciar `u.full_name` a `NULL`
+> dejaba los 5 tests en verde). Ronda 2 — aprobada, más el cambio de
+> `COUNT(*)` a `COUNT(DISTINCT d.package_id)`.
+> QA: pgTAP ejecutado contra `spec52-pg` leyendo las líneas TAP crudas de
+> `psql` (el resumen de `scripts/pgtap-local.sh` sólo hace `grep ERROR:` y es
+> ciego a `not ok`): **6/6 `ok`**. Mutación verificada por el revisor sobre esa
+> misma salida: `status = 'open'` voltea 1/4/5; sin filtro de estado voltea 1;
+> `u.full_name` → `NULL::TEXT` voltea 6. Frontend 31/31 con `--pool=forks`.
+> CI verde en `932d1ca`; Vercel desplegado.
+
+**Decisión de producto (2026-09-09).** `missing_count` filtra
+`status <> 'resolved'`, no `= 'open'`. Una merma resuelta deja de ser merma
+—criterio del usuario— pero **`lost` sigue contando**: es el disparador del
+futuro workflow de indemnización (`20260913000005`), no un cierre limpio. Con
+`= 'open'`, el jefe de operaciones declarando un bulto perdido habría apagado
+la alarma y pintado el peor desenlace como carga completa. El fixture
+`CARGA-83-3` (un `'lost'` solo, sin ninguna `'open'`) existe para impedir esa
+regresión.
+
+El histórico que el usuario pidió **ya existe y no hizo falta construirlo**:
+`discrepancies` guarda `status`, `detected_at`, `resolved_at` y
+`resolved_by_user_id`, y la tabla lleva trigger de auditoría
+(`audit_discrepancies_changes`), así que cada transición queda en `audit_logs`
+con actor y momento.
+
+> Downstream: si el panel llega a querer distinguir «cerró con merma en su día»
+> de «tiene merma ahora», la vía barata son dos columnas —`missing_count` (lo
+> que pinta la alarma) y `missing_ever_count` (todas, como texto neutro)— sobre
+> el dato que ya está. Fase aparte, no ampliación de ésta.
+> Heredado, no arreglado aquí: `TodayClosuresPanel.tsx` usa
+> `{row.total_packages ?? 0}`, así que un manifiesto sin conteo muestra
+> «N faltantes de 0». Viene de spec-54 y está igual en la rama de cierre
+> limpio — va a un barrido de copy, no a esta fase.
 
 ### Fase 2 — Ventana `[blocked]`
 
-- [ ] Migración del modelo elegido + test de aislamiento por operador.
-- [ ] `get_pending_manifests` devuelve la ventana.
-- [ ] Columna y semáforo; resolver el conflicto del borde izquierdo (progreso vs proximidad) **explícitamente**, no por accidente.
+**Corrección (2026-09-08):** el modelo (a) — ventana fija por punto de
+recogida — ya lo eligió el esquema (`pickup_locations[].operating_hours`,
+`sla_config.pickup_cutoff_time`); no hay migración de modelo que decidir. Esta
+fase sigue `[blocked]`, pero sólo por la decisión real: qué gana en el borde
+izquierdo de la fila.
+
+- [ ] Decidir con el usuario: el borde izquierdo cambia de significado
+      (progreso → proximidad al cierre) o se añaden dos señales distintas.
+- [ ] Poblar `operating_hours` / `pickup_cutoff_time` donde falten (nadie los
+      escribe hoy) y hacer que `get_pending_manifests` los devuelva.
+- [ ] Columna y semáforo, con la decisión del borde ya tomada explícitamente.
 
 ### Fase 3 — Ocupación `[pending]`
+
+**Archivos:** (indeterminado — esta fase es **condicional**: su primer punto es
+decidir si se implementa. Si la decisión es «no», el write set real es cero
+ficheros de código. Declarar una lista antes de esa decisión sería inventarla.
+`check-phase-overlap.mjs` la reporta como «no puedo juzgar» (exit 3), que es la
+respuesta correcta: no se despacha en paralelo con nada hasta que la decisión
+esté tomada y este campo se rellene de verdad.)
 
 - [ ] Leer spec-73 y decidir: mismo proxy, o omisión razonada escrita en este spec.
 - [ ] Si se implementa: capacidad en `vehicles` primero, que es la mitad barata y ya se muestra en el mock.
 
 ### Fase 4 — Diff visual `[pending]`
+
+**Archivos:** `apps/frontend/src/components/pickup/ManifestTable.tsx`, `apps/frontend/src/components/pickup/PickupRouteDraftPanel.tsx`, `apps/frontend/src/components/pickup/TodayClosuresPanel.tsx`, `apps/frontend/src/components/StatTile.tsx`, y sus tests
 
 - [ ] Screenshot diff `1l` contra `5a`. Se espera poco: `5a` es el mismo diseño con los datos que faltaban.
 - [ ] **Conservar la séptima columna** (impresión de etiquetas, spec-53). El mock no la tiene y spec-54 la añadió a propósito: quitarla sería una regresión funcional disfrazada de fidelidad al diseño.

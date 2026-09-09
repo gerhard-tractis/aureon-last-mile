@@ -73,6 +73,30 @@ export function ScanField({
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const s = SIZES[size];
+  // spec-54 fix: race guard. The auto-submit debounce (useScannerAutoSubmit)
+  // and the Enter keydown handler both call submit() with the same code.
+  // reset() only cancels the debounce side — nothing cancels a keydown
+  // listener already attached to the DOM, so if the debounce timer fires
+  // and this submit() call's own state update (setValue('')) hasn't
+  // committed yet when the real Enter keydown event arrives (a genuine gap
+  // on a loaded runner, or in production), the Enter handler's closure can
+  // still see the pre-clear value and submit() again for the same physical
+  // scan. `submittedRef` closes that gap: it's an ordinary ref (synchronous,
+  // not batched like state), so it's true the instant the first submit()
+  // runs, regardless of when React commits.
+  //
+  // The contract this guard keeps is "one submit per clear cycle". It has
+  // to open again on the very next keystroke, unconditionally — gating that
+  // re-arm on "the field was empty" would have to read that from somewhere,
+  // and the only candidate (`value` state) is exactly what's unreliable in
+  // the window this guard exists to cover: it can still hold the pre-clear
+  // code when the next keystroke's handleChange runs, so a gated re-arm
+  // never fires and the field goes mute until an unrelated remount — worse
+  // than the double-submit this guard was built to close. `submittedRef` is
+  // only ever true for the instant between one submit() call and the next
+  // keystroke, so clearing it unconditionally on every keystroke is safe:
+  // there's nothing left to protect by that point.
+  const submittedRef = useRef(false);
 
   // Keep focus on the field. A scanner gun types into whatever is focused, so
   // losing focus silently drops scans — the operator keeps working and nothing
@@ -87,9 +111,21 @@ export function ScanField({
     if (disabled) return;
     const code = raw.trim();
     if (!code) return;
+    // Same scan already submitted by the other path (debounce vs. Enter) —
+    // see submittedRef above. Re-armed unconditionally on the next
+    // keystroke, in handleChange.
+    if (submittedRef.current) return;
+    submittedRef.current = true;
     autoSubmit.reset();
-    onScan(code);
-    setValue('');
+    try {
+      onScan(code);
+    } finally {
+      // Same transaction as the guard's own true assignment above: whatever
+      // happens in onScan, the field still clears. No call site throws
+      // synchronously today, but nothing here should depend on that staying
+      // true.
+      setValue('');
+    }
   }
 
   // Scanner guns without a CR/Enter suffix never trigger the Enter path —
@@ -97,8 +133,13 @@ export function ScanField({
   const autoSubmit = useScannerAutoSubmit(submit);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setValue(e.target.value);
-    autoSubmit.handleValueChange(e.target.value);
+    const newValue = e.target.value;
+    // Re-arm the guard on every keystroke — see the comment on submittedRef
+    // above for why this has to be unconditional rather than gated on
+    // "the field was empty".
+    submittedRef.current = false;
+    setValue(newValue);
+    autoSubmit.handleValueChange(newValue);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {

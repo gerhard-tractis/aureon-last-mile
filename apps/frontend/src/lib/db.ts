@@ -7,6 +7,7 @@
  */
 
 import Dexie, { type EntityTable } from 'dexie';
+import { manifestIsBlocked } from './offline/queue-blocking';
 
 // Scan Queue Interface (Task 3.1)
 export interface ScanQueue {
@@ -55,6 +56,18 @@ export interface PickupQueueEntry {
    * reintento. */
   clientOperationId: string;
   operatorId: string;
+  /**
+   * B4, ronda 2 de review del PR #679 (bloqueante) — `auth.users.id` de
+   * quien encoló esta entrada, no sólo el inquilino (`operatorId`). Un
+   * teléfono de muelle compartido puede tener dos conductores DE LA MISMA
+   * empresa (mismo `operatorId`) en sesiones sucesivas — sin esto, el
+   * drenador de la sesión de B enviaba la firma que A capturó, y
+   * `close_manifest` deriva `signature_operator_name` de `auth.uid()` en el
+   * servidor: el cierre quedaba firmado con el nombre de B sobre la firma
+   * dibujada de A. `useOfflineQueue` filtra por este campo antes de
+   * reclamar cualquier entrada — nunca toca una que esta sesión no encoló.
+   */
+  userId: string;
   manifestId: string;
   type: PickupQueueOperationType;
   payload: Record<string, unknown>;
@@ -66,6 +79,18 @@ export interface PickupQueueEntry {
   status: PickupQueueEntryStatus;
   retryCount: number;
   lastError?: string;
+  /**
+   * Token de propiedad de la reclamación en curso — `crypto.randomUUID()`,
+   * generado por `claimPending` en cada reclamación y comparado por
+   * `markSent`/`markFailed`/`markDead` antes de tocar una entrada. Antes de
+   * fase 2 esto era el propio `lastAttemptAt` (una marca de milisegundo):
+   * dos reclamaciones sucesivas de la misma entrada dentro del mismo
+   * milisegundo (el caso común sin señal, donde `fetch` rechaza casi al
+   * instante) producían el mismo token y el guard volvía a pasar. Ver
+   * spec-81, checklist de fase 2, residual "el token es una marca de
+   * milisegundo, no un nonce".
+   */
+  claimToken: string | null;
   /** ISO 8601. Cuándo se intentó por última vez — persistido, no en memoria,
    * para que el backoff exponencial de fase 2 sobreviva a que la PWA se
    * cierre y reabra a mitad de reintento (spec-81 fase 1, ronda 1, B3). */
@@ -77,7 +102,17 @@ export interface PickupQueueEntry {
 }
 
 // Dexie Database Class (Task 3.1)
-class AureonOfflineDB extends Dexie {
+// Exported as a type-only surface (spec-81 fase 2) so `lib/offline/queue.ts`
+// can type its `db` parameter against the real Dexie shape (`import type`,
+// no runtime import) instead of a hand-rolled structural interface. Dexie's
+// `Table.modify()` is overloaded (a change-object form and a callback form,
+// the latter also passing a `ctx` second argument) — TypeScript does not
+// treat an overloaded method as assignable to a single union-parameter
+// signature, even when every real call site is compatible. `tsc` never
+// caught this because it excludes `*.test.ts`, and nothing outside tests
+// called these functions with the real `db` until `useOfflineQueue` (fase
+// 2, first production caller).
+export class AureonOfflineDB extends Dexie {
   scan_queue!: EntityTable<ScanQueue, 'id'>;
   pickup_queue!: EntityTable<PickupQueueEntry, 'id'>;
 
@@ -103,13 +138,112 @@ class AureonOfflineDB extends Dexie {
 export const db = new AureonOfflineDB();
 
 /**
- * Cuántas entradas de la cola de Recogida siguen sin confirmar, en todo el
- * dispositivo. Deliberadamente no filtra por operador — mismo criterio que
- * `getUnsynced()` de abajo, que tampoco lo hace: el badge del topbar es
- * global al dispositivo, no por operador.
+ * Cuántas entradas de la cola de Recogida de un operador siguen en curso,
+ * como reintentable: `pending` y `sending` (reclamada, en vuelo).
+ *
+ * spec-81 fase 2 — pasó de device-global a por operador. Device-global
+ * dejaba huérfano el contador de un operador que cerraba sesión en un
+ * teléfono de muelle: ni el drenado del siguiente operador ni su
+ * `purgeConfirmed` tocan las entradas del anterior, así que el badge nunca
+ * bajaba a 0 para el operador entrante (ver "Alcance del contador" en
+ * docs/specs/spec-81-recogida-cola-offline.md).
+ *
+ * Cuenta también `sending`, no sólo `pending` — `useSyncQueue` corta su
+ * polling cuando el conteo combinado llega a 0; una sola entrada huérfana en
+ * `sending` (pestaña muerta a mitad de envío, antes de que `reclaimStale` la
+ * recupere) haría caer el conteo a 0, deteniendo el polling y congelando la
+ * pantalla en "todo subido" con el escaneo sin enviar de verdad.
+ *
+ * NO cuenta `dead` (B3, ronda 2 de review del PR #679) — antes lo hacía, y
+ * `SyncChip.tsx` pinta `queuedCount > 0` en verde de éxito. Un escaneo
+ * irrecuperablemente rechazado no es "todavía en cola" — es un bloqueo que
+ * necesita ayuda humana, y mezclarlo con lo reintentable lo disfrazaba de
+ * éxito para siempre. Ver `getBlockedPickupCount`, su contador hermano.
  */
-export async function getPendingPickupCount(): Promise<number> {
-  return db.pickup_queue.where('status').equals('pending').count();
+/**
+ * M-2, ronda 4 de review del PR #679 — una entrada `pending` cuyo manifiesto
+ * está bloqueado (`manifestIsBlocked`: un `dead` en cualquier lugar, o un
+ * `pending`/`sending` fresco de otro usuario por delante) no cuenta aquí —
+ * pasa a `getBlockedPickupCount`. Sin esto, el badge "COLA N" pintaba en
+ * verde de éxito algo que no iba a salir hasta que el otro usuario volviera
+ * o pasaran `CROSS_USER_RECLAIM_MS` — la misma mentira que B3 corrigió para
+ * `dead` en la ronda 2 (B2 lo había movido de `dead` a `pending` en vez de
+ * eliminarlo), reintroducida por el bloqueo cross-user.
+ *
+ * `sending` siempre cuenta como pendiente (nunca bloqueada): es la entrada
+ * activamente en vuelo, no una que espera detrás de otra.
+ */
+export async function getPendingPickupCount(operatorId: string): Promise<number> {
+  const entries = await db.pickup_queue
+    .where('operatorId')
+    .equals(operatorId)
+    .and((entry) => entry.status === 'pending' || entry.status === 'sending')
+    .toArray();
+
+  const isBlocked = createBlockedChecker(operatorId);
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.status === 'sending') {
+      count += 1;
+      continue;
+    }
+    if (!(await isBlocked(entry.manifestId, entry.userId))) count += 1;
+  }
+  return count;
+}
+
+/**
+ * Cuántas entradas de la cola de Recogida de un operador quedaron `dead`:
+ * un rechazo de negocio irrecuperable que agotó los reintentos. Separado de
+ * `getPendingPickupCount` (B3, ronda 2 de review del PR #679) — necesitan
+ * afordancias distintas: "sigue en cola, va a salir solo" contra "está
+ * bloqueado, alguien tiene que intervenir".
+ */
+export async function getBlockedPickupCount(operatorId: string): Promise<number> {
+  const entries = await db.pickup_queue
+    .where('operatorId')
+    .equals(operatorId)
+    .and((entry) => entry.status === 'dead' || entry.status === 'pending')
+    .toArray();
+
+  const isBlocked = createBlockedChecker(operatorId);
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.status === 'dead') {
+      count += 1;
+      continue;
+    }
+    if (await isBlocked(entry.manifestId, entry.userId)) count += 1;
+  }
+  return count;
+}
+
+/**
+ * M-2, ronda 5 de review del PR #679 (mayor) — `getPendingPickupCount`/
+ * `getBlockedPickupCount` llamaban `manifestIsBlocked` una vez POR ENTRADA;
+ * cada llamada hace 2 escaneos completos del índice
+ * (`manifestHasDeadEntry` + `manifestHead`/`manifestBlockedForUser`).
+ * `useSyncQueue` invoca ambos contadores cada `POLL_MS` (2s). Medido: N=200
+ * (dentro del tope de 500 que declara `enqueue`) tardaba 21s por contador.
+ *
+ * El resultado de `manifestIsBlocked` sólo depende de `(manifestId, userId)`
+ * — nunca de la entrada en sí — así que memoizarlo por esa clave reduce el
+ * coste al número de pares distintos realmente presentes (unos pocos
+ * manifiestos, cada uno con uno o dos dueños), no al número de entradas.
+ */
+function createBlockedChecker(
+  operatorId: string,
+): (manifestId: string, userId: string) => Promise<boolean> {
+  const cache = new Map<string, Promise<boolean>>();
+  return (manifestId, userId) => {
+    const key = `${manifestId}::${userId}`;
+    let cached = cache.get(key);
+    if (!cached) {
+      cached = manifestIsBlocked(db, operatorId, manifestId, userId);
+      cache.set(key, cached);
+    }
+    return cached;
+  };
 }
 
 /**

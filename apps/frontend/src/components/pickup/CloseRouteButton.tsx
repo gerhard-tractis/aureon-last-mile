@@ -33,7 +33,7 @@ export function CloseRouteButton({
       ) : (
         <Truck className="h-4 w-4" />
       )}
-      Cerrar ruta y entregar
+      Cerrar ruta
     </Button>
   );
 }

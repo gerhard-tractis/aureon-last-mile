@@ -5,11 +5,10 @@
 
 **Status:** backlog
 **Verify:** unit, sql, e2e-qa
-**Bloqueado por:** nada a nivel de esquema — spec-85 fase 1 y fase 2 ya están
-mergeadas (PR #657 incluido, spec-80 fase 1 ya consume el mismo esquema en
-`main`). Ver *Precondición* abajo: el bloqueo real que queda es sólo sobre la
-mitad de la fase 2 (la pata de indemnización), y depende de una decisión del
-usuario, no de spec-85.
+**Bloqueado por:** nada. Fase 1, 2a y 3 están `[pending]`; fase 2b — la pata
+de indemnización — pasó a `[parked]` el 2026-09-08 (`dd6f921`, PR #677): el
+usuario ya decidió que la pantalla de indemnización es un spec aparte. Ver
+*Precondición* abajo y la fase 2b misma.
 
 _Date: 2026-09-07_
 
@@ -55,15 +54,14 @@ que las tres fases nazcan `[blocked]` en bloque:
   tomando como plantilla la **última** migración que la define — nunca la
   original — porque esta fase le añade el payload por paquete y la llamada al
   RPC nuevo.
-- **Fase 2: sólo parcialmente bloqueada.** La pata "Resuelta" (bulto aparece,
-  pasa a `resolved` vía `resolve_discrepancy`) no depende de nada que falte:
-  el RPC existe y el escaneo que dispara el avance de estado ya vive en
-  producción. La pata "Perdida → indemnización" sí depende de una decisión
-  abierta (ver *Decisión abierta que hereda spec-85* abajo) y de spec-85 fase
-  3 ("`lost` e indemnización"), ambas esperando al usuario. Ése es el único
-  bloqueo legítimo que queda en todo este spec, y afecta a media fase, no a
-  las tres. Se separa en **fase 2a** (desbloqueada) y **fase 2b** (bloqueada)
-  más abajo por esa razón.
+- **Fase 2: dividida en 2a y 2b desde el inicio.** La pata "Resuelta" (bulto
+  aparece, pasa a `resolved` vía `resolve_discrepancy`) no depende de nada que
+  falte: el RPC existe y el escaneo que dispara el avance de estado ya vive en
+  producción — **fase 2a**. La pata "Perdida → indemnización" — **fase 2b** —
+  dependía de una decisión abierta del usuario; esa decisión ya se tomó
+  (`dd6f921`, 2026-09-08, PR #677): la pantalla de indemnización sale a un
+  spec aparte, y por ahora sólo queda el estado de bulto. La fase pasa de
+  `[blocked]` a `[parked]` — no espera una decisión, espera su turno.
 
 **Spec-85 debe seguir declarando `**Downstream:** spec-86`** junto a su
 `**Status:**`, y ninguna de sus fases pasa a `[done]` sin releer este spec
@@ -143,13 +141,23 @@ mergeadas):
    tabla de contrato de errores de spec-85 y los tests pgTAP.
 3. **Ciclo de vida** `open → resolved | lost` vía `resolve_discrepancy(p_id,
    p_status, p_resolution)`, con quién resolvió, cuándo y por qué.
-4. **Enganche de indemnización** para `lost`: una referencia nullable donde el
-   flujo de indemnización (no construido, ver *Fuera de alcance*) pueda
+4. ~~**Enganche de indemnización** para `lost`: una referencia nullable donde
+   el flujo de indemnización (no construido, ver *Fuera de alcance*) pueda
    colgarse sin una segunda migración sobre datos vivos. Spec-85 no la
    entregó — es una fase futura declarada, "3 — `lost` e indemnización",
-   `[blocked]` en spec-85.
+   `[blocked]` en spec-85.~~ **Corrección (2026-09-08):** spec-85 fase 3b
+   (`lost` de bulto) pasó a `[parked]` con `dd6f921` — el usuario decidió que
+   la pantalla de indemnización es un spec aparte y que, por ahora, sólo hace
+   falta el estado de bulto. No hay enganche de indemnización que modelar en
+   esta fase; ver criterio de aceptación 5, retirado por la misma razón.
 
-### Decisión abierta que hereda spec-85
+### Decisión abierta que hereda spec-85 — histórico, ya no bloquea nada aquí
+
+> **Nota (2026-09-08).** Esta sección describía una decisión de producto
+> pendiente. `dd6f921` la resolvió: no hay enganche de indemnización que
+> modelar todavía, y la pantalla sale a un spec aparte. Queda como historia de
+> lo que se consideró, no como trabajo abierto — nada en fase 2a o fase 3
+> depende de resolverla.
 
 **Si los desenlaces son los mismos para ambos procesos, o dependen de quién
 responde.** No se decidió aquí porque la tabla es de spec-85. La asimetría real:
@@ -170,6 +178,8 @@ Una tabla, un panel, y nunca se etiqueta mal de quién es la pérdida.
 ## Fases
 
 ### Fase 1 — Captura por paquete al cerrar la recepción `[pending]`
+
+**Archivos:** migración (`complete_route_reception`, `CREATE OR REPLACE` sobre la última definición, `packages/database/supabase/migrations/20260820000002_spec61_pickup_route_crew.sql`), test pgTAP en `packages/database/supabase/tests/`, `apps/frontend/src/hooks/reception/useCompleteRouteReception.ts`, `apps/frontend/src/app/app/reception/ReturnReceptionSession.tsx`, y sus tests
 
 `complete_route_reception(p_route_id, p_discrepancy_notes text)` (SECURITY
 DEFINER, def viva en QA) hoy sólo exige texto cuando
@@ -200,6 +210,8 @@ registro del faltante.
 
 ### Fase 2a — Resolver: el bulto aparece `[pending]`
 
+**Archivos:** migración (`trg_reception_scan_advance_package_status`, `CREATE OR REPLACE` sobre la última definición, `packages/database/supabase/migrations/20260812000002_spec52_package_state_engine.sql`), test pgTAP en `packages/database/supabase/tests/`
+
 El bulto aparece, se escanea en recepción, el paquete avanza a `en_bodega`
 por el camino normal (`trg_reception_scan_advance_package_status`) y la
 discrepancia pasa a `resolved` vía `resolve_discrepancy(p_id, 'resolved',
@@ -210,12 +222,29 @@ escritores del mismo estado es como se producen los desacuerdos.
 No depende de nada pendiente: `resolve_discrepancy` existe y el disparador de
 avance de estado ya vive en producción.
 
-### Fase 2b — Perdida e indemnización `[blocked]`
+### Fase 2b — Perdida e indemnización `[parked]`
 
-Pasa a `lost` vía el mismo `resolve_discrepancy`, con autor y motivo, y marca
-la indemnización según la decisión abierta de más abajo (*Decisión abierta
-que hereda spec-85*) y de spec-85 fase 3b. Sigue siendo el único bloqueo
-legítimo que queda en todo el spec.
+> **Corrección (2026-09-08).** Esta fase estaba `[blocked]` esperando la
+> decisión de producto sobre el efecto aguas abajo de `lost` (¿el bulto pasa a
+> `extraviado`? ¿se abre una `exceptions` con `settlement_id`?) y dónde vive la
+> pantalla. Esa decisión ya se tomó, **después** del último toque de este spec
+> (`031b9bc`): el mismo día, `dd6f921` («docs(spec-85): fase 2 [done] y fase 3b
+> recortada por decisión del usuario», PR #677) registra la decisión literal
+> del usuario — *«la pantalla de indemnizaciones será un spec aparte…
+> eventualmente agreguemos un nuevo estado de package que sea `lost`. No
+> trabajaría más que eso»*. Contesta las dos preguntas que esta fase declaraba
+> abiertas: no hay pantalla de indemnización que construir aquí, y no hay
+> enganche de indemnización que modelar todavía — sale a un spec propio cuando
+> termine el bloque de Recogida.
+>
+> Sigue la misma razón que spec-85 fase 3b, que `dd6f921` aparcó con esas
+> palabras: **ya no espera una decisión, espera su turno.** Pasa de
+> `[blocked]` a `[parked]`.
+
+Pasa a `lost` vía el mismo `resolve_discrepancy`, con autor y motivo. El
+efecto aguas abajo de indemnización sale de aquí — ver corrección arriba y
+*Decisión abierta que hereda spec-85* más abajo, que queda como historia de lo
+que se consideró, no como trabajo pendiente de esta fase.
 
 > **Actualización (2026-09-08).** El usuario decidió **quién** declara el `lost`:
 > el jefe de operaciones, desde una pantalla todavía sin definir. Eso zanja que
@@ -248,6 +277,8 @@ legítimo que queda en todo el spec.
 > previsto en vez de rehacerla después.
 
 ### Fase 3 — Ver: la vista Discrepancias en Ops Control `[pending]`
+
+**Archivos:** `apps/frontend/src/app/app/operations-control/components/stage-panels/DiscrepanciesPanel.tsx` (nuevo), `apps/frontend/src/app/app/operations-control/components/StageRail.tsx`, `apps/frontend/src/lib/ops-control/stage.ts`, `apps/frontend/src/hooks/ops-control/useDiscrepancies.ts` (nuevo), y sus tests
 
 Lista las discrepancias abiertas con orden, paquete, carga, ruta, quién cerró la
 recepción y desde cuándo está abierta, leyendo `get_discrepancies(
@@ -285,8 +316,16 @@ que están recibidas sería falso.
 4. Escanear en recepción un bulto con discrepancia abierta lo lleva a
    `en_bodega` y deja la fila `resolved` — sin que la resolución toque el estado
    del paquete por su cuenta.
-5. Marcar `lost` deja autor, momento y motivo, y el enganche de indemnización
-   poblado.
+5. ~~Marcar `lost` deja autor, momento y motivo, y el enganche de indemnización
+   poblado.~~ **Retirado (2026-09-08).** Insatisfacible con lo que existe hoy:
+   `discrepancies` (`20260913000001:49-91`) no tiene ninguna columna de
+   enganche — ni `settlement_id` ni `exception_id`. Iba a añadirla spec-85 fase
+   3b, que `dd6f921` acaba de aparcar por decisión del usuario (la pantalla de
+   indemnización sale a un spec propio). Dejar este criterio habría empujado a
+   quien tome fase 2b a escribir una migración de enganche sobre datos vivos
+   que el usuario aplazó explícitamente. Lo que sí queda, y ya lo cubre el
+   criterio 4 más un `resolve_discrepancy(p_status='lost', ...)` análogo:
+   marcar `lost` deja autor, momento y motivo — sin enganche.
 6. Ninguna consulta nueva sin `operator_id`; ningún archivo nuevo sobre 300
    líneas.
 7. El texto libre del cierre sigue existiendo y ya no es el único registro de un

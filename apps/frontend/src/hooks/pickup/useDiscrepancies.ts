@@ -6,6 +6,7 @@ export interface MissingPackage {
   label: string;
   order_id: string;
   order_number: string;
+  customer_name: string | null;
 }
 
 export interface DiscrepancyNote {
@@ -39,7 +40,7 @@ export function useMissingPackages(
       // Get all packages for this load
       const { data: orders } = await supabase
         .from('orders')
-        .select('id, order_number')
+        .select('id, order_number, customer_name')
         .eq('operator_id', operatorId!)
         .eq('external_load_id', externalLoadId!)
         .is('deleted_at', null);
@@ -47,7 +48,8 @@ export function useMissingPackages(
       if (!orders || orders.length === 0) return [];
 
       const orderIds = orders.map((o) => o.id);
-      const orderMap = new Map(orders.map((o) => [o.id, o.order_number]));
+      const orderNumberMap = new Map(orders.map((o) => [o.id, o.order_number]));
+      const customerNameMap = new Map(orders.map((o) => [o.id, o.customer_name ?? null]));
 
       const { data: allPackages } = await supabase
         .from('packages')
@@ -61,7 +63,8 @@ export function useMissingPackages(
           id: p.id,
           label: p.label,
           order_id: p.order_id,
-          order_number: orderMap.get(p.order_id) ?? '',
+          order_number: orderNumberMap.get(p.order_id) ?? '',
+          customer_name: customerNameMap.get(p.order_id) ?? null,
         }));
 
       return missing as MissingPackage[];

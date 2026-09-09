@@ -99,7 +99,7 @@ This is the **pickup-side route**, distinct from the existing distribution `rout
 │   Route header: code, started_at, status=in_progress               │
 │   Linked manifests list (verified count / expected count each)     │
 │   [+ Agregar manifiesto]   → opens manifest picker (links it)      │
-│   [Cerrar ruta y entregar]  → flips status to in_transit, →QR page │
+│   [Cerrar ruta]  → flips status to in_transit, →QR page             │
 └────────────────────────────────────────────────────────────────────┘
                               │ close route
                               ↓

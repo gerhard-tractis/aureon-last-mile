@@ -10,9 +10,13 @@ import { MetricCard } from '@/components/metrics/MetricCard';
 import { SignaturePad } from '@/components/pickup/SignaturePad';
 import { usePickupScans } from '@/hooks/pickup/usePickupScans';
 import { useMissingPackages } from '@/hooks/pickup/useDiscrepancies';
-import { mapCloseManifestError } from '@/lib/pickup/closeManifestErrors';
+import { classifyCloseManifestError } from '@/lib/pickup/closeManifestErrors';
 import { useOperatorId } from '@/hooks/useOperatorId';
+import { useSyncQueue } from '@/hooks/useSyncQueue';
+import { retryBlockedManifest, PICKUP_QUEUE_WAKE_EVENT } from '@/hooks/useOfflineQueue';
 import { createSPAClient } from '@/lib/supabase/client';
+import { db } from '@/lib/db';
+import { enqueue } from '@/lib/offline/queue';
 import { CheckCircle, XCircle, Target, Shield } from 'lucide-react';
 import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
 import { toast } from 'sonner';
@@ -32,7 +36,7 @@ export default function CompletionPage() {
   const params = useParams();
   const router = useRouter();
   const loadId = decodeURIComponent(params.loadId as string);
-  const { operatorId } = useOperatorId();
+  const { operatorId, userId } = useOperatorId();
 
   const [manifestId, setManifestId] = useState<string | null>(null);
   const [manifestStartedAt, setManifestStartedAt] = useState<string | null>(
@@ -46,6 +50,28 @@ export default function CompletionPage() {
   const [clientName, setClientName] = useState('');
   const [clientSignature, setClientSignature] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Menor 5, ronda 4 de review del PR #679 — `5f` es la pantalla que hace la
+  // promesa "se sube al recuperar señal" (la línea estática de más abajo) y
+  // era la única del flujo de Recogida sin ningún indicador de bloqueo:
+  // `PickupFlowHeader` (montado en `5c`/scan) no vive aquí. Sin esto, un
+  // operario que llega a esta pantalla con algo ya bloqueado no tiene forma
+  // de saberlo ni de reintentar.
+  const sync = useSyncQueue(operatorId);
+
+  // M-3, ronda 5 de review del PR #679 (mayor) — `blockedCount` incluye
+  // bloqueos cross-user que este botón no puede resolver (sólo revive
+  // `dead`, vía `retryBlockedManifest`/`retryDead`). Sin este feedback, el
+  // operario tocaba "REQUIERE AYUDA" sobre un bloqueo cross-user y no veía
+  // ningún cambio.
+  const handleRetryBlocked = () => {
+    if (!manifestId || !operatorId) return;
+    void retryBlockedManifest(operatorId, manifestId).then((revived) => {
+      if (revived === 0) {
+        toast.info('Nada que reintentar todavía. Puede que otro operario lo esté procesando.');
+      }
+    });
+  };
 
   useEffect(() => {
     if (!operatorId) return;
@@ -109,7 +135,7 @@ export default function CompletionPage() {
   const canComplete = !!operatorSignature;
 
   const handleComplete = async () => {
-    if (!manifestId || !operatorId || !operatorSignature) return;
+    if (!manifestId || !operatorId || !userId || !operatorSignature) return;
     setIsSubmitting(true);
 
     try {
@@ -141,7 +167,79 @@ export default function CompletionPage() {
       // OPERATOR_SIGNATURE_REQUIRED) — map it to Spanish rather than
       // painting raw Postgres text on an all-Spanish PWA.
       console.error('Failed to complete manifest:', err);
-      toast.error(mapCloseManifestError(err));
+
+      // spec-81 fase 2, checklist item 5 — "sin conexión" y "rechazo de
+      // negocio irrecuperable" son ramas distintas, no el mismo mensaje ni
+      // la misma afordancia. Offline: encolar la firma capturada y dejar al
+      // operario seguir — es el caso normal en este muelle, y
+      // `useOfflineQueue` la drenará al volver la señal. Rechazo de
+      // negocio: detenerse, no encolar algo que el servidor puede seguir
+      // rechazando para siempre, y re-habilitar el botón para que el
+      // operario corrija o pida ayuda.
+      const classified = classifyCloseManifestError(err);
+
+      // P0, ronda 3 de review del PR #679 (bloqueante) — `idempotent` (23505
+      // `MANIFEST_ALREADY_SIGNED`) significa que el cierre YA SE APLICÓ: la
+      // respuesta se perdió en el camino (túnel, o el propio
+      // `AbortSignal.timeout` del sender), no que el intento fallara. Sin
+      // esta rama caía al `toast.error` genérico de abajo, dejando al
+      // operario atrapado en esta pantalla para siempre después de un cierre
+      // que sí funcionó — refrescar no ayuda, el `useEffect` recarga el
+      // mismo manifiesto ya firmado. `offlineQueueSender.ts` ya trata este
+      // mismo `kind` como éxito para el drenador de fondo; esto alinea el
+      // camino interactivo con esa misma lectura.
+      if (classified.kind === 'idempotent') {
+        toast.success(classified.message);
+        router.push('/app/pickup');
+        return;
+      }
+
+      if (classified.kind === 'offline') {
+        // M5, ronda 2 de review del PR #679 (mayor): `enqueue` puede lanzar
+        // por su cuenta — el tope de 500 entradas sin confirmar
+        // (`lib/offline/queue.ts`), o cualquier `DOMException` real de
+        // IndexedDB (cuota agotada, modo privado de Safari). Antes, esa
+        // excepción escapaba de este `catch` sin capturar: `setIsSubmitting
+        // (false)` nunca corría, el botón quedaba deshabilitado con
+        // "Completando…" para siempre, sin toast, y la firma se perdía.
+        // "fallo silencioso contra la cuota" se convertía en "fallo
+        // silencioso con la pantalla colgada".
+        try {
+          await enqueue(db, {
+            operatorId,
+            userId,
+            manifestId,
+            type: 'close_manifest',
+            payload: {
+              manifestId,
+              signatures: {
+                operator_signature: operatorSignature,
+                client_signature: clientSignature,
+                client_name: clientName || null,
+              },
+            },
+          });
+          // Nota menor, ronda 6 de review del PR #679 — sin esto, la entrada
+          // recién encolada esperaba al próximo `online` real (o a un timer
+          // de backoff de OTRA entrada) para intentarse por primera vez. El
+          // drenador ya está montado globalmente en `AppLayout`; este evento
+          // es la misma señal que `retryBlockedManifest` ya usa para
+          // despertarlo sin fingir una reconexión que no ocurrió.
+          window.dispatchEvent(new Event(PICKUP_QUEUE_WAKE_EVENT));
+          toast.success(classified.message);
+          router.push('/app/pickup');
+          return;
+        } catch (enqueueErr) {
+          console.error('Failed to enqueue offline close_manifest:', enqueueErr);
+          toast.error(
+            enqueueErr instanceof Error ? enqueueErr.message : 'No se pudo completar el manifiesto',
+          );
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      toast.error(classified.message);
       setIsSubmitting(false);
     }
   };
@@ -190,6 +288,35 @@ export default function CompletionPage() {
           Al firmar, el operador confirma la recepción de los paquetes verificados.
           A partir de este momento, el operador asume la responsabilidad legal
           sobre la mercancía.
+        </p>
+      </div>
+
+      {/* Menor 5, ronda 4 de review del PR #679 — ver el comentario junto a
+          `sync` más arriba. */}
+      {sync.blockedCount > 0 && (
+        <button
+          type="button"
+          data-testid="blocked-badge"
+          onClick={handleRetryBlocked}
+          className="flex w-full items-center justify-between gap-2 rounded-lg border border-status-error-border bg-status-error-bg p-3 text-left text-sm font-medium text-status-error-text"
+        >
+          <span>{sync.blockedCount} REQUIERE AYUDA</span>
+          <span className="text-xs font-normal">Toca para reintentar</span>
+        </button>
+      )}
+
+      {/*
+        Decisión del usuario, 2026-09-08 (ronda 3 de review del PR #679) —
+        línea estática del mock de `5f` (`docs/design/Recogida.dc.html`),
+        siempre visible ANTES de que el operario firme, no como reacción a un
+        fallo. Texto literal del mock. El toast (más abajo, en el catch de
+        `handleComplete`) se queda como confirmación de que el cierre se
+        encoló — esta línea es la promesa hecha ANTES de decidir firmar, no
+        un reemplazo de esa confirmación.
+      */}
+      <div className="flex items-center gap-3 p-3 rounded-lg bg-status-warning-bg border border-status-warning-border">
+        <p className="text-sm text-status-warning-text">
+          Todo queda en el teléfono y se sube al recuperar señal. Las fotos también.
         </p>
       </div>
 

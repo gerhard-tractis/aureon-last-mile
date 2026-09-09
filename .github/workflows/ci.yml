@@ -220,6 +220,18 @@ jobs:
       - name: Test the harness guard
         run: bash ./scripts/check-harness-present.test.sh
 
+      # check-phase-overlap: "¿estas fases, si se despachan en paralelo,
+      # pueden pisarse?" (spec-89). No es un gate — el orquestador lo corre
+      # antes de dispatchar; sólo sus tests corren en CI.
+      - name: Test the phase-overlap parser
+        run: node ./scripts/check-phase-overlap-parse.test.mjs
+
+      - name: Test the phase-overlap import closure
+        run: node ./scripts/check-phase-overlap-closure.test.mjs
+
+      - name: Test the phase-overlap CLI (real temp git repo, not fixtures)
+        run: bash ./scripts/check-phase-overlap.test.sh
+
       - name: Lint
         run: npx turbo run lint
 

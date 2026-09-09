@@ -166,18 +166,20 @@ El `RETURN` temprano es **correcto** para `service_role` (workers/cron/backend s
 - **`current_user`/`session_user`** — dentro de una función `SECURITY DEFINER`, `current_user` es el **dueño de la función** (aquí, `postgres`), no el rol con el que PostgREST autenticó la conexión. `session_user` tampoco ayuda: PostgREST conecta como el rol `authenticator` y hace `SET ROLE` (o `SET LOCAL ROLE`, según versión) al rol resuelto del JWT (`anon`/`authenticated`/`service_role`) — `session_user` seguiría siendo `authenticator` en los tres casos. Ninguno de los dos distingue `anon` de `service_role` desde dentro de una función `SECURITY DEFINER`.
 - **Confiar en que "si `service_role` llama, siempre pasará `p_operator_id` correcto"** — no es una garantía, es una esperanza. Un bug en un worker que arme mal el parámetro tendría el mismo `RETURN` temprano sin errores, silenciosamente.
 
-**Qué sí sirve, y es lo que propone este spec:** `current_setting('request.jwt.claims', true)` — el GUC que PostgREST fija por request con el JWT decodificado, o su ausencia — **combinado con el rol Postgres real de la conexión**, que sí es observable: `pg_has_role(session_user, 'service_role', 'member')` o, más directo, comparar `current_setting('request.jwt.claim.role', true)` (el claim `role` del JWT, que PostgREST también expone como GUC individual) contra `'service_role'` explícitamente, en vez de inferirlo por ausencia de `auth.uid()`.
+**Qué sí sirve, y es lo que propone este spec:** comparar el claim `role` del JWT contra `'service_role'` explícitamente, en vez de inferirlo por ausencia de `auth.uid()`. PostgREST expone ese claim por dos vías, no una — el GUC individual heredado del modo legacy (`request.jwt.claim.role`) y el GUC JSON único (`request.jwt.claims ->> 'role'`) — y cuál de las dos está poblada depende de `PGRST_DB_USE_LEGACY_GUCS`, una variable de despliegue que este spec no controla ni puede confirmar para producción (ver más abajo). **La comprobación correcta lee las dos, coalescidas** — exactamente lo que ya hace `auth.role()`, presente en todo proyecto Supabase, que coalesce `request.jwt.claim.role` y `request.jwt.claims ->> 'role'` en ese orden. `auth.uid()` hace lo mismo para `sub`: lee primero `request.jwt.claim.sub`, y si no está, cae a `request.jwt.claims ->> 'sub'` — no lee sólo la forma JSON, como una versión anterior de esta sección afirmaba.
 
 Reescritura propuesta (a discutir en la fase que la implemente, no cerrada aquí):
 
 ```sql
 IF auth.uid() IS NULL THEN
-  IF current_setting('request.jwt.claim.role', true) IS DISTINCT FROM 'service_role' THEN
+  IF auth.role() IS DISTINCT FROM 'service_role' THEN
     RAISE EXCEPTION 'no operator in JWT' USING ERRCODE = '42501';
   END IF;
   RETURN;  -- service_role confirmado, no inferido por ausencia
 END IF;
 ```
+
+**Corrección tras review de la fase 2 (PR #683):** una primera implementación de esta reescritura leyó *sólo* `request.jwt.claims ->> 'role'`, razonando (correctamente para QA) que `infra/supabase-qa/docker-compose.yml` fija `PGRST_DB_USE_LEGACY_GUCS=false` ahí. El error fue generalizar esa observación de QA a "siempre" — producción es un proyecto Supabase **gestionado**, cuyo modo de GUCs no está bajo el control de este repo y no se puede confirmar sin acceso a producción. Si el PostgREST gestionado corre en modo legacy, esa primera versión habría devuelto `NULL` para *todo* llamante `service_role` real — el mismo tipo de fuga silenciosa que esta fase existe para cerrar, un nivel más abajo. La solución no es elegir cuál de las dos fuentes confiar: es leer ambas, que es exactamente lo que hace `auth.role()`.
 
 Esto cierra la fuga **incluso si alguien vuelve a olvidar un `REVOKE`** en una función futura que reutilice `assert_operator_access` como guard — es la razón por la que esta reescritura merece su propia fase en vez de conformarse con el `REVOKE` de ACL. El `REVOKE` cierra la puerta hoy; esto cierra la clase de bug.
 
@@ -229,8 +231,11 @@ Ordenadas por riesgo y por lo que se puede hacer sin arriesgar el login.
 | **3 — `custom_access_token_hook`** | Confirma producción, `GRANT` a `supabase_auth_admin`, prueba login end-to-end, sólo entonces `REVOKE` | sí |
 | **4 — Check automático de ACL huérfana** | `check-migration-safety.sh` (spec-87 fase 5) detecta un overload sin `REVOKE` propio y un `REVOKE FROM anon` sin `REVOKE FROM PUBLIC` que le corresponda | no |
 | **5 — Defensa en profundidad del resto** | `REVOKE` sobre las 17 funciones guardadas-pero-nunca-revocadas — sin urgencia, sin riesgo, cierre de higiene | no |
+| **6 — `set_config` deja de ser un bypass genérico de GUC** | Allowlist de `setting_name` o `REVOKE` de `authenticated`, según lo que muestre el inventario de llamantes reales — cierra la vía hallada en el review de la fase 2 (no alcanzable por HTTP, sí por sesión Postgres directa) | no |
 
-### Fase 1 — REVOKE mecánico `[in_progress]`
+### Fase 1 — REVOKE mecánico `[done]`
+
+**Archivos:** migración nueva en `packages/database/supabase/migrations/`, `packages/database/supabase/tests/spec88_fase1_revoke_anon.test.sql`
 
 Cierra, con una sola migración (`CREATE OR REPLACE` no es necesario donde el cuerpo no cambia — sólo el ACL), las funciones donde revocar `anon`/PUBLIC no cambia ningún comportamiento legítimo, porque **ningún llamante legítimo del sistema es `anon`** sobre estas RPCs: el frontend siempre llama autenticado, y el patrón correcto (spec-80 fase 1b, spec-85 fase 2) es `REVOKE ALL ... FROM PUBLIC; GRANT EXECUTE ... TO authenticated [, service_role]; REVOKE ALL ... FROM anon;`.
 
@@ -246,12 +251,63 @@ Cierra, con una sola migración (`CREATE OR REPLACE` no es necesario donde el cu
 
 **Excepción declarada al límite de 300 líneas por archivo:** `packages/database/supabase/tests/spec88_fase1_revoke_anon.test.sql` es SQL repetitivo — cada una de las 16 funciones necesita su propio `has_function()` + de 2 a 4 aserciones `aclexplode()` casi idénticas (PUBLIC, `anon`, a veces `authenticated`/`service_role`), y partirlo por grupo (A/B/C) rompería la sección `plan(N)` única que pgTAP exige por transacción. Se deja como un solo archivo en vez de dividirlo artificialmente.
 
-### Fase 2 — Reescritura de `assert_operator_access` `[pending]`
+> Implementado por: rama `feat/spec-88-fase-1-revoke-anon`, SHA `a9aeb646`,
+> PR #675 (merge `d77fe792`, 2026-09-08T10:38:42Z).
+> Review: al menos una ronda — corrigió la clasificación de
+> `start_pickup_route` (la firma viva `uuid,uuid[]` estaba mal marcada como
+> "ya cerrada"; el total de funciones subió a 16) y confirmó por test, no
+> por suposición, que `assert_operator_access` sigue funcionando como guard
+> interno tras el `REVOKE` (`SECURITY DEFINER` ejecuta con los privilegios
+> del dueño, no del rol del llamante).
+> QA: `gh pr checks 675` verde (Lint/Type-Check/Test/Build en ambos jobs,
+> Vercel deploy). La migración está aplicada en producción — confirmado
+> `git merge-base --is-ancestor d77fe792 32667d0d`, el `headSha` del run
+> `34265192142` ("Deploy Production"), cuyo job `Verify Production
+> Migrations` cerró en verde. ACL real verificado en QA antes/después,
+> citado en el PR (`aclexplode` sobre las 16 funciones).
+> Downstream: ninguno declarado para este spec (`**Downstream:** ninguno
+> todavía`, cabecera). Fase 2 de este mismo spec depende de que
+> `assert_operator_access` siga revocada de PUBLIC/anon/authenticated tras
+> esta fase — sin cambios sobre esa premisa.
 
-Implementa la distinción `service_role` real vs. `anon`/ausencia de sesión, propuesta en la sección de diseño arriba (`current_setting('request.jwt.claim.role', true) = 'service_role'`, no ausencia de `auth.uid()`). Requiere:
+### Fase 2 — Reescritura de `assert_operator_access` `[done]`
+
+**Archivos:** `packages/database/supabase/migrations/20260913000008_spec88_fase2_assert_operator_access_service_role.sql`, `packages/database/supabase/tests/spec88_fase2_assert_operator_access_service_role.test.sql`, `packages/database/supabase/tests/cross_tenant_definer_rpcs_test.sql`
+
+Implementa la distinción `service_role` real vs. `anon`/ausencia de sesión, propuesta en la sección de diseño arriba (`auth.role() = 'service_role'`, no ausencia de `auth.uid()`). Requiere:
 - Inventariar cada llamante `service_role` real de `assert_operator_access` (directo o vía `get_active_routes_with_dispatches`/`get_unmatched_comunas`) — grep en `apps/agents`, `apps/frontend/src/app/api`, cualquier cron/worker — y confirmar que cada uno de verdad manda una conexión cuyo JWT claim `role` es `service_role` antes de fiarse de la reescritura.
 - Probar contra QA con ambos roles: `service_role` real (debe seguir pasando, cross-tenant intencional) y `anon` (debe fallar con 42501, no con un `RETURN` silencioso).
 - Esta fase **no depende** de la fase 1 — puede ir en paralelo, pero conceptualmente cierra la clase de bug que la fase 1 sólo tapa función por función.
+
+**Desviación deliberada de la propuesta literal del spec, corregida tras review (PR #683):** una primera versión de esta migración usó `current_setting('request.jwt.claims', true)::jsonb ->> 'role'` en vez del GUC individual `request.jwt.claim.role` que el snippet original de diseño mostraba, razonando que `infra/supabase-qa/docker-compose.yml` fija `PGRST_DB_USE_LEGACY_GUCS: "false"` para el contenedor `rest` de QA, así que el GUC individual nunca se puebla ahí. Eso es cierto para QA, pero QA no describe producción — producción es un proyecto Supabase **gestionado** (`apps/frontend/docs/deployment-runbook.md:137`), cuyo modo de GUCs no está bajo control de este repo. Si el PostgREST gestionado corre en modo legacy, esa primera versión habría leído `NULL` para todo llamante `service_role` real (el GUC JSON nunca se puebla en ese modo) y lo habría rechazado — el mismo bug que esta fase existe para cerrar, un nivel más abajo. La conclusión correcta no era cambiar de una fuente única a la otra: es leer **ambas**, coalescidas — que es exactamente lo que ya hace `auth.role()` (presente en todo proyecto Supabase, sin necesidad de reimplementarlo aquí) y lo que ya hace `auth.uid()` para `sub`. La migración final llama `auth.role()` directamente; la razón queda documentada en el propio archivo de migración y en el test (caso `legacy-GUC-mode`, TEST 3b).
+
+**Inventario de llamantes `service_role` reales — hecho, resultado: cero.** `assert_operator_access` sólo se invoca desde `get_active_routes_with_dispatches` y `get_unmatched_comunas` (confirmado con `git grep -n "PERFORM public.assert_operator_access"` sobre todas las migraciones). Los únicos consumidores reales de esas dos RPCs en todo el repo (`git grep`/`grep -rl` sobre `apps/agents`, `apps/worker`, `apps/frontend/src/app/api`, `packages/database/supabase/functions`, `apps/frontend/supabase/functions`, `scripts/*.mjs`, `n8n/workflows`) son `apps/frontend/src/hooks/useActiveRoutes.ts` y `apps/frontend/src/hooks/distribution/useUnmatchedComunas.ts`, ambos vía `createSPAClient()` — sesión de navegador autenticada, nunca `service_role`. **No existe hoy ningún llamante `service_role` real de este guard** en el código que se despliega; la reescritura no puede romper un camino que no existe, y sólo cierra la posibilidad de que uno futuro se confíe en falso. Detalle completo en el header de `20260913000008_spec88_fase2_assert_operator_access_service_role.sql`.
+
+**Probado contra QA con ambos roles:** no se probó contra QA en vivo (sin credenciales VPS en esta sesión de implementación) — probado contra el contenedor `spec52-pg` local (pgTAP). `service_role` con `role` confirmado en el JWT sigue pasando cross-tenant (`spec88_fase2_assert_operator_access_service_role.test.sql`, tests 4-5), incluido el caso donde sólo el GUC legacy `request.jwt.claim.role` está poblado y `request.jwt.claims` no existe en absoluto (test 6, `lives_ok`); `anon`/sin sesión/`role:anon` ahora falla con 42501 en vez de `RETURN` silencioso (mismo archivo, tests 1-3, y `cross_tenant_definer_rpcs_test.sql` TEST 5, reescrito porque codificaba la premisa vieja "sin `sub` = service-role"); un caller `authenticated` con `operator_id` ajeno sigue rechazado (test 8, ancla el `IF p_operator_id IS DISTINCT FROM get_operator_id()` que TEST 4/7 por sí solo no cubría). Mutation-testeado: instalar el cuerpo con sólo `request.jwt.claims ->> 'role'` (la primera versión de esta fase, antes del review) hace fallar exactamente el test 6, ningún otro; instalar el cuerpo con el segundo `IF` borrado hace fallar exactamente el test 8. Quien mergee y despliegue a QA real debe confirmar el mismo comportamiento ahí antes de dar la fase por cerrada — ver `> QA:` pendiente.
+
+**Alcance real de "cierra la clase de bug" — acotado tras review (PR #683):** esta fase cierra la inferencia de `service_role` por ausencia de `auth.uid()` — el bug original. No cierra `public.set_config(text,text,boolean)`: es `SECURITY DEFINER`, sin allowlist de nombre de GUC, y conserva `GRANT EXECUTE ... TO authenticated` desde la fase 1 (`20260913000006:134`). Un caller `authenticated` puede ejecutar `SELECT public.set_config('request.jwt.claims','{"role":"service_role"}',true)` y la siguiente llamada en la misma sesión pasaría el guard de esta fase. No es una regresión de esta fase (el cuerpo viejo con `RETURN` temprano lograba el mismo resultado) y **no es alcanzable por HTTP real**: PostgREST abre una transacción nueva por request y refija los claims JWT en cada una, así que no hay una segunda llamada dentro de la misma sesión donde el `set_config` del paso anterior siga vigente. Sigue siendo una vía real desde `psql`/cualquier cliente directo a Postgres autenticado como `authenticated`. Ver fase 6.
+
+> Implementado por: rama `feat/spec-88-fase-2-assert-operator-access`, SHA
+> `291a5e76`, PR #683 (merge `ffcf5972`, 2026-09-08T17:47:04Z).
+> Review: dos rondas. La ronda 1 bloqueó porque el discriminador leía sólo
+> el GUC JSON individual (`request.jwt.claim.role`, que nunca se puebla con
+> `PGRST_DB_USE_LEGACY_GUCS=false`); se cambió a `auth.role()`, que coalesce
+> ambas fuentes. El reviewer reprodujo el RED (`not ok 6` sólo con el cuerpo
+> viejo) y comparó el comportamiento de `auth.role()` contra un contenedor
+> Supabase de otro proyecto con la imagen oficial — hash del `prosrc`
+> idéntico. Esa misma ronda abrió la fase 6 (`set_config`) al acotar la
+> afirmación de "cierra la clase de bug" a lo que de verdad cierra (arriba).
+> QA: `gh pr checks 683` verde (Lint/Type-Check/Test/Build en ambos jobs,
+> Vercel deploy). La migración `20260913000008` está aplicada en
+> producción — confirmado `git merge-base --is-ancestor ffcf5972 32667d0d`,
+> el `headSha` del run `34265192142` ("Deploy Production"), cuyo job
+> `Verify Production Migrations` cerró en verde — cierra el "ver `> QA:`
+> pendiente" que dejó el párrafo de arriba: no se probó contra QA en vivo en
+> el momento de implementar (sin credenciales VPS en esa sesión), pero la
+> migración sí llegó a producción y su verificación de ledger pasó. Suites
+> citadas en el PR: 8/8, 64/64, 4/4, 5/5, sobre salida cruda de `psql`.
+> Downstream: ninguno declarado para este spec (`**Downstream:** ninguno
+> todavía`, cabecera).
 
 ### Fase 3 — `custom_access_token_hook` `[blocked]`
 
@@ -269,6 +325,8 @@ Esta fase queda **desbloqueada para tomarse** en cuanto el resultado del workflo
 
 ### Fase 4 — Check automático de ACL huérfana `[pending]`
 
+**Archivos:** `scripts/check-migration-safety.sh`, `scripts/check-migration-safety-rule1-match.mjs`, `+ test`
+
 Extiende `scripts/check-migration-safety.sh` (spec-87 fase 5, en construcción en paralelo — coordinar antes de duplicar trabajo) con dos chequeos nuevos, ambos basados en lo encontrado aquí:
 
 1. **Overload sin `REVOKE` propio.** Si una migración crea `CREATE [OR REPLACE] FUNCTION public.f(tipos_A)` y existe, en cualquier migración anterior, un `REVOKE ... ON FUNCTION public.f(tipos_B)` con `tipos_A ≠ tipos_B`, advertir que el `REVOKE` histórico no cubre la firma nueva. Éste es exactamente el bug de `start_pickup_route`.
@@ -276,7 +334,19 @@ Extiende `scripts/check-migration-safety.sh` (spec-87 fase 5, en construcción e
 
 ### Fase 5 — Defensa en profundidad del resto `[pending]`
 
+**Archivos:** migración nueva en `packages/database/supabase/migrations/`, test pgTAP en `packages/database/supabase/tests/`
+
 Las 17 funciones con guard efectivo pero sin `REVOKE` nunca aplicado (`add_manifest_to_route`, `cancel_pickup_route`, `close_pickup_route`, `complete_route_reception`, `delete_minted_carton`, `disable_module_for_operator`, `enable_module_for_operator`, `expand_carton`, `get_current_user_role`, `get_enabled_modules_for_operator`, `get_manifest_label_data`, `get_module_audit_for_operator`, `get_operator_id`, `get_route_reception_snapshot`, `list_operators_with_module_state`, `mark_manifest_labels_printed`, `remove_manifest_from_route`). Sin riesgo activo — cada una falla limpio ante `anon` hoy — pero dejar el ACL real coherente con la intención de cada función es higiene que cierra la clase de "hoy no hay guard porque alguien lo olvidó" antes de que ocurra, no después. Baja prioridad, sin fecha — se puede tomar en cualquier momento sin coordinar con nada más de este spec.
+
+### Fase 6 — `set_config` deja de ser un bypass genérico de GUC `[pending]`
+
+Abierta tras el review de la fase 2 (PR #683): `public.set_config(text,text,boolean)` (`20260217000002_fix_audit_logging_critical_issues.sql:14-36`) es `SECURITY DEFINER`, sin allowlist de `setting_name`, y conserva `GRANT EXECUTE ... TO authenticated` desde la fase 1 de este spec (`20260913000006:134`) porque revocarlo entonces habría roto sus llamantes legítimos. Reproducido en `spec52-pg` como `authenticated`: `SELECT public.set_config('request.jwt.claims', '{"role":"service_role"}', true)` seguido de cualquier RPC que use `assert_operator_access` como guard pasa el chequeo de la fase 2 — porque `set_config` puede escribir *cualquier* GUC de sesión, incluido el que la fase 2 acaba de aprender a confiar. No es una regresión de la fase 2 (el `RETURN` temprano del cuerpo viejo lograba el mismo resultado) y **no es alcanzable desde PostgREST real** — cada request de PostgREST abre su propia transacción y refija los claims JWT al principio, así que no existe una segunda llamada HTTP dentro de la misma sesión donde el `set_config` de la primera siga vigente. Sigue siendo alcanzable por cualquier cliente que abra una sesión Postgres persistente autenticado como `authenticated` (`psql`, un pooler mal configurado, una función futura que reutilice la misma conexión).
+
+**Qué entrega:** una de las dos, a decidir en la implementación —
+- Allowlist de `setting_name`: `IF setting_name NOT LIKE 'app.%' THEN RAISE EXCEPTION ...` (o el prefijo que de verdad usan los llamantes reales de `set_config` — inventariarlos antes de fijar el prefijo), preservando el uso legítimo documentado en `20260217000002` y cerrando la escritura arbitraria de GUCs de autenticación.
+- O revocar `EXECUTE` de `authenticated` sobre `public.set_config` directamente, si el inventario de llamantes reales muestra que ninguno lo necesita desde una sesión `authenticated` (los llamantes de auditoría del spec original pueden ser `service_role`).
+
+**Archivos:** `packages/database/supabase/migrations/<nueva>_spec88_fase6_set_config_allowlist.sql`, `packages/database/supabase/tests/spec88_fase6_set_config_allowlist.test.sql`.
 
 ---
 

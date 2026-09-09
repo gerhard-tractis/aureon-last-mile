@@ -55,6 +55,14 @@ La regresión es de `spec-47` (`3a61572`, PR #349). El flujo era `Revisión → 
 
 Las etiquetas de `5b` y `5e` en el propio diseño dicen «el paso que faltaba» y «el bloqueo que faltaba en `5d`». **Este no es un restyle: es la ronda de diseño que documenta los huecos funcionales del rebrand anterior.** Tratarlo como cosmético es repetir el error.
 
+`docs/design/Recogida.dc.html` es la copia versionada en el repo de ese mismo archivo, para
+agentes sin acceso al proyecto de Claude Design (ver `docs/design/README.md`). El mock manda en
+diseño; este spec manda en comportamiento — si discrepan, se implementa el mock y la
+discrepancia se escribe aquí, no se resuelve en silencio. Si el mock no contempla algo que el
+código necesita (un estado de error, un caso vacío), es un hallazgo para escalar al usuario, no
+licencia para inventarlo. Esta referencia caduca con el diseño: al re-bajar el fichero, comprobar
+que `5e`–`5i` siguen siendo las mismas pantallas.
+
 ## Las pantallas
 
 | Mock | Pantalla | Estado hoy |
@@ -329,7 +337,9 @@ Rechaza: manifiesto de otro operador, manifiesto **ya firmado** (`signature_oper
       `close_manifest` acepta el rescate y escribe la firma. No requiere esperar
       a la fase 2 — esa fase sólo añade el mismo camino en móvil.
 
-### Fase 1b — `close_manifest`: ACL heredado sin revocar y dos `RAISE` sin prefijo `[in_progress]`
+### Fase 1b — `close_manifest`: ACL heredado sin revocar y dos `RAISE` sin prefijo `[done]`
+
+**Archivos:** `packages/database/supabase/migrations/20260913000004_spec80_close_manifest_acl_fix.sql`, `packages/database/supabase/tests/spec80_close_manifest_acl.test.sql`, `packages/database/supabase/tests/spec80_close_manifest.sql`, `apps/frontend/src/lib/pickup/closeManifestErrors.ts`
 
 > Implementado por: sesión en solitario, TDD manual (test pgTAP escrito y
 > corrido en rojo antes de la migración). Rama
@@ -348,7 +358,11 @@ Rechaza: manifiesto de otro operador, manifiesto **ya firmado** (`signature_oper
 > ambos matan su test correspondiente. No se probó contra la base de QA real
 > (a diferencia de la fase 1): el cambio es sólo ACL + prefijo de mensaje
 > sobre una función ya viva en QA/producción, sin nueva superficie que un
-> humano pueda ejercitar desde la UI.
+> humano pueda ejercitar desde la UI. **Cierre (2026-09-08, orquestador):** la
+> migración de esta fase está aplicada en producción — confirmado
+> `git merge-base --is-ancestor 78d65df8 32667d0d`, el `headSha` del run
+> `34265192142` ("Deploy Production"), cuyo job `Verify Production
+> Migrations` cerró en verde.
 > Downstream: revisado spec-81, spec-82, spec-83, spec-84, spec-86 — sin
 > cambios. Ninguno depende del texto exacto de estos dos mensajes de error
 > (ambos seguían cayendo al fallback genérico antes del prefijo, y lo siguen
@@ -406,7 +420,7 @@ la reemplazó antes de usarla como base), con:
   ya hace matching sobre el texto viejo sin prefijo — si es así, actualizarlo
   en el mismo cambio.
 
-### Fase 2 — `5e` cerrar con faltantes `[pending]`
+### Fase 2 — `5e` cerrar con faltantes `[done]`
 
 > **No empezar hasta que [spec-85](spec-85-discrepancias.md) fase 2 esté en `[done]`.**
 > Esta fase escribe en `discrepancies` mediante `record_discrepancies`; sin ese RPC
@@ -428,9 +442,190 @@ la reemplazó antes de usarla como base), con:
 
 Con 0 faltantes la pantalla no bloquea: pasa directo a `5f`.
 
-- [ ] Tests de la lógica pura de conteo en `lib/pickup/` — verificados, faltantes, ajenos — antes de la UI.
-- [ ] Componente + tests, incluyendo el caso 0 faltantes.
-- [ ] Cablear al RPC de la fase 1.
+- [x] Tests de la lógica pura de conteo en `lib/pickup/` — verificados, faltantes, ajenos — antes de la UI.
+- [x] Componente + tests, incluyendo el caso 0 faltantes.
+- [x] Cablear al RPC de la fase 1.
+
+> Implementado por: sesión de agente, rama `feat/spec-80-fase-2-bloqueo-faltantes`.
+> `lib/pickup/reviewCloseGate.ts` (conteo puro), `components/pickup/UnverifiedPackagesBlock.tsx`
+> (advertencia + `SIN VERIFICAR` + `NO ESTABAN EN LA CARGA`), `components/pickup/MissingPackageRow.tsx`
+> (fila por bulto), y `review/[loadId]/page.tsx` reescrito contra `5e`. El "cablear al RPC de la
+> fase 1" resultó ser cambio de SQL, no de frontend: `close_manifest` (migración `20260916000001`,
+> `CREATE OR REPLACE` sobre la última, `20260913000004`) ahora construye `p_items` desde los
+> paquetes declarados-y-no-verificados (con su nota de `discrepancy_notes` si la hay) y los
+> barcodes `not_found` deduplicados, y llama a `record_discrepancies('pickup', manifest_id, items)`
+> en la MISMA transacción que fija status/firmas. `complete/[loadId]/page.tsx` (5f, fase 3) no se
+> tocó. No se tocó ningún fichero de la cola offline (spec-81) ni `PickupFlowHeader`.
+> pgTAP: `spec80_fase2_close_manifest_discrepancies.test.sql`, 11/11 vía `pgtap-local.sh` (esta
+> cifra es de la ronda 1 — ver la nota de la ronda de review de PR #686 más abajo: los fixtures de
+> la ronda de review cambiaron el resultado esperado de una aserción vieja, `(1,2,1)` →
+> `(1,3,1)`, así que este 11/11 **ya no cubre el fichero actual**; el fichero entero está sin
+> verificar, no sólo las aserciones nuevas — pendiente de que alguien con Docker vivo corra
+> `pgtap-local.sh sync && apply && run spec80_fase2_close_manifest_discrepancies` y grepee la
+> salida cruda de `psql` por `not ok`, no el resumen del script).
+>
+> **Validado contra el mock real** (`docs/design/Recogida.dc.html`, `5e Cierre con faltantes`)
+> después de una primera ronda construida sólo contra la prosa del spec — sin acceso al diseño en
+> ese momento. Correcciones de esa auditoría:
+> - Los dos CTAs estaban invertidos: `Seguir escaneando` es el primario dorado de 60px a ancho
+>   completo (empuja a seguir buscando bultos); `Cerrar con N faltantes` es el secundario, contorno
+>   rojo (`status-error`). Estaban al revés en la primera versión, y el test lo fijaba como
+>   intencional — corregido, con el test reescrito.
+> - «Faltan N paquetes» / «X de Y verificados» viven DENTRO de la tarjeta de alarma roja, junto
+>   con la frase literal — no en una cabecera dorada aparte. La cabecera dorada (heredada de
+>   spec-19) se quitó de esta pantalla.
+> - `SIN VERIFICAR · N` y `NO ESTABAN EN LA CARGA · N` usan separador `·`, no `(N)`.
+> - `NO ESTABAN EN LA CARGA` es `status-error` (rojo), con la sublínea `escaneado HH:MM · no
+>   pertenece a este manifiesto` — antes usaba `status-warning` (ámbar) sin timestamp.
+> - «Faltan 1 paquetes» → «Falta 1 paquete» (concordancia singular). Con 0 faltantes la tarjeta de
+>   alarma no se renderiza en absoluto (ya era así), así que nunca sale «Faltan 0 paquetes».
+> - El botón **Nota** por bulto es literal: `MissingPackageRow.tsx` reemplaza el textarea
+>   siempre-abierto de la primera ronda (reutilizaba `DiscrepancyItem`) por un chip `Nota` de 44px
+>   que abre un campo inline, y un chip `CON NOTA` + la nota entrecomillada de sólo lectura una vez
+>   guardada — igual que el mock. **Corrección (ronda de review PR #686, 2026-09-08):** la
+>   decisión de dejar `DiscrepancyItem.tsx` sin usar "por si otro spec lo retoma" no se cumplió —
+>   `git grep` confirmó que ningún archivo de producción lo importaba, sólo su propio test (6
+>   casos). Borrado, junto con `DiscrepancyItem.test.tsx`: 60+ líneas y 6 tests corriendo en cada
+>   CI por un componente inalcanzable, sin ningún spec declarándolo como suyo.
+>
+> **Decisión del usuario (2026-09-08) sobre si la nota es obligatoria:** *"Es opcional, y la
+> dejaría editable en el futuro."* El mock ya lo mostraba así (CTA de cierre totalmente opaco con
+> bultos sin nota, sin estado deshabilitado en ningún caso) y ni el spec ni el mock pedían lo
+> contrario — la obligatoriedad se había inventado en la primera ronda de implementación y luego
+> se citaba a sí misma como premisa en el comentario de la migración SQL. Revertido: se quitó
+> `allMissingNotesComplete` de `reviewCloseGate.ts` (y sus tests) y el CTA de cierre ya no se
+> deshabilita nunca por falta de notas. Los placeholders «(obligatorio)» de `MissingPackageRow.tsx`
+> y `DiscrepancyItem.tsx` pasan a «(opcional)». El comentario de la migración `20260916000001` que
+> afirmaba la premisa falsa quedó corregido — **no cambió ningún comportamiento SQL**:
+> `discrepancies.note` nunca tuvo `NOT NULL`, así que la fila que ese bloque insertaba con
+> `note=NULL` antes de la nota corregida es exactamente la misma que inserta ahora.
+>
+> **Hallazgo (no implementado, sólo declarado, por instrucción explícita del usuario):** hoy no
+> existe ningún camino para EDITAR la nota de una discrepancia ya registrada. Verificado leyendo
+> `20260913000001` (esquema: `discrepancies.note`, sin trigger de escritura) y `20260913000003`
+> (`record_discrepancies` sólo INSERTa; `resolve_discrepancy` hace `UPDATE ... SET status,
+> resolution, resolved_at, resolved_by_user_id` — nunca toca `note`). Ningún otro archivo tiene un
+> `UPDATE` sobre `discrepancies.note`. Consecuencia sobre lo que ya se puede crear hoy en
+> producción: ninguna — la nota opcional en captura no rompe ni migra nada existente, sólo permite
+> que una fila `missing` nueva se inserte con `note=NULL` cuando antes (con la puerta indebida)
+> nunca habría llegado a insertarse sin nota. Este spec **no** decide dónde vive la edición futura
+> — candidatos razonables son spec-86 fase 3 (panel de resolución de discrepancias) o una fase
+> nueva de spec-85; la decisión de cuál es del orquestador, no de esta fase.
+>
+> **Aplazamiento declarado — nota "Alcance corregido" (2026-09-07, ronda 3), corregido en la
+> ronda de review de PR #686 (2026-09-08):** esa nota pide que la cuadrilla gane una forma de
+> llegar a un manifiesto de rescate (uno que `trg_route_receptions_status_sync` completó sin
+> firma) sin escritorio y sin teclear la URL — una pestaña Completados en móvil. **No se
+> construyó en esta fase.**
+>
+> La razón que se había escrito antes aquí — "`PickupMobileView.tsx` es, por lo visto en los
+> tests existentes, el mismo fichero que spec-82 fase 1 está editando en paralelo" — era
+> **falsa**, y se afirmaba sin comprobarla (`gh pr view` la habría descartado en un comando).
+> Verificado ahora: el PR #682 (spec-82 fase 1) toca `app/app/pickup/route/active/page.{tsx,test.tsx}`,
+> `CloseRouteButton`, `DigitalizeManifestTrigger`, `NextManifestCard`, `RouteManifestList` y dos
+> specs — **no** `PickupMobileView.tsx`. `git log -- PickupMobileView.tsx` da `e0eaf97` (spec-61)
+> como último commit; nada de spec-82 lo toca.
+>
+> La razón real: `PickupMobileView.tsx` en sí mismo está libre, pero una pestaña Completados no
+> vive ahí sola — la pantalla que de verdad tendría que crecer es `PickupMobileActiveRoute.tsx`
+> (o un hermano suyo), que ya importa `RouteManifestRow` de `./RouteManifestList` (`:15`). Ese
+> fichero, junto con `CloseRouteButton.tsx`, `DigitalizeManifestTrigger.tsx`, `NextManifestCard.tsx`
+> y todo `app/app/pickup/route/active/**`, estuvo explícitamente fuera de alcance para esta ronda
+> de corrección (instrucción del orquestador, para no pisar el PR #682 mientras seguía en vuelo) —
+> no porque spec-82 fase 1 editara el mismo archivo que este spec necesitaría, sino porque la
+> familia de componentes donde encajaría la entrada de rescate era la misma familia que #682
+> estaba tocando en ese momento, y tocarla desde dos ramas a la vez era exactamente el conflicto
+> que la coordinación de esta sesión pidió evitar.
+>
+> **Actualización:** el PR #682 ya mergeó a `main` (`2026-09-08T17:16:39Z`) — verificado con
+> `gh pr view 682 --json state,mergedAt`. El conflicto que motivaba el aplazamiento ya no existe,
+> pero esta ronda de corrección sigue sin poder tocar esos archivos (siguen fuera del alcance que
+> el orquestador fijó para esta tarea específica). Sigue sin construirse. Queda declarado, con
+> dueño: fase 2b de este spec (`spec-80`), ahora sin ningún bloqueo de coordinación — no absorbida
+> en spec-82 fase 1, porque el "rescate sin firma" es un flujo de `close_manifest`/discrepancias
+> (spec-80/spec-85), no de asignación de ruta (el alcance real de spec-82 fase 1).
+>
+> **Ronda 3 de review (PR #686, 2026-09-08):** dos bloqueantes más, los dos medidos con sonda
+> (no deducidos) — la ronda 2 arregló 2 de los 3 estados y dejó el que le da nombre a la fase sin
+> cubrir. `page.tsx` gateaba con `isLoading`, y en TanStack Query v5 `isLoading === isPending &&
+> isFetching` — **falso** mientras una query está `paused` por `networkMode:'online'` (el default
+> del repo; `Providers.tsx` llama `onlineManager.setOnline(false)` en el evento `offline` del
+> navegador, pero nunca sobreescribe `networkMode`). Camino real: la cuadrilla llega desde
+> `scan/[loadId]` con `['pickup','scans',manifestId]` ya caliente en caché, la señal cae mientras
+> `['pickup','missing',manifestId]` sigue en vuelo → `isLoading`/`isError` de ambos hooks leen
+> `false`, `data` queda `undefined`, y el `= []` de la desestructuración lo convertía en
+> `missingCount = 0` → CTA dorado único «Continuar a firma» con bultos sin verificar. Arreglo:
+> quitar los `= []`, gatear por **ausencia de datos** (`scans === undefined || missingPackages
+> === undefined`) en vez de por fase del fetch — cubre `pending`, `paused` y `error sin caché` a
+> la vez, con el orden correcto (error primero, porque un error también deja `data` en
+> `undefined`). Segundo hallazgo: los dos tests de la ronda 2 ponían AMBOS hooks en el mismo
+> estado a la vez, así que no distinguían cuál mitad del `||` hacía el trabajo — reemplazados por
+> tests por-hook (uno `undefined`, el otro resuelto) más un test dedicado a la forma exacta del
+> estado `paused`. Mutado a mano: quitar `|| missingError` mató 1 test; quitar
+> `|| missingPackages === undefined` mató 2 (con un crash aguas abajo en
+> `UnverifiedPackagesBlock`, confirmando que `missingPackages` sí llega `undefined` a producción);
+> ambos revertidos tras confirmar rojo. Seguimiento declarado, no bloqueante, sin resolver en esta
+> ronda: (1) guardar una nota sin red deja «Guardando…» indefinido — `mutateAsync` tampoco
+> resuelve/rechaza bajo `networkMode:'online'` pausado, aunque el borrador sí sobrevive (el fallo
+> original ya está cerrado); (2) el skeleton de `!manifestId` puede quedar permanente si la
+> búsqueda del manifiesto falla por red (sin rama `else`/`catch`, forma preexistente); (3) el
+> estado de error no ofrece «Reintentar» ni salida.
+>
+> Cierre (2026-09-08, orquestador). Rama `feat/spec-80-fase-2-bloqueo-faltantes`,
+> SHA `632b505e`, PR #686 (merge `4e59c6cc`, 2026-09-08T19:28:53Z).
+> Review: tres rondas adversariales, todas cerradas en la misma rama — ronda 1
+> encontró que el arreglo P0 de los CTAs no lo sujetaba ningún test (invertirlos
+> dejaba 8/8 en verde); ronda 2 encontró que el bloqueo se evaporaba sin red
+> porque TanStack Query **pausa** las queries (`isLoading` false, `data`
+> undefined) y el `= []` lo convertía en `missingCount = 0`; ronda 3 (arriba)
+> gateó por ausencia de datos — la mutación que quita `|| missingPackages ===
+> undefined` produce un crash real aguas abajo (`Cannot read properties of
+> undefined (reading 'length')`), prueba de que el bug llegaba al JSX de
+> producción.
+> QA: `gh pr checks 686` verde (Lint/Type-Check/Test/Build en ambos jobs,
+> Vercel deploy). **Hueco declarado, no maquillado:** el `push` a `main` que
+> trae este merge (`Deploy Production`, run `34270192606`) falló en el gate
+> `E2E against QA` por un test en cuarentena no declarado
+> (`despacho-close-dispatch.spec.ts`, Ruta H — ajeno a Recogida) y por eso
+> nunca llegó a `Verify Production Migrations`; las dos ejecuciones
+> posteriores del pipeline (`439e7f9`, `e23690e`) siguen `waiting` sobre la
+> aprobación manual de producción al momento de este cierre. La migración
+> `20260916000001` **no** está confirmada como aplicada en producción —
+> a diferencia de la fase 1b, aquí no hay un run verde posterior que la
+> incluya. Verificado vía pgTAP local (`spec80_fase2_close_manifest_discrepancies.test.sql`,
+> 11/11 tras la ronda de review, según el PR) y vía `vitest` (83 archivos /
+> 679 tests en `src/lib/pickup src/components/pickup src/app/app/pickup
+> src/hooks/pickup`), ambos citados en el PR.
+> Downstream: revisado spec-81 (cola offline, en su fase 3/2 en paralelo) —
+> sin cambios; esta fase no toca ningún fichero de la cola ni de
+> `PickupFlowHeader`. Revisado spec-82 (confirmado sin solape de archivos,
+> arriba), spec-83, spec-84, spec-86 — sin cambios de contrato que les
+> afecte.
+> Seguimiento de prioridad alta, no cerrado aquí: `useDiscrepancies.ts:31-56`
+> se traga los errores de red y resuelve con `[]` — el mismo patrón que la
+> ronda 3 de review acaba de blindar del lado del gate, pero sin corregir en
+> origen. Queda para una fase nueva o para spec-85/86; no se abre número aquí
+> por decisión del orquestador — anotado para que no se pierda.
+
+### Fase 2b — entrada de rescate para móvil (Completados sin escritorio) `[pending]`
+
+**Archivos:** `apps/frontend/src/components/pickup/PickupMobileActiveRoute.tsx`, `+ test` (el diseño exacto de dónde vive la entrada está sin decidir — ver el primer punto de abajo; puede sumar un fichero de pantalla hermana no nombrado aquí)
+
+> El PR #682 (spec-82 fase 1) ya mergeó (`2026-09-08T17:16:39Z`) — la única dependencia que
+> tenía esta fase ya no bloquea. Toca la misma familia de componentes (`PickupMobileActiveRoute.tsx`
+> y lo que importa de `RouteManifestList.tsx`). Ver el "Aplazamiento declarado" de la fase 2,
+> arriba, para la razón completa de por qué no se construyó ahí.
+
+Dale a la cuadrilla, en móvil, una forma de llegar a un manifiesto que `trg_route_receptions_status_sync`
+ya cerró sin firma (rescate de H1, fase 1) — sin escritorio y sin teclear la URL a mano. En
+escritorio esa entrada ya existe (Completados → escanear → revisión → firma); en móvil no hay
+pestaña Completados en absoluto.
+
+- [ ] Diseñar dónde vive la entrada: ¿una pestaña/filtro dentro de `PickupMobileActiveRoute.tsx`,
+      o una pantalla hermana fuera de la ruta activa? El mock de Recogida no dibuja este estado —
+      es un hallazgo a escalar antes de construir, no licencia para inventar el diseño aquí.
+- [ ] Tests primero.
+- [ ] Cablear a `review/[loadId]` (fase 2, ya construida) como destino final.
 
 ### Fase 3 — `5f` firma y fotos `[pending]`
 
