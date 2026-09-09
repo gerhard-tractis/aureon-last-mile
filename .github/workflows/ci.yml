@@ -125,6 +125,14 @@ jobs:
       - name: Test the deploy-gating guard — auto-approve shape (spec-92)
         run: bash ./scripts/check-deploy-gating-autoapprove.test.sh
 
+      # spec-92 review round 2 (2026-09-09, PR #716): six mutants survived
+      # the round-1 guard against the REAL deploy.yml — neutralised freshness
+      # comparison, if: false on it, continue-on-error on the gate job
+      # itself, a brand-new ungated prod job, and deleting the auth_hook
+      # output/detection signals from `changes`.
+      - name: Test the deploy-gating guard — auto-approve shape (round 2)
+        run: bash ./scripts/check-deploy-gating-autoapprove-r2.test.sh
+
       # A malformed quarantine.json only fails today's e2e-qa run on the VPS —
       # by then it has already re-blocked production, the exact state spec-87
       # fase 1 exists to end. Catch a bad entry (missing field, impossible

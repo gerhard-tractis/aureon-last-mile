@@ -3,61 +3,64 @@
  *
  * Split out of check-deploy-gating.mjs to keep both files under the repo's
  * 300-line guideline, matching how check-deploy-gating-quarantine.mjs is
- * split — this module is blind to needs:/concurrency/always() and only
- * knows about the shape spec-92 added to `approve-production`:
- *
- *   1. `environment:`, when it is a conditional expression, must map
- *      `needs.changes.outputs.auth_hook == 'true'` to `'production'` and
- *      everything else to `'production-auto'`. Inverted or pointed at the
- *      wrong output, it would auto-approve exactly the class of change
- *      (auth hook config) that QA cannot exercise — see
- *      docs/specs/spec-92-gate-produccion-diferenciado.md for why that
- *      class is exempted from auto-approval at all.
- *
- *      An unconditional literal `'production'` is NOT an error here — it is
- *      strictly more cautious than the auto-approve feature (it just always
- *      pauses, spec-57's original behaviour), so it is left to
- *      check-deploy-gating.mjs's own environment check, which already
- *      requires an environment of some kind to exist.
- *
- *   2. `approve-production` must carry a "run is current" freshness step
- *      that compares this run's commit against main's actual tip and fails
- *      the job on a mismatch — without it, a run superseded by a later
- *      merge can still deploy stale code on top of it, on EITHER path
- *      (auto-approved or humanly approved: approval can be granted after a
- *      newer merge already landed). The step must not be neutralised by
- *      `continue-on-error: true` or a trailing `|| true`.
- *
- *      Only asserted when the fixture defines `steps:` on
- *      `approve-production` at all — the real deploy.yml always does; a
- *      minimal test fixture that omits `steps:` entirely (this family's
- *      convention: "fixtures are minimal on purpose") is simply not
- *      exercising this concern.
- *
- *   3. No PROD_JOBS job may declare its own `environment:` — that would let
- *      it decide independently whether to pause/skip, bypassing whatever
- *      `approve-production` decided.
+ * split. Round 2 (review 2026-09-09) hardened every check here after six
+ * mutants survived the round-1 version — see each check's comment for which
+ * mutant it now kills. Kept independent of the main file's job list: see
+ * `computeProdJobs` below, which BOTH files now use instead of maintaining
+ * two copies of a fixed array (round-1 mutant: a brand-new production job
+ * that forgets to add itself to that list was invisible to either file).
  *
  * Returns an array of error strings (empty when the shape is fine).
  */
 
-// Kept as its own small list rather than importing PROD_JOBS from
-// check-deploy-gating.mjs — this module stays independently readable and
-// testable, same as check-deploy-gating-quarantine.mjs's independence from
-// the main file's job list.
-const PROD_JOBS = [
-  'deploy-supabase',
-  'deploy-edge-functions',
-  'deploy-vercel',
-  'deploy-worker',
-  'deploy-agents',
-  'deploy-solver',
-];
+// A fixed allowlist of "production jobs" is exactly the kind of thing a new
+// job silently skips being added to — round-1 mutant "new prod job, no
+// gate" survived because PROD_JOBS was a static array duplicated in two
+// files. Inverted instead: name the handful of jobs that are NOT production
+// jobs, and treat every other job in the workflow as one. A new job now has
+// to prove it doesn't need gating (by being named here) rather than being
+// silently ungated by default.
+const NON_PROD_JOBS = new Set([
+  'changes',
+  'deploy-qa',
+  'e2e-qa',
+  'approve-production',
+  'verify-prod-migrations',
+]);
+
+export function computeProdJobs(jobs) {
+  return Object.keys(jobs || {}).filter((name) => !NON_PROD_JOBS.has(name));
+}
 
 // Exported so check-deploy-gating.mjs's own (looser) environment check can
 // accept this shape too, without duplicating the regex.
 export const VALID_CONDITIONAL_ENV =
   /\$\{\{\s*needs\.changes\.outputs\.auth_hook\s*==\s*'true'\s*&&\s*'production'\s*\|\|\s*'production-auto'\s*\}\}/;
+
+/**
+ * Round-1 version matched three substrings ANYWHERE in the step's `run:` —
+ * `commits/main`, `DEPLOY_SHA`, `exit 1`. Mutant: neutralise the actual
+ * comparison (e.g. `if [ "1" = "1" ]`) while leaving all three tokens
+ * present elsewhere (a comment, an unrelated echo) — survived, guard stayed
+ * green. This version requires the tokens to be WIRED TOGETHER: a variable
+ * assigned from a `commits/main …. sha` call, THEN compared with `!=`
+ * against `DEPLOY_SHA` using that SAME variable name, THEN `exit 1`
+ * appearing AFTER that comparison in the script — not merely present
+ * somewhere in the step.
+ */
+function findFreshnessStep(steps) {
+  return steps.find((s) => {
+    const run = String(s.run ?? '');
+    const assign = run.match(/(\w+)\s*=\s*"?\$\(\s*gh api[^\n]*commits\/main[^\n]*\.sha[^\n]*\)"?/);
+    if (!assign) return false;
+    const varName = assign[1];
+    const cmpRe = new RegExp(`\\[\\s*"\\$\\{?${varName}\\}?"\\s*!=\\s*"\\$\\{?DEPLOY_SHA\\}?"\\s*\\]`);
+    const cmpMatch = run.match(cmpRe);
+    if (!cmpMatch) return false;
+    const afterCmp = run.slice(run.indexOf(cmpMatch[0]) + cmpMatch[0].length);
+    return /exit\s+1/.test(afterCmp);
+  });
+}
 
 export function checkAutoApproveShape(jobs) {
   const errors = [];
@@ -78,8 +81,6 @@ export function checkAutoApproveShape(jobs) {
       );
     }
   } else if (typeof env === 'string' && env !== 'production') {
-    // A literal that isn't 'production' and isn't a conditional at all — e.g.
-    // an unconditional 'production-auto', which always skips review.
     errors.push(
       `approve-production.environment is "${env}" — an unconditional value other than ` +
       `'production' bypasses review for every change, including the auth hook class spec-92 ` +
@@ -87,19 +88,29 @@ export function checkAutoApproveShape(jobs) {
     );
   }
 
+  // ── 1b. the gate job itself must not neutralise its own result ──────────
+  // Round-1 mutant: `continue-on-error: true` on approve-production ITSELF
+  // (not on the freshness step, which was already checked) — survived,
+  // because at JOB level that makes `needs.approve-production.result`
+  // report 'success' regardless of what happened inside, and every
+  // production job's `if:` only ever asked for `result == 'success'`.
+  if (gate['continue-on-error'] === true) {
+    errors.push(
+      'approve-production has continue-on-error: true at JOB level — a failed freshness check ' +
+      '(or anything else in the job) would still report success to every production job downstream, ' +
+      'which only checks needs.approve-production.result == \'success\''
+    );
+  }
+
   // ── 2. the freshness step ────────────────────────────────────────────────
   const steps = Array.isArray(gate.steps) ? gate.steps : null;
   if (steps) {
-    const isFreshnessStep = (s) => {
-      const run = String(s.run ?? '');
-      return run.includes('commits/main') && run.includes('DEPLOY_SHA') && /exit\s+1/.test(run);
-    };
-    const fresh = steps.find(isFreshnessStep);
+    const fresh = findFreshnessStep(steps);
     if (!fresh) {
       errors.push(
-        'approve-production has no "run is current" freshness step (comparing DEPLOY_SHA against ' +
-        'commits/main and exiting 1 on mismatch) — without it a run superseded by a newer merge ' +
-        'can still deploy stale code, on either the auto-approved or the humanly-approved path'
+        'approve-production has no "run is current" freshness step (a variable assigned from a ' +
+        'commits/main …sha call, compared with != against DEPLOY_SHA, followed by exit 1) — without ' +
+        'it a run superseded by a newer merge can still deploy stale code, on either path'
       );
     } else {
       if (fresh['continue-on-error'] === true) {
@@ -114,16 +125,71 @@ export function checkAutoApproveShape(jobs) {
           'report success and deploy'
         );
       }
+      // Round-1 mutant not yet covered: `if: false` on the step itself —
+      // survived because the guard never read a step's own `if:`. The step
+      // must run unconditionally on BOTH paths (auto-approved and humanly
+      // approved); there is no legitimate reason for it to be conditional.
+      if (fresh.if !== undefined) {
+        errors.push(
+          `the "run is current" freshness step declares if: ${JSON.stringify(fresh.if)} — it must ` +
+          'run unconditionally on every path, or a false/skipped condition silently removes the check'
+        );
+      }
     }
   }
 
-  // ── 3. no PROD_JOBS job may declare its own environment: ────────────────
-  for (const job of PROD_JOBS) {
+  // ── 3. no production job may declare its own environment: ───────────────
+  for (const job of computeProdJobs(jobs)) {
     if (jobs[job] && jobs[job].environment) {
       errors.push(
         `${job} declares its own environment: — whether to pause or skip must be decided once, ` +
         `by approve-production, not independently by a job downstream of it`
       );
+    }
+  }
+
+  // ── 4. changes.outputs.auth_hook must exist and be wired to a real step ──
+  // Round-1 mutant: delete `auth_hook` from changes.outputs entirely.
+  // needs.changes.outputs.auth_hook then evaluates to '', '' == 'true' is
+  // false, approve-production's environment ALWAYS resolves to
+  // 'production-auto' — the human pause silently disappears from the repo
+  // with CI green. Only enforced when the fixture declares `outputs:` on
+  // `changes` at all (minimal fixtures across this test family often don't).
+  const changesJob = jobs['changes'];
+  if (changesJob && changesJob.outputs && typeof changesJob.outputs === 'object') {
+    const authHookOutput = changesJob.outputs.auth_hook;
+    if (!authHookOutput || !/auth_hook/.test(String(authHookOutput))) {
+      errors.push(
+        'changes.outputs.auth_hook is missing or does not reference an auth_hook step output — ' +
+        'needs.changes.outputs.auth_hook then reads as empty, which always resolves ' +
+        "approve-production's environment to 'production-auto', silently removing the human pause"
+      );
+    }
+
+    // ── 5. the detection signals themselves must still be present ─────────
+    // Round-1 mutant: delete the `custom_access_token_hook` string from the
+    // filter step's computation while leaving the output wiring intact —
+    // survived, because nothing checked *how* auth_hook gets computed, only
+    // that it exists. Only enforced when `changes` declares `steps:`.
+    if (Array.isArray(changesJob.steps)) {
+      const filterStep = changesJob.steps.find((s) => /auth_hook\s*=/.test(String(s.run ?? '')));
+      if (!filterStep) {
+        errors.push('changes has no step computing auth_hook= — the output cannot be produced');
+      } else {
+        const run = String(filterStep.run ?? '');
+        if (!/custom_access_token_hook/.test(run)) {
+          errors.push(
+            "changes' path-filter step no longer references custom_access_token_hook — the " +
+            'path/content detection signal was removed, so auth_hook can never observe that class of change'
+          );
+        }
+        if (!/supabase_auth_admin/.test(run)) {
+          errors.push(
+            "changes' path-filter step no longer references supabase_auth_admin — the migration-" +
+            'content detection signal was removed'
+          );
+        }
+      }
     }
   }
 

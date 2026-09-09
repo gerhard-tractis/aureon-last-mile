@@ -115,10 +115,47 @@ jobs:
           # migrations.
           fetch-depth: 0
 
+      # spec-92 review (2026-09-09), B1 — auth_hook must NOT be scoped to this
+      # single commit's diff. deploy-supabase (below) is unconditional and
+      # runs `db push --include-all`, applying EVERY pending migration on
+      # EVERY approved run — not just this commit's. A single-commit diff let
+      # a hook migration slip through unpaused: PR A adds the migration and
+      # correctly pauses; before anyone clicks, PR B (docs) merges with
+      # auth_hook=false (B's own diff never touched the hook), auto-approves,
+      # and B's `db push --include-all` applies A's still-pending migration —
+      # nobody clicked anything. Identical via workflow_dispatch + force_db
+      # (the 2026-08-23 incident: 13 migrations applied at once).
+      #
+      # Fix: scope the auth-hook check to the CUMULATIVE diff since the last
+      # successfully completed Deploy Production run — because deploy-supabase
+      # is unconditional, that run is guaranteed to have applied everything up
+      # to its own commit, so anything since is exactly what THIS run's
+      # `db push --include-all` would newly apply. Fails closed (pauses) if
+      # the range cannot be established (see the step below).
+      #
+      # M1 — path names are an incidental signal (they only caught the hook
+      # historically because OTHER co-modified files happened to name it).
+      # The real signal is CONTENT: does the migration diff actually touch
+      # the hook function, by any means — not only a fresh GRANT to
+      # supabase_auth_admin (which has never once appeared in the repo's
+      # migration history) but also a function hotfix (CREATE OR REPLACE),
+      # whose GRANTs survive unchanged and so would never mention
+      # supabase_auth_admin at all.
+      #
+      # M2 — the content check below captures into a variable BEFORE
+      # grepping it, not piped straight into `grep -q`. `grep -q` exits at
+      # the first match and closes its stdin; piped directly to a `git diff`
+      # under `pipefail`, that SIGPIPEs git diff (rc 141) on any diff bigger
+      # than one pipe buffer, and `set -e` then treats the whole pipeline as
+      # failed — silently leaving the flag false even though the content
+      # matched. Capturing via `$(...)` first means nothing reads git diff's
+      # output until it has finished writing all of it, so there is no
+      # reader to SIGPIPE it.
       - name: Filter paths
         id: filter
         env:
           FORCE_DB: ${{ inputs.force_db }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           # main is squash-merge only, so HEAD^ is the previous main tip.
@@ -140,22 +177,37 @@ jobs:
             DB=true
           fi
 
-          # spec-92 — QA does not exercise the auth hook path: GoTrue in QA
-          # never invokes custom_access_token_hook (no GOTRUE_HOOK_CUSTOM_
-          # ACCESS_TOKEN_* in infra/supabase-qa/docker-compose.yml), and even
-          # if it did, e2e-qa's signIn() never reads the JWT (spec-88, spec-92
-          # review 2026-09-09) — a degraded hook still produces a green login.
-          # So deploy-qa + e2e-qa passing proves nothing about this class of
-          # change, and it must not auto-approve. Two signals, either trips it:
-          # a changed path naming the hook, or a migration diff granting to
-          # supabase_auth_admin (how the hook is wired up).
-          AUTH_HOOK=false
-          if [ "$(matches 'custom_access_token_hook')" = "true" ]; then
-            AUTH_HOOK=true
+          # B1 (see the step's YAML comment above): scope to the cumulative
+          # diff since the last successful deploy, not this single commit.
+          # Fails closed (pause) if that range cannot be established.
+          RANGE_OK=false
+          RANGE_BASE="${BASE}"
+          LAST_SUCCESS_SHA="$(gh api "repos/${{ github.repository }}/actions/workflows/deploy.yml/runs?status=success&per_page=1" --jq '.workflow_runs[0].head_sha // empty' 2>/dev/null || true)"
+          if [ -n "${LAST_SUCCESS_SHA}" ] \
+             && git cat-file -e "${LAST_SUCCESS_SHA}^{commit}" 2>/dev/null \
+             && git merge-base --is-ancestor "${LAST_SUCCESS_SHA}" "${DEPLOY_SHA}" 2>/dev/null; then
+            RANGE_BASE="${LAST_SUCCESS_SHA}"
+            RANGE_OK=true
+            echo "auth_hook range: last successful deploy ${RANGE_BASE} .. ${DEPLOY_SHA}"
+          else
+            echo "auth_hook range: could not establish the last successful deploy — failing closed"
           fi
-          if git diff "${BASE}" "${DEPLOY_SHA}" -- packages/database/supabase/migrations/ \
-               | grep -qE 'supabase_auth_admin'; then
+
+          # M1/M2 (see the step's YAML comment above): content signal,
+          # captured before grepping (not piped, to avoid a SIGPIPE under
+          # pipefail on a large diff).
+          AUTH_HOOK=false
+          if [ "${RANGE_OK}" != "true" ]; then
             AUTH_HOOK=true
+          else
+            CUM_CHANGED="$(git diff --name-only "${RANGE_BASE}" "${DEPLOY_SHA}")"
+            if echo "${CUM_CHANGED}" | grep -qE 'custom_access_token_hook|infra/supabase-qa/docker-compose\.yml|volumes/db/roles\.sql'; then
+              AUTH_HOOK=true
+            fi
+            MIGRATIONS_DIFF="$(git diff "${RANGE_BASE}" "${DEPLOY_SHA}" -- packages/database/supabase/migrations/)"
+            if printf '%s' "${MIGRATIONS_DIFF}" | grep -qE 'custom_access_token_hook|supabase_auth_admin'; then
+              AUTH_HOOK=true
+            fi
           fi
 
           {

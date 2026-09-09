@@ -20,23 +20,13 @@ import { fileURLToPath } from 'node:url';
 // `load` directly rather than reaching for createRequire.
 import { load } from 'js-yaml';
 import { checkQuarantineStep } from './check-deploy-gating-quarantine.mjs';
-import { checkAutoApproveShape, VALID_CONDITIONAL_ENV } from './check-deploy-gating-autoapprove.mjs';
+import {
+  checkAutoApproveShape,
+  computeProdJobs,
+  VALID_CONDITIONAL_ENV,
+} from './check-deploy-gating-autoapprove.mjs';
 
 const GATE = 'approve-production';
-
-// Every job that mutates production. Deliberately excluded:
-//   deploy-qa               — runs BEFORE the gate; it is the precondition.
-//   verify-prod-migrations  — read-only; its output is what you read before
-//                             deciding whether to approve.
-//   changes                 — pure path detection, touches nothing.
-const PROD_JOBS = [
-  'deploy-supabase',
-  'deploy-edge-functions',
-  'deploy-vercel',
-  'deploy-worker',
-  'deploy-agents',
-  'deploy-solver',
-];
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const workflow = process.argv[2] ?? path.join(here, '..', '.github', 'workflows', 'deploy.yml');
@@ -56,6 +46,13 @@ try {
 
 const jobs = (doc && doc.jobs) || {};
 const errors = [];
+
+// Round-1 mutant (review 2026-09-09): a NEW production job that forgets to
+// add itself to a static PROD_JOBS array is invisible to every check below.
+// computeProdJobs derives the list from the workflow itself — every job
+// except the small, explicit non-production set — so a new job is gated by
+// default instead of silently ungated. See check-deploy-gating-autoapprove.mjs.
+const PROD_JOBS = computeProdJobs(jobs);
 
 /** `needs:` is legal as a bare string or a list; normalise both. */
 const needsOf = (name) => {
