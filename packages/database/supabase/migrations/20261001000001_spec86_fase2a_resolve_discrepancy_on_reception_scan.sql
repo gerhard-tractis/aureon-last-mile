@@ -59,12 +59,29 @@
 --                                              (resolve_discrepancy, 20260913000003,
 --                                              20260913000005): no se reabre ni se
 --                                              cambia. Este trigger no llama a
---                                              resolve_discrepancy porque no tiene
---                                              JWT de caller garantizado (un
---                                              reintento de la cola offline,
---                                              spec-81, podría reproducir el
---                                              INSERT sin la misma sesión), así
---                                              que replica el mismo guard a mano.
+--                                              resolve_discrepancy() — dos razones
+--                                              verificadas, no la cola offline de
+--                                              spec-81 (esa cola no cubre
+--                                              reception_scans: db.ts sólo declara
+--                                              pickup_scan|close_manifest|
+--                                              manifest_photo; useReceptionScan.ts
+--                                              inserta siempre online). La primera:
+--                                              resolve_discrepancy arranca con
+--                                              get_operator_id() y lanza 42501 si
+--                                              es NULL — cualquier INSERT sin JWT
+--                                              de operador (service_role, seed,
+--                                              backfill) reventaría el escaneo
+--                                              entero. La segunda: si la fila ya
+--                                              está resolved/lost, lanza 23505
+--                                              (DISCREPANCY_ALREADY_RESOLVED) — un
+--                                              trigger que llamara al RPC
+--                                              reventaría el INSERT del escaneo
+--                                              cada vez que la discrepancia ya
+--                                              estuviera cerrada, justo el caso
+--                                              que hoy es un no-op benigno. Este
+--                                              trigger replica el mismo guard
+--                                              (status = 'open') a mano en vez de
+--                                              arriesgar cualquiera de las dos.
 --   deleted_at IS NULL                     -- soft-delete, no-negociable del
 --                                              repo. Ningún código de hoy pone
 --                                              deleted_at en discrepancies —
@@ -76,9 +93,10 @@
 -- resolved_by_user_id = NEW.scanned_by, no auth.jwt()->>'sub'. reception_scans
 -- ya captura quién escaneó en una columna propia (scanned_by), consistente con
 -- cómo los dos triggers de spec-52 ya evitan depender del JWT para el tenant
--- (usan NEW.operator_id, no get_operator_id()) — un reintento de la cola
--- offline reproduce el INSERT con los mismos valores de columna incluso si la
--- sesión que lo ejecuta cambió.
+-- (usan NEW.operator_id, no get_operator_id()) — reception_scans no tiene cola
+-- offline hoy (ver arriba), pero tampoco hace falta una para justificar esto:
+-- es el mismo patrón que los triggers de spec-52 ya usan, columna por columna,
+-- sin depender de que el JWT de la sesión que ejecuta el INSERT diga nada.
 -- =============================================================================
 
 BEGIN;
@@ -104,10 +122,13 @@ BEGIN
     -- spec-86 fase 2a: resolve the open reception discrepancy this exact
     -- scan answers, if one exists. Independent of whether the UPDATE above
     -- actually advanced the package — see header. Deliberately does NOT call
-    -- resolve_discrepancy(): that RPC resolves auth.jwt() for the caller,
-    -- which this trigger cannot guarantee across an offline-queue replay: it
-    -- replicates the same "open only, never reopen a closed row" guard by
-    -- hand instead.
+    -- resolve_discrepancy(): it raises 42501 with no operator JWT (would
+    -- abort a service_role/seed/backfill insert entirely) and 23505 if the
+    -- row is already resolved/lost (would abort the scan on today's benign
+    -- no-op) — see header for both, verified against the RPC's own body, not
+    -- against spec-81's offline queue (which does not cover reception_scans
+    -- at all). Replicates the same "open only, never reopen a closed row"
+    -- guard by hand instead.
     UPDATE public.discrepancies
     SET status              = 'resolved',
         resolution          = 'Resuelto automáticamente: bulto escaneado en recepción',

@@ -517,9 +517,16 @@ avance de estado ya vive en producción.
 >   entero; y si la fila ya está `resolved`/`lost`, lanza `23505`
 >   (`DISCREPANCY_ALREADY_RESOLVED`) — un trigger que llamara al RPC
 >   **reventaría el `INSERT` del escaneo** cada vez que la discrepancia ya
->   estuviera cerrada, justo el caso que hoy es un no-op benigno. No se
->   modificó la migración (ya mergeada en la ronda 1) — la razón correcta
->   queda documentada aquí para quien la lea después.
+>   estuviera cerrada, justo el caso que hoy es un no-op benigno.
+>   **Corrección (ronda 3):** esta nota decía "no se modificó la migración
+>   (ya mergeada en la ronda 1)" — falso: al escribir esto el PR seguía
+>   `OPEN`, sin mergear (`gh pr view 722`), así que la migración sí se podía
+>   tocar, y la cabecera todavía citaba la razón desmentida de la cola
+>   offline en tres sitios. Corregida en la migración misma (los tres
+>   comentarios que decían "spec-81"/"offline-queue replay" ahora dan las dos
+>   razones reales de arriba); no hubo cambio de comportamiento, sólo de
+>   texto — el próximo que lea la cabecera de la función, no esta nota
+>   enterrada, ve la razón correcta.
 > - **B1 — declarado, no arreglado (decisión de producto, no de esta fase).**
 >   Con una discrepancia `lost`, el paquete pasa a `en_bodega`, pero la
 >   discrepancia **sigue `lost` para siempre**: `resolve_discrepancy` rechaza
@@ -539,8 +546,9 @@ avance de estado ya vive en producción.
 > antes del siguiente. Regresión repetida sin fallos.
 >
 > Migración: `packages/database/supabase/migrations/20261001000001_spec86_fase2a_resolve_discrepancy_on_reception_scan.sql`
-> (sin cambios en la ronda 2 — el comportamiento ya era correcto; sólo el
-> test y esta nota se corrigieron).
+> (sin cambios de comportamiento en las rondas 2 y 3 — la lógica ya era
+> correcta desde la ronda 1; la ronda 3 sí tocó tres comentarios de la
+> cabecera, ver más abajo).
 > Test pgTAP: `packages/database/supabase/tests/spec86_fase2a_resolve_discrepancy_on_reception_scan.test.sql`
 > (22/22, `psql -tA -f` crudo contra `spec52-pg`, y vía `scripts/pgtap-local.sh`).
 > Regresión sin fallos: `spec52_state_engine`, `spec52_unexpected_count`,
@@ -548,6 +556,18 @@ avance de estado ya vive en producción.
 > `spec86_fase1_complete_route_reception_discrepancies` (18/18),
 > `spec85_discrepancies_rpcs` (29/29), `spec85_discrepancies_schema`,
 > `spec86_fase3_ops_control_discrepancies_view`.
+>
+> **Ronda 3 de review (PR #722) — mergeable, un único hallazgo real:** la
+> cabecera de la migración seguía citando la razón desmentida en la ronda 2
+> ("un reintento de la cola offline de spec-81…") en tres sitios distintos
+> (líneas 61-67, 76-81 y 104-110 del archivo antes de esta corrección) — la
+> ronda 2 corrigió la razón en esta nota del spec, pero no en la cabecera de
+> la función, que es lo que lee quien la toque después sin bajar hasta esta
+> nota (el mismo patrón que ya costó una ronda en la fase 1 de este spec).
+> Los tres comentarios se reemplazaron por las dos razones reales (`42501`
+> sin JWT de operador, `23505` si la fila ya está cerrada); reaplicado y
+> reverificado: 22/22, regresión de las cuatro suites relacionadas sin
+> fallos. Sin cambio de comportamiento — sólo texto.
 >
 > No se tocó ningún archivo de frontend — esta fase es puramente SQL
 > (trigger existente, ya invocado hoy por `useReceptionScan.ts` en cada
