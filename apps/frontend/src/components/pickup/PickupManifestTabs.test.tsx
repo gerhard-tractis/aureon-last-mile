@@ -44,7 +44,7 @@ const completed: CompletedManifest[] = [
     id: 'c1', external_load_id: 'CARGA-000', retailer_name: 'Easy',
     total_orders: 2, total_packages: 4, completed_at: '2026-04-09T13:00:00Z',
     created_at: '2026-04-09T08:00:00Z', pickup_point: null,
-    labels_printed_at: null, labels_printed_by_name: null,
+    labels_printed_at: null, labels_printed_by_name: null, missing_count: 0,
   },
 ];
 
