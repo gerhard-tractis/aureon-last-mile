@@ -916,6 +916,7 @@ El mock dice «expo-camera», que es la app Expo dormida (`apps/mobile`, ver `ls
 `5h`: revisión con la pregunta del mock — «¿Se lee la firma? Una foto borrosa no sirve como respaldo» — y **Repetir** / **Usar foto**.
 
 - [ ] Tests con `getUserMedia` mockeado.
+- [ ] **M3, review del PR #712 (spec-81 fase 5) — la captura llama a `enqueueManifestPhoto` (`lib/offline/photos.ts`), NO a `useUploadManifestDocument` directo.** spec-81 fase 5 construyó la ruta offline completa para fotos (blob a IndexedDB, subida diferida con reintento, huérfano imposible) precisamente porque `useUploadManifestDocument` sube directo al bucket sin ninguna ruta offline — si `upload` falla, el archivo se pierde. Esa fase no tocó `ManifestPhotoStrip.tsx` ni esta pantalla a propósito (coordinación explícita para no pisar esta fase 4, en vuelo en paralelo); conectar `5g`/`5h` a `enqueueManifestPhoto` es lo que hace verdad «Las fotos también» (`5f`) en el código que corre, no sólo en la infraestructura. Si esta fase implementa la captura llamando al uploader directo, hereda exactamente el hueco que spec-81 fase 5 existe para cerrar.
 - [ ] Verificación en dispositivo real: `awaiting_user_test`, la cierra una persona con el teléfono.
 
 ### Fase 5 — `5i` carga cerrada `[pending]`

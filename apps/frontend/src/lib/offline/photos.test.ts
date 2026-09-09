@@ -19,7 +19,9 @@ import {
   sendManifestPhoto,
   unconfirmedPhotoBytes,
   MAX_UNCONFIRMED_PHOTO_BYTES_PER_OPERATOR,
+  MAX_PHOTO_FILE_BYTES,
 } from './photos';
+import { PICKUP_QUEUE_WAKE_EVENT } from '@/hooks/useOfflineQueue';
 import type { PickupQueueEntry } from '../db';
 
 const OPERATOR_A = 'operator-a';
@@ -168,6 +170,260 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
 
       expect(entry.status).toBe('pending');
     });
+
+    // Mutante superviviente (menor, review del PR #712): `>` frente a `>=`
+    // en el guard del tope. En el borde exacto (currentBytes + blob.size ===
+    // CAP) debe encolar, no rechazar — el tope es "no superar", no "llegar
+    // a". Semilla con `fakeBlob` (no vía `enqueueManifestPhoto` con un Blob
+    // real): un segundo encolado real perdería el tamaño del primero al
+    // releer (fake-indexeddb, ver el docstring de `fakeBlob`), lo que
+    // falsearía el conteo del segundo intento.
+    it('allows enqueueing exactly up to the byte cap (boundary)', async () => {
+      const remaining = 100;
+      await db.pickup_queue.add({
+        clientOperationId: 'seed-boundary',
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'manifest_photo',
+        payload: { sheetNumber: 1 },
+        blob: fakeBlob(MAX_UNCONFIRMED_PHOTO_BYTES_PER_OPERATOR - remaining),
+        status: 'pending',
+        retryCount: 0,
+        claimToken: null,
+        lastAttemptAt: null,
+        nextAttemptAt: null,
+        createdAt: new Date().toISOString(),
+      });
+
+      await expect(
+        enqueueManifestPhoto(db, {
+          operatorId: OPERATOR_A,
+          userId: USER_A,
+          manifestId: MANIFEST_1,
+          sheetNumber: 2,
+          blob: blobOfSize(remaining),
+        }),
+      ).resolves.toMatchObject({ status: 'pending' });
+    });
+
+    it('rejects a single byte past the exact byte cap boundary', async () => {
+      const remaining = 100;
+      await db.pickup_queue.add({
+        clientOperationId: 'seed-boundary-plus-one',
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'manifest_photo',
+        payload: { sheetNumber: 1 },
+        blob: fakeBlob(MAX_UNCONFIRMED_PHOTO_BYTES_PER_OPERATOR - remaining),
+        status: 'pending',
+        retryCount: 0,
+        claimToken: null,
+        lastAttemptAt: null,
+        nextAttemptAt: null,
+        createdAt: new Date().toISOString(),
+      });
+
+      await expect(
+        enqueueManifestPhoto(db, {
+          operatorId: OPERATOR_A,
+          userId: USER_A,
+          manifestId: MANIFEST_1,
+          sheetNumber: 2,
+          blob: blobOfSize(remaining + 1),
+        }),
+      ).rejects.toThrow(/cola de fotos llena|bytes|MB/i);
+    });
+
+    // M2, review del PR #712 (mayor) — el bucket `manifests` tiene
+    // `file_size_limit = 10485760` (10 MiB); sin este tope, una foto por
+    // encima de ese límite sube en cada intento, el bucket la rechaza con un
+    // error no reconocido → `retry` × `MAX_RETRY_ATTEMPTS` → `dead` →
+    // manifiesto bloqueado sin salida. Rechazarla AQUÍ, en el momento de
+    // capturar, es donde el operario todavía puede repetir la foto (más
+    // comprimida, o recortada) en vez de perder la sesión entera contra un
+    // límite del bucket que el drenador de fondo no puede negociar.
+    it('rejects a single photo above the bucket file_size_limit before it ever reaches the queue', async () => {
+      const addSpy = vi.spyOn(db.pickup_queue, 'add');
+
+      await expect(
+        enqueueManifestPhoto(db, {
+          operatorId: OPERATOR_A,
+          userId: USER_A,
+          manifestId: MANIFEST_1,
+          sheetNumber: 1,
+          blob: blobOfSize(MAX_PHOTO_FILE_BYTES + 1),
+        }),
+      ).rejects.toThrow(/10\s*MiB|tamaño|MB/i);
+
+      expect(addSpy).not.toHaveBeenCalled();
+      addSpy.mockRestore();
+    });
+
+    it('allows a single photo exactly at the bucket file_size_limit', async () => {
+      await expect(
+        enqueueManifestPhoto(db, {
+          operatorId: OPERATOR_A,
+          userId: USER_A,
+          manifestId: MANIFEST_1,
+          sheetNumber: 1,
+          blob: blobOfSize(MAX_PHOTO_FILE_BYTES),
+        }),
+      ).resolves.toMatchObject({ status: 'pending' });
+    });
+
+    // M1, review del PR #712 (mayor) — `complete/[loadId]/page.tsx:228`
+    // dispara este evento tras encolar un `close_manifest` offline; sin el
+    // equivalente aquí, una foto encolada mientras la PWA sigue montada
+    // (el caso normal: el operario sigue en la pantalla de captura) espera
+    // al próximo `online` real o al próximo montaje de `AppLayout` — que,
+    // para una sesión que nunca perdió `navigator.onLine` de verdad (sólo
+    // falló el upload puntual, o el operario está offline desde antes de
+    // abrir la cámara), puede no llegar nunca hasta cerrar y reabrir la PWA.
+    it('wakes the drainer (PICKUP_QUEUE_WAKE_EVENT) after a successful enqueue', async () => {
+      const handler = vi.fn();
+      window.addEventListener(PICKUP_QUEUE_WAKE_EVENT, handler);
+
+      await enqueueManifestPhoto(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        sheetNumber: 1,
+        blob: blobOfSize(1024),
+      });
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      window.removeEventListener(PICKUP_QUEUE_WAKE_EVENT, handler);
+    });
+
+    it('does not wake the drainer when enqueueing is rejected by a cap', async () => {
+      const handler = vi.fn();
+      window.addEventListener(PICKUP_QUEUE_WAKE_EVENT, handler);
+
+      await enqueueManifestPhoto(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        sheetNumber: 1,
+        blob: blobOfSize(MAX_PHOTO_FILE_BYTES + 1),
+      }).catch(() => undefined);
+
+      expect(handler).not.toHaveBeenCalled();
+      window.removeEventListener(PICKUP_QUEUE_WAKE_EVENT, handler);
+    });
+
+    // B3, review del PR #712 (bloqueante) — `ManifestPhotoStrip.tsx` calcula
+    // `nextSheetNumber` contra `useManifestDocuments` (una query al
+    // servidor), que sin señal queda CONGELADA. Dos hojas capturadas offline
+    // en el MISMO dispositivo reciben el mismo número propuesto — no es una
+    // carrera rara, es el caso normal del flujo que esta fase existe para
+    // cubrir. Sin este guard, la segunda choca en el drenador con un
+    // `storage_path` distinto (`sheet-N-<otro client_operation_id>`) → 23505
+    // "colisión real" → `dead` → `manifestHasDeadEntry` bloquea también el
+    // `close_manifest` de la carga, sin salida (`retryDead` repite la misma
+    // colisión). `enqueueManifestPhoto` desambigua contra lo que SÍ es
+    // consultable offline — la cola local — antes de que el número llegue al
+    // servidor.
+    it('B3: renumbers past a sheetNumber already queued locally for the same manifest, so two offline captures never collide', async () => {
+      const first = await enqueueManifestPhoto(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        sheetNumber: 3,
+        blob: blobOfSize(10),
+      });
+      // La UI offline propone el MISMO número para la segunda captura —
+      // `useManifestDocuments` está congelada sin señal.
+      const second = await enqueueManifestPhoto(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        sheetNumber: 3,
+        blob: blobOfSize(10),
+      });
+
+      expect((first.payload as { sheetNumber: number }).sheetNumber).toBe(3);
+      expect((second.payload as { sheetNumber: number }).sheetNumber).toBe(4);
+    });
+
+    it('B3: skips past every number already taken, not just the first collision', async () => {
+      await enqueueManifestPhoto(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        sheetNumber: 1,
+        blob: blobOfSize(10),
+      });
+      await enqueueManifestPhoto(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        sheetNumber: 1,
+        blob: blobOfSize(10),
+      });
+
+      const third = await enqueueManifestPhoto(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        sheetNumber: 1,
+        blob: blobOfSize(10),
+      });
+
+      expect((third.payload as { sheetNumber: number }).sheetNumber).toBe(3);
+    });
+
+    it('B3: does not renumber past a collision with a DIFFERENT manifest', async () => {
+      await enqueueManifestPhoto(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: 'manifest-other',
+        sheetNumber: 1,
+        blob: blobOfSize(10),
+      });
+
+      const entry = await enqueueManifestPhoto(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        sheetNumber: 1,
+        blob: blobOfSize(10),
+      });
+
+      expect((entry.payload as { sheetNumber: number }).sheetNumber).toBe(1);
+    });
+
+    it('B3: a sheet number already sent (uploaded, cleared from the local queue) is available again', async () => {
+      await db.pickup_queue.add({
+        clientOperationId: 'seed-sent',
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'manifest_photo',
+        payload: { sheetNumber: 1 },
+        blob: fakeBlob(10),
+        status: 'sent',
+        retryCount: 0,
+        claimToken: null,
+        lastAttemptAt: null,
+        nextAttemptAt: null,
+        createdAt: new Date().toISOString(),
+      });
+
+      const entry = await enqueueManifestPhoto(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        sheetNumber: 1,
+        blob: blobOfSize(10),
+      });
+
+      // `sent` ya se subió con su propio storage_path — el servidor es la
+      // fuente de verdad para ese número; renumerar aquí sólo importa contra
+      // lo que la cola LOCAL todavía no confirmó.
+      expect((entry.payload as { sheetNumber: number }).sheetNumber).toBe(1);
+    });
   });
 
   describe('unconfirmedPhotoBytes', () => {
@@ -269,11 +525,14 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
       uploadError = null as { name?: string; message: string } | null,
       insertError = null as { code?: string; message: string } | null,
       existingRow = null as { storage_path: string } | null,
+      selectError = null as { code?: string; message: string } | null,
     } = {}) {
       const upload = vi.fn(async () => (uploadError ? { data: null, error: uploadError } : { data: { path: 'x' }, error: null }));
       const remove = vi.fn(async () => ({ data: [], error: null }));
       const insert = vi.fn(async () => (insertError ? { data: null, error: insertError } : { data: [{}], error: null }));
-      const maybeSingle = vi.fn(async () => ({ data: existingRow, error: null }));
+      const maybeSingle = vi.fn(async () =>
+        selectError ? { data: null, error: selectError } : { data: existingRow, error: null },
+      );
       const selectChain = {
         eq: vi.fn(() => selectChain),
         is: vi.fn(() => selectChain),
@@ -310,7 +569,7 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
       expect(upload).toHaveBeenCalledWith(
         manifestPhotoStoragePath(entry),
         entry.blob,
-        expect.objectContaining({ upsert: true }),
+        expect.objectContaining({ upsert: true, contentType: entry.blob!.type }),
       );
       expect(insert).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -318,10 +577,54 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
           manifest_id: MANIFEST_1,
           storage_path: manifestPhotoStoragePath(entry),
           sheet_number: 3,
-          uploaded_by: USER_A,
         }),
       );
       expect(result).toEqual({ outcome: 'sent' });
+    });
+
+    // B2, review del PR #712 — `uploaded_by` NO puede venir de
+    // `entry.userId` (la identidad de quien encoló, congelada en la entrada).
+    // `drainManifest` procesa la cabeza del FIFO sea de quien sea, pasado
+    // `CROSS_USER_RECLAIM_MS` (`queue-blocking.ts`) — decisión del usuario,
+    // justificada porque `close_manifest` deriva el firmante de `auth.uid()`
+    // en el servidor, NUNCA del payload. `manifest_photo` es el primer tipo
+    // de esta cola que llevaba la identidad del actor en el payload, y eso
+    // rompía esa premisa: B (bajo su propio JWT) reintentando la foto de A
+    // insertaba `uploaded_by = A`, y la policy `uploaded_by IS NULL OR
+    // uploaded_by = auth.uid()` la rechazaba con 42501 — retry × 10 → dead →
+    // manifiesto bloqueado para siempre, subiendo y borrando el blob en cada
+    // vuelta. La policy admite `NULL` explícitamente; no hay sesión fiable de
+    // la que derivarlo en el drenador de fondo (mismo problema, mismo motivo
+    // que `close_manifest` no manda `operator_name` en el payload).
+    it('never sends uploaded_by from the queued entry — insert leaves it null, RLS-safe for any session', async () => {
+      const { supabase, insert } = storageStub();
+      const entry = photoEntry({ userId: 'a-different-user-than-the-draining-session' });
+
+      await sendManifestPhoto(supabase, entry);
+
+      expect(insert).toHaveBeenCalledWith(
+        expect.objectContaining({ uploaded_by: null }),
+      );
+    });
+
+    // M2, review del PR #712 — el bucket `manifests` sólo acepta
+    // image/jpeg|png|webp|heic|heif (`20260430000001_create_manifests_storage_bucket.sql`);
+    // sin `contentType` explícito, storage-js infiere el MIME del NOMBRE del
+    // objeto (`.jpg`, forzado por `manifestPhotoStoragePath` sin importar el
+    // tipo real del blob) en vez del blob real — un HEIC de iOS subido con
+    // nombre `.jpg` puede acabar con un content-type equivocado. Se pasa el
+    // `.type` real del blob capturado.
+    it('passes the real blob content type to upload, not inferred from the .jpg path', async () => {
+      const { supabase, upload } = storageStub();
+      const entry = photoEntry({ blob: new Blob(['x'], { type: 'image/heic' }) });
+
+      await sendManifestPhoto(supabase, entry);
+
+      expect(upload).toHaveBeenCalledWith(
+        manifestPhotoStoragePath(entry),
+        entry.blob,
+        expect.objectContaining({ contentType: 'image/heic' }),
+      );
     });
 
     it('reports offline when the upload fails on a network error, and never attempts the insert', async () => {
@@ -415,6 +718,47 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
       const result = await sendManifestPhoto(supabase, photoEntry());
 
       expect(result.outcome).toBe('offline');
+      expect(remove).not.toHaveBeenCalled();
+    });
+
+    // B1, review del PR #712 (bloqueante) — un reintento NORMAL de esta cola
+    // (el insert anterior SÍ se aplicó, sólo se perdió la respuesta) choca
+    // con 23505; si la señal cae DE NUEVO justo entre ese 23505 y la SELECT
+    // que verifica si la fila existente es la nuestra, `existing` era `null`
+    // y el código anterior lo confundía con "no es la misma foto, hay que
+    // limpiar" — borrando el objeto que la fila VIVA en `manifest_documents`
+    // referencia. Evidencia legal apuntando a un objeto inexistente, y
+    // `retryDead` no lo salva: revive, repite el mismo 23505, vuelve a
+    // fallar la misma SELECT (sin señal), vuelve a morir. La SELECT que
+    // falla por red no es evidencia de nada — se reporta `offline`, sin
+    // tocar el bucket, igual que un fallo de red en el insert mismo.
+    it('B1: does not remove the object when the 23505-verification SELECT itself fails on a network error', async () => {
+      const entry = photoEntry();
+      const { supabase, remove } = storageStub({
+        insertError: { code: '23505', message: 'duplicate key value violates unique constraint' },
+        selectError: { code: '', message: 'TypeError: Failed to fetch' },
+      });
+
+      const result = await sendManifestPhoto(supabase, entry);
+
+      expect(result.outcome).toBe('offline');
+      expect(remove).not.toHaveBeenCalled();
+    });
+
+    // Residual de B1 — una SELECT que falla por una razón NO de red (RLS
+    // mal configurada, lo que sea) tampoco es evidencia de colisión real;
+    // valor por defecto seguro de esta cola para lo no reconocido: `retry`,
+    // sin borrar nada, hasta que una SELECT que sí resuelva pueda decidir.
+    it('does not remove the object when the 23505-verification SELECT fails for a non-network reason', async () => {
+      const entry = photoEntry();
+      const { supabase, remove } = storageStub({
+        insertError: { code: '23505', message: 'duplicate key value violates unique constraint' },
+        selectError: { code: '42501', message: 'permission denied' },
+      });
+
+      const result = await sendManifestPhoto(supabase, entry);
+
+      expect(result.outcome).toBe('retry');
       expect(remove).not.toHaveBeenCalled();
     });
   });

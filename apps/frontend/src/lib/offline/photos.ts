@@ -24,6 +24,7 @@ import type { PickupQueueEntry } from '../db';
 import type { PickupQueueStore } from './queue-claims';
 import { enqueue } from './queue';
 import type { OfflineQueueOutcome, OfflineQueueSender } from '@/hooks/useOfflineQueue';
+import { PICKUP_QUEUE_WAKE_EVENT } from '@/hooks/useOfflineQueue';
 
 export interface ManifestPhotoPayload {
   sheetNumber: number;
@@ -62,6 +63,20 @@ export interface EnqueueManifestPhotoInput {
 export const MAX_UNCONFIRMED_PHOTO_BYTES_PER_OPERATOR = 200 * 1024 * 1024;
 
 /**
+ * M2, review del PR #712 (mayor) — el bucket `manifests` tiene
+ * `file_size_limit = 10485760` (10 MiB, ver
+ * `20260430000001_create_manifests_storage_bucket.sql`). Sin este tope
+ * propio, una foto por encima de ese límite sube en cada intento del
+ * drenador, el bucket la rechaza con un error no reconocido → `retry` ×
+ * `MAX_RETRY_ATTEMPTS` → `dead` → manifiesto bloqueado sin salida, subiendo
+ * y borrando el mismo blob en cada vuelta. Rechazarla aquí, al encolar, es
+ * el único punto donde el operario todavía puede repetir la foto (más
+ * comprimida o recortada) en vez de perder la sesión entera contra un
+ * límite del bucket que el drenador de fondo nunca podría negociar.
+ */
+export const MAX_PHOTO_FILE_BYTES = 10 * 1024 * 1024;
+
+/**
  * Bytes de fotos sin confirmar (`status !== 'sent'`) en cola para un
  * operador — lo que `MAX_UNCONFIRMED_PHOTO_BYTES_PER_OPERATOR` limita.
  * `dead`/`sending` cuentan a propósito: un blob `dead` sigue ocupando disco
@@ -81,15 +96,82 @@ export async function unconfirmedPhotoBytes(
 }
 
 /**
+ * B3, review del PR #712 (bloqueante) — `ManifestPhotoStrip.tsx` calcula el
+ * número de hoja contra `useManifestDocuments`, una query AL SERVIDOR. Sin
+ * señal esa lista queda congelada, así que dos fotos capturadas offline en
+ * el MISMO dispositivo reciben el MISMO número propuesto — no es una
+ * carrera rara: es el caso normal del flujo que esta fase existe para
+ * cubrir. Sin desambiguar, la segunda choca en el drenador contra un
+ * `sheet_number` ya usado por OTRO `storage_path` → 23505 leído como
+ * colisión real → `dead` → `manifestHasDeadEntry` bloquea también el
+ * `close_manifest` de la carga entera, sin salida (`retryDead` repite la
+ * misma colisión).
+ *
+ * Desambigua contra lo único consultable offline: la cola LOCAL. Devuelve
+ * el primer número ≥ `requested` que ningún `manifest_photo` sin confirmar
+ * (`status !== 'sent'`) de este manifiesto ya está usando — `sent` no
+ * cuenta: ese número ya lo decidió el servidor, y es la fuente de verdad
+ * para él.
+ *
+ * No resuelve la colisión entre DOS DISPOSITIVOS distintos capturando para
+ * el mismo manifiesto sin haber sincronizado nunca entre sí — ninguna cola
+ * puramente local puede verla venir. Ese caso, mucho más raro (fuera de la
+ * ventana de `CROSS_USER_RECLAIM_MS`, además), sigue cayendo en el 23505
+ * "colisión real" de `sendManifestPhoto` — `dead`, con la misma afordancia
+ * humana ("REQUIERE AYUDA") que cualquier otro bloqueo irrecuperable de esta
+ * cola. Documentado explícitamente, no un caso silenciosamente cubierto.
+ */
+async function nextAvailableSheetNumber(
+  db: PickupQueueStore,
+  operatorId: string,
+  manifestId: string,
+  requested: number,
+): Promise<number> {
+  const queued = await db.pickup_queue
+    .where('operatorId')
+    .equals(operatorId)
+    .and((entry) => entry.manifestId === manifestId && entry.type === 'manifest_photo' && entry.status !== 'sent')
+    .toArray();
+  const taken = new Set(queued.map((entry) => (entry.payload as ManifestPhotoPayload).sheetNumber));
+
+  let candidate = requested;
+  while (taken.has(candidate)) {
+    candidate += 1;
+  }
+  return candidate;
+}
+
+/**
  * Encola una foto de manifiesto. Delega en `enqueue` (fase 1) para el
- * `client_operation_id` estable y el tope de 500 filas; añade el tope propio
- * en bytes antes de encolar — rechazar ANTES de escribir es lo que evita que
- * el propio intento de encolar sea el que agote la cuota real de IndexedDB.
+ * `client_operation_id` estable y el tope de 500 filas; añade dos topes
+ * propios antes de escribir — por fichero (`MAX_PHOTO_FILE_BYTES`, el límite
+ * real del bucket) y por operador en bytes acumulados
+ * (`MAX_UNCONFIRMED_PHOTO_BYTES_PER_OPERATOR`) — y renumera contra colisión
+ * local (B3, `nextAvailableSheetNumber`) antes de encolar. Rechazar ANTES de
+ * escribir es lo que evita que el propio intento de encolar sea el que
+ * agote la cuota real de IndexedDB o produzca un envío condenado a `dead`.
+ *
+ * M1, review del PR #712 (mayor) — despierta el drenador
+ * (`PICKUP_QUEUE_WAKE_EVENT`) tras un encolado que sí se aplicó, mismo
+ * patrón que `complete/[loadId]/page.tsx` ya usa tras encolar un
+ * `close_manifest` offline. `AppLayout` monta `useOfflineQueue` una única
+ * vez a nivel de shell; sin esto, una foto encolada mientras la pestaña
+ * sigue abierta (el caso normal: el operario sigue en la pantalla de
+ * captura) espera a un evento `online` real que puede no llegar nunca si la
+ * señal nunca se recuperó de verdad a nivel de red — sólo falló ese upload
+ * puntual, o el dispositivo ya estaba offline antes de abrir la cámara.
  */
 export async function enqueueManifestPhoto(
   db: PickupQueueStore,
   input: EnqueueManifestPhotoInput,
 ): Promise<PickupQueueEntry> {
+  if (input.blob.size > MAX_PHOTO_FILE_BYTES) {
+    const limitMb = Math.round(MAX_PHOTO_FILE_BYTES / (1024 * 1024));
+    throw new Error(
+      `recogida offline queue: la foto supera el tamaño máximo (${limitMb} MiB) que el bucket admite — repite la captura antes de continuar`,
+    );
+  }
+
   const currentBytes = await unconfirmedPhotoBytes(db, input.operatorId);
   if (currentBytes + input.blob.size > MAX_UNCONFIRMED_PHOTO_BYTES_PER_OPERATOR) {
     const capMb = Math.round(MAX_UNCONFIRMED_PHOTO_BYTES_PER_OPERATOR / (1024 * 1024));
@@ -98,8 +180,14 @@ export async function enqueueManifestPhoto(
     );
   }
 
-  const payload: ManifestPhotoPayload = { sheetNumber: input.sheetNumber };
-  return enqueue(db, {
+  const sheetNumber = await nextAvailableSheetNumber(
+    db,
+    input.operatorId,
+    input.manifestId,
+    input.sheetNumber,
+  );
+  const payload: ManifestPhotoPayload = { sheetNumber };
+  const entry = await enqueue(db, {
     operatorId: input.operatorId,
     userId: input.userId,
     manifestId: input.manifestId,
@@ -107,6 +195,12 @@ export async function enqueueManifestPhoto(
     payload,
     blob: input.blob,
   });
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(PICKUP_QUEUE_WAKE_EVENT));
+  }
+
+  return entry;
 }
 
 /**
@@ -184,9 +278,14 @@ export async function sendManifestPhoto(
   const { sheetNumber } = entry.payload as ManifestPhotoPayload;
   const storagePath = manifestPhotoStoragePath(entry);
 
+  // M2, review del PR #712 — `contentType` explícito con el `.type` real del
+  // blob capturado, no inferido del nombre del objeto (`manifestPhotoStoragePath`
+  // siempre termina en `.jpg`, sin importar el tipo real — un HEIC de iOS
+  // subido con ese nombre acabaría con un content-type equivocado si se deja
+  // que storage-js lo infiera de la extensión).
   const { error: uploadError } = await supabase.storage
     .from('manifests')
-    .upload(storagePath, entry.blob, { upsert: true });
+    .upload(storagePath, entry.blob, { upsert: true, contentType: entry.blob.type });
   if (uploadError) {
     if (isStorageNetworkFailure(uploadError)) {
       return { outcome: 'offline', reason: uploadError.message };
@@ -194,12 +293,26 @@ export async function sendManifestPhoto(
     return { outcome: 'retry', reason: uploadError.message };
   }
 
+  // B2, review del PR #712 (bloqueante) — `uploaded_by` NUNCA viene de
+  // `entry.userId` (la identidad de quien ENCOLÓ, congelada en la entrada).
+  // `drainManifest` procesa la cabeza del FIFO sea de quien sea, pasado
+  // `CROSS_USER_RECLAIM_MS` (`queue-blocking.ts`) — decisión del usuario,
+  // aceptada porque `close_manifest` deriva el firmante de `auth.uid()` EN
+  // EL SERVIDOR, nunca del payload. `manifest_photo` fue el primer tipo de
+  // esta cola en llevar la identidad del actor en el payload, y eso rompía
+  // esa premisa: B (bajo su propio JWT) drenando la foto que A capturó
+  // insertaba `uploaded_by = A`, y la policy `uploaded_by IS NULL OR
+  // uploaded_by = auth.uid()` (`20260918000001_spec80_fase3_manifest_documents.sql`)
+  // lo rechazaba con 42501 — retry × `MAX_RETRY_ATTEMPTS` → `dead` →
+  // manifiesto bloqueado para siempre, subiendo y borrando el mismo blob en
+  // cada vuelta. La policy admite `NULL` explícitamente para este caso; no
+  // hay sesión fiable de la que derivarlo en un drenador de fondo.
   const { error: insertError } = await supabase.from('manifest_documents').insert({
     operator_id: entry.operatorId,
     manifest_id: entry.manifestId,
     storage_path: storagePath,
     sheet_number: sheetNumber,
-    uploaded_by: entry.userId,
+    uploaded_by: null,
   });
 
   if (!insertError) {
@@ -221,7 +334,7 @@ export async function sendManifestPhoto(
     // ya existe referencia exactamente ese objeto, el insert anterior SÍ se
     // aplicó y sólo se perdió la respuesta. No es un huérfano — no hay nada
     // que limpiar ni fila nueva que crear.
-    const { data: existing } = await supabase
+    const { data: existing, error: selectError } = await supabase
       .from('manifest_documents')
       .select('storage_path')
       .eq('operator_id', entry.operatorId)
@@ -230,15 +343,39 @@ export async function sendManifestPhoto(
       .is('deleted_at', null)
       .maybeSingle();
 
+    // B1, review del PR #712 (bloqueante) — un `existing === null` NO
+    // significa "es una colisión real" cuando la SELECT que lo produjo
+    // falló: es el reintento NORMAL de esta cola (el insert anterior SÍ se
+    // aplicó) leído a ciegas. Si la señal cae DE NUEVO justo entre el 23505
+    // y esta verificación, `existing` es `null` por el fallo de red, no
+    // porque la fila no exista — tratarlo como colisión real borraba el
+    // objeto que la fila VIVA en `manifest_documents` referencia: evidencia
+    // legal apuntando a un objeto inexistente, y `retryDead` no lo salva
+    // (revive, repite el mismo 23505, vuelve a fallar la misma SELECT sin
+    // señal, vuelve a morir). No se borra nada mientras no se sepa de
+    // verdad — `offline` si la SELECT falló por red (mismo criterio que el
+    // resto de esta función), `retry` para cualquier otro fallo no
+    // reconocido de la SELECT misma.
+    if (selectError) {
+      if (isPostgrestNetworkFailure(selectError)) {
+        return { outcome: 'offline', reason: selectError.message };
+      }
+      return { outcome: 'retry', reason: selectError.message };
+    }
+
     if (existing && (existing as { storage_path: string }).storage_path === storagePath) {
       return { outcome: 'sent' };
     }
 
-    // Colisión real: otra foto ya ocupa este número de hoja (una carrera
-    // entre dos capturas). Reintentar no resuelve un número ya ocupado por
-    // OTRO objeto — limpiar lo que acabamos de subir (huérfano evitable,
-    // mismo contrato que `useUploadManifestDocument`) y dar por muerta, con
-    // la misma afordancia humana que cualquier otro `dead` de esta cola.
+    // Colisión real: otra foto ya ocupa este número de hoja. Con B3
+    // (`nextAvailableSheetNumber`, `enqueueManifestPhoto`) esto deja de ser
+    // el caso normal de dos capturas offline en el MISMO dispositivo — sólo
+    // ocurre entre DOS DISPOSITIVOS que nunca sincronizaron entre sí, algo
+    // que ninguna cola puramente local puede prevenir. Reintentar no
+    // resuelve un número ya ocupado por OTRO objeto — limpiar lo que
+    // acabamos de subir (huérfano evitable, mismo contrato que
+    // `useUploadManifestDocument`) y dar por muerta, con la misma
+    // afordancia humana que cualquier otro `dead` de esta cola.
     const { error: removeError } = await supabase.storage.from('manifests').remove([storagePath]);
     if (removeError) {
       console.error(

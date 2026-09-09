@@ -93,6 +93,19 @@ export type OfflineQueueSender = (entry: PickupQueueEntry) => Promise<OfflineQue
  * propio `AbortSignal.timeout(60_000)` sobre la llamada — así que ESTE
  * valor sólo necesita superar ESE, con margen. 90s deja 30s de margen sobre
  * los 60s del sender.
+ *
+ * Excepción declarada, spec-81 fase 5 — `manifest_photo`
+ * (`lib/offline/photos.ts`, `sendManifestPhoto`) NO impone su propio
+ * `AbortSignal.timeout`, así que el límite real de esa subida es el default
+ * del `fetch` del navegador (~300s), muy por encima de este valor — en
+ * cualquier otro tipo de esta cola eso sería el mismo bug que B4 corrigió
+ * arriba. Es deliberado sólo para `manifest_photo`: la ruta de subida es
+ * determinista (`operator_id/manifest_id/sheet-N-<client_operation_id>.jpg`)
+ * y sube con `upsert: true`, así que reclamar esta entrada como huérfana
+ * (`reclaimStale`) y reintentar ANTES de que la primera petición en vuelo
+ * termine es inofensivo — el segundo intento sube al MISMO objeto, no crea
+ * un duplicado, a diferencia de `close_manifest`, que muta
+ * `signature_operator_name` en el servidor y sí necesita el timeout propio.
  */
 export const RECLAIM_STALE_MS = 90_000;
 
