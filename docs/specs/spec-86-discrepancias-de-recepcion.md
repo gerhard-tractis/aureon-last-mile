@@ -5,10 +5,10 @@
 
 **Status:** in progress
 **Verify:** unit, sql, e2e-qa
-**Bloqueado por:** nada. Fase 1, 2a y 3 están `[pending]`; fase 2b — la pata
-de indemnización — pasó a `[parked]` el 2026-09-08 (`dd6f921`, PR #677): el
-usuario ya decidió que la pantalla de indemnización es un spec aparte. Ver
-*Precondición* abajo y la fase 2b misma.
+**Bloqueado por:** nada. Fase 1 `[done]` (2026-09-09, PR #704/#707); 2a y 3
+siguen `[pending]`; fase 2b — la pata de indemnización — pasó a `[parked]` el
+2026-09-08 (`dd6f921`, PR #677): el usuario ya decidió que la pantalla de
+indemnización es un spec aparte. Ver *Precondición* abajo y la fase 2b misma.
 
 _Date: 2026-09-07_
 
@@ -177,7 +177,7 @@ Una tabla, un panel, y nunca se etiqueta mal de quién es la pérdida.
 
 ## Fases
 
-### Fase 1 — Captura por paquete al cerrar la recepción `[in_progress]`
+### Fase 1 — Captura por paquete al cerrar la recepción `[done]`
 
 **Archivos:** migración (`complete_route_reception`, `DROP FUNCTION` + `CREATE` sobre la última definición real, `packages/database/supabase/migrations/20260625000001_spec47_pickup_routes_consolidated_reception.sql:566` — no `20260820000002`, que sólo la menciona en un comentario; `20260812000006` PART 3 dice explícitamente que no la toca), test pgTAP en `packages/database/supabase/tests/`, `apps/frontend/src/lib/types.ts` (firma hand-mantenida del RPC). El llamador real es `apps/frontend/src/app/app/reception/route/[routeId]/page.tsx` vía `useCompleteRouteReception.ts` — no se tocó ninguno de los dos (ver nota de implementación abajo); `ReturnReceptionSession.tsx` no es un archivo de esta fase (es la pantalla de reingresos, un flujo distinto).
 
@@ -249,7 +249,7 @@ registro del faltante.
 > `close_manifest` (spec-80 fase 2), el payload de razones no se lee de una
 > tabla persistida — viaja en la misma llamada, en `p_missing_reasons`.
 >
-> **Implementado por:** implementer — rama `feat/spec-86-fase-1-captura-por-paquete`.
+> Implementado por: implementer — rama `feat/spec-86-fase-1-captura-por-paquete`, PR #704 (mergeado como `9147821`).
 > Migración: `packages/database/supabase/migrations/20260920000001_spec86_fase1_complete_route_reception_discrepancies.sql`.
 > Test pgTAP: `packages/database/supabase/tests/spec86_fase1_complete_route_reception_discrepancies.test.sql`
 > (18 aserciones tras la ronda 2, ver abajo — 12 en la ronda 1; corridas
@@ -382,8 +382,42 @@ registro del faltante.
 > línea que sólo el reviewer puede firmar honestamente. Corregido: la línea
 > de abajo la completa quien ejecute el review, no yo.
 >
-> **Review:**
-> **QA:** no aplica todavía — pendiente de PR + `qa-e2e`.
+> Review: reviewer — dos rondas sobre PR #704. Ronda 1: cuatro hallazgos
+> (detallados arriba, en "Ronda 2 de review (PR #704)" — numeración interna
+> del implementer al aplicar la corrección, no del reviewer), el principal
+> que re-cerrar una recepción ya `completed` resucitaba discrepancias ya
+> resueltas por un humano (la fila duplicaba 4→5, la nueva naciendo `open`);
+> más dos guards con mutante superviviente en el test, uno de ellos el
+> gemelo del que costó una ronda entera en spec-80 fase 2/3
+> (`rs.reception_id`/`rs.scan_result` sin aserción dedicada). Ronda 2:
+> aprobado — el test pasó de 12 a 18 aserciones, y el reviewer verificó que
+> el guard nuevo (`RAISE EXCEPTION ... '23505'` sobre `status = 'completed'`)
+> no crea un callejón sin salida, porque una recepción `completed` ya era un
+> estado terminal antes de esta fase (no había ninguna operación legítima que
+> dependiera de re-cerrarla).
+> QA: PR #704 merged 2026-09-09T04:20:14Z, corregido por PR #707 (docs-only,
+> no firmar `> Review:` por adelantado) merged 2026-09-09T04:37:01Z —
+> `gh pr checks` verde en ambos. **Producción: NO confirmado, contrario a lo
+> asumido al iniciar este cierre.** El run de `Deploy Production` sobre el
+> merge commit de #707 (`d9f42ec`, `run 34312232042`) tiene `Verify
+> Production Migrations` en `failure`: *"Production is BEHIND the repo —
+> 20260920000001 exists in packages/database/supabase/migrations/ but is not
+> applied to production"*. El mismo run también trae `E2E against QA` en
+> `failure` (2 fallos: `reception-mobile.spec.ts` y
+> `spec52-pickup-reception-end-to-end.spec.ts`, ambos por
+> `update or delete on table "route_receptions" violates foreign key
+> constraint "discrepancies_route_reception_id_fkey"` — la propia fase 1
+> añadió esa FK y el teardown de `spec52-fixture.ts` no la limpiaba en
+> orden). Ese fallo de E2E se corrigió aparte, en `9147821..`→`ca09df8`
+> (PR #708, `fix(e2e): spec52-fixture teardown clears discrepancies before
+> route_receptions/manifests`), ya mergeado a `main` — los runs posteriores
+> sobre otros commits (`2f80d83`, `9407082`) muestran `E2E against QA` en
+> `success`. Pero ningún run de `Deploy Production` posterior a `d9f42ec`
+> llegó a `Deploy Supabase Migrations`: los tres siguientes quedaron parados
+> en el gate manual `Approve Production Deploy` (`waiting`, sin aprobar).
+> **La migración de esta fase no tiene confirmación de estar aplicada en
+> producción** — sólo en QA (que sí replay cada migración en cada merge, per
+> `docs/specs/CLAUDE.md`).
 
 ### Fase 2a — Resolver: el bulto aparece `[pending]`
 

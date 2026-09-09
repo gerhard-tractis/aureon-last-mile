@@ -1,6 +1,6 @@
 # Spec-91: Cerrar dos huecos del harness de orquestación (y una regresión de #695)
 
-**Status:** in progress
+**Status:** completed
 **Verify:** unit
 **Downstream:** ninguno — este spec construye herramienta interna del harness (hooks + guards); ningún spec de producto depende de su implementación.
 
@@ -354,7 +354,7 @@ cumplió ("declara `**Archivos:**`" cuando ya está declarado).
 
 ## Fases
 
-### Fase 1 — Hook `post-merge-remind.sh`: atajo de latencia cero, no la garantía `[in_progress]`
+### Fase 1 — Hook `post-merge-remind.sh`: atajo de latencia cero, no la garantía `[done]`
 
 **Reescrita en ronda 2 de review.** La versión original de esta fase matcheaba
 `gh pr merge` y asumía que eso bastaba. El review adversarial lo tumbó con
@@ -435,7 +435,24 @@ el razonamiento completo.
       filtro de bash mide más rápido que el camino real (smoke test de
       tiempo, no un presupuesto estricto).
 
-### Fase 2 — El `exit 3` deja de mentir cuando `**Archivos:**` existe pero no resuelve `[in_progress]`
+> Implementado por: implementer — rama `feat/spec-91-harness-cierre-y-dependencias`, PR #699 (mergeado como `9407082`).
+> Review: reviewer — tres rondas sobre PR #699. El hallazgo que cambió el
+> diseño de esta fase: **el hook no dispara nunca en el flujo obligatorio del
+> repo** — `gh pr merge --auto --squash` deja el PR `OPEN` (GitHub lo
+> mergea después, sin ningún comando Bash que un hook pueda interceptar), y
+> las seis fases rancias que motivaron spec-91 vinieron exactamente de ese
+> camino. Por eso nació la fase 5 (reconciliación en servidor) como garantía
+> real, y esta fase bajó de rango a atajo opcional para el camino manual. Ronda
+> 3 (H-3): el prefiltro de bash pasó de `*gh*` (pagaba el arranque de node por
+> cualquier payload con el bigrama "gh") a `*'gh pr merge'*` — nunca puede
+> rechazar algo que el `.mjs` habría aceptado.
+> QA: PR #699 merged 2026-09-09T05:16:37Z — `gh pr checks 699` verde (Lint,
+> Type-Check, Test, Build x2; Vercel). `.claude/hooks/post-merge-remind.test.sh`
+> 10/10 contra un `gh` falso en PATH. Sin migración — no hay despliegue a
+> producción que verificar para esta fase.
+> Downstream: revisado — ninguno declarado en la cabecera de este spec; sin cambios.
+
+### Fase 2 — El `exit 3` deja de mentir cuando `**Archivos:**` existe pero no resuelve `[done]`
 
 **Archivos:** `scripts/check-phase-overlap-parse.mjs` (`extractArchivosFiles`
 expone `fieldPresent` y el texto crudo), `scripts/check-phase-overlap-parse.test.mjs`,
@@ -456,7 +473,19 @@ expone `fieldPresent` y el texto crudo), `scripts/check-phase-overlap-parse.test
       `**Archivos:** (indeterminado — <razón real>)` sigue devolviendo `exit 3`,
       pero el mensaje ya no dice "sin **Archivos:** en el spec".
 
-### Fase 3 — Campo `**Depende de:**`: tres estados y chequeo duro (`exit 4`) `[in_progress]`
+> Implementado por: implementer — misma rama `feat/spec-91-harness-cierre-y-dependencias`, PR #699 (mergeado como `9407082`).
+> Review: reviewer — mismas tres rondas del PR #699. Esta fase no estaba en
+> el encargo original: el coordinador la añadió a media tarea como regresión
+> real de PR #695 (una fase con `**Archivos:** (indeterminado — razón)` hacía
+> decir al `exit 3` "declara **Archivos:**" a una fase que ya lo había
+> declarado), y quedó con su propio caso de aceptación reproduciendo esa
+> regresión sin depender de que #695 siguiera mergeado.
+> QA: PR #699 merged 2026-09-09T05:16:37Z — `gh pr checks 699` verde.
+> `scripts/check-phase-overlap-parse.test.mjs` 27/27 (5 nuevos de esta fase).
+> Sin migración.
+> Downstream: revisado — ninguno declarado en la cabecera de este spec; sin cambios.
+
+### Fase 3 — Campo `**Depende de:**`: tres estados y chequeo duro (`exit 4`) `[done]`
 
 **Archivos:** `scripts/check-phase-overlap-depends.mjs`, `scripts/check-phase-overlap-depends.test.mjs`,
 `scripts/check-phase-overlap.mjs` (wiring del chequeo y `exit 4`), `scripts/check-phase-overlap.test.sh`,
@@ -524,7 +553,21 @@ expone `fieldPresent` y el texto crudo), `scripts/check-phase-overlap-parse.test
       documentando `**Depende de:**`, sus tres estados y por qué no es
       obligatorio todavía (la lección del Hueco 3, citada).
 
-### Fase 4 — Red heurística: referencias no declaradas, avisa sin bloquear `[in_progress]`
+> Implementado por: implementer — misma rama `feat/spec-91-harness-cierre-y-dependencias`, PR #699 (mergeado como `9407082`).
+> Review: reviewer — mismas tres rondas del PR #699. Bloqueante 1 de la ronda
+> 2, cerrado aquí: `findPhaseTokenByNumber` dejaba ganar un heading en prosa
+> que MENCIONA "fase N" sin token real sobre el heading real que aparecía
+> después — reproducido contra `spec-85-discrepancias.md`, donde bloqueaba
+> el primer backfill de una dependencia que **sí** estaba `[done]` (spec-85
+> fase 2, la más citada del corpus). Corregido: sigue buscando hasta
+> encontrar un heading con un token del vocabulario válido.
+> QA: PR #699 merged 2026-09-09T05:16:37Z — `gh pr checks 699` verde.
+> `scripts/check-phase-overlap-depends.test.mjs` 22/22 (módulo nuevo),
+> `scripts/check-phase-overlap.test.sh` 37/37 (9 nuevos, incluido el caso
+> real corrido contra el repo, no una copia). Sin migración.
+> Downstream: revisado — ninguno declarado en la cabecera de este spec; sin cambios.
+
+### Fase 4 — Red heurística: referencias no declaradas, avisa sin bloquear `[done]`
 
 **Archivos:** `scripts/check-phase-overlap-depends.mjs` (`scanUndeclaredReferences`),
 `scripts/check-phase-overlap-depends.test.mjs`, `scripts/check-phase-overlap.mjs`
@@ -585,7 +628,20 @@ misma razón que el caveat anterior: adivinar cuál cita es "sólo un ejemplo
 de la documentación" y cuál es una dependencia real sería peor que avisar
 de más en un canal que no bloquea nada.
 
-### Fase 5 — Reconciliación en servidor: la garantía real del Hueco 1 `[in_progress]`
+> Implementado por: implementer — misma rama `feat/spec-91-harness-cierre-y-dependencias`, PR #699 (mergeado como `9407082`).
+> Review: reviewer — mismas tres rondas del PR #699. Validado contra el
+> corpus real dos veces, no supuesto: primera corrida (ronda 2) 49 avisos en
+> 30 fases; segunda corrida (ronda 3, tras cerrar el segundo caveat) 51
+> avisos, con el ~30% (15/51) siendo ruido estructural del propio spec
+> citándose a sí mismo como ejemplo — aceptado y documentado, no arreglado,
+> por la razón de arriba.
+> QA: PR #699 merged 2026-09-09T05:16:37Z — `gh pr checks 699` verde.
+> `scripts/check-phase-overlap-depends.test.mjs` cubre `scanUndeclaredReferences`
+> (parte del 22/22 citado en fase 3). Sin migración.
+> Downstream: revisado — ninguno declarado en la cabecera de este spec (ver
+> `**Downstream:**` arriba); sin cambios.
+
+### Fase 5 — Reconciliación en servidor: la garantía real del Hueco 1 `[done]`
 
 **Añadida en ronda 2 de review.** Ver "La garantía real: reconciliación en
 servidor (detalle de la fase 5)" arriba para el razonamiento completo — esta
@@ -678,6 +734,32 @@ fase existe porque ningún hook local puede cerrar el Hueco 1 de verdad.
       de cerrar (rompe "no cierra dos veces"), e invertir la condición de
       reapertura (rompe "sólo reabre si estaba cerrado") — las dos rompen un
       test cuando se aplican, confirmado y revertido.
+
+> Implementado por: implementer — misma rama `feat/spec-91-harness-cierre-y-dependencias`, PR #699 (mergeado como `9407082`).
+> Review: reviewer — mismas tres rondas del PR #699. Esta fase se añadió en
+> ronda 2 precisamente por el hallazgo de la fase 1 (el hook local no
+> garantiza nada en el flujo `--auto`) — es la garantía real. Ronda 3 cerró
+> tres huecos propios: F5-1 (bloqueante) — `findTrackingIssue` que no podía
+> determinar si ya existía un issue (blip de red/parseo de `gh`) devolvía
+> `null`, indistinguible de "confirmado: no existe", y creaba un SEGUNDO
+> issue; corregido con un sentinel `{ error: true }`. F5-4 — el `JSON.parse`
+> de la respuesta de PRs abiertos vivía fuera del `try`, así que un `gh` que
+> salía 0 con salida no-JSON lanzaba sin capturar, contradiciendo el
+> fail-open declarado. F5-2/F5-3 — escotilla `wontfix` y clave de identidad
+> por spec+número de fase, no por texto del heading.
+> QA: PR #699 merged 2026-09-09T05:16:37Z — `gh pr checks 699` verde.
+> `scripts/reconcile-stale-phases-lib.test.mjs` y
+> `scripts/reconcile-stale-phases.test.mjs` en verde (parte del run agregado
+> de PR #699). Sin migración — el workflow `reconcile-stale-phases.yml` no
+> toca producción, sólo lee PRs abiertos y gestiona un issue de GitHub.
+> **La ironía documentada en el propio spec (líneas 246-254) se confirmó
+> exactamente como se predijo:** al mergear PR #699, las 5 fases de este
+> spec perdieron su único PR abierto y pasaron a ser candidatas de la
+> primera corrida real del reconciliador — comportamiento correcto, no un
+> bug, tal como el spec ya advertía. Este mismo cierre (que pasa las 5 fases
+> a `[done]` con su evidencia) es lo que las saca de esa lista antes de que
+> el workflow programado vuelva a correr.
+> Downstream: revisado — ninguno declarado en la cabecera de este spec; sin cambios.
 
 ---
 

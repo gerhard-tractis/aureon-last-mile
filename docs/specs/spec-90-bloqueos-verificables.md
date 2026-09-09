@@ -2,7 +2,7 @@
 
 > **Related:** [spec-87](spec-87-desbloquear-produccion.md) (la cuarentena de tests, `check-quarantine-validate.mjs`, es el precedente directo del horizonte de 30 días y de `::warning file=,line=`), [spec-88](spec-88-anon-security-definer-audit.md) (fase 3 es hoy el `[blocked]` mejor documentado del repo, sin traer todavía la línea que este spec exige), [docs/specs/CLAUDE.md](CLAUDE.md) (documenta el campo `> Bloqueo:` y la evidencia por fase), [feat/spec-89-guardarrail-paralelismo] (rama en paralelo tocando `scripts/check-spec-fields.sh` y `.claude/agents/*.md` — ver sección de coordinación)
 
-**Status:** in progress
+**Status:** completed
 **Verify:** unit
 **Downstream:** ninguno todavía — este spec construye el guardarraíl; ningún otro spec consume su resultado hasta que alguien escriba un `> Bloqueo:` de verdad
 
@@ -319,7 +319,7 @@ paralelo. Decisiones tomadas aquí para minimizar el choque:
 
 ## Fases
 
-### Fase 1 — `check-blocked-evidence.sh` y `check-blocked-freshness.sh` `[in_progress]`
+### Fase 1 — `check-blocked-evidence.sh` y `check-blocked-freshness.sh` `[done]`
 
 **Archivos:** `scripts/check-blocked-evidence.sh`,
 `scripts/check-blocked-evidence.test.sh`, `scripts/check-blocked-freshness.sh`,
@@ -364,7 +364,27 @@ Construido en esta sesión, rama `feat/spec-90-bloqueos-verificables`. Sin
 review ni PR todavía — se abre el PR **sin auto-merge**, a propósito, para
 que el review y QA ocurran antes de que alguien la mueva a `[done]`.
 
-### Fase 2 — Agentes declaran capacidad, no imposibilidad `[in_progress]`
+> Implementado por: implementer — rama `feat/spec-90-bloqueos-verificables`, PR #690 (mergeado como `5cc1fc7`).
+> Review: reviewer — cuatro rondas sobre PR #690. El ejemplo canónico que el
+> propio PR documentaba en `docs/specs/CLAUDE.md` fallaba contra el guard que
+> el mismo PR añadía (3 de 4 campos exigidos ausentes); el guard de "qué se
+> intentó" era un bingo de palabras clave — la frase «se intentó nada y no se
+> verificó nada» pasaba con las palabras mágicas puestas pese a negar
+> explícitamente haber hecho algo (cerrado en round 3, ver "Riesgos" arriba);
+> la lista hardcodeada de specs reales en el test (round 1: spec-75/82/83/
+> 84/86/88) se sustituyó por escaneo dinámico de `docs/specs/spec-*.md` con
+> invariante de no-vacío, porque esa lista fija ya había tumbado CI una vez
+> por deriva de corpus (PR #687 sacó a spec-86 de la realidad 18 minutos
+> antes de que el fixture se escribiera); y el wireado en CI estaba verde por
+> casualidad — un diff de dos puntos habría marcado 9 specs ajenos al PR en
+> cuanto `main` avanzara, corregido en round 3/4 (lista de ficheros vía `gh
+> api` para `pull_request`, salto explícito en `push` para `merge_group`).
+> QA: PR #690 merged 2026-09-09T13:07:44Z — `gh pr checks 690` verde (Lint,
+> Type-Check, Test, Build x2; Vercel). Sin migración (harness only) — no hay
+> despliegue a producción que verificar para esta fase.
+> Downstream: revisado — ninguno declarado en la cabecera de este spec; sin cambios.
+
+### Fase 2 — Agentes declaran capacidad, no imposibilidad `[done]`
 
 **Archivos:** `.claude/agents/implementer.md`, `.claude/agents/reviewer.md`,
 `.claude/agents/qa-e2e.md`, `docs/specs/CLAUDE.md`,
@@ -381,6 +401,14 @@ que el review y QA ocurran antes de que alguien la mueva a `[done]`.
 
 Construido en esta sesión, misma rama. Sin review ni PR todavía — mismo
 motivo que la fase 1.
+
+> Implementado por: implementer — misma rama `feat/spec-90-bloqueos-verificables`, PR #690 (mergeado como `5cc1fc7`).
+> Review: reviewer — mismas cuatro rondas del PR #690 que la fase 1 (una sola
+> revisión cubrió ambas fases, mergeadas juntas). Sin hallazgos específicos
+> de esta fase distintos de los ya listados en la fase 1.
+> QA: PR #690 merged 2026-09-09T13:07:44Z — `gh pr checks 690` verde. Sin
+> migración — no hay despliegue a producción que verificar para esta fase.
+> Downstream: revisado — ninguno declarado en la cabecera de este spec; sin cambios.
 
 ## Riesgos
 
