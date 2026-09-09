@@ -370,11 +370,17 @@ export async function signIn(
  * — a JWT with no `operator_id`/`role`/`permissions` still authenticates.
  * Reading the claims is the only way to prove the hook actually ran.
  *
- * `@supabase/ssr` (browser client, cookie storage) writes the session under
- * a cookie named `sb-<ref>-auth-token`, chunked into `.0`/`.1`/... if the
- * value is long, each chunk `base64-`-prefixed base64url. This does not
- * hardcode `<ref>` (self-hosted QA derives it from the API hostname, not a
- * Supabase project id) — it matches any cookie name of that shape instead.
+ * `@supabase/ssr@0.5.2` (browser client, cookie storage) always writes the
+ * session `base64-`-prefixed under a cookie named `sb-<ref>-auth-token`,
+ * chunked into `.0`/`.1`/... if the value is long. This does not hardcode
+ * `<ref>` (self-hosted QA derives it from the API hostname, not a Supabase
+ * project id) — it matches any cookie name of that shape instead.
+ *
+ * The `base64-` prefix strip below is NOT tolerating two formats — this
+ * version of `@supabase/ssr` never writes the value without it. If a future
+ * bump ever did, stripping nothing here would feed non-base64url text into
+ * `Buffer.from(..., 'base64url')` and `JSON.parse` would throw — loud, not
+ * silent, which is the point.
  */
 export async function getAccessTokenClaims(page: Page): Promise<Record<string, unknown>> {
   const cookies = await page.context().cookies();

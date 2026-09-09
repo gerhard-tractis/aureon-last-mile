@@ -78,14 +78,25 @@ test.describe('spec-52 pickup route and consolidated reception', () => {
     // opposed to just not blocking the login). Its EXCEPTION handler swallows
     // any internal failure and returns the JWT unchanged, so `signIn()`
     // reaching /app on its own proves nothing about the hook — a degraded
-    // hook still authenticates. This reads the actual JWT's
-    // app_metadata.claims, the shape the hook writes and the frontend reads.
+    // hook still authenticates.
+    //
+    // ronda 3 of review caught that app_metadata.claims is the WRONG place to
+    // assert: sync_claims_to_auth_metadata() (a trigger, unrelated to this
+    // hook — 20260312120000_sync_app_metadata_claims.sql) writes that exact
+    // same key, in the exact same shape, into auth.users.raw_app_meta_data,
+    // which GoTrue copies into app_metadata regardless of whether the hook
+    // ran at all. Measured: with the hook fully bypassed, app_metadata.claims
+    // still comes out byte-identical. The only thing the hook adds that
+    // nothing else does is at the JWT's ROOT (`claims := claims ||
+    // custom_claims`, 20260312190110_fix_hook_role_overwrite.sql:36) — so
+    // assert there. `role` is not a valid discriminant: the hook overwrites
+    // the root `role` back to `"authenticated"` right after the merge
+    // (same file, next line) so PostgREST still recognises the JWT; only
+    // `operator_id` and `permissions` at the root are hook-exclusive.
     const claims = await getAccessTokenClaims(driver);
-    const appClaims = claims.app_metadata as { claims?: Record<string, unknown> } | undefined;
-    expect(appClaims?.claims?.operator_id).toBe(OPERATOR_ID);
-    expect(appClaims?.claims?.role).toBe(DRIVER.role);
-    expect(Array.isArray(appClaims?.claims?.permissions)).toBe(true);
-    expect((appClaims?.claims?.permissions as unknown[]).length).toBeGreaterThan(0);
+    expect(claims.operator_id).toBe(OPERATOR_ID);
+    expect(Array.isArray(claims.permissions)).toBe(true);
+    expect((claims.permissions as unknown[]).length).toBeGreaterThan(0);
 
     await driver.goto('/app/pickup');
 

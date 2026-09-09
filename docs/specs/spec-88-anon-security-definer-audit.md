@@ -345,8 +345,8 @@ Implementa la distinción `service_role` real vs. `anon`/ausencia de sesión, pr
 >    Arreglado: nuevo helper `getAccessTokenClaims()` (decodifica la cookie
 >    `sb-*-auth-token` de `@supabase/ssr`) más una aserción en
 >    `spec52-pickup-reception-end-to-end.spec.ts`, justo después de
->    `signIn(driver, DRIVER)`, exigiendo `operator_id`/`role`/`permissions`
->    reales en `app_metadata.claims`.
+>    `signIn(driver, DRIVER)` — **corregida en ronda 3, ver abajo: el
+>    assert original miraba el lugar equivocado del JWT.**
 > 3. Corregido el comentario "ORDEN NO NEGOCIABLE" de la migración — el
 >    orden `GRANT`/`REVOKE` es conmutativo dentro de una transacción
 >    (verificado moviendo el `GRANT` al final: mismo ACL, 6/6 verde); lo
@@ -382,20 +382,68 @@ Implementa la distinción `service_role` real vs. `anon`/ausencia de sesión, pr
 > un contenedor que ya no era limpiamente el mío; ronda 2 no dependió de esa
 > afirmación para nada nuevo.
 >
+> **Ronda 3 (review adversarial, ejecutando código real contra
+> `@supabase/ssr@0.5.2` instalado):** confirmó que `getAccessTokenClaims`
+> reconstruye correctamente una sesión partida en 3 chunks reales
+> percent-encodeados, que la preocupación por `permissions` vacío no
+> aplicaba (`handle_new_user` mapea `pickup_leader → ARRAY['pickup']`), que
+> la corrección del comentario "ORDEN NO NEGOCIABLE" es exacta (`DO` block
+> ejecutado quitando el `GRANT` → `ERROR` real, no hipotético), que el plan
+> de rollback es ejecutable por un tercero, y que mi sospecha sobre la URI
+> del hook (`${POSTGRES_DB}` vacío) era una falsa alarma — están definidos y
+> usados en diez sitios del mismo compose, el `GRANT USAGE ON SCHEMA public
+> TO supabase_auth_admin` ya existía. Dos bloqueantes reales, cerrados aquí:
+> 1. **El assert de ronda 2 no distinguía hook-ejecutado de hook-ausente.**
+>    `sync_claims_to_auth_metadata()` (trigger, no el hook —
+>    `20260312120000_sync_app_metadata_claims.sql:31-40`) escribe la misma
+>    llave `app_metadata.claims`, con la misma forma, directo en
+>    `auth.users.raw_app_meta_data` — y GoTrue la copia al JWT sin pasar por
+>    el hook. Medido por el revisor: `app_metadata.claims` sale
+>    byte-idéntico con y sin el hook. Lo único que el hook añade en
+>    exclusiva es la raíz del payload (`claims := claims || custom_claims`,
+>    `20260312190110_fix_hook_role_overwrite.sql:36`). Arreglado: el assert
+>    ahora mira `claims.operator_id`/`claims.permissions` en la **raíz**, no
+>    `app_metadata.claims` — `role` no sirve de discriminante porque el
+>    hook lo resetea a `"authenticated"` en la raíz justo después del merge.
+>    Verificado con una simulación en Node (payload sin hook, sólo
+>    `app_metadata.claims` poblado por el trigger, root sin
+>    `operator_id`/`permissions`): el assert nuevo falla
+>    (`operator_id mismatch: got undefined`); el assert viejo de ronda 2
+>    habría pasado igual.
+> 2. **El compose nuevo nunca llegaba al contenedor `auth`.**
+>    `deploy-qa.sh` sólo hace `docker compose ... up -d functions` — nunca
+>    `auth`. El `up -d` completo de `setup-qa.sh` es bootstrap manual, no
+>    invocado por `deploy-qa.sh`. Resultado: mergear no habría cambiado el
+>    entorno real de `supabase-qa-auth`, que habría seguido sin las
+>    `GOTRUE_HOOK_*` — silencioso, y compuesto con el bloqueante 1 (el
+>    assert tampoco lo habría detectado). Arreglado: nuevo flag
+>    `CHANGED_QA_COMPOSE` (widened sólo contra
+>    `infra/supabase-qa/docker-compose.yml`, separado de
+>    `CHANGED_EDGE_FUNCTIONS` para no recrear `auth` en cada cambio de
+>    `functions/`) y `restart_auth()` (mismo patrón `up -d`, no `restart`,
+>    que `restart_functions()`), invocado en `main()` cuando el flag es
+>    `true`. No resuelto en general — spec-93 (PR #714) ya recoge la
+>    divergencia QA↔prod más amplia; esto sólo arregla que `auth` se recree.
+>
+> **Corrección al propio texto de esta fase:** la frase "ya no depende de
+> que alguien lo haga a mano" (ronda 2) era ella misma una afirmación de
+> cobertura sin medir — exactamente lo que ronda 3 encontró falso, dos
+> veces. Retirada; ver la línea de QA de abajo para el estado real.
+>
 > PR: #710, **sin auto-merge** (deliberado — ver más abajo).
-> Review: ronda 2 hecha (opus, adversarial) — hallazgos arriba, cerrados en
-> esta misma rama.
-> QA: `gh pr checks 710` verde en ronda 1 (dos runs de Lint/Type-Check/Test/Build,
-> Vercel, Vercel Preview Comments) a las 2026-09-09T13:28:56Z; pendiente
-> reconfirmar tras el push de ronda 2. **La prueba de login en vivo sigue
-> sin ejecutarse en esta sesión** (mismo motivo que ronda 1: SSH al VPS
-> bloqueado por el clasificador de permisos del entorno) — pero ahora, con
-> el hook activo en QA y el assert de claims en `e2e-qa`, la prueba **sí**
-> ocurre automáticamente cuando `deploy-qa` aplique esta migración y
-> `e2e-qa` corra sobre ella, antes de que `approve-production` sea
-> alcanzable. Eso es lo que pedía la tarea originalmente (un login real con
-> el hook activo, con los claims verificados, antes de producción) — ya no
-> depende de que alguien lo haga a mano.
+> Review: ronda 2 y ronda 3 hechas (opus, adversarial) — hallazgos arriba,
+> cerrados en esta misma rama.
+> QA: `gh pr checks 710` verde en rondas 1 y 2; pendiente reconfirmar tras
+> el push de ronda 3. **La prueba de login en vivo sigue sin ejecutarse en
+> esta sesión** (SSH al VPS bloqueado por el clasificador de permisos del
+> entorno, en las tres rondas). El mecanismo que la haría automática
+> (hook activo en QA + assert de claims en la raíz correcta + `auth` se
+> recrea en el deploy) está ahora escrito y verificado en aislamiento
+> (SQL en `spec52-pg`, simulación de JWT en Node, `DO` block ejecutado) —
+> **pero nadie lo ha ejecutado de punta a punta contra la VPS real
+> todavía.** Eso ocurre la primera vez que este PR mergee y `deploy-qa`
+> corra sobre él; hasta entonces, el gate humano de "sin auto-merge" en
+> este PR sigue siendo la única red real.
 > Downstream: `**Downstream:** ninguno todavía` en la cabecera del spec —
 > sin cambios.
 

@@ -127,6 +127,7 @@ widen_changed_flags() {
     CHANGED_WORKER=true
     CHANGED_AGENTS=true
     CHANGED_EDGE_FUNCTIONS=true
+    CHANGED_QA_COMPOSE=true
     return 0
   fi
 
@@ -150,8 +151,21 @@ widen_changed_flags() {
   # container. Without this, adding a variable to the service changes nothing
   # on the VPS and the deploy still reports success.
   CHANGED_EDGE_FUNCTIONS="$(widen "${CHANGED_EDGE_FUNCTIONS:-false}" '^(packages/database/supabase/functions/|infra/supabase-qa/docker-compose\.yml$)')"
+  # spec-88 fase 3, ronda 3 of review — a SEPARATE flag from the one above,
+  # scoped only to the compose file itself (not the functions/ dir), because
+  # it drives a DIFFERENT container. `restart_functions()` only ever recreated
+  # `functions` — a compose edit to any OTHER service's `environment:` block
+  # (e.g. `auth`'s GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_*, added by
+  # 20260922000001) went completely unapplied on the VPS: `deploy-qa` never
+  # ran `docker compose up -d auth`, only `setup-qa.sh`'s one-time bootstrap
+  # did, and that script is not invoked here. The deploy reported success
+  # while the container kept its old environment — silent, and paired with
+  # a hook that degrades silently on its own EXCEPTION handler, doubly so.
+  # Scoping this to the compose file only avoids recreating `auth` on every
+  # unrelated functions/*.ts change.
+  CHANGED_QA_COMPOSE="$(widen "${CHANGED_QA_COMPOSE:-false}" '^infra/supabase-qa/docker-compose\.yml$')"
 
-  log "QA was at ${prev} — flags now frontend=${CHANGED_FRONTEND} worker=${CHANGED_WORKER} agents=${CHANGED_AGENTS} edge=${CHANGED_EDGE_FUNCTIONS}"
+  log "QA was at ${prev} — flags now frontend=${CHANGED_FRONTEND} worker=${CHANGED_WORKER} agents=${CHANGED_AGENTS} edge=${CHANGED_EDGE_FUNCTIONS} compose=${CHANGED_QA_COMPOSE}"
 }
 
 # --------------------------------------------------------------------------
@@ -254,6 +268,18 @@ restart_functions() {
   log "recreating edge functions container"
   docker compose -f "${infra_dir}/docker-compose.yml" \
     --env-file "$QA_ENV_FILE" up -d functions
+}
+
+# spec-88 fase 3, ronda 3 — the same "restart reuses old config" trap as
+# restart_functions() above, for the `auth` (GoTrue) service. `up -d`, not
+# `restart`, for the same reason: a restart would keep serving the
+# container's existing environment and ignore anything just added to its
+# `environment:` block in docker-compose.yml.
+restart_auth() {
+  local infra_dir="${QA_CHECKOUT_DIR}/infra/supabase-qa"
+  log "recreating auth (GoTrue) container"
+  docker compose -f "${infra_dir}/docker-compose.yml" \
+    --env-file "$QA_ENV_FILE" up -d auth
 }
 
 # Restarting the QA units needs passwordless sudo. The prod units have a
@@ -527,6 +553,7 @@ main() {
   apply_seed
   apply_qa_users
   if is_true "${CHANGED_EDGE_FUNCTIONS:-}"; then restart_functions; fi
+  if is_true "${CHANGED_QA_COMPOSE:-}"; then restart_auth; fi
   if is_true "${CHANGED_FRONTEND:-}"; then deploy_frontend; fi
   if is_true "${CHANGED_AGENTS:-}"; then deploy_node_app agents; fi
   if is_true "${CHANGED_WORKER:-}"; then deploy_node_app worker; fi
