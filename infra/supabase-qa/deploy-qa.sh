@@ -31,12 +31,14 @@
 # Test-only overrides (never set these on the VPS):
 #   QA_CHECKOUT_DIR=<path>   QA checkout location (default /home/aureon/aureon-qa)
 #   QA_ENV_FILE=<path>       QA env file (default /home/aureon/.env.qa)
+#   QA_STATE_FILE=<path>     last-completed-deploy marker (default /home/aureon/.qa-last-deployed-sha)
 # The script can also be `source`d: functions are defined but nothing runs.
 
 set -Eeuo pipefail   # -E: the ERR trap main() installs must fire inside functions too
 
 QA_CHECKOUT_DIR="${QA_CHECKOUT_DIR:-/home/aureon/aureon-qa}"
 QA_ENV_FILE="${QA_ENV_FILE:-/home/aureon/.env.qa}"
+QA_STATE_FILE="${QA_STATE_FILE:-/home/aureon/.qa-last-deployed-sha}"
 
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
 err() { log "ERROR: $*" >&2; }
@@ -107,10 +109,42 @@ guard_inputs() {
 # Syncing to the tip makes a dropped run self-healing: whichever run survives
 # brings QA to whatever main has, so no merge can be skipped, only coalesced.
 # QA_PREV_SHA is recorded first so widen_changed_flags can tell what QA missed.
+#
+# spec-88 fase 3, ronda 6 — QA_PREV_SHA reads QA_STATE_FILE, NOT the
+# checkout's own `git rev-parse HEAD`, and that distinction is load-bearing.
+# `git reset --hard` in this same function runs unconditionally, every run,
+# BEFORE any restart/rebuild step below in main() — so the checkout's git
+# HEAD reflects "the last commit this run's sync got to," not "the last
+# commit whose restarts actually completed." A run that dies partway
+# through main() (restart_functions hit a real permission bug on
+# 2026-09-09, #718) still leaves the checkout's HEAD at the new commit; the
+# NEXT run then reads that already-advanced HEAD as "prev", diffs it
+# against an even newer "target", and any file that landed in the commit
+# the dead run already checked out silently drops out of that diff —
+# CHANGED_QA_COMPOSE included. Confirmed exactly this way in production:
+# spec-88 fase 3's own GOTRUE_HOOK_* migration merged, its restart_auth
+# call was skipped by this bug, and `docker inspect supabase-qa-auth`
+# showed a container still running its pre-merge environment. QA_STATE_FILE
+# is written only at the very end of main(), after post_checks() passes —
+# so a partial run never advances it, and the next run's diff naturally
+# spans back to the last run that TRULY finished, re-triggering every flag
+# a dead run left unapplied. Falls back to `git rev-parse HEAD` only when
+# the marker does not exist yet (first run ever on a host).
 # --------------------------------------------------------------------------
+# Split out for testability: sync_checkout() also does a real `git fetch`
+# against GitHub, which nothing here can stub cheaply. This one function is
+# the entire new decision this ronda made, so it is what gets a unit test.
+read_qa_prev_sha() {
+  if [ -f "$QA_STATE_FILE" ]; then
+    cat "$QA_STATE_FILE" 2>/dev/null || true
+  else
+    git -C "$QA_CHECKOUT_DIR" rev-parse HEAD 2>/dev/null || true
+  fi
+}
+
 sync_checkout() {
   cd "$QA_CHECKOUT_DIR"
-  QA_PREV_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+  QA_PREV_SHA="$(read_qa_prev_sha)"
   git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
   # Scrub the token from .git/config even if fetch/reset fails mid-way.
   trap 'git -C "$QA_CHECKOUT_DIR" remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"' EXIT
@@ -704,6 +738,13 @@ main() {
   if is_true "${CHANGED_AGENTS:-}"; then deploy_node_app agents; fi
   if is_true "${CHANGED_WORKER:-}"; then deploy_node_app worker; fi
   post_checks
+  # spec-88 fase 3, ronda 6 — only reached if post_checks() did not `exit 1`
+  # above, i.e. every CHANGED_* restart/rebuild this run attempted actually
+  # completed and passed health checks. Recording it HERE, not any earlier,
+  # is what makes a partial run (dies mid-main(), e.g. restart_functions'
+  # #718 permission bug) leave the marker untouched — see sync_checkout's
+  # comment on QA_PREV_SHA for what breaks otherwise.
+  printf '%s' "${QA_SYNCED_SHA:-${DEPLOY_SHA}}" > "$QA_STATE_FILE"
 }
 
 # Run only when executed, not when sourced (lets tests source the functions).

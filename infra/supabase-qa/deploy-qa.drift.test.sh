@@ -43,6 +43,7 @@ extract() { sed -n "/^$1() {/,/^}/p" "$HERE/deploy-qa.sh"; }
   extract err
   extract is_true
   extract widen_changed_flags
+  extract read_qa_prev_sha
 } > "$TMP/fns.sh"
 # shellcheck disable=SC1091
 . "$TMP/fns.sh"
@@ -120,6 +121,44 @@ QA_PREV_SHA="$GITHUB_SHA" DEPLOY_SHA="$WORKER_SHA" \
   CHANGED_FRONTEND=false CHANGED_WORKER=false CHANGED_AGENTS=false CHANGED_EDGE_FUNCTIONS=false \
   eval 'widen_changed_flags >/dev/null 2>&1; echo "$CHANGED_WORKER $CHANGED_FRONTEND"' > "$TMP/out"
 check_eq "maps apps/worker to the worker flag only" "true false" "$(cat "$TMP/out")"
+
+echo
+echo "read_qa_prev_sha() (spec-88 fase 3, ronda 6)"
+
+# The bug this ronda chased: sync_checkout() used to read QA_PREV_SHA
+# straight from the checkout's `git rev-parse HEAD`. `git reset --hard`
+# (inside sync_checkout, unconditionally, every run) advances that HEAD
+# BEFORE any restart/rebuild step runs later in main() — so a run that dies
+# partway through main() (restart_functions hit a real permission bug,
+# #718, 2026-09-09) still leaves the checkout's HEAD at the new commit. The
+# next run then reads that already-advanced HEAD as "prev", and any file
+# that landed in the commit the dead run already checked out silently drops
+# out of the diff. Measured live: this exact mechanism dropped
+# CHANGED_QA_COMPOSE to false on the retry after #710 merged, and
+# `docker inspect supabase-qa-auth` showed the container still running its
+# pre-merge environment — `restart_auth()` was simply never called.
+QA_CHECKOUT_DIR="$REPO"
+QA_STATE_FILE="$TMP/state-missing"
+check_eq "falls back to git HEAD when no marker exists yet (first run on a host)" \
+  "$(git -C "$REPO" rev-parse HEAD)" "$(read_qa_prev_sha)"
+
+printf '%s' "$FRONTEND_SHA" > "$TMP/state-present"
+QA_STATE_FILE="$TMP/state-present"
+check_eq "reads the marker instead of git HEAD once one exists" \
+  "$FRONTEND_SHA" "$(read_qa_prev_sha)"
+
+# The exact scenario that broke: the checkout's HEAD has already moved past
+# what the marker says, because a previous run's sync_checkout() ran but its
+# later restarts died. read_qa_prev_sha() must still report the OLDER,
+# marker-recorded commit — not the checkout's newer HEAD — so
+# widen_changed_flags() sees the true, still-outstanding diff.
+current_head="$(git -C "$REPO" rev-parse HEAD)"
+if [ "$current_head" = "$FRONTEND_SHA" ]; then
+  fail=$((fail + 1)); echo "  FAIL test setup — REPO HEAD unexpectedly equals FRONTEND_SHA, the case below proves nothing"
+else
+  check_eq "reports the marker even when the checkout has since moved past it" \
+    "$FRONTEND_SHA" "$(read_qa_prev_sha)"
+fi
 
 echo
 echo "  $pass passed, $fail failed"

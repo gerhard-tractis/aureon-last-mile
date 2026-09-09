@@ -483,26 +483,146 @@ Implementa la distinción `service_role` real vs. `anon`/ausencia de sesión, pr
 > **Archivos** actualizado (índice de la fase completo, ver más abajo) —
 > ronda 4 encontró que seguía describiendo sólo el plan de ronda 1.
 >
-> PR: #710, **sin auto-merge** (deliberado — ver más abajo).
-> Review: rondas 2, 3 y 4 hechas (opus, adversarial) — hallazgos arriba,
-> cerrados en esta misma rama.
-> QA: `gh pr checks 710` verde en rondas 1, 2 y 3; pendiente reconfirmar
-> tras el push de ronda 4. **La prueba de login en vivo sigue sin
-> ejecutarse en esta sesión** (SSH al VPS bloqueado por el clasificador de
-> permisos del entorno, en las cuatro rondas). El mecanismo que la haría
-> automática (hook activo en QA + assert de claims en la raíz correcta +
-> `auth` se recrea en el deploy + `post_checks` verifica que `auth` arrancó
-> sano) está ahora escrito y verificado en aislamiento (SQL en `spec52-pg`,
-> simulación de JWT en Node, `DO` block ejecutado, 21 tests de shell
-> mutation-verificados, compose de juguete real para `up -d`/config-hash) —
-> **pero nadie lo ha ejecutado de punta a punta contra la VPS real
-> todavía.** Eso ocurre la primera vez que este PR mergee y `deploy-qa`
-> corra sobre él. Pedido explícito del reviewer para ese primer deploy: leer
-> el log de `deploy-qa` y confirmar la línea de recreación de `auth`
-> seguida de un `e2e-qa` verde, antes de aprobar producción — lo hace el
-> orquestador, no un agente.
+> **Ronda 5 (review adversarial):** un hallazgo — cada test de rondas 3/4
+> probaba las funciones (`restart_auth`, `container_health_check`)
+> aisladas, nunca `main()`/`post_checks()` llamándolas; medido: borrar la
+> llamada a cualquiera de las dos dejaba 21/21 en verde. Arreglado con dos
+> `check_contains` grepando el `main()`/`post_checks()` reales, mutation-
+> verificado (borrar cada línea de llamada → 1 rojo cada vez). `gh pr checks
+> 710` verde (SHA `76efe83`).
+>
+> **PR #710 mergeado por el usuario — y el assert de la raíz del JWT
+> (ronda 3) cazó algo real en el primer deploy real.** Run `34388997942`
+> (commit `2d18739`, el merge de este PR): `Sync QA Environment` success,
+> `E2E against QA` **failure**, exactamente en el assert de
+> `spec52-pickup-reception-end-to-end.spec.ts:97`:
+> `expect(claims.operator_id).toBe(OPERATOR_ID)` — recibido `undefined`.
+> Los otros 16 tests de esa suite pasaron; el login en sí funcionó. **Esto
+> es el gate funcionando, no el gate fallando**: antes de esta fase esto
+> habría salido verde y `approve-production` se habría abierto con GoTrue
+> sirviendo JWTs sin `operator_id`/`role`/`permissions`.
+>
+> **Ronda 6 — diagnóstico con evidencia ejecutada, causa raíz confirmada.**
+> El run había reintentado (`run_attempt=2` vía la API de Actions). En el
+> intento 1 (job `102592417542`), `QA_PREV_SHA=4157950697...`,
+> `QA_SYNCED_SHA=2d18739` (el merge de este PR), `compose=true` — **correcto**
+> — pero `restart_functions()` murió en `rm -rf "$merge_dir"/*` con
+> `Permission denied` (ficheros de otro uid, arreglado después en #718), y
+> `set -euo pipefail` abortó el script **antes** de llegar a `restart_auth()`,
+> aunque `sync_checkout()` ya había hecho `git reset --hard 2d18739` sobre
+> el checkout. En el intento 2 (el que se ve en el run), `sync_checkout()`
+> leyó `QA_PREV_SHA` del `git rev-parse HEAD` del checkout — que el intento
+> 1 ya había dejado en `2d18739` — lo diffeó contra el nuevo target
+> (`a3caa7b2`, main había avanzado con otro merge mientras tanto), y ese
+> diff **no incluía** `docker-compose.yml` porque ambos extremos ya lo
+> tenían: `compose=false`, `restart_auth()` nunca se llamó. Confirmado con
+> `docker inspect supabase-qa-auth` (SSH, sólo lectura): contenedor vivo
+> desde `2026-08-11T17:07:55Z` — un mes antes de este PR, sin ninguna
+> `GOTRUE_HOOK_*` en su entorno real, pese a que el `docker-compose.yml` en
+> disco (`/home/aureon/aureon-qa`) sí las tenía. Esto descarta las hipótesis
+> 2 y 3 del todo — no hay degradación del hook que investigar, ni una URI
+> mal armada: el contenedor simplemente nunca se recreó, ni una sola vez.
+>
+> **Causa raíz real, más profunda que "falta una línea": `QA_PREV_SHA` medía
+> la posición del checkout, no si un deploy anterior había terminado.**
+> `sync_checkout()` hace `git reset --hard` de forma incondicional al
+> principio de cada corrida, **antes** de cualquier restart — así que el
+> HEAD del checkout después de una corrida que murió a mitad de camino ya
+> apunta al commit nuevo, aunque los restarts de ese commit nunca se
+> completaran. La siguiente corrida hereda ese HEAD ya avanzado como "prev",
+> y cualquier fichero que ya estuviera en el commit que la corrida muerta
+> alcanzó a hacer checkout desaparece silenciosamente del diff. Esto no es
+> específico de `auth` — `restart_functions()` tiene la misma exposición —
+> pero fue `auth` quien la sufrió esta vez, porque fue la única víctima con
+> un assert capaz de notarlo.
+>
+> **Arreglo:** nuevo `QA_STATE_FILE` (`/home/aureon/.qa-last-deployed-sha`),
+> escrito sólo al final de `main()`, **después** de que `post_checks()` no
+> haya hecho `exit 1` — es decir, sólo cuando todo lo que esa corrida
+> intentó restar/reconstruir terminó y pasó los health checks. Nueva función
+> `read_qa_prev_sha()` (extraída de `sync_checkout()` para poder testearla
+> sin un `git fetch` real): lee `QA_STATE_FILE` si existe, y sólo cae a
+> `git rev-parse HEAD` la primera vez que corre en un host nuevo (el
+> archivo no existe todavía). Una corrida que muere a mitad de camino ya
+> **no** avanza el marcador, así que la siguiente corrida diffea desde el
+> último commit que **de verdad** terminó, no desde donde el checkout
+> quedó parado. 3 tests nuevos en `deploy-qa.drift.test.sh`
+> (`read_qa_prev_sha()`), mutation-verificados: reducir la función a sólo
+> `git rev-parse HEAD` (quitando la lectura del marcador) → 2 de 3 en rojo.
+> Sin regresión: las 4 suites de shell existentes (`drift`, `functions`,
+> `guard-sudo`, `seed`, `sql-tests`) siguen en verde.
+>
+> **Catch-up manual de una sola vez, hecho por mí vía SSH (sólo esta
+> operación de escritura; todo lo demás de esta ronda fue lectura):**
+> ```
+> docker compose -f infra/supabase-qa/docker-compose.yml \
+>   --env-file /home/aureon/.env.qa up -d --no-deps auth
+> ```
+> — el mismo comando exacto que `restart_auth()` ejecuta. Confirmado
+> después: `docker inspect supabase-qa-auth` muestra
+> `GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED=true`,
+> `..._URI=pg-functions://postgres/public/custom_access_token_hook`,
+> `StartedAt=2026-09-09T19:04:43Z`, `Health.Status=healthy`.
+>
+> **Y la prueba que esta fase pedía desde la ronda 1, hasta hoy sólo
+> afirmada, ahora genuinamente ejecutada:**
+> ```
+> ANON_KEY="$(grep -E '^ANON_KEY=' /home/aureon/.env.qa | cut -d= -f2- | tr -d '\r')"
+> curl -s -X POST "http://localhost:8100/auth/v1/token?grant_type=password" \
+>   -H "apikey: $ANON_KEY" -H "Content-Type: application/json" \
+>   -d '{"email":"qa-admin@qa.test","password":"QaTest123!"}'
+> # → access_token, JWT decodificado:
+> ```
+> Root del JWT: `operator_id: 00000000-0000-4000-8000-000000000001`,
+> `role: authenticated`, `permissions: [pickup, warehouse, loading,
+> operations, admin, dispatch]`. `app_metadata.claims`: `{operator_id:
+> 00000000-0000-4000-8000-000000000001, permissions: [pickup, warehouse,
+> loading, operations, admin, dispatch], role: admin}`. El hook corre, y
+> corre bien — `operator_id`/`role`/`permissions` correctos, exactamente lo
+> que un login normal debía emitir desde el principio de esta fase.
+>
+> También sembré `QA_STATE_FILE` a `a3caa7b2ef1978293ab39b858b77c225ae30e475`
+> (el HEAD real del checkout en ese momento) para que la corrida que aplique
+> este PR arranque desde un estado consistente con la realidad, no desde
+> "archivo ausente" otra vez.
+>
+> **Este catch-up manual NO sustituye el arreglo en código**, y el arreglo
+> en código **tampoco está verificado de punta a punta todavía** — hueco
+> honesto, no una casilla marcada de más: `QA_STATE_FILE` está unit-testeado
+> (3 tests, mutation-verificados) y razonado contra el incidente real que lo
+> motivó, pero **nadie lo ha visto sostener un deploy que muere a mitad de
+> camino**, porque desde que se escribió no ha ocurrido otro. Se verificará
+> genuinamente la próxima vez que algo se caiga a mitad de `main()` — que
+> ojalá no sea pronto — y hasta entonces sigue siendo una corrección
+> razonada, no una observada dos veces.
+>
+> **Rebase sobre `origin/main` (pedido en ronda 6, tras mergear #718 —
+> mismo fichero: `clear_merge_dir()`, el trap `on_err()`, el health-check
+> de `edge-functions`):** limpio, sin conflictos — `git rebase origin/main`
+> resolvió solo. Verificado explícitamente que ninguna de las dos
+> intervenciones se pisa: `read_qa_prev_sha()` y `on_err()` tocan puntos
+> distintos de `main()` (lectura de `QA_PREV_SHA` al principio de
+> `sync_checkout()` vs. el trap `ERR` instalado justo antes de
+> `guard_provisioned`), y las 4 suites de shell (`drift` con mis 3 tests
+> nuevos, `functions` con sus 8 tests nuevos + los míos, `guard-sudo`,
+> `seed`, `sql-tests`) corren juntas en verde: 10+36+6+10+15.
+>
+> PR: #721, **sin auto-merge**.
+> Review: pendiente — ronda 6 en curso, no revisada todavía por nadie más.
+> QA: **la prueba de login en vivo, pedida desde el inicio de esta fase, se
+> ejecutó de punta a punta contra la VPS real esta ronda — y salió roja la
+> primera vez**, exactamente como predijo la ronda 3 y exactamente lo que
+> el assert de esa ronda existe para cazar. Diagnosticada, arreglada en
+> código, y el estado en vivo de QA corregido a mano una vez — comando y
+> resultado del login arriba, ya no una promesa. El PR de ronda 6 todavía
+> no se ha mergeado ni desplegado — la próxima corrida real de `deploy-qa`
+> es la que prueba que `QA_STATE_FILE` sostiene esto sin intervención
+> manual la próxima vez que algo se caiga a mitad de camino.
 > Downstream: `**Downstream:** ninguno todavía` en la cabecera del spec —
-> sin cambios.
+> sin cambios. Nota para spec-93 (paridad QA↔prod, fase 1): el contenedor
+> `auth` llevando un mes sin recrearse mientras el compose declaraba otra
+> cosa es exactamente la clase de divergencia QA↔prod que ese spec
+> inventaría — no se actúa aquí, sólo se deja dicho para que encaje ahí.
 
 **Archivos:** (actualizado en ronda 4 — el índice se había quedado en el plan
 de ronda 1, ver el hallazgo C de la ronda 4 en la evidencia de arriba):
