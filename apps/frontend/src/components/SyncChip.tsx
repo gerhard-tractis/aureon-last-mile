@@ -95,6 +95,8 @@ export function SyncChip({ operatorId = null }: { operatorId?: string | null }) 
             data-testid="sync-chip-detail"
             className="absolute right-0 top-full z-50 mt-1 w-72 space-y-2 rounded-lg border border-status-warning-border bg-surface-raised p-3 text-xs text-text shadow-lg"
           >
+            {detail.status === 'idle' && <p>Cargando detalle…</p>}
+
             {detail.status === 'error' && (
               <p>
                 No se pudo cargar el detalle del bloqueo (la cola local no responde). El
@@ -122,21 +124,39 @@ export function SyncChip({ operatorId = null }: { operatorId?: string | null }) 
                     <p className="text-text-secondary">
                       {blocksClose
                         ? 'Bloquea el cierre de esta carga hasta resolverse.'
-                        : 'No bloquea el cierre de la carga — es una foto de respaldo.'}
+                        : 'Es respaldo — no bloquea el cierre de la carga.'}
+                    </p>
+                    {/* M1, ronda 2 de review del PR #725 — el código SÍ puede
+                        deshacer esto (`retryDead`, ya cableado al botón
+                        "REQUIERE AYUDA" de la pantalla de esa carga). Mandar
+                        a soporte por algo que se arregla con un toque nombra
+                        al actor equivocado. */}
+                    <p className="text-text-secondary">
+                      Abre la carga {entry.manifestId} y toca “REQUIERE AYUDA” para
+                      reintentar.
                     </p>
                   </div>
                 );
               })}
 
-            {detail.status === 'ok' && detail.entries.length > 0 && blockedCount > detail.entries.length && (
+            {/* B1, ronda 2 de review del PR #725 — el resto de `blockedCount`
+                no explicado por `entries` tiene DOS causas distintas, no
+                una: bloqueada por la MISMA carga que ya se lista arriba
+                (nunca se libera sola — se resuelve cuando ese `dead` se
+                resuelva), o esperando de verdad a otro operario (esa sí se
+                libera sola). Mezclarlas es la misma mentira al revés. */}
+            {detail.status === 'ok' && detail.sameManifestBlockedCount > 0 && (
               <p className="text-text-secondary">
-                +{blockedCount - detail.entries.length} más esperando a otro operario; se
-                liberan solas.
+                +{detail.sameManifestBlockedCount} más bloqueadas por la misma carga de
+                arriba — se resuelven cuando eso se resuelva, no solas.
               </p>
             )}
 
-            {detail.status === 'ok' && detail.entries.length > 0 && (
-              <p className="text-text-secondary">Contacta a soporte u operaciones para resolverlo.</p>
+            {detail.status === 'ok' && detail.crossUserBlockedCount > 0 && (
+              <p className="text-text-secondary">
+                +{detail.crossUserBlockedCount} más esperando a otro operario; se liberan
+                solas.
+              </p>
             )}
           </div>
         </details>

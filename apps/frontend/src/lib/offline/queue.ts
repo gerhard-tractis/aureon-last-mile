@@ -225,6 +225,30 @@ export async function listDeadPickupEntries(
 }
 
 /**
+ * spec-81 fase 4, ronda 2 de review del PR #725 (B1 bloqueante) — cuántas
+ * `pending` de un operador viven en alguno de los manifiestos dados. El
+ * chip de sync la usa con el conjunto de manifiestos que ya tienen un
+ * `dead` listado: `manifestHasDeadEntry` bloquea CUALQUIER `pending` de ese
+ * mismo manifiesto, sin que exista ningún otro operario de por medio — así
+ * que ese resto de `getBlockedPickupCount` no es espera cross-user que "se
+ * libera sola", es la MISMA carga bloqueada, y decirlo de la otra forma es
+ * la misma mentira que este módulo lleva rondas cerrando en otros sitios.
+ */
+export async function countPendingInManifests(
+  db: PickupQueueStore,
+  operatorId: string,
+  manifestIds: string[],
+): Promise<number> {
+  if (manifestIds.length === 0) return 0;
+  const ids = new Set(manifestIds);
+  return db.pickup_queue
+    .where("operatorId")
+    .equals(operatorId)
+    .and((entry) => entry.status === "pending" && ids.has(entry.manifestId))
+    .count();
+}
+
+/**
  * Borra las entradas ya confirmadas (`sent`) de un operador. Ver spec-81,
  * "Riesgos" — tope declarado de 500 entradas sin confirmar por operador;
  * `purgeConfirmed` es lo que mantiene la cuota bajo control una vez que

@@ -102,4 +102,101 @@ describe('useBlockedPickupEntries', () => {
 
     await waitFor(() => expect(result.current.entries).toHaveLength(1));
   });
+
+  // Ronda 2 de review del PR #725 (B1 bloqueante) — el resto de
+  // `blockedCount` no explicado por `listDeadPickupEntries` NO es siempre
+  // espera cross-user. `manifestHasDeadEntry` bloquea CUALQUIER `pending`
+  // del MISMO manifiesto que un `dead`, sin que exista otro operario.
+  describe('sameManifestBlockedCount vs crossUserBlockedCount', () => {
+    it('attributes the remainder to the same blocked manifest, not to another operator, when that is what it is', async () => {
+      await db.pickup_queue.add({
+        ...baseEntry,
+        clientOperationId: 'dead-1',
+        manifestId: 'm-1',
+        type: 'close_manifest',
+        status: 'dead',
+        lastError: 'MANIFEST_NOT_CLOSABLE',
+      });
+      // Cuatro `pending` en el MISMO manifiesto, mismo operador, mismo
+      // usuario — nada de cross-user aquí. `getBlockedPickupCount` real
+      // contaría estas 4 como bloqueadas (5 en total); se lo pasamos
+      // directo al hook, que es lo único que necesita para el cálculo.
+      await db.pickup_queue.bulkAdd(
+        Array.from({ length: 4 }, (_, i) => ({
+          ...baseEntry,
+          clientOperationId: `pending-${i}`,
+          manifestId: 'm-1',
+          type: 'pickup_scan' as const,
+          status: 'pending' as const,
+        })),
+      );
+
+      const { result } = renderHook(() => useBlockedPickupEntries('op-1', 5));
+
+      await waitFor(() => expect(result.current.status).toBe('ok'));
+      expect(result.current.sameManifestBlockedCount).toBe(4);
+      expect(result.current.crossUserBlockedCount).toBe(0);
+    });
+
+    it('attributes the remainder to cross-user waiting when no dead entry explains it', async () => {
+      // Sin ningún `dead` — el caso puro cross-user (una `pending` fresca
+      // de otro usuario por delante en el FIFO).
+      const { result } = renderHook(() => useBlockedPickupEntries('op-1', 2));
+
+      await waitFor(() => expect(result.current.status).toBe('ok'));
+      expect(result.current.entries).toEqual([]);
+      expect(result.current.sameManifestBlockedCount).toBe(0);
+      expect(result.current.crossUserBlockedCount).toBe(2);
+    });
+
+    it('splits a mix of both correctly', async () => {
+      await db.pickup_queue.add({
+        ...baseEntry,
+        clientOperationId: 'dead-1',
+        manifestId: 'm-1',
+        type: 'close_manifest',
+        status: 'dead',
+        lastError: 'MANIFEST_NOT_CLOSABLE',
+      });
+      await db.pickup_queue.add({
+        ...baseEntry,
+        clientOperationId: 'pending-same-manifest',
+        manifestId: 'm-1',
+        type: 'pickup_scan',
+        status: 'pending',
+      });
+      // blockedCount = 1 dead + 1 same-manifest pending + 3 cross-user pending = 5
+      const { result } = renderHook(() => useBlockedPickupEntries('op-1', 5));
+
+      await waitFor(() => expect(result.current.status).toBe('ok'));
+      expect(result.current.entries).toHaveLength(1);
+      expect(result.current.sameManifestBlockedCount).toBe(1);
+      expect(result.current.crossUserBlockedCount).toBe(3);
+    });
+  });
+
+  // Menor (ronda 2 de review del PR #725) — un mutante que quitara el
+  // `setEntries([])` de la rama `idle` sobrevivía porque ningún test volvía
+  // a `blockedCount: 0` DESPUÉS de haber cargado filas.
+  it('clears stale entries and counts when blockedCount returns to 0', async () => {
+    await db.pickup_queue.add({
+      ...baseEntry,
+      clientOperationId: 'a',
+      type: 'pickup_scan',
+      status: 'dead',
+      lastError: 'MANIFEST_NOT_CLOSABLE',
+    });
+    const { result, rerender } = renderHook(
+      ({ blockedCount }) => useBlockedPickupEntries('op-1', blockedCount),
+      { initialProps: { blockedCount: 1 } },
+    );
+    await waitFor(() => expect(result.current.entries).toHaveLength(1));
+
+    rerender({ blockedCount: 0 });
+
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+    expect(result.current.entries).toEqual([]);
+    expect(result.current.sameManifestBlockedCount).toBe(0);
+    expect(result.current.crossUserBlockedCount).toBe(0);
+  });
 });

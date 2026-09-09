@@ -20,9 +20,13 @@ vi.mock('@/hooks/useSyncQueue', () => ({
 const mockDetail: {
   status: 'idle' | 'ok' | 'error';
   entries: Partial<PickupQueueEntry>[];
+  sameManifestBlockedCount: number;
+  crossUserBlockedCount: number;
 } = {
   status: 'idle',
   entries: [],
+  sameManifestBlockedCount: 0,
+  crossUserBlockedCount: 0,
 };
 
 vi.mock('@/hooks/useBlockedPickupEntries', () => ({
@@ -37,6 +41,8 @@ beforeEach(() => {
   mockState.blockedCount = 0;
   mockDetail.status = 'idle';
   mockDetail.entries = [];
+  mockDetail.sameManifestBlockedCount = 0;
+  mockDetail.crossUserBlockedCount = 0;
 });
 
 describe('SyncChip', () => {
@@ -134,6 +140,19 @@ describe('SyncChip', () => {
       expect(screen.getByTestId('sync-chip-detail-toggle')).toBeInTheDocument();
     });
 
+    // Menor, ronda 2 de review del PR #725 — con `blockedCount > 0` pero el
+    // hook todavía en `idle` (el instante entre el mount y su primera
+    // lectura), el panel no puede quedar en blanco: el chip ya dice "N
+    // REQUIERE AYUDA", así que abrir "Ver detalle" y encontrar una caja
+    // vacía es peor que decir "cargando".
+    it('never renders a blank panel while the hook has not resolved yet', () => {
+      mockState.blockedCount = 1;
+      mockDetail.status = 'idle';
+      render(<SyncChip />);
+      const panel = screen.getByTestId('sync-chip-detail');
+      expect(panel.textContent).not.toBe('');
+    });
+
     it('names the blocked manifest and the reason it was rejected', () => {
       mockState.blockedCount = 1;
       mockDetail.status = 'ok';
@@ -141,7 +160,7 @@ describe('SyncChip', () => {
         { id: 1, manifestId: 'manifest-77', type: 'pickup_scan', lastError: 'MANIFEST_NOT_CLOSABLE' },
       ];
       render(<SyncChip />);
-      expect(screen.getByText(/manifest-77/)).toBeInTheDocument();
+      expect(screen.getAllByText(/manifest-77/).length).toBeGreaterThan(0);
       expect(screen.getByText(/MANIFEST_NOT_CLOSABLE/)).toBeInTheDocument();
     });
 
@@ -152,7 +171,11 @@ describe('SyncChip', () => {
         { id: 1, manifestId: 'manifest-77', type: 'pickup_scan', lastError: 'MANIFEST_NOT_CLOSABLE' },
       ];
       render(<SyncChip />);
-      expect(screen.getByText(/bloquea el cierre/i)).toBeInTheDocument();
+      // M2, ronda 2 de review del PR #725 — regex anclada: sin esto, "No
+      // bloquea el cierre…" (la rama contraria) también matchea
+      // `/bloquea el cierre/i` como substring, y el test no discrimina nada.
+      expect(screen.getByText(/^Bloquea el cierre/)).toBeInTheDocument();
+      expect(screen.queryByText(/es respaldo/i)).not.toBeInTheDocument();
     });
 
     // La distinción exacta que la fase 5 (photos-send.ts) introdujo hoy:
@@ -166,7 +189,8 @@ describe('SyncChip', () => {
         { id: 1, manifestId: 'manifest-77', type: 'manifest_photo', lastError: 'sheet_number collision' },
       ];
       render(<SyncChip />);
-      expect(screen.getByText(/no bloquea el cierre/i)).toBeInTheDocument();
+      expect(screen.getByText(/es respaldo/i)).toBeInTheDocument();
+      expect(screen.queryByText(/^Bloquea el cierre/)).not.toBeInTheDocument();
     });
 
     // El caso puro cross-user: blockedCount > 0 sólo por una `pending`
@@ -178,36 +202,69 @@ describe('SyncChip', () => {
       mockState.blockedCount = 1;
       mockDetail.status = 'ok';
       mockDetail.entries = [];
+      mockDetail.crossUserBlockedCount = 1;
       render(<SyncChip />);
       expect(screen.getByText(/nada requiere ayuda/i)).toBeInTheDocument();
-      // Nadie necesita contactar a soporte por algo que se resuelve solo.
-      expect(screen.queryByText(/soporte|operaciones/i)).not.toBeInTheDocument();
+      // Nadie necesita abrir ninguna carga por algo que se resuelve solo.
+      expect(screen.queryByText(/toca “requiere ayuda”/i)).not.toBeInTheDocument();
     });
 
-    it('gives a human path to resolve it — contacting support/operations', () => {
+    // M3, ronda 2 de review del PR #725 — con un `dead` listado, la rama
+    // "nada requiere ayuda" no puede aparecer a la vez: eso es
+    // contradictorio (la carga de arriba SÍ requiere ayuda).
+    it('does not say "nothing needs help" when a dead entry is listed', () => {
       mockState.blockedCount = 1;
       mockDetail.status = 'ok';
       mockDetail.entries = [
         { id: 1, manifestId: 'manifest-77', type: 'pickup_scan', lastError: 'MANIFEST_NOT_CLOSABLE' },
       ];
       render(<SyncChip />);
-      expect(screen.getByText(/soporte|operaciones/i)).toBeInTheDocument();
+      expect(screen.queryByText(/nada requiere ayuda/i)).not.toBeInTheDocument();
     });
 
-    // `getBlockedPickupCount` también cuenta una `pending` esperando
-    // detrás de otro operario (se libera sola) — `listDeadPickupEntries`
-    // no la trae porque nunca tuvo nada que explicar. El panel no puede
-    // desaparecer ese resto silenciosamente: 3 bloqueadas y sólo 1 dead
-    // real tiene que decir dónde están las otras 2, no fingir que sólo
-    // hay 1.
-    it('accounts for blocked entries the detail list cannot explain — waiting on another operator, not dead', () => {
-      mockState.blockedCount = 3;
+    // M1, ronda 2 de review del PR #725 — `retryDead` ya existe y ya está
+    // cableado al botón "REQUIERE AYUDA" de `complete/[loadId]/page.tsx`.
+    // Mandar a soporte por algo que el propio operario puede resolver con
+    // un toque nombra al actor equivocado.
+    it('points to the existing retry affordance on that load, not to support', () => {
+      mockState.blockedCount = 1;
       mockDetail.status = 'ok';
       mockDetail.entries = [
         { id: 1, manifestId: 'manifest-77', type: 'pickup_scan', lastError: 'MANIFEST_NOT_CLOSABLE' },
       ];
       render(<SyncChip />);
-      expect(screen.getByText(/\+2/)).toBeInTheDocument();
+      expect(screen.getByText(/manifest-77.*requiere ayuda/is)).toBeInTheDocument();
+      expect(screen.queryByText(/contacta a soporte/i)).not.toBeInTheDocument();
+    });
+
+    // B1, ronda 2 de review del PR #725 (bloqueante) — el resto de
+    // `blockedCount` que un `dead` en el MISMO manifiesto bloquea NO se
+    // libera solo (ninguna otra persona involucrada); confundirlo con
+    // espera cross-user es la misma mentira que este módulo lleva rondas
+    // cerrando en otros sitios.
+    it('attributes extra blocked entries to the same load above when that is what blocks them — never "se liberan solas"', () => {
+      mockState.blockedCount = 5;
+      mockDetail.status = 'ok';
+      mockDetail.entries = [
+        { id: 1, manifestId: 'manifest-77', type: 'close_manifest', lastError: 'MANIFEST_NOT_CLOSABLE' },
+      ];
+      mockDetail.sameManifestBlockedCount = 4;
+      mockDetail.crossUserBlockedCount = 0;
+      render(<SyncChip />);
+      expect(screen.getByText(/\+4 más bloqueadas por la misma carga/i)).toBeInTheDocument();
+      expect(screen.queryByText(/se liberan solas/i)).not.toBeInTheDocument();
+    });
+
+    it('attributes extra blocked entries to another operator only when nothing dead explains them', () => {
+      mockState.blockedCount = 3;
+      mockDetail.status = 'ok';
+      mockDetail.entries = [
+        { id: 1, manifestId: 'manifest-77', type: 'pickup_scan', lastError: 'MANIFEST_NOT_CLOSABLE' },
+      ];
+      mockDetail.sameManifestBlockedCount = 0;
+      mockDetail.crossUserBlockedCount = 2;
+      render(<SyncChip />);
+      expect(screen.getByText(/\+2 más esperando a otro operario; se liberan solas/i)).toBeInTheDocument();
     });
 
     it('does not claim there is more when the dead list already accounts for all of blockedCount', () => {
@@ -216,9 +273,12 @@ describe('SyncChip', () => {
       mockDetail.entries = [
         { id: 1, manifestId: 'manifest-77', type: 'pickup_scan', lastError: 'MANIFEST_NOT_CLOSABLE' },
       ];
+      mockDetail.sameManifestBlockedCount = 0;
+      mockDetail.crossUserBlockedCount = 0;
       render(<SyncChip />);
       expect(screen.queryByText(/\+0/)).not.toBeInTheDocument();
       expect(screen.queryByText(/más esperando/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/más bloqueadas/i)).not.toBeInTheDocument();
     });
 
     it('distinguishes a failed read from "nothing is blocked" — never a silent zero', () => {

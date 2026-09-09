@@ -20,6 +20,7 @@ import {
   reclaimStale,
   retryDead,
   deadEntryBlocksManifestClose,
+  countPendingInManifests,
 } from "./queue";
 
 const OPERATOR_A = "operator-a";
@@ -1228,6 +1229,55 @@ describe("recogida offline queue", () => {
 
     it("is false for manifest_photo — a lost photo is backup, not count", () => {
       expect(deadEntryBlocksManifestClose("manifest_photo")).toBe(false);
+    });
+  });
+
+  // spec-81 fase 4, ronda 2 de review del PR #725 (B1 bloqueante) — el chip
+  // afirmaba que TODO el resto de `blockedCount` (lo no explicado por
+  // `listDeadPickupEntries`) es espera cross-user que "se libera sola". Es
+  // falso cuando el resto es una `pending` bloqueada por un `dead` del MISMO
+  // manifiesto (`manifestHasDeadEntry` domina en `manifestIsBlocked`, sin
+  // que exista ningún otro operario de por medio) — esa `pending` no se
+  // libera sola, se resuelve cuando el `dead` de arriba se resuelva. Esta
+  // consulta separa esa cantidad de la espera cross-user real.
+  describe("countPendingInManifests", () => {
+    const baseEntry = {
+      manifestId: "m-1",
+      type: "pickup_scan" as const,
+      payload: {},
+      retryCount: 0,
+      claimToken: null,
+      lastAttemptAt: null,
+      nextAttemptAt: null,
+      createdAt: new Date().toISOString(),
+    };
+
+    it("counts pending entries whose manifestId is in the given set, scoped to the operator", async () => {
+      await db.pickup_queue.bulkAdd([
+        { ...baseEntry, clientOperationId: "a", operatorId: "op-1", userId: "user-a", status: "pending", manifestId: "m-1" },
+        { ...baseEntry, clientOperationId: "b", operatorId: "op-1", userId: "user-a", status: "pending", manifestId: "m-1" },
+        { ...baseEntry, clientOperationId: "c", operatorId: "op-1", userId: "user-a", status: "pending", manifestId: "m-2" },
+        { ...baseEntry, clientOperationId: "d", operatorId: "op-2", userId: "user-a", status: "pending", manifestId: "m-1" },
+      ]);
+
+      await expect(countPendingInManifests(db, "op-1", ["m-1"])).resolves.toBe(2);
+    });
+
+    it("ignores non-pending statuses — sending/sent/dead are not what a listed dead entry blocks", async () => {
+      await db.pickup_queue.bulkAdd([
+        { ...baseEntry, clientOperationId: "a", operatorId: "op-1", userId: "user-a", status: "sending", manifestId: "m-1" },
+        { ...baseEntry, clientOperationId: "b", operatorId: "op-1", userId: "user-a", status: "sent", manifestId: "m-1" },
+        { ...baseEntry, clientOperationId: "c", operatorId: "op-1", userId: "user-a", status: "dead", manifestId: "m-1" },
+      ]);
+
+      await expect(countPendingInManifests(db, "op-1", ["m-1"])).resolves.toBe(0);
+    });
+
+    it("is 0 for an empty manifest set, without querying the database", async () => {
+      const spy = vi.spyOn(db.pickup_queue, "where");
+
+      await expect(countPendingInManifests(db, "op-1", [])).resolves.toBe(0);
+      expect(spy).not.toHaveBeenCalled();
     });
   });
 });
