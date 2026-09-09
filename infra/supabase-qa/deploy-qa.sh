@@ -458,9 +458,12 @@ container_health_check() { # $1 label, $2 container name
 # file 5 does not stop files 6 through 31 from running.
 #
 # Failure detection matches scripts/pgtap-local.sh's `run` case: grep the
-# captured output for "ERROR" (a RAISE EXCEPTION) rather than trust psql's
+# captured output for "ERROR:" (a RAISE EXCEPTION) rather than trust psql's
 # process exit status, which stays 0 even when a statement inside the script
 # errored (that is what ON_ERROR_STOP=1 would change, and we don't set it).
+# Anchored on the colon, not bare "ERROR" — the same imprecision
+# pgtap-local.sh's own comment (:167-172 as of #717) documents avoiding, since
+# an unanchored match can hit the word inside an otherwise-passing message.
 # pgTAP failures don't raise, so pgTAP sections are additionally grepped for
 # TAP's "not ok N" failure marker. Matched as "not ok [0-9]", not "not ok "
 # (trailing space) — pgTAP prints a bare "not ok N" with no trailing space
@@ -519,7 +522,7 @@ sql_tests_check() {
     if printf '%s' "$section" | grep -q "SKIPPED-NO-PGTAP"; then
       skip=$((skip + 1))
       record_advisory "sql: $base" SKIP "pgtap extension not installed on QA"
-    elif printf '%s' "$section" | grep -qE "ERROR|not ok [0-9]"; then
+    elif printf '%s' "$section" | grep -qE "ERROR:|not ok [0-9]"; then
       fail=$((fail + 1))
       # Echo the failing lines. Without this the summary row says "see the
       # deploy log" and the log does not contain it — the section lives only in
@@ -528,7 +531,7 @@ sql_tests_check() {
       # advisory, so the log IS the whole product.
       log "--- $base failed, first 20 offending lines:"
       printf '%s
-' "$section" | grep -E "ERROR|not ok [0-9]|EXCEPTION" | head -20 | sed 's/^/    /'
+' "$section" | grep -E "ERROR:|not ok [0-9]|EXCEPTION" | head -20 | sed 's/^/    /'
       record_advisory "sql: $base" FAIL "see the block above this table"
     else
       pass=$((pass + 1))

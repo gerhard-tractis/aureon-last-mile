@@ -176,31 +176,59 @@ case "${1:-}" in
       #      `finish()` call, or a step upstream of it just returns early)
       #      leaves no diagnostic line at all and would otherwise pass
       #      silently (round 2 review, A-2/A-3).
+      #
+      # Round 3 review, three more edges in the same plan/TAP counting:
+      #   - Sum EVERY `1..N` plan line, not just the first (`head -1`): a
+      #     file with two independent plan()/finish() blocks (pgTAP allows
+      #     this across separate transactions in one connection — a second
+      #     plan() inside the SAME transaction as the first raises "You
+      #     tried to plan twice!", caught by hard_error above, but a
+      #     ROLLBACK between them resets pgTAP's session state and a second
+      #     plan() is legal) restarts numbering at "1..1" each time; taking
+      #     only the first plan against the file's TOTAL ok+not-ok count is
+      #     a false mismatch (measured: two plan(1)+ok()+finish() blocks,
+      #     both genuinely passing, reported FAIL pass=2 fail=1).
+      #   - A `not ok` line carrying a `# TODO` directive is not a failure
+      #     by TAP semantics (`ok N # SKIP` was already correctly excluded
+      #     from failure — `# TODO` was not, an inverse blind spot).
+      #   - Every FAIL branch below now prints the declared plan and the
+      #     real ok/not-ok count unconditionally, not only when a `not ok`
+      #     or pgTAP diagnostic line happens to exist to grep for — a bare
+      #     "FAIL" with no explanation (the plan-mismatch-without-`not ok`
+      #     case) costs more debugging time than the bug it catches.
       hard_error=""
       echo "$out" | grep -qE "ERROR:|^psql: error:" && hard_error=1
       ok_n=$(echo "$out" | grep -cE '^ok [0-9]+($| )')
       notok_n=$(echo "$out" | grep -cE '^not ok [0-9]+($| )')
+      notok_todo_n=$(echo "$out" | grep -ciE '^not ok [0-9]+.*# *TODO\b')
+      notok_real_n=$((notok_n - notok_todo_n))
       ran_n=$((ok_n + notok_n))
-      plan_n=$(echo "$out" | grep -oE '^[0-9]+\.\.[0-9]+$' | head -1)
-      plan_n="${plan_n#*..}"
+      plan_calls=$(echo "$out" | grep -cE '^[0-9]+\.\.[0-9]+$')
+      plan_total=0
+      while IFS= read -r n; do
+        [ -n "$n" ] && plan_total=$((plan_total + n))
+      done < <(echo "$out" | grep -oE '^[0-9]+\.\.[0-9]+$' | sed -E 's/^[0-9]+\.\.//')
       mismatch_n=0
-      if [ -n "$plan_n" ] && [ "$plan_n" -ne "$ran_n" ]; then
-        if [ "$plan_n" -gt "$ran_n" ]; then mismatch_n=$((plan_n - ran_n))
-        else mismatch_n=$((ran_n - plan_n)); fi
+      if [ "$plan_calls" -gt 0 ] && [ "$plan_total" -ne "$ran_n" ]; then
+        if [ "$plan_total" -gt "$ran_n" ]; then mismatch_n=$((plan_total - ran_n))
+        else mismatch_n=$((ran_n - plan_total)); fi
       fi
       if [ -n "$hard_error" ]; then
         # Transaction aborted — partial TAP counts inside it aren't
         # trustworthy, so count the file as one failure, matching the
         # non-TAP (RAISE EXCEPTION style) files' granularity.
         fail=$((fail+1)); echo "FAIL"; echo "$out" | grep -E "ERROR:|^psql: error:" | head -2 | sed 's/^/      /'
-      elif [ "$notok_n" -gt 0 ] || [ "$mismatch_n" -gt 0 ]; then
-        fail=$((fail + notok_n + mismatch_n)); [ "$ok_n" -gt 0 ] && pass=$((pass + ok_n))
+      elif [ "$notok_real_n" -gt 0 ] || [ "$mismatch_n" -gt 0 ]; then
+        fail=$((fail + notok_real_n + mismatch_n))
+        pass=$((pass + ok_n + notok_todo_n))
         echo "FAIL"
         echo "$out" | grep -E '^not ok [0-9]+($| )|^# Looks like you' | head -3 | sed 's/^/      /'
-      elif [ "$ok_n" -gt 0 ]; then
-        # Real TAP output, every assertion passed — count assertions, not
-        # the file, so the summary reflects real asserts run.
-        pass=$((pass + ok_n)); echo "PASS"
+        echo "      plan: $plan_calls plan() call(s) declaring $plan_total total; ran ok=$ok_n not_ok=$notok_n (todo=$notok_todo_n) = $ran_n"
+      elif [ "$ok_n" -gt 0 ] || [ "$notok_todo_n" -gt 0 ]; then
+        # Real TAP output, every assertion passed (or was an accepted TODO
+        # failure) — count assertions, not the file, so the summary
+        # reflects real asserts run.
+        pass=$((pass + ok_n + notok_todo_n)); echo "PASS"
       else
         # No TAP output at all (RAISE EXCEPTION style file) and no error —
         # per-file is the only granularity available.

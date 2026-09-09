@@ -195,7 +195,7 @@ jobs:
             sleep 2
           done
           if [ "$ok" -ne 1 ]; then
-            echo "::error::pgtap-selftest-ci never became ready"
+            echo "::error::$CT never became ready"
             docker rm -f "$CT" >/dev/null 2>&1 || true
             exit 1
           fi
