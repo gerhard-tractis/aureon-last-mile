@@ -215,18 +215,34 @@ export async function sendManifestPhoto(
   //
   // `getSession()`, no `getUser()` (bloqueante, ronda 4) — medido contra
   // `@supabase/auth-js@2.72.0` (`GoTrueClient.js:1179-1226`): `getUser()` es
-  // una llamada de RED real (un round-trip por foto), pasa por
+  // SIEMPRE una llamada de RED real (un round-trip por foto), pasa por
   // `_acquireLock(-1, …)` — espera de lock SIN TIMEOUT, así que un lock de
   // GoTrue atascado en otra pestaña deja esta entrada `sending` hasta que
   // `reclaimStale` la libere a los 90s — y su `catch` puede disparar
-  // `_removeSession()` (`AuthSessionMissingError`), cerrando la sesión local
-  // del conductor a media jornada por una subida de foto en segundo plano.
-  // `getSession()` da el mismo `user.id`, es LOCAL (sin red, sin el lock sin
-  // timeout, sin `_removeSession`). `try/catch` de todas formas: sin él, una
-  // excepción aquí escapaba de `sendManifestPhoto` DESPUÉS de una subida ya
-  // exitosa sin limpiar el objeto — el único camino post-subida que rompía
-  // "fila huérfana imposible", el contrato que esta fase defiende en todas
-  // las demás ramas.
+  // `_removeSession()` (`AuthSessionMissingError`) por una sesión REVOCADA
+  // en el servidor, cerrando la sesión local del conductor a media jornada
+  // por una subida de foto en segundo plano.
+  //
+  // Corrección de la ronda 5 — `getSession()` NO es puramente local; la
+  // afirmación absoluta de la ronda 4 era incorrecta en los tres puntos,
+  // medido en la misma fuente instalada: también pasa por
+  // `_acquireLock(-1, …)` (`GoTrueClient.js:1018-1026`, el mismo lock sin
+  // timeout, no eliminado); llama a `_callRefreshToken(...)` — RED real —
+  // si el token está dentro de `EXPIRY_MARGIN_MS` de expirar (`:1162`); y sí
+  // llama a `_removeSession()` si la sesión guardada no pasa
+  // `_isValidSession` (`:1120`). El cambio sigue siendo correcto y una
+  // mejora real: la red sólo ocurre cuando el token está por caducar (y ahí
+  // YA hubo red — venimos de una subida al bucket que tuvo éxito, así que
+  // hay señal), y `_removeSession` sólo dispara por almacenamiento local
+  // corrupto, no por "sesión revocada en el servidor" — el camino realista
+  // de `getUser()` que sí podía cerrar la sesión de un conductor activo sin
+  // ninguna razón real. `try/catch` de todas formas: sin él, una excepción
+  // aquí (de cualquiera de los tres caminos de arriba) escapaba de
+  // `sendManifestPhoto` DESPUÉS de una subida ya exitosa sin limpiar el
+  // objeto — el único camino post-subida que rompía "fila huérfana
+  // imposible", el contrato que esta fase defiende en todas las demás
+  // ramas. Verificado por ejecución (ronda 5): con `getSession` lanzando, la
+  // función continúa y limpia el objeto (`remove` se llama).
   let uploadedBy: string | null = null;
   try {
     const { data: sessionData } = await supabase.auth.getSession();
