@@ -2,7 +2,7 @@
 
 > **Related:** [spec-54](spec-54-ui-rebrand.md) (**su fase 4.4 construyó esta pantalla contra el mock `1l` y difirió estos tres datos con razón escrita**), [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (el cierre que produce la merma que aquí se muestra), [spec-82](spec-82-recogida-movil-asignacion-y-ruta.md) (`5b`/`5c`; la asignación puede aterrizar aquí), [spec-61](spec-61-pickup-route-crew.md) (panel de armado de ruta), [spec-73](spec-73-capacity-ladder-truck-topup.md) (capacidad de vehículo en Despacho — precedente directo)
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit, e2e-qa
 
 > **Nota (2026-09-07).** El punto 1 («Merma en cierres», «2 faltantes de 44»)
@@ -115,7 +115,7 @@ Si spec-73 no lo resolvió, la posición honesta sigue siendo la de spec-54: **o
 | **3 — Ocupación** | El porcentaje, o su omisión razonada | spec-73 |
 | **4 — Diff visual del resto** | Lo que difiera entre `1l` y `5a` sin datos nuevos | — |
 
-### Fase 1 — Merma `[in_progress]`
+### Fase 1 — Merma `[done]`
 
 **Archivos:** migración (`get_completed_manifests`), `components/pickup/TodayClosuresPanel.tsx`, tests
 
@@ -139,7 +139,51 @@ esto.
 
 - [ ] Test pgTAP del RPC con un manifiesto cerrado con faltantes y otro limpio.
 - [ ] Test del panel: paleta warning sólo cuando hay merma.
-- [ ] Implementar.
+- [x] Implementar.
+
+> Implementado por: `feat/spec-83-fase-1-merma`, PR #696 (mergeado 2026-09-09,
+> squash). Migración `20260917000002` — renumerada desde `...0001` por colisión
+> de timestamp con spec-84 fase 1 (#698). Plantilla tomada de
+> `20260813000001_spec53_package_labels.sql`, la más reciente que define
+> `get_completed_manifests`, tras repetir el `git grep` que este spec exige:
+> usar la de abril habría borrado `labels_printed_at`/`labels_printed_by_name`.
+> Review: dos rondas adversariales. Ronda 1 — tres bloqueantes: el pgTAP
+> abortaba en el fixture antes de la primera aserción (una fila `resolved` sin
+> `resolved_at` violaba `discrepancy_resolved_has_when`, inmediato y no
+> diferible: 0 `ok` de 5 planeadas); el filtro de estado faltaba; y la aserción
+> que protege las columnas de spec-53 era vacua (vaciar `u.full_name` a `NULL`
+> dejaba los 5 tests en verde). Ronda 2 — aprobada, más el cambio de
+> `COUNT(*)` a `COUNT(DISTINCT d.package_id)`.
+> QA: pgTAP ejecutado contra `spec52-pg` leyendo las líneas TAP crudas de
+> `psql` (el resumen de `scripts/pgtap-local.sh` sólo hace `grep ERROR:` y es
+> ciego a `not ok`): **6/6 `ok`**. Mutación verificada por el revisor sobre esa
+> misma salida: `status = 'open'` voltea 1/4/5; sin filtro de estado voltea 1;
+> `u.full_name` → `NULL::TEXT` voltea 6. Frontend 31/31 con `--pool=forks`.
+> CI verde en `932d1ca`; Vercel desplegado.
+
+**Decisión de producto (2026-09-09).** `missing_count` filtra
+`status <> 'resolved'`, no `= 'open'`. Una merma resuelta deja de ser merma
+—criterio del usuario— pero **`lost` sigue contando**: es el disparador del
+futuro workflow de indemnización (`20260913000005`), no un cierre limpio. Con
+`= 'open'`, el jefe de operaciones declarando un bulto perdido habría apagado
+la alarma y pintado el peor desenlace como carga completa. El fixture
+`CARGA-83-3` (un `'lost'` solo, sin ninguna `'open'`) existe para impedir esa
+regresión.
+
+El histórico que el usuario pidió **ya existe y no hizo falta construirlo**:
+`discrepancies` guarda `status`, `detected_at`, `resolved_at` y
+`resolved_by_user_id`, y la tabla lleva trigger de auditoría
+(`audit_discrepancies_changes`), así que cada transición queda en `audit_logs`
+con actor y momento.
+
+> Downstream: si el panel llega a querer distinguir «cerró con merma en su día»
+> de «tiene merma ahora», la vía barata son dos columnas —`missing_count` (lo
+> que pinta la alarma) y `missing_ever_count` (todas, como texto neutro)— sobre
+> el dato que ya está. Fase aparte, no ampliación de ésta.
+> Heredado, no arreglado aquí: `TodayClosuresPanel.tsx` usa
+> `{row.total_packages ?? 0}`, así que un manifiesto sin conteo muestra
+> «N faltantes de 0». Viene de spec-54 y está igual en la rama de cierre
+> limpio — va a un barrido de copy, no a esta fase.
 
 ### Fase 2 — Ventana `[blocked]`
 
