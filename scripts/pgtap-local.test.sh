@@ -44,7 +44,7 @@ docker exec "$C" psql -U postgres -d postgres -tAc "select 1" >/dev/null 2>&1 ||
 }
 docker exec "$C" mkdir -p /supabase/tests
 
-FIXTURES="tap_pass tap_fail tap_fail_no_desc plan_overshoot plan_undershoot_no_finish err_raise"
+FIXTURES="tap_pass tap_fail tap_fail_no_desc plan_overshoot plan_undershoot_no_finish err_raise r3_twoplans r3_todo r3_notok_count"
 cleanup() {
   for f in $FIXTURES; do
     docker exec "$C" rm -f "/supabase/tests/$f.test.sql" >/dev/null 2>&1
@@ -112,6 +112,35 @@ check "a plan() overshoot (ran > planned) makes run exit nonzero" nonzero "$rc_o
 out_noplan=$(bash "$WRAPPER" run plan_undershoot_no_finish 2>&1); rc_noplan=$?
 check "a plan() shortfall with finish() never called still makes run exit nonzero" nonzero "$rc_noplan" "$out_noplan" \
   "── pass=1 fail=4 ──"
+# Round 3, item 1: a plan mismatch with no 'not ok' or pgTAP diagnostic to
+# grep for used to print a bare "FAIL" and nothing else — the declared plan
+# and real count must be printed unconditionally.
+check "  ...and prints WHY (declared plan vs. real count), not a bare FAIL" nonzero "$rc_noplan" "$out_noplan" \
+  "plan: 1 plan() call(s) declaring 5 total; ran ok=1 not_ok=0 (todo=0) = 1"
+
+# Round 3, item 2: two independent plan()/finish() blocks in one file (legal
+# pgTAP — a ROLLBACK between them resets session state) both pass. Taking
+# only the FIRST "1..N" plan (head -1) against the file's total ok count is
+# a false mismatch — kills the head -1 -> tail -1 mutant.
+out_twoplans=$(bash "$WRAPPER" run r3_twoplans 2>&1); rc_twoplans=$?
+check "two independent plan()/finish() blocks, both passing, make run exit 0" 0 "$rc_twoplans" "$out_twoplans" \
+  "── pass=2 fail=0 ──"
+
+# Round 3, item 3: a 'not ok' carrying a '# TODO' directive is not a
+# failure by TAP semantics (ok N # SKIP was already correctly excluded;
+# # TODO was not — an inverse blind spot).
+out_todo=$(bash "$WRAPPER" run r3_todo 2>&1); rc_todo=$?
+check "a 'not ok ... # TODO' assertion is not counted as a failure" 0 "$rc_todo" "$out_todo" \
+  "── pass=2 fail=0 ──"
+
+# Round 3 mutant coverage: plan(3) with three REAL failures and zero passes.
+# Kills the `ran_n=$((ok_n + notok_n))` -> `ran_n=$((ok_n))` mutant — without
+# not-ok counted into ran_n, this file's plan (3) looks like it "ran" 0,
+# double-counting the three real failures as a plan mismatch too (fail=6
+# instead of the correct fail=3).
+out_notokcount=$(bash "$WRAPPER" run r3_notok_count 2>&1); rc_notokcount=$?
+check "three real pgTAP failures against plan(3) are counted once, not doubled" nonzero "$rc_notokcount" "$out_notokcount" \
+  "── pass=0 fail=3 ──"
 
 # A-5: the pre-existing ERROR: detection (non-pgTAP, RAISE EXCEPTION style
 # — most of the 83 real test files) must still work after this rewrite.
