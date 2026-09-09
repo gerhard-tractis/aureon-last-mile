@@ -476,6 +476,29 @@ assert_exit 0 "explicit 'ninguna' never triggers the dependency check" \
   "docs/specs/spec-99-x.md#Fase 1" \
   "docs/specs/spec-88-x.md#Fase 2"
 
+# ── Menor (review ronda 2): "exit 4 gana sobre exit 3" no tenía ningún test
+# — nada fijaba el ORDEN. spec-104 fase 1 no declara **Archivos:** en
+# absoluto (sería exit 3 por sí sola: no juzgable) Y depende de spec-105
+# fase 1, que sigue [pending] — el resultado combinado debe ser exit 4, no 3.
+cat > "$REPO/docs/specs/spec-104-x.md" <<'MD'
+### Fase 1 — sin Archivos y con dependencia sin satisfacer `[pending]`
+
+**Depende de:** spec-105 fase 1
+
+Prosa nada más — nadie declaró **Archivos:** para esta fase.
+MD
+cat > "$REPO/docs/specs/spec-105-x.md" <<'MD'
+### Fase 1 — todavía no aterriza `[pending]`
+
+**Archivos:** `apps/frontend/src/lib/offline/deepest.ts`
+MD
+(cd "$REPO" && git add -A && git commit -q -m "add spec-104 (no Archivos + unmet dep) and spec-105 (still pending)")
+
+assert_exit 4 "order: exit 4 (unmet dependency) wins over exit 3 (unjudgeable surface) when both would apply" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-104-x.md#Fase 1" \
+  "docs/specs/spec-105-x.md#Fase 1"
+
 # ── Real acceptance case, NOT a fixture: spec-84 fase 3 declares it depends
 # on spec-80 fase 3, which is genuinely [pending] in this repo today. Runs
 # against the actual worktree's docs/specs/, not a copy — this is the exact
