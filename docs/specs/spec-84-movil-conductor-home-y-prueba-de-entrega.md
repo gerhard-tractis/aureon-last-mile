@@ -2,8 +2,15 @@
 
 > **Related:** [spec-54](spec-54-ui-rebrand.md) (**de donde vienen estas dos pantallas; se cerró moviéndolas aquí**), [spec-68](spec-68-distribution-mobile.md) (móvil de distribución, ya entregado), [spec-62](spec-62-reception-mobile.md) (móvil de andén), [spec-43](spec-43-failed-delivery-return-flow.md) (entrega fallida y retorno), [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (precedente inmediato: fotos como respaldo, con almacenamiento resuelto)
 
-**Status:** in progress
-**Bloqueado por:** un rediseño que no se ha hecho (fase 2, fase 4) y, para `1j`, un módulo de Reparto que no existe todavía (fase 4). Fase 1 y fase 3 sí las puede tomar un agente — ver *Corrección (2026-09-08)*.
+**Status:** closed — fase 1 entregada; fases 2, 3 y 4 `[parked]`: Reparto no es
+nuestro. Decisión del usuario (2026-09-09): «Con respecto a Reparto, déjalo,
+todo reparto usará la app DispatchTrack por parte del tenant. Ese webhook ya le
+pega a nuestra base de datos y actualiza estados de pedidos.» Y sobre la
+prueba de entrega: «La prueba de entrega la genera DispatchTrack y la envía vía
+webhook a nuestra DB.» Lo que faltaba de este spec no se construye aquí: la
+pantalla de home del operario (`1g`) y la parada/prueba de entrega (`1j`) son
+pantallas de un módulo de Reparto que el tenant opera con DispatchTrack, no con
+esta plataforma. Ver fases 2/3/4.
 **Verify:** unit, e2e-qa
 
 _Date: 2026-09-07_
@@ -30,16 +37,25 @@ _Date: 2026-09-07_
 
 Dar un hogar a las dos únicas pantallas que quedaron abiertas de spec-54, para poder cerrar aquel spec sin fingir que están hechas ni fingir que se descartaron.
 
-**Corrección (2026-09-08):** este párrafo decía «este spec no está listo para implementarse» sobre las cuatro fases en bloque. Ya no es cierto: fase 1 (`drivers.user_id` usable) y fase 3 (almacenamiento de prueba de entrega) están `[pending]` — el dato que faltaba resultó existir en ambos casos. Lo que sigue sin estar listo son las dos *pantallas* (fase 2 y fase 4), porque ninguna tiene diseño en la convención por módulo, y `1j` además es la punta de un módulo de Reparto que no existe. Léase la sección de bloqueos.
+**Corrección (2026-09-08), superada a su vez el 2026-09-09:** este párrafo
+decía «este spec no está listo para implementarse» sobre las cuatro fases en
+bloque, y luego se corrigió a «fase 1 y fase 3 sí se pueden construir, fase 2 y
+4 faltan de diseño». **Ninguna de las dos lecturas es la vigente.** El usuario
+decidió (2026-09-09) que Reparto entero lo opera el tenant con DispatchTrack:
+no hay pantalla que construir, con o sin diseño. Fase 1 sigue `[done]` — no
+tiene nada que ver con Reparto, es infraestructura de `drivers.user_id` que
+otros módulos también pueden usar. Fases 2, 3 y 4 quedan `[parked]` con la
+razón, no `[blocked]` esperando un mock o un módulo. Léase la sección de
+bloqueos y las fases.
 
 ## Las dos pantallas
 
-| Mock | Pantalla | Por qué se quedó fuera |
+| Mock | Pantalla | Por qué no se construyen |
 |---|---|---|
-| `1g` | Móvil — home del operario («Hola, Cristian… TU TAREA AHORA») | Falta diseño en la convención por módulo (el vínculo usuario↔conductor ya existe, ver fase 1) |
-| `1j` | Móvil — parada y prueba de entrega (parada 19 de 24, promesa 11:00) | No existe el módulo de Reparto (el almacenamiento de la prueba ya tiene patrón, ver fase 3) |
+| `1g` | Móvil — home del operario («Hola, Cristian… TU TAREA AHORA») | **Decisión del usuario (2026-09-09):** Reparto no es nuestro — lo opera el tenant con DispatchTrack. No se construye una home de operario para un módulo que no vamos a tener. |
+| `1j` | Móvil — parada y prueba de entrega (parada 19 de 24, promesa 11:00) | **Decisión del usuario (2026-09-09):** misma razón — la parada y la prueba de entrega las genera DispatchTrack, no esta plataforma. |
 
-Son pantallas de **reparto**, no de recogida. `1j` es una parada de una ruta de entrega; `1g` es la pantalla de entrada del operario, transversal a los módulos. Por eso no cabían en spec-80–83, que son Recogida.
+Son pantallas de **reparto**, no de recogida. `1j` es una parada de una ruta de entrega; `1g` es la pantalla de entrada del operario, transversal a los módulos. Por eso no cabían en spec-80–83, que son Recogida — y por la misma razón de módulo, tampoco caben aquí: el usuario decidió que Reparto entero lo cubre DispatchTrack, con su webhook ya escribiendo en nuestra base y actualizando estados de pedidos.
 
 ## La numeración es vieja, y eso importa
 
@@ -75,7 +91,7 @@ La pantalla captura la prueba: foto, firma, o ambas.
 
 `assignments.pod_photo_url` existe — una sola columna, una sola URL, y nada que diga en qué bucket vive ni que soporte varias tomas. `git grep pod_photo_url` sobre todo el repo (2026-09-08) sólo la encuentra en `20260318000004_agent_suite_tables.sql:375` y su copia en `docs/architecture/agents-data-model.sql:598` — **cero lecturas y cero escrituras en código**. No hay nada vivo que migrar ni con lo que convivir.
 
-**Lo que cambió desde que spec-54 declaró este bloqueo:** spec-80 resuelve el mismo problema para el manifiesto firmado, con bucket privado ya existente y tabla `manifest_documents`, diseñada íntegra en spec-80 fase 3 (`spec-80-recogida-movil-cierre-de-carga.md:439-455`), que está `[pending]`, no `[blocked]`. **Cuando se abra este spec, copiar ese patrón en vez de inventar otro** — dos módulos guardando pruebas de formas distintas es exactamente la divergencia que spec-83 señala para la capacidad de vehículo. Esto ya no es una decisión de producto pendiente: es una dependencia de orden. Ver fase 3 reescrita más abajo.
+**Corrección (2026-09-09) — esta sección quedó superada por la decisión del usuario, se deja como historia.** ~~Lo que cambió desde que spec-54 declaró este bloqueo: spec-80 resuelve el mismo problema para el manifiesto firmado, con bucket privado ya existente y tabla `manifest_documents`, diseñada íntegra en spec-80 fase 3 (`spec-80-recogida-movil-cierre-de-carga.md:439-455`), que está `[pending]`, no `[blocked]`. Cuando se abra este spec, copiar ese patrón en vez de inventar otro — dos módulos guardando pruebas de formas distintas es exactamente la divergencia que spec-83 señala para la capacidad de vehículo. Esto ya no es una decisión de producto pendiente: es una dependencia de orden.~~ El usuario decidió (2026-09-09) que la prueba de entrega la genera DispatchTrack y llega por webhook — no se construye ningún almacenamiento propio, y por tanto no hay patrón de `manifest_documents` que copiar aquí. Ver fase 3.
 
 ### 3. No hay diseño en la convención nueva
 
@@ -85,12 +101,12 @@ Ver arriba. Reparto móvil no tiene ronda propia.
 
 ## Fases
 
-| Fase | Qué entrega | Bloqueada por |
+| Fase | Qué entrega | Estado |
 |---|---|---|
-| **1 — `drivers.user_id` usable** | El índice único, el poblado y la superficie de admin que faltan | — (esquema ya decidido; ver corrección 2026-09-08) |
-| **2 — `1g` home del operario** | Pantalla de entrada del operario | fase 1 + rediseño |
-| **3 — Prueba de entrega multi-archivo** | Dónde y cómo se guarda la prueba | spec-80 fase 3 (orden, no decisión humana) |
-| **4 — `1j` parada y prueba de entrega** | La parada | fase 3 + rediseño |
+| **1 — `drivers.user_id` usable** | El índice único, el poblado y la superficie de admin que faltan | `[done]` |
+| **2 — `1g` home del operario** | — | `[parked]`: Reparto no es nuestro, ver decisión del usuario |
+| **3 — Prueba de entrega multi-archivo** | — | `[parked]`: la genera DispatchTrack, ver decisión del usuario |
+| **4 — `1j` parada y prueba de entrega** | — | `[parked]`: Reparto no es nuestro, ver decisión del usuario |
 
 ### Fase 1 — `drivers.user_id` usable `[done]`
 
@@ -321,45 +337,77 @@ del alcance de esta fase, que sólo tenía que dejar `drivers.user_id` usable.
 > conductores con logins — la misma ambigüedad ya documentada para
 > `driver_name` en spec-72.
 
-### Fase 2 — `1g` home del operario `[blocked]`
+### Fase 2 — `1g` home del operario `[parked]`
 
-- [ ] Requiere una ronda de diseño en la convención por módulo. Sin ella, no se construye.
+**Decisión del usuario (2026-09-09), textual:** «Con respecto a Reparto,
+déjalo, todo reparto usará la app DispatchTrack por parte del tenant. Ese
+webhook ya le pega a nuestra base de datos y actualiza estados de pedidos.»
 
-### Fase 3 — Prueba de entrega multi-archivo `[pending]`
+No se aparca por falta de mock ni porque el módulo esté "sin construir todavía"
+— eso subestimaría lo que pasó. **Reparto no es nuestro.** El tenant opera
+reparto con la app DispatchTrack, y su webhook ya escribe en nuestra base y
+actualiza estados de pedidos — es la prueba de que el camino alternativo está
+vivo, no un plan a futuro. No hay razón para construir una home de operario de
+reparto en esta plataforma.
 
-> **Corrección (2026-09-08):** esta fase estaba `[blocked]` por «patrón de
-> spec-80 + decisión». No hay decisión de producto pendiente:
-> `assignments.pod_photo_url` no tiene ningún lector ni escritor en el repo
-> (`git grep pod_photo_url` sólo la encuentra en la migración que la declara y
-> su copia de arquitectura), así que no hay nada que migrar ni con qué
-> convivir — no aplica lo que el bloqueo original pedía decidir. Lo único que
-> queda es orden: depende de que aterrice spec-80 fase 3
-> (`manifest_documents`, `[pending]`), no de una persona.
+### Fase 3 — Prueba de entrega multi-archivo `[parked]`
 
-**Archivos:** migración nueva en `packages/database/supabase/migrations/` (tabla de documentos de prueba de entrega, patrón `manifest_documents`; deprecar/eliminar `assignments.pod_photo_url` en la misma migración), test pgTAP en `packages/database/supabase/tests/`
+**Decisión del usuario (2026-09-09), textual:** «La prueba de entrega la
+genera DispatchTrack y la envía vía webhook a nuestra DB.»
 
-- [ ] Reusar el patrón de `manifest_documents` (spec-80 fase 3), no inventar uno nuevo.
-- [ ] `assignments.pod_photo_url` no tiene datos vivos que migrar (0 lecturas, 0 escrituras) — dejarla sin usar o eliminarla en la misma migración, no hace falta decisión de convivencia.
+No la construimos porque **no la generamos nosotros**: llega desde
+DispatchTrack por el mismo webhook que ya actualiza estados de pedidos. Ya no
+depende de spec-80 fase 3 — no depende de nada, está aparcada.
 
-### Fase 4 — `1j` parada y prueba de entrega `[blocked]`
+**Distinción importante, porque los nombres se parecen y confundirlos es
+caro:**
 
-> **Nota (2026-09-08), verificada de nuevo, no relajada:** este bloqueo es real
-> y el spec original lo subestimaba llamándolo «necesita diseño nuevo antes que
-> código», como si sólo faltara un mock. No existe el módulo de reparto:
-> `ls apps/frontend/src/app/app/` da `dispatch`, `distribution`, `pickup`,
-> `reception`, `orders`… — no hay `delivery`. `delivery_attempts` sólo aparece
-> en `apps/frontend/src/lib/types.ts:1348` como tipo generado sin consumidor
-> (`git grep delivery_attempts` no encuentra ningún lector real), y
-> `assignments` sólo la tocan scripts de desarrollo de `apps/agents/src/dev/`.
-> No hay secuencia de paradas, ni ETA, ni resultado de entrega en ningún punto
-> del código. Esto es la punta de un módulo que no existe y necesita decisión
-> de roadmap — no un mock.
+- **Prueba de entrega (reparto)** — foto/firma de que el cliente final recibió
+  el pedido. La genera **DispatchTrack**, llega por webhook. **No es nuestra.**
+- **Documentos del manifiesto de recogida** (`manifest_documents`, spec-80 fase
+  3) — fotos del manifiesto **firmado en el punto de retiro**, al cerrar una
+  carga de Recogida. **Sí es nuestra**, está en construcción ahora mismo, y
+  **no tiene nada que ver** con la prueba de entrega de reparto.
 
-- [ ] No se construye sin decisión de roadmap sobre el módulo de Reparto. Un rediseño de `1j` solo, sin el módulo detrás, es una pantalla que no puede funcionar.
+Esta fase decía originalmente que iba a "reusar el patrón de
+`manifest_documents` (spec-80 fase 3)". Esa frase queda **superada**: ya no
+construimos nada aquí, así que no hay patrón que reusar — se deja tachada, no
+borrada, para que quede constancia de que la intención cambió y por qué.
+
+~~**Archivos:** migración nueva en `packages/database/supabase/migrations/`
+(tabla de documentos de prueba de entrega, patrón `manifest_documents`;
+deprecar/eliminar `assignments.pod_photo_url` en la misma migración), test
+pgTAP en `packages/database/supabase/tests/`~~
+
+~~- [ ] Reusar el patrón de `manifest_documents` (spec-80 fase 3), no inventar
+      uno nuevo.~~
+~~- [ ] `assignments.pod_photo_url` no tiene datos vivos que migrar (0
+      lecturas, 0 escrituras) — dejarla sin usar o eliminarla en la misma
+      migración, no hace falta decisión de convivencia.~~
+
+**Nota fuera de alcance, sin abrir línea nueva:** en el repo existen
+`assignments.pod_photo_url` y `assignments.signature_url` sin ningún escritor
+en código, y la integración con DispatchTrack vive en n8n ("Paris
+DispatchTrack Webhook Receiver"), fuera de este repo. Si esas columnas
+persisten lo que el webhook envía, o si el webhook escribe en otro lado, lo
+verifica el usuario por su cuenta — no es investigación de este spec.
+
+### Fase 4 — `1j` parada y prueba de entrega `[parked]`
+
+**Decisión del usuario (2026-09-09):** misma que fase 2 y 3 — Reparto no es
+nuestro, lo opera el tenant con DispatchTrack.
+
+No se aparca por falta de diseño nuevo, aunque la nota de abajo (verificada
+antes de esta decisión) sigue siendo cierta como contexto: no existe el módulo
+de reparto en este repo — `ls apps/frontend/src/app/app/` da `dispatch`,
+`distribution`, `pickup`, `reception`, `orders`… no hay `delivery`;
+`delivery_attempts` sólo aparece en `apps/frontend/src/lib/types.ts:1348` como
+tipo generado sin consumidor. Esa ausencia ya no es una pregunta de roadmap
+abierta — el roadmap la contestó: reparto lo cubre DispatchTrack, no esta
+plataforma.
 
 ---
 
 ## Riesgos
 
-- **Tomar `1g` (fase 2) o `1j` (fase 4) porque «sólo son dos pantallas».** Siguen bloqueadas — no por datos inexistentes (fase 1 y fase 3, corregidas 2026-09-08, sí se pueden construir), sino porque su diseño está superado por convención y, en el caso de `1j`, porque el módulo de Reparto entero no existe todavía.
-- **Divergir de spec-80 en el almacenamiento de pruebas.** Si este spec se abre antes de que spec-80 fase 3 aterrice, se inventará otro esquema. Esperar.
+- **Reabrir `1g` (fase 2), la prueba de entrega (fase 3) o `1j` (fase 4) creyendo que era deuda técnica.** No lo es: el usuario decidió (2026-09-09) que Reparto lo opera el tenant con DispatchTrack, no esta plataforma. Reabrirlas exigiría primero deshacer esa decisión, no "por fin encontrar tiempo".

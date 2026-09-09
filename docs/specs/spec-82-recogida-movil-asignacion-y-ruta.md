@@ -58,6 +58,11 @@ El mock lista los manifiestos **asignados a esa persona**, agrupados por cliente
 
 Hasta que se decida, la pantalla se queda como está. **Implementar (a) en silencio sería peor que no tocarla**, porque congela una mentira en la UI.
 
+**Decisión del usuario (2026-09-09).** Ninguno de los tres caminos de arriba: no
+es «nadie asigna», no es el escritorio en `5a`, y no es una derivación por zona.
+Textual: **«El líder de recogida define la asignación. Al llegar al punto de
+retiro recibe los manifiestos, y en ese momento los asigna.»** Ver fase 3.
+
 ### 2. `5c` — «DESCARGAR» por carga
 
 El mock marca cada carga con `EN RUTA` / `SIGUIENTE` / `DESCARGAR` / `COMPLETADA`. `DESCARGAR` es precarga explícita: bajar el manifiesto al teléfono **antes** de entrar a la bodega sin cobertura.
@@ -96,7 +101,7 @@ andén, no dónde guardarlo si se decide capturarlo.
 |---|---|---|
 | **1 — Diff visual `5b`/`5c`** | Las dos pantallas contra el mock nuevo, sin datos nuevos | — |
 | **2 — `DESCARGAR`** | Precarga por carga | spec-81 fase 1 |
-| **3 — Asignación** | «asignados a ti» de verdad | decisión (a)/(b)/(c) |
+| **3 — Asignación** | «asignados a ti» de verdad | decisión tomada, ver fase 3 |
 | **4 — Andén en la tarjeta** | La línea del mock | decisión sobre si se captura, no sobre dónde guardarlo |
 
 ### Fase 1 — Diff visual `[done]`
@@ -295,7 +300,15 @@ de spec-81», pero `apps/frontend/src/lib/db.ts` hoy sólo tiene colas de SALIDA
 (`scan_queue`, `pickup_queue`), no un caché de lectura offline. No hay tabla,
 hook ni componente que nombrar sin inventarlo. `check-phase-overlap.mjs` la
 reporta como «no puedo juzgar» (exit 3). Rellenar este campo es parte de tomar
-la fase: primero se decide la forma del almacén, después se declara.)
+la fase.
+
+**Corrección (2026-09-09): esto no era una decisión del usuario, y escalarla
+como tal fue un error de esta orquestación.** Qué tablas Dexie, qué se
+precarga y cómo se invalida es **ingeniería** — la toma quien implemente esta
+fase, no el usuario. Lo que sí era de producto — si "DESCARGAR una carga para
+trabajar sin red" es una capacidad que queremos — ya está decidido: lo pide el
+mock `5c`. Sigue en `exit 3` hasta que alguien tome la decisión técnica y la
+declare aquí; eso no cambia.)
 
 - [ ] Test: una carga descargada abre `5d` sin red; una no descargada muestra el estado del mock y no deja entrar.
 - [ ] Precarga de manifiesto, órdenes y bultos al almacén de spec-81.
@@ -306,21 +319,70 @@ la fase: primero se decide la forma del almacén, después se declara.)
       chip gana si ambos predicados aplicaran a la vez por un dato
       inconsistente, antes de renderizar `DESCARGAR` ahí.
 
-### Fase 3 — Asignación `[blocked]`
+### Fase 3 — Asignación `[pending]`
 
-Bloqueada por la decisión de producto. Si sale (b), el trabajo cae en `5a` (spec-83), no aquí, y esta fase se reduce a leer `assigned_to_user_id`.
+**Decisión del usuario (2026-09-09), textual:** «El líder de recogida define la
+asignación. Al llegar al punto de retiro recibe los manifiestos, y en ese
+momento los asigna.»
 
-### Fase 4 — Andén `[blocked]`
+**Consecuencia de diseño, no invención de esta sesión.** La asignación **no es
+previa a la ruta** — no se decide en un escritorio antes de salir — sino **in
+situ y posterior a la llegada** al punto de retiro. Cualquier pantalla que dé
+por hecho que la asignación ya existe cuando la cuadrilla arranca la ruta está
+mal planteada.
 
-**Corrección (2026-09-08):** no está bloqueada por dónde vive el dato — el
-JSONB `pickup_locations` ya admite el campo sin migración, ver corrección más
-arriba. Sigue `[blocked]` por si el alta del punto de recogida debe capturar el
-andén, decisión que le toca al usuario. Si se decide que no, se cierra esta
-fase con la razón escrita, como spec-54 hizo con VENTANA.
+**Hallazgo: el mock de `5b` supone justo eso.** `5b` es la pantalla de **antes**
+de iniciar la ruta — el mock la titula «MANIFIESTOS ASIGNADOS A TI · 4» y deja
+elegir cuáles entran a la ruta (pie «2 manifiestos · 67 paq. entran a la
+ruta»), es decir, presenta una asignación ya resuelta **antes de llegar a
+ningún punto de retiro**. Con la decisión del usuario, esa asignación todavía
+no puede existir en ese momento: se hace al llegar y recibir los manifiestos
+físicos, no antes de salir. El mock y la decisión de producto están en tensión
+y esta sesión no la resuelve — se deja escrita para que el diseño de `5b` (o
+una pantalla nueva de asignación en el punto de retiro) se revise contra esto
+antes de implementar.
+
+Lo que sí queda claro sin inventar nada más: `manifests.assigned_to_user_id`
+(hoy NULL en todas las filas de QA, según el diagnóstico de arriba) se escribe
+por el líder de la cuadrilla, en el móvil, en el momento de llegada al punto de
+retiro — no desde `5a` (spec-83) ni por derivación de zona. El camino (b) del
+listado original queda descartado por esta decisión.
+
+**Archivos:** (indeterminado — la decisión resuelve *quién* y *cuándo* asigna,
+no *dónde* en la interfaz ocurre esa asignación. Falta una pantalla o
+interacción de asignación in-situ que hoy no existe en ningún mock revisado por
+este spec — `5b` no la muestra, muestra el resultado de una asignación previa
+que la decisión del usuario contradice. Nombrar componentes antes de que exista
+ese diseño sería inventarlo. `check-phase-overlap.mjs` la reporta como «no
+puedo juzgar» (exit 3), correctamente.)
+
+- [ ] Resolver la tensión con el mock `5b` (arriba) antes de tocar código:
+      ¿nueva pantalla de asignación al llegar al punto de retiro, o `5b` se
+      redefine como esa pantalla?
+- [ ] Escribir en `manifests.assigned_to_user_id` desde esa interacción.
+- [ ] `5b` (o la pantalla que resulte) lee `assigned_to_user_id` en vez de
+      "pendientes del operador".
+
+### Fase 4 — Andén `[parked]`
+
+**Decisión del usuario (2026-09-09), textual:** «No es necesario, déjalo así
+por el momento.»
+
+El alta de punto de recogida **no** captura el andén. No hay coste técnico en
+ninguna de las dos opciones — el JSONB `pickup_locations` ya admitiría el campo
+sin migración, ver corrección de arriba —, así que esto no se cerró por
+dificultad técnica: se decidió que la cuadrilla pregunta el andén al llegar, en
+vez de que quede escrito de antemano en el punto de recogida. Mismo cierre que
+spec-54 hizo con VENTANA (`docs/specs/spec-54-ui-rebrand.md`, `1i` — un dato
+real que el mock quiere y el negocio decide no capturar).
 
 ---
 
 ## Riesgos
 
-- **La tentación de implementar (a) para «cerrar» la fase 3.** Congela en la UI una afirmación falsa sobre a quién le toca la carga. Preferible dejar la fase abierta.
+- **La tentación de implementar la fase 3 leyendo `5b` tal cual, sin resolver la
+  tensión con la decisión del usuario.** `5b` presenta la asignación como
+  resuelta antes de salir; la decisión dice que se hace al llegar. Construir
+  contra el mock literal congelaría en la UI una secuencia que el negocio
+  acaba de decir que no es así.
 - **Screenshot diff sobre datos de QA**: Musan tiene 4 cargas pendientes y 10 órdenes cada una; el mock muestra 12 manifiestos y grupos de varios puntos. Las diferencias de volumen no son diferencias de diseño.
