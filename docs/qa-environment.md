@@ -282,7 +282,37 @@ the workflow test plan it enables lives in `docs/qa-test-scope.md` (spec-51).
 | Re-seed / re-create users only | `PGPASSWORD=<pw> psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 -q -f packages/database/supabase/seed-qa.sql`, then `bash infra/supabase-qa/create-qa-users.sh` |
 | Regenerate all secrets | `bash infra/supabase-qa/generate-qa-secrets.sh --force` (then `setup-qa.sh` to rebuild with the new values) |
 | `deploy-qa` fails with `sudo: a password is required` | The CI runner cannot restart the QA systemd units — see below |
+| `deploy-qa` fails with `cannot clear /home/aureon/supabase-qa-functions` | Something in the merged edge-functions dir is not owned by the runner user. It is rebuilt from the repo on every deploy, so nothing there is precious: `sudo chown -R aureon:aureon /home/aureon/supabase-qa-functions` |
 | Anything else | Re-run `bash infra/supabase-qa/setup-qa.sh` — every step is idempotent |
+
+## Never hand-copy anything into `/home/aureon/supabase-qa-functions`
+
+That directory is a **build artifact**, reassembled from the repo by
+`restart_functions()` on every deploy that touches `packages/database/supabase/
+functions/` or the QA compose file. Writing into it by hand is at best pointless
+and at worst a landmine.
+
+On 2026-08-21 someone scp'd two files in from a Windows host, preserving numeric
+ids, so they landed owned by uid **197609**. The runner user `aureon` owns the
+parent but not those files, so it could not unlink them. Nothing noticed for
+nineteen days, because the edge flag only widens on a functions/ or compose
+change — and then #710 touched `docker-compose.yml`, `restart_functions()` ran
+for the first time in weeks, `rm -rf` hit "Permission denied", and the whole QA
+sync died with it (run 34388997942). QA drifted from `main` and, via spec-57,
+that blocked the production deploy.
+
+Two things came out of it, both in `deploy-qa.sh`:
+
+- `clear_merge_dir()` re-checks the directory after wiping it and, if anything
+  survived, prints the paths, their owning uid, the wipe's own stderr and the
+  exact `chown -R` that repairs it — instead of dying on a bare `exit 1`.
+- The script installs an ERR trap (`on_err`, with `set -E`) that emits an
+  `::error::` annotation naming the line, exit code and failing command, and
+  re-execs itself under `stdbuf -oL -eL`. The original failure *did* print
+  `rm: ... Permission denied`, but the script's stdout is block-buffered through
+  the runner's pipe while a child's stderr is not, so the reason landed ~40
+  lines above the step that failed, spliced into the QA-users listing. Reading
+  the tail of the failing job showed nothing at all.
 
 ## First-time provisioning needs root — `setup-qa.sh` alone is not enough
 
