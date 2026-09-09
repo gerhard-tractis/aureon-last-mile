@@ -21,6 +21,8 @@ import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
 import { toast } from 'sonner';
 import { useModuleEnabled } from '@/hooks/modules/useEnabledModules';
 import { ModuleKey } from '@/lib/modules/registry';
+import { useOfflineScanSource } from '@/hooks/pickup/useOfflineScanSource';
+import { ManifestNotDownloadedNotice } from '@/components/pickup/ManifestNotDownloadedNotice';
 
 export default function ScanningPage() {
   const params = useParams();
@@ -47,6 +49,13 @@ export default function ScanningPage() {
   // infrastructure rather than a hard-coded value waiting on a rewrite.
   const sync = useSyncQueue(operatorId);
 
+  // spec-82 fase 2 — "DESCARGAR" (mock 5c/5d). Inerte mientras hay señal
+  // (ver el docstring del hook): el flujo online de abajo no cambia en
+  // absoluto. Sin red, decide entre tres estados — "todavía no lo sé",
+  // "nunca se descargó" (bloquea) y "aquí está el snapshot" — nunca sólo
+  // dos, para no pintar "no descargada" sobre una carga que sí lo está.
+  const offline = useOfflineScanSource(operatorId, loadId, sync.status === 'offline');
+
   // spec-53 — second entry point. Labels are normally printed from the pickup
   // list before departure, but the crew also needs them here: this is the
   // screen they are on when they discover a label is missing or unreadable.
@@ -54,6 +63,10 @@ export default function ScanningPage() {
 
   useEffect(() => {
     if (!operatorId) return;
+    // spec-82 fase 2 — sin red no hay nada que este fetch pueda traer;
+    // `offline.snapshot` (si existe) alimenta las mismas variables más
+    // abajo. Evita una llamada de red condenada a quedar pendiente/fallar.
+    if (sync.status === 'offline') return;
     const supabase = createSPAClient();
     supabase
       .from('manifests')
@@ -78,7 +91,7 @@ export default function ScanningPage() {
     supabase.auth.getUser().then(({ data }) => {
       setUserId(data.user?.id ?? null);
     });
-  }, [operatorId, loadId]);
+  }, [operatorId, loadId, sync.status]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -90,7 +103,21 @@ export default function ScanningPage() {
     return () => clearInterval(interval);
   }, [startTime]);
 
-  const { data: scans = [] } = usePickupScans(manifestId, operatorId);
+  // spec-82 fase 2 — sin red, el snapshot local reemplaza por completo lo
+  // que el fetch de red (arriba) y `useManifestOrders` (abajo) no pueden
+  // traer. Con red, `offline.snapshot` es siempre `null` (ver el hook) y
+  // estas líneas no cambian nada del comportamiento existente.
+  const effectiveManifestId = offline.snapshot ? offline.snapshot.manifestId : manifestId;
+  const effectiveTotalPackages = offline.snapshot
+    ? (offline.snapshot.totalPackages ?? 0)
+    : totalPackages;
+  const effectivePickupRouteId = offline.snapshot
+    ? offline.snapshot.pickupRouteId
+    : pickupRouteId;
+  const effectiveRetailerName = offline.snapshot ? offline.snapshot.retailerName : retailerName;
+  const effectivePickupPoint = offline.snapshot ? offline.snapshot.pickupLocation : pickupPoint;
+
+  const { data: scans = [] } = usePickupScans(effectiveManifestId, operatorId);
   const scanMutation = useScanMutation();
 
   const {
@@ -98,7 +125,9 @@ export default function ScanningPage() {
     isLoading: ordersLoading,
     isError: ordersError,
     refetch: refetchOrders,
-  } = useManifestOrders(loadId, operatorId);
+  } = useManifestOrders(sync.status === 'offline' ? null : loadId, operatorId);
+
+  const effectiveOrders = offline.snapshot ? offline.snapshot.orders : orders;
 
   const verifiedCount = useMemo(
     () => {
@@ -119,7 +148,7 @@ export default function ScanningPage() {
   // spec-54 mock 1h — the "Bloque de resultado" card. Reflects the latest
   // scan attempt of ANY outcome (verified/not_found/duplicate), not just
   // the latest success — see useLatestScanResult's own comment for why.
-  const latestScanResult = useLatestScanResult(scans, orders);
+  const latestScanResult = useLatestScanResult(scans, effectiveOrders);
 
   // Scan failures (most commonly: offline, since useScanMutation writes
   // straight to Supabase with no local queue) must surface to the operator
@@ -131,18 +160,18 @@ export default function ScanningPage() {
 
   const handleScan = useCallback(
     (barcode: string) => {
-      if (!manifestId || !operatorId || !userId) return;
+      if (!effectiveManifestId || !operatorId || !userId) return;
       // spec-47 guard: a manifest must be linked to an in_progress pickup route
       // before any scan is allowed. If not, the driver is sent back to the
       // pickup landing where they can start (or join) a route.
-      if (!pickupRouteId) {
+      if (!effectivePickupRouteId) {
         toast.error('Inicia una ruta de retiro primero', {
           action: { label: 'Ir', onClick: () => router.push('/app/pickup') },
         });
         return;
       }
       scanMutation.mutate(
-        { barcode, manifestId, operatorId, externalLoadId: loadId, userId },
+        { barcode, manifestId: effectiveManifestId, operatorId, externalLoadId: loadId, userId },
         {
           onSuccess: (result) => {
             if (result.scanResult === 'not_found') {
@@ -153,24 +182,48 @@ export default function ScanningPage() {
         }
       );
     },
-    [manifestId, operatorId, userId, loadId, scanMutation, pickupRouteId, router, handleScanError]
+    [
+      effectiveManifestId,
+      operatorId,
+      userId,
+      loadId,
+      scanMutation,
+      effectivePickupRouteId,
+      router,
+      handleScanError,
+    ]
   );
 
   const handleManualVerify = useCallback(
     (packageLabel: string) => {
-      if (!manifestId || !operatorId || !userId) return;
-      if (!pickupRouteId) {
+      if (!effectiveManifestId || !operatorId || !userId) return;
+      if (!effectivePickupRouteId) {
         toast.error('Inicia una ruta de retiro primero', {
           action: { label: 'Ir', onClick: () => router.push('/app/pickup') },
         });
         return;
       }
       scanMutation.mutate(
-        { barcode: packageLabel, manifestId, operatorId, externalLoadId: loadId, userId },
+        {
+          barcode: packageLabel,
+          manifestId: effectiveManifestId,
+          operatorId,
+          externalLoadId: loadId,
+          userId,
+        },
         { onError: handleScanError }
       );
     },
-    [manifestId, operatorId, userId, loadId, scanMutation, pickupRouteId, router, handleScanError]
+    [
+      effectiveManifestId,
+      operatorId,
+      userId,
+      loadId,
+      scanMutation,
+      effectivePickupRouteId,
+      router,
+      handleScanError,
+    ]
   );
 
   // M-3, ronda 5 de review del PR #679 (mayor) — `blockedCount` incluye
@@ -179,13 +232,34 @@ export default function ScanningPage() {
   // operario tocaba "REQUIERE AYUDA" sobre un bloqueo cross-user y no veía
   // ningún cambio — ni éxito ni error, la misma pantalla de siempre.
   const handleRetryBlocked = useCallback(() => {
-    if (!manifestId || !operatorId) return;
-    void retryBlockedManifest(operatorId, manifestId).then((revived) => {
+    if (!effectiveManifestId || !operatorId) return;
+    void retryBlockedManifest(operatorId, effectiveManifestId).then((revived) => {
       if (revived === 0) {
         toast.info('Nada que reintentar todavía. Puede que otro operario lo esté procesando.');
       }
     });
-  }, [manifestId, operatorId]);
+  }, [effectiveManifestId, operatorId]);
+
+  // spec-82 fase 2 — early returns DESPUÉS de todos los hooks (regla de
+  // hooks de React), igual que hace `route/active/page.tsx` con
+  // `routeLoading`/`routeError`/`!route`. Con red (`offline.unknown` y
+  // `offline.blocked` siempre `false` — ver el hook) esto nunca se
+  // ejecuta y el flujo de abajo es exactamente el de siempre.
+  if (offline.unknown) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Clock className="h-8 w-8 animate-pulse text-text-muted" aria-hidden />
+      </div>
+    );
+  }
+  if (offline.blocked) {
+    return (
+      <ManifestNotDownloadedNotice
+        externalLoadId={loadId}
+        onBack={() => router.push('/app/pickup')}
+      />
+    );
+  }
 
   return (
     <>
@@ -238,17 +312,17 @@ export default function ScanningPage() {
 
         <PickupFlowHeader
           loadId={loadId}
-          retailerName={retailerName}
-          pickupPoint={pickupPoint}
+          retailerName={effectiveRetailerName}
+          pickupPoint={effectivePickupPoint}
           scanned={verifiedCount}
-          total={totalPackages}
+          total={effectiveTotalPackages}
           queuedCount={sync.queuedCount}
           blockedCount={sync.blockedCount}
           // Decisión del usuario, 2026-09-08 (ronda 4 de review del PR #679,
           // B-1) — "el operario puede reintentar desde la app". Sólo se
           // ofrece una vez que el manifiesto cargó: sin `manifestId` no hay
           // a qué carga aplicar el reintento.
-          onRetryBlocked={manifestId && operatorId ? handleRetryBlocked : undefined}
+          onRetryBlocked={effectiveManifestId && operatorId ? handleRetryBlocked : undefined}
         />
 
         <ScannerInput onScan={handleScan} disabled={scanMutation.isPending} />
@@ -273,7 +347,7 @@ export default function ScanningPage() {
         </div>
 
         <ManifestDetailList
-          orders={orders}
+          orders={effectiveOrders}
           scans={scans}
           onManualVerify={handleManualVerify}
           isLoading={ordersLoading}

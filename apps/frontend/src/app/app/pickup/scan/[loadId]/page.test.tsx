@@ -24,6 +24,13 @@ vi.mock('@/hooks/useSyncQueue', () => ({
   useSyncQueue: (...args: unknown[]) => mockUseSyncQueue(...args),
 }));
 
+// spec-82 fase 2 — inerte por defecto (todo este archivo prueba el flujo
+// EN LÍNEA; el offline vive en page.offline.test.tsx). Sin este mock, el
+// hook real llama a useQuery y este archivo no monta un QueryClientProvider.
+vi.mock('@/hooks/pickup/useOfflineScanSource', () => ({
+  useOfflineScanSource: () => ({ unknown: false, blocked: false, snapshot: null }),
+}));
+
 const mockRetryBlockedManifest = vi.fn();
 vi.mock('@/hooks/useOfflineQueue', () => ({
   retryBlockedManifest: (...args: unknown[]) => mockRetryBlockedManifest(...args),
