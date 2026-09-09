@@ -2,7 +2,12 @@
 
 > **Related:** [spec-57](spec-57-qa-gate-before-production.md) (hizo de QA la precondición de producción), [spec-56](spec-56-pickup-contract-phase.md) (**el precedente: un índice único que pasa CI y muere con datos de producción**), [spec-79](spec-79-dispatch-handoff-integrity.md) (dueña de 5 de las 12 migraciones pendientes, y de una de las dos entradas de cuarentena), [spec-78](spec-78-despacho-tablet-anden.md) (dueña de la otra entrada de cuarentena — ver `apps/frontend/e2e/quarantine.json`), [spec-80](spec-80-recogida-movil-cierre-de-carga.md) y [spec-85](spec-85-discrepancias.md) (dueñas de las tres migraciones del 2026-09-13, sumadas al listado tras la corrección de fase 3 abajo)
 
-**Status:** in progress
+**Status:** awaiting_user_test — fases 1, 2, 3 y 5 están `[done]`; fase 4 es la única que
+queda, y está `[awaiting_user_test]`: el mecanismo de backfill por lotes está construido y
+probado localmente (round 2 de review, PR #705), pero nadie lo ha disparado contra producción.
+Sólo lo puede cerrar el usuario, disparando `prod-backfill-loaded-route-id.yml` (`dry_run`
+primero) y aprobando `environment: production`. Corregido 2026-09-09: esta línea decía `in
+progress`, que ya no era cierto — ningún agente tiene trabajo pendiente que tomar en este spec.
 **Verify:** unit, sql, e2e-qa
 
 _Date: 2026-09-07_
@@ -661,16 +666,96 @@ el usuario dispare `prod-backfill-loaded-route-id.yml` en modo `dry_run`, ese n�
 decide si 2000 sigue siendo un tamaño de lote razonable o si conviene ajustarlo antes de pasar a
 `execute`.
 
+---
+
+#### 2026-09-09 — Ronda 2 de review (PR #705): cuatro correcciones, todas cerradas
+
+El reviewer verificó **ejecutando**, no leyendo: función original intacta (`pg_get_functiondef`
+idéntica, suite 10/10), el driver es **equivalente en salida a la original** (10 paquetes, casos
+ambiguo/ruta completada/soft-deleted/`load_inferred`/multi-dispatch, diff de valores, no sólo de
+conteos: cero filas de diferencia), el `DELETE ... RETURNING` consume cada candidato exactamente
+una vez bajo concurrencia real (dos sesiones con locks), el loop se detiene si `psql` falla, y el
+gate `environment: production` es real. Dio por bueno el mecanismo de escritura. Cuatro
+correcciones quedaban:
+
+**Corrección 1 — 7 de 10 mutantes sobrevivían, dos eran los defectos H-2 de spec-79 fase 1g.**
+`spec79_populate_loaded_route_backfill_candidates()` duplica la subquery de elegibilidad de
+`spec79_backfill_loaded_route_id()` en vez de reusarla (decisión deliberada, no descuido — ver el
+encabezado de la migración), así que las dos copias podían divergir sin aviso: TEST 2 (la única
+prueba de elegibilidad del PR original) usaba dos rutas **ambas activas**, la única forma en que un
+mutante sobre `r.status IN (...)` no cambia nada. **Arreglo: TEST 6**, una aserción de equivalencia
+con fixture de 10 casos (A: inequívoco; B: ambiguo; C: ruta `completed` compitiendo — coge el
+mutante de `r.status`; D: dos filas de dispatch en la MISMA ruta — coge `COUNT(DISTINCT
+route_id)` → `COUNT(*)`; E: dispatch soft-deleted en otra ruta; F: ruta soft-deleted; G:
+`load_inferred=true`; H: `loaded_at IS NULL`; I: paquete soft-deleted; J: `loaded_route_id` ya
+seteado, no debe sobrescribirse) que corre el driver, resetea, corre la función original, y exige
+cero diferencias fila por fila. Verificado a mano reintroduciendo cada mutante:
+- Quitar `r.status IN (...)` de `populate()`: `TEST 6` falla (`diverge on 1 of 10 packages`).
+- `COUNT(DISTINCT dd.route_id)` → `COUNT(*)`: `TEST 6` falla igual.
+- Quitar `p.load_inferred = false` del `UPDATE` batched: **tanto** `TEST 4` como `TEST 6` fallan.
+Los tres mutantes restaurados a la versión correcta, ambas suites (`spec87_fase4_backfill_batching`,
+`spec79_loaded_route_id`) vuelven a verde.
+
+**Corrección 2 — el `dry_run` no medía `batch_size` sobre lo que de verdad limita, y "prudente"
+empeoraba el resultado.** `batch_size` es un `LIMIT` de **órdenes** en el staging, no de
+`packages` — y `populate()` stagea toda orden con una ruta viva, incluidas las que ya tienen
+`loaded_route_id`, paquetes soft-deleted, o `load_inferred`, así que `candidate_orders` puede ser
+un orden de magnitud mayor que `eligible_packages`. Un `batch_size` chico elegido "por prudencia"
+podía agotar `MAX_ITERATIONS=1000` (constante) antes de drenar, cortando en rojo con la mitad ya
+escrita. Arreglo: cuarto `SELECT` en `dry_run` (`candidate_orders`, mismo `FROM`/`WHERE` sin
+`JOIN` a `packages`), y `MAX_ITERATIONS` derivado de `BATCH_SIZE`
+(`$(( 4000000 / BATCH_SIZE ))`) en vez de una constante. Documentado en el encabezado del
+workflow como una trampa explícita, no sólo en el spec: **`dry_run` sin reservas; `execute` sólo
+con `batch_size = 2000` salvo que `candidate_orders` diga lo contrario** — si el número de
+`dry_run` sale chico y por eso bajo `batch_size`, **aumento el riesgo de fallo, no lo bajo**.
+
+**Corrección 3 — inyección de script vía `inputs.batch_size`.** `${{ inputs.batch_size }}` (input
+libre `type: string`) se interpolaba directo en texto de `bash` en tres steps, incluido el que
+debía validarlo — Actions sustituye el valor **antes** de que bash lo parsee, así que un string
+bien armado rompe la sintaxis esperada dentro de un job que carga `SUPABASE_DB_PASSWORD`.
+Superficie nueva: `prod-readonly-query.yml` no tiene inputs. Arreglo: `batch_size` sólo llega vía
+`env: BATCH_SIZE: ${{ inputs.batch_size }}`, referenciado como `"$BATCH_SIZE"` — nunca más
+interpolado en el texto del script.
+
+**Corrección 4 — sin `concurrency:` group.** `deploy.yml` reserva `production-deploy` para esto
+mismo. Sin el group, dos `execute` simultáneos (o uno corriendo mientras `deploy.yml` aplica
+migraciones) no corrompen datos (todo es idempotente por construcción) pero pueden agotar el
+presupuesto de iteraciones por contención artificial. Arreglo: `concurrency: {group:
+production-deploy, cancel-in-progress: false}` en el job.
+
+**Seguimientos documentados, sin cambio de código:**
+- El riesgo de timeout se **relocalizó, no se eliminó**: `populate()` sigue pagando el barrido
+  completo que la migración original se negó a correr sin medir. A favor: el primer `SELECT` del
+  `dry_run` ejecuta ese mismo barrido, así que un `dry_run` verde ya es evidencia real de que
+  sobrevive a escala de producción. Añadido `SET statement_timeout = '900s'` a las queries de
+  `dry_run` y a `populate()` para que un fallo sea determinista (un timeout claro), no un job
+  colgado hasta el límite de 30 minutos del job.
+- Nada dropea la tabla de staging: un segundo `execute` re-stagea todo lo elegible (incluido lo ya
+  escrito) y drena lotes no-op (`0 updated`), consumiendo presupuesto de iteraciones sin dañar
+  nada. Aceptado — el costo es tiempo de CI, no corrección.
+- El Security Advisor de Supabase marcará `spec79_loaded_route_backfill_candidates` sin RLS. Es
+  ruido esperado: la tabla no tiene grants para `anon`/`authenticated` (`REVOKE ALL`), y
+  `operator_id` está ahí precisamente para que, si alguna vez se expone, exista la columna sobre
+  la que escribir una policy — no para evitar el aviso.
+- **`verify.sh` rojo en `apps/agents` (ronda 1): estructuralmente cierto, no reproducido a
+  propósito.** El diff de esta fase son 4 ficheros, ninguno en `apps/agents`, y CI corrió
+  `turbo run test:run` en verde sobre el mismo commit — pero eso no cierra la pregunta de si
+  `apps/agents` está realmente roto en la rama base: el reviewer no lo reprodujo porque correr
+  vitest en el checkout primario rancio ya destruyó 1599 ficheros una vez. Queda abierto,
+  explícitamente, no como "resuelto por CI verde".
+
 **Qué falta, y por qué sigue siendo `awaiting_user_test` y no `[done]`:** el mecanismo está
 construido y probado localmente, pero **nadie ha corrido nada de esto contra producción** — ése es
 el criterio de cierre real de esta fase, y sólo lo puede ejercer una persona con el botón
 "Run workflow" y la aprobación del `environment: production`. Verificación después de correrlo,
 en dos pasos:
-1. `dry_run` primero, siempre — anotar aquí el conteo de `eligible_packages` que devuelve.
-2. `execute` después, con el `batch_size` que ese número sugiera — anotar aquí cuántos lotes corrió,
-   el total de filas actualizadas, y el resultado del paso final "Confirm the backlog is drained"
-   (candidatos restantes debe ser 0; el total de `packages` con `loaded_route_id IS NULL` debe haber
-   bajado y estabilizarse en el resto ambiguo, nunca subir).
+1. `dry_run` primero, siempre — anotar aquí `eligible_packages` **y** `candidate_orders` (no sólo
+   el primero: es el segundo el que de verdad acota `batch_size`).
+2. `execute` después, con `batch_size = 2000` salvo que `candidate_orders` sugiera otra cosa —
+   anotar aquí cuántos lotes corrió, el total de `packages` actualizados (no de órdenes — son
+   unidades distintas), y el resultado del paso final "Confirm the backlog is drained"
+   (candidatos restantes debe ser 0; el total de `packages` con `loaded_route_id IS NULL` debe
+   haber bajado y estabilizarse en el resto ambiguo, nunca subir).
 
 ### Fase 5 — Guardarraíles `[done]`
 

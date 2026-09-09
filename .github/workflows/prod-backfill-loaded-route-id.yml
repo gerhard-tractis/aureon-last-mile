@@ -26,19 +26,43 @@ name: Production Backfill — loaded_route_id (spec-87 fase 4)
 # adds a batched, resumable driver instead (see that migration's header for the
 # full design): a staging table populated once, drained in caller-controlled
 # batches. This workflow calls ONLY that driver, never the original function.
+# Round-2 review proved the two equivalent by construction (equivalence
+# assertion in spec87_fase4_backfill_batching.test.sql, TEST 6): same inputs,
+# byte-identical loaded_route_id per package, across every edge case that
+# cost spec-79 fase 1g three review rounds.
 #
 # TWO MODES, dry_run IS THE DEFAULT
 # --------------------------------------------------------------
-# `mode: dry_run` (default) — dimensions the backlog with two SELECTs and
-# stops. Writes nothing. Safe to run as many times as needed.
+# `mode: dry_run` (default) — dimensions the backlog with FOUR read-only
+# SELECTs and stops. Writes nothing. Safe to run as many times as needed.
 # `mode: execute` — populates the staging table (if not already populated)
 # and loops the batch function until it drains, printing per-batch and total
-# rows changed. Each batch is its own `psql -c` invocation (a separate
-# connection = a separate autocommitted transaction) — never one long
-# transaction wrapping every batch, so a failure mid-run leaves whatever was
-# already committed committed, not rolled back to zero.
+# PACKAGE ROWS changed (batch_size itself counts ORDERS — the staging
+# table's unit — not packages; one order can carry more than one package).
+# Each batch is its own `psql -c` invocation (a separate connection = a
+# separate autocommitted transaction) — never one long transaction wrapping
+# every batch, so a failure mid-run leaves whatever was already committed
+# committed, not rolled back to zero.
 #
-# SECURITY — same pattern as prod-readonly-query.yml
+# THE COUNTERINTUITIVE TRAP IN CHOOSING batch_size
+# --------------------------------------------------------------
+# `batch_size` bounds the LOOP ITERATION COUNT via a fixed iteration budget
+# (see MAX_ITERATIONS below), not the total amount of work. A SMALL
+# `batch_size` after a dry_run that reports a small `eligible_packages`
+# number is NOT the cautious choice — `populate()` stages every order with
+# exactly one live route, including ones whose packages are already fully
+# written, soft-deleted, or load_inferred (see the fourth dry_run SELECT,
+# `candidate_orders`, which can be an order of magnitude larger than
+# `eligible_packages`). A small batch_size against a large candidate_orders
+# count can exhaust the iteration budget before draining, which fails the
+# run loudly with real work already committed but incomplete — worse than
+# either a larger batch_size or accepting more iterations would have been.
+# Read `candidate_orders` from dry_run, not just `eligible_packages`, before
+# picking batch_size. Reviewer's verdict on the dispatch itself: dry_run
+# with no reservations; execute only with batch_size = 2000 unless
+# candidate_orders says otherwise.
+#
+# SECURITY — same pattern as prod-readonly-query.yml, plus one new lesson
 # --------------------------------------------------------------
 # PGPASSWORD is passed as an env var to psql, never interpolated into a
 # command string that gets echoed. Only query RESULT ROWS are printed —
@@ -46,7 +70,28 @@ name: Production Backfill — loaded_route_id (spec-87 fase 4)
 # SUPABASE_DB_PASSWORD / SUPABASE_PROJECT_REF secrets verify-prod-migrations
 # and prod-readonly-query.yml already use.
 #
+# NEW SURFACE prod-readonly-query.yml never had: a free-text `workflow_dispatch`
+# input (batch_size) used inside `run:` blocks in a job that holds
+# SUPABASE_DB_PASSWORD. GitHub Actions substitutes `${{ inputs.batch_size }}`
+# into the step's script TEXT before bash ever parses it — writing
+# `"${{ inputs.batch_size }}"` inline (even inside a bash `[[ ]]` test) lets
+# an attacker-controlled string break out of that quoting and run arbitrary
+# shell in the same step that is supposed to be validating it. Every step
+# that touches batch_size instead receives it via `env: BATCH_SIZE: ${{
+# inputs.batch_size }}` and refers to `"$BATCH_SIZE"` — env values are passed
+# as data, never spliced into the script text.
+#
 # NEVER touches the VPS. Production is managed Supabase — no SSH, no docker.
+
+concurrency:
+  # Same slot deploy.yml's approve-production reserves. Two `execute` runs at
+  # once, or one racing a deploy.yml migration apply, are not memory-unsafe
+  # (every write here is idempotent — see the migration's own header) but can
+  # burn through MAX_ITERATIONS on artificial contention and fail a run that
+  # would otherwise have finished. cancel-in-progress: false — a queued
+  # second run should wait its turn, not cancel a backfill mid-drain.
+  group: production-deploy
+  cancel-in-progress: false
 
 on:
   workflow_dispatch:
@@ -59,7 +104,7 @@ on:
           - execute
         default: dry_run
       batch_size:
-        description: 'Rows per batch when mode = execute (ignored for dry_run)'
+        description: 'order_ids drained from staging per batch when mode = execute (NOT a row/package count — see workflow header). Ignored for dry_run.'
         type: string
         default: '2000'
 
@@ -77,10 +122,12 @@ jobs:
           sudo apt-get install -yqq postgresql-client
 
       - name: Validate batch_size
+        env:
+          BATCH_SIZE: ${{ inputs.batch_size }}
         run: |
           set -euo pipefail
-          if ! [[ "${{ inputs.batch_size }}" =~ ^[0-9]+$ ]] || [ "${{ inputs.batch_size }}" -lt 1 ]; then
-            echo "::error::batch_size must be a positive integer, got '${{ inputs.batch_size }}'"
+          if ! [[ "$BATCH_SIZE" =~ ^[0-9]+$ ]] || [ "$BATCH_SIZE" -lt 1 ]; then
+            echo "::error::batch_size must be a positive integer, got '$BATCH_SIZE'"
             exit 1
           fi
 
@@ -90,8 +137,14 @@ jobs:
         run: |
           set -euo pipefail
           CONN="sslmode=require host=db.${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co port=5432 dbname=postgres user=postgres"
+          # statement_timeout bounds the same full-dispatches-table sweep
+          # populate() pays for real in mode=execute. A green result here is
+          # real evidence that sweep survives at production scale — a red
+          # one (deterministic timeout, not an indefinite hang) is exactly
+          # the signal to stop before mode=execute, not after.
           echo "Packages eligible for the backfill (same FROM/WHERE as the batched UPDATE, wrapped in COUNT):"
           psql "$CONN" -c "
+            SET statement_timeout = '900s';
             SELECT COUNT(*) AS eligible_packages
               FROM public.packages p
               JOIN (
@@ -110,6 +163,22 @@ jobs:
                AND p.load_inferred  = false
                AND p.loaded_route_id IS NULL;
           "
+          echo "Candidate ORDERS the batch driver would stage (the unit batch_size actually limits — can be larger than eligible_packages: an order with no eligible package, or with more than one package, both diverge from the count above):"
+          psql "$CONN" -c "
+            SET statement_timeout = '900s';
+            SELECT COUNT(*) AS candidate_orders
+              FROM (
+                SELECT dd.order_id
+                  FROM public.dispatches dd
+                  JOIN public.routes r ON r.id = dd.route_id
+                 WHERE dd.deleted_at IS NULL
+                   AND r.deleted_at  IS NULL
+                   AND r.status IN ('draft', 'planned', 'loading', 'loaded',
+                                     'dispatched', 'in_transit', 'in_progress')
+                 GROUP BY dd.order_id
+                HAVING COUNT(DISTINCT dd.route_id) = 1
+              ) eligible_orders;
+          "
           echo "Candidate orders currently staged (0 if never populated, or fully drained):"
           psql "$CONN" -c "SELECT COUNT(*) AS staged_candidate_orders FROM public.spec79_loaded_route_backfill_candidates;"
           echo "Total packages still missing loaded_route_id (includes ambiguous orders this backfill deliberately never touches):"
@@ -126,6 +195,7 @@ jobs:
         if: ${{ inputs.mode == 'dry_run' }}
         run: |
           echo "mode = dry_run — nothing was written. Re-run with mode = execute to apply the backfill."
+          echo "Read candidate_orders above before picking batch_size — see this workflow's header for why a small batch_size is not automatically the cautious choice."
 
       - name: Populate the candidate staging table (idempotent, safe to re-run)
         if: ${{ inputs.mode == 'execute' }}
@@ -134,29 +204,37 @@ jobs:
         run: |
           set -euo pipefail
           CONN="sslmode=require host=db.${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co port=5432 dbname=postgres user=postgres"
-          psql "$CONN" -c "SELECT public.spec79_populate_loaded_route_backfill_candidates() AS newly_staged;"
+          psql "$CONN" -c "
+            SET statement_timeout = '900s';
+            SELECT public.spec79_populate_loaded_route_backfill_candidates() AS newly_staged;
+          "
 
       - name: Drain the backfill in batches (each batch its own transaction)
         if: ${{ inputs.mode == 'execute' }}
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          BATCH_SIZE: ${{ inputs.batch_size }}
         run: |
           set -euo pipefail
           CONN="sslmode=require host=db.${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co port=5432 dbname=postgres user=postgres"
-          BATCH_SIZE="${{ inputs.batch_size }}"
           TOTAL_UPDATED=0
           BATCH_NUM=0
-          # Generous upper bound on iterations: at BATCH_SIZE=2000 this covers
-          # 2,000,000 candidate orders before refusing to converge, far above
-          # production's documented ~112k dispatches. A run that hits this cap
-          # without draining is a bug, not patience running out — fail loudly
-          # rather than silently declaring victory.
-          MAX_ITERATIONS=1000
+          # Upper bound scaled to BATCH_SIZE, not a fixed constant: a fixed
+          # 1000 with a small BATCH_SIZE (chosen thinking it was the cautious
+          # option — see the header trap) can cut off a run that is
+          # correctly draining, just slowly, and fail loudly with real work
+          # already committed but incomplete. 4,000,000 orders is well above
+          # any plausible candidate_orders count at this repo's documented
+          # production scale (~112k dispatches), for any BATCH_SIZE >= 1.
+          MAX_ITERATIONS=$(( 4000000 / BATCH_SIZE ))
+          if [ "$MAX_ITERATIONS" -lt 1 ]; then
+            MAX_ITERATIONS=1
+          fi
 
           while true; do
             BATCH_NUM=$((BATCH_NUM + 1))
             if [ "$BATCH_NUM" -gt "$MAX_ITERATIONS" ]; then
-              echo "::error::backfill did not converge after $MAX_ITERATIONS batches — stopping without declaring success"
+              echo "::error::backfill did not converge after $MAX_ITERATIONS batches (BATCH_SIZE=$BATCH_SIZE) — stopping without declaring success"
               exit 1
             fi
 
@@ -165,7 +243,7 @@ jobs:
             REMAINING=$(echo "$RESULT" | cut -d',' -f2)
 
             TOTAL_UPDATED=$((TOTAL_UPDATED + UPDATED))
-            echo "batch $BATCH_NUM: updated=$UPDATED remaining_candidates=$REMAINING running_total_updated=$TOTAL_UPDATED"
+            echo "batch $BATCH_NUM: packages_updated=$UPDATED remaining_candidate_orders=$REMAINING running_total_packages_updated=$TOTAL_UPDATED"
 
             if [ "$REMAINING" = "0" ]; then
               break

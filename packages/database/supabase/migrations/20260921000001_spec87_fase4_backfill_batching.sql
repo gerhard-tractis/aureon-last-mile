@@ -47,10 +47,50 @@
 --     package already written.
 --
 -- `operator_id` on the new table, per repo rule (no exception for a staging
--- table): sourced from `orders.operator_id` at populate time, even though
--- `order_id` alone is already enough to join back to `packages` — it lets a
--- human dimension or clear the backlog per operator if that is ever needed,
--- and keeps this table consistent with every other one in the schema.
+-- table): sourced from `orders.operator_id` at populate time. Not just
+-- convention for its own sake — this table lives in `public`, so PostgREST
+-- enumerates it like any other; if it is ever exposed (a future migration
+-- greps for `REVOKE ALL` and "helpfully" removes it, a Security Advisor
+-- finding gets "fixed" by adding a grant) there has to be an `operator_id`
+-- column already in place for someone to write a tenant-scoping RLS policy
+-- against. Retrofitting that column onto a live table is strictly harder
+-- than never having omitted it. `order_id` alone would already be enough to
+-- join back to `packages` for this migration's own purposes.
+--
+-- ROUND-2 REVIEW FIXES (this migration's SQL objects are otherwise
+-- unchanged from round 1 — the corrections below live in the workflow and
+-- the test suite, not here):
+--   - Corrección 1: `spec79_populate_loaded_route_backfill_candidates()`'s
+--     eligibility subquery is a deliberate SEPARATE copy of
+--     spec79_backfill_loaded_route_id()'s own subquery (see 20260910000001)
+--     -- not shared code, so the two CAN silently diverge. 7 of 10 mutants
+--     survived round 1's suite, including the exact two defects
+--     (`r.status IN (...)` and `COUNT(DISTINCT route_id)`) spec-79 fase 1g/
+--     H-2 spent three review rounds fixing in the ORIGINAL function.
+--     `spec87_fase4_backfill_batching.test.sql` TEST 6 closes this: it runs
+--     the driver and the original function against the same 10-case fixture
+--     and requires byte-identical `loaded_route_id` per package. Verified
+--     to catch both H-2 defects and a removed `p.load_inferred` guard by
+--     re-introducing each mutant by hand and confirming TEST 6 fails.
+--   - Corrección 2 (workflow): `batch_size` bounds `spec79_loaded_route_
+--     backfill_candidates` rows (ORDERS) per call, not `packages` rows.
+--     `populate()` stages every order with exactly one live route,
+--     including ones whose packages are already written, soft-deleted, or
+--     `load_inferred` -- `candidate_orders` can be an order of magnitude
+--     larger than `eligible_packages`. The workflow's dry_run now reports
+--     both numbers, and its iteration budget scales with batch_size instead
+--     of a fixed constant, so a small batch_size chosen for caution cannot
+--     exhaust the budget before draining.
+--   - Corrección 3 (workflow): `${{ inputs.batch_size }}` was spliced
+--     directly into `run:` script text in three steps, including the one
+--     meant to validate it -- GitHub Actions substitutes inputs into the
+--     script BEFORE bash parses it, so an attacker-controlled string could
+--     break out of the intended shell syntax inside a job holding
+--     `SUPABASE_DB_PASSWORD`. Fixed: `batch_size` now only ever arrives via
+--     `env: BATCH_SIZE: ${{ inputs.batch_size }}`, referenced as `"$BATCH_SIZE"`.
+--   - Corrección 4 (workflow): added `concurrency: {group: production-deploy,
+--     cancel-in-progress: false}`, the same slot `deploy.yml`'s
+--     `approve-production` reserves.
 -- =============================================================================
 
 BEGIN;
