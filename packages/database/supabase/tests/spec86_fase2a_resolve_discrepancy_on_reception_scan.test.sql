@@ -28,20 +28,51 @@
 --                  deleted_at in fase 1 — future-proofing, not reachable yet)
 --                  -> scanned received on rr1, must stay open + deleted
 --                  (mutation guard: deleted_at IS NULL)
+--   d9 CTN862A-9 — package already TERMINAL ('extraviado'), open reception
+--                  discrepancy on rr1 -> scanned received on rr1: package
+--                  stays 'extraviado' (spec52_may_advance_status blocks a
+--                  terminal resurrection, untouched by this fase), but the
+--                  discrepancy STILL resolves (mutation guard: chaining the
+--                  discrepancies UPDATE to "IF FOUND" on the packages UPDATE
+--                  — a lost bulto that later turns up on the dock is exactly
+--                  this case, and it must not be the one case this fase
+--                  leaves stuck open)
+--   d10 CTN862A-10 — package already PAST en_bodega ('asignado', pipeline
+--                  position 6 > 3), open reception discrepancy on rr1 ->
+--                  scanned received on rr1: package stays 'asignado' (forward-
+--                  only guard, unrelated to this fase), discrepancy STILL
+--                  resolves. Same mutation guard as d9, a second angle on it
+--                  (blocked-by-guard vs blocked-by-terminal are different
+--                  branches of spec52_may_advance_status)
+--   d12 CTN862A-12 — open reception discrepancy on rr1, scanned on rr1 but
+--                  with scan_result = 'route_mismatch', NOT 'received' (the
+--                  spec-52 "arrived on another truck" case, same shape as
+--                  fase 1's d7) -> package stays 'verificado', discrepancy
+--                  STAYS OPEN (mutation guard: the outer
+--                  `NEW.scan_result = 'received'` IF — pre-existing, but this
+--                  fase changes what it gates: before, only "advance status";
+--                  now also "close evidence")
 -- PR-862B-1 (route f2, route_reception rr2) only exists to host d2's
 -- discrepancy on a DIFFERENT source_id than rr1.
 --
--- NOT mutation-tested here (declared, not covered — verified by actually
--- removing each predicate and re-running this file, not assumed):
+-- Cross-tenant (operator Z): d11, a discrepancy belonging to operator Z's OWN
+-- package, but pointing (directly, bypassing every RPC — the fixture forges
+-- what a malicious row would look like) at operator A's rr1. discrepancies.
+-- route_reception_id REFERENCES route_receptions(id) with NO operator_id
+-- component (20260913000001:63) — nothing stops this at the FK level, same
+-- shape of hole the two spec-52 triggers already guard against for packages
+-- (SECURITY DEFINER bypasses RLS; reception_scans RLS never validates
+-- package_id/route_reception_id cross-tenant). Operator A's user scans that
+-- SAME package_id (Z's) received on A's rr1: d11 must stay open, untouched
+-- by A's user. Mutation guard: operator_id = NEW.operator_id on the
+-- discrepancies UPDATE — earlier revisions of this file claimed this
+-- predicate was unreachable ("route_reception_id already determines the
+-- operator"). That was checked against the wrong constraint: the FK is on
+-- route_receptions(id) alone. Corrected here, with the fixture that actually
+-- exercises it.
 --
--- * "operator_id = NEW.operator_id". Unlike packages (keyed only by id),
---   route_reception_id already uniquely determines the operator via its own
---   FK — a discrepancy row's route_reception_id cannot match NEW.reception_id
---   across two different operators, because NEW.reception_id itself belongs
---   to exactly one operator's route_reception. There is no reachable fixture
---   where route_reception_id matches and operator_id differs; kept anyway as
---   the same defense-in-depth resolve_discrepancy's "m1" note documents for
---   its own redundant operator_id check.
+-- NOT mutation-tested here (declared, not covered — verified by actually
+-- removing the predicate and re-running this file, not assumed):
 --
 -- * "operation_type = 'reception'". Mutated and re-run against this exact
 --   fixture set: survived 14/14 — d4 did NOT get resolved even with the
@@ -56,7 +87,7 @@
 --   anyway: the CHECK constraint could change under a future migration, and
 --   this predicate is the one that would then start doing real work.
 BEGIN;
-SELECT plan(14);
+SELECT plan(22);
 
 -- ── Fixtures ────────────────────────────────────────────────────────────
 INSERT INTO public.operators (id, name, slug) VALUES
@@ -93,7 +124,23 @@ INSERT INTO public.packages (id, operator_id, order_id, label, sku_items, raw_da
   ('00000000-0000-4000-8000-0000000862d4','00000000-0000-4000-8000-0000000862a0','00000000-0000-4000-8000-0000000862c0','CTN862A-4','[]'::jsonb,'{}'::jsonb,'verificado'),
   ('00000000-0000-4000-8000-0000000862d5','00000000-0000-4000-8000-0000000862a0','00000000-0000-4000-8000-0000000862c0','CTN862A-5','[]'::jsonb,'{}'::jsonb,'verificado'),
   ('00000000-0000-4000-8000-0000000862d7','00000000-0000-4000-8000-0000000862a0','00000000-0000-4000-8000-0000000862c0','CTN862A-7','[]'::jsonb,'{}'::jsonb,'verificado'),
-  ('00000000-0000-4000-8000-0000000862d8','00000000-0000-4000-8000-0000000862a0','00000000-0000-4000-8000-0000000862c0','CTN862A-8','[]'::jsonb,'{}'::jsonb,'verificado')
+  ('00000000-0000-4000-8000-0000000862d8','00000000-0000-4000-8000-0000000862a0','00000000-0000-4000-8000-0000000862c0','CTN862A-8','[]'::jsonb,'{}'::jsonb,'verificado'),
+  ('00000000-0000-4000-8000-0000000862d9','00000000-0000-4000-8000-0000000862a0','00000000-0000-4000-8000-0000000862c0','CTN862A-9','[]'::jsonb,'{}'::jsonb,'extraviado'),
+  ('00000000-0000-4000-8000-0000000862da','00000000-0000-4000-8000-0000000862a0','00000000-0000-4000-8000-0000000862c0','CTN862A-10','[]'::jsonb,'{}'::jsonb,'asignado'),
+  ('00000000-0000-4000-8000-0000000862dc','00000000-0000-4000-8000-0000000862a0','00000000-0000-4000-8000-0000000862c0','CTN862A-12','[]'::jsonb,'{}'::jsonb,'verificado')
+ON CONFLICT (id) DO NOTHING;
+
+-- Cross-tenant fixtures (operator Z), for d11 below.
+INSERT INTO public.operators (id, name, slug) VALUES
+  ('00000000-0000-4000-8000-0000000862b9','Spec862a Op Z (other tenant)','spec862a-op-z')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone, delivery_address, comuna, delivery_date, external_load_id, retailer_name, raw_data, imported_via, imported_at) VALUES
+  ('00000000-0000-4000-8000-0000000862c9','00000000-0000-4000-8000-0000000862b9','ORD-862Z-1','Cliente Z','+56900000000','Calle Z','Santiago', CURRENT_DATE, 'CARGA-862Z-1','Retailer Z','{}'::jsonb,'MANUAL', NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.packages (id, operator_id, order_id, label, sku_items, raw_data, status) VALUES
+  ('00000000-0000-4000-8000-0000000862db','00000000-0000-4000-8000-0000000862b9','00000000-0000-4000-8000-0000000862c9','CTN862Z-1','[]'::jsonb,'{}'::jsonb,'ingresado')
 ON CONFLICT (id) DO NOTHING;
 
 -- Manifest auto-created by trg_ensure_manifest_for_order on the order INSERT.
@@ -152,7 +199,30 @@ INSERT INTO public.discrepancies (
   ('00000000-0000-4000-8000-0000000862e8','00000000-0000-4000-8000-0000000862a0','missing','reception','open',
    '00000000-0000-4000-8000-0000000862d8',
    (SELECT id FROM public.route_receptions WHERE pickup_route_id = '00000000-0000-4000-8000-0000000862f1'),
-   '00000000-0000-4000-8000-0000000862a1','borrada')
+   '00000000-0000-4000-8000-0000000862a1','borrada'),
+  -- d9: open, on rr1, package already terminal ('extraviado').
+  ('00000000-0000-4000-8000-0000000862e9','00000000-0000-4000-8000-0000000862a0','missing','reception','open',
+   '00000000-0000-4000-8000-0000000862d9',
+   (SELECT id FROM public.route_receptions WHERE pickup_route_id = '00000000-0000-4000-8000-0000000862f1'),
+   '00000000-0000-4000-8000-0000000862a1','declarado extraviado, pero apareció'),
+  -- d10: open, on rr1, package already past en_bodega ('asignado').
+  ('00000000-0000-4000-8000-0000000862ea','00000000-0000-4000-8000-0000000862a0','missing','reception','open',
+   '00000000-0000-4000-8000-0000000862da',
+   (SELECT id FROM public.route_receptions WHERE pickup_route_id = '00000000-0000-4000-8000-0000000862f1'),
+   '00000000-0000-4000-8000-0000000862a1','ya asignado, escaneado de nuevo'),
+  -- d12: open, on rr1, will be scanned as route_mismatch, NOT received.
+  ('00000000-0000-4000-8000-0000000862ec','00000000-0000-4000-8000-0000000862a0','missing','reception','open',
+   '00000000-0000-4000-8000-0000000862dc',
+   (SELECT id FROM public.route_receptions WHERE pickup_route_id = '00000000-0000-4000-8000-0000000862f1'),
+   '00000000-0000-4000-8000-0000000862a1','tampoco llegó (aún)'),
+  -- d11: CROSS-TENANT. Belongs to operator Z's own package (862db), but
+  -- forged to point at operator A's rr1 -- discrepancies.route_reception_id
+  -- has no operator_id component in its FK, so nothing at the schema level
+  -- stops this row from existing.
+  ('00000000-0000-4000-8000-0000000862eb','00000000-0000-4000-8000-0000000862b9','missing','reception','open',
+   '00000000-0000-4000-8000-0000000862db',
+   (SELECT id FROM public.route_receptions WHERE pickup_route_id = '00000000-0000-4000-8000-0000000862f1'),
+   '00000000-0000-4000-8000-0000000862a1','fila cruzada de tenant, forjada por el fixture')
 ON CONFLICT DO NOTHING;
 
 UPDATE public.discrepancies SET deleted_at = NOW() WHERE id = '00000000-0000-4000-8000-0000000862e8';
@@ -241,6 +311,47 @@ VALUES ((SELECT id FROM public.route_receptions WHERE pickup_route_id = '0000000
 
 SELECT is((SELECT status::text FROM public.discrepancies WHERE id = '00000000-0000-4000-8000-0000000862e8'), 'open', 'd8 (soft-deleted) is untouched -- still open in the row itself');
 SELECT isnt((SELECT deleted_at FROM public.discrepancies WHERE id = '00000000-0000-4000-8000-0000000862e8'), NULL, 'd8 stays soft-deleted');
+
+-- ── 8. d9: package already terminal ('extraviado') -- discrepancy still
+--    resolves, independently of the (blocked) status advance ──────────────
+INSERT INTO public.reception_scans (reception_id, package_id, operator_id, scanned_by, barcode, scan_result, scanned_at)
+VALUES ((SELECT id FROM public.route_receptions WHERE pickup_route_id = '00000000-0000-4000-8000-0000000862f1'),
+        '00000000-0000-4000-8000-0000000862d9','00000000-0000-4000-8000-0000000862a0',
+        '00000000-0000-4000-8000-0000000862a1','CTN862A-9','received', NOW());
+
+SELECT is((SELECT status::text FROM public.packages WHERE id = '00000000-0000-4000-8000-0000000862d9'), 'extraviado', 'd9 package stays extraviado -- spec52_may_advance_status blocks a terminal resurrection (unrelated to this fase)');
+SELECT is((SELECT status::text FROM public.discrepancies WHERE id = '00000000-0000-4000-8000-0000000862e9'), 'resolved', 'd9''s discrepancy STILL resolves even though the package status advance was blocked -- the two UPDATEs are independent (A1)');
+
+-- ── 9. d10: package already past en_bodega ('asignado') -- same independence,
+--    the other branch of spec52_may_advance_status ─────────────────────────
+INSERT INTO public.reception_scans (reception_id, package_id, operator_id, scanned_by, barcode, scan_result, scanned_at)
+VALUES ((SELECT id FROM public.route_receptions WHERE pickup_route_id = '00000000-0000-4000-8000-0000000862f1'),
+        '00000000-0000-4000-8000-0000000862da','00000000-0000-4000-8000-0000000862a0',
+        '00000000-0000-4000-8000-0000000862a1','CTN862A-10','received', NOW());
+
+SELECT is((SELECT status::text FROM public.packages WHERE id = '00000000-0000-4000-8000-0000000862da'), 'asignado', 'd10 package stays asignado -- forward-only guard blocks the regression, unrelated to this fase');
+SELECT is((SELECT status::text FROM public.discrepancies WHERE id = '00000000-0000-4000-8000-0000000862ea'), 'resolved', 'd10''s discrepancy STILL resolves even though the package was already past en_bodega (A1)');
+
+-- ── 10. d12: scanned as route_mismatch, NOT received -- neither the package
+--     nor the discrepancy move (B2: the outer scan_result='received' IF now
+--     gates two things, not one) ───────────────────────────────────────────
+INSERT INTO public.reception_scans (reception_id, package_id, operator_id, scanned_by, barcode, scan_result, scanned_at)
+VALUES ((SELECT id FROM public.route_receptions WHERE pickup_route_id = '00000000-0000-4000-8000-0000000862f1'),
+        '00000000-0000-4000-8000-0000000862dc','00000000-0000-4000-8000-0000000862a0',
+        '00000000-0000-4000-8000-0000000862a1','CTN862A-12','route_mismatch', NOW());
+
+SELECT is((SELECT status::text FROM public.packages WHERE id = '00000000-0000-4000-8000-0000000862dc'), 'verificado', 'd12 package does not advance on a route_mismatch scan (pre-existing behaviour)');
+SELECT is((SELECT status::text FROM public.discrepancies WHERE id = '00000000-0000-4000-8000-0000000862ec'), 'open', 'd12''s discrepancy stays open -- route_mismatch is not received (B2)');
+
+-- ── 11. d11: CROSS-TENANT. Operator A's user scans operator Z's package
+--     (forged onto A's rr1) -- Z's discrepancy must stay untouched by A ────
+INSERT INTO public.reception_scans (reception_id, package_id, operator_id, scanned_by, barcode, scan_result, scanned_at)
+VALUES ((SELECT id FROM public.route_receptions WHERE pickup_route_id = '00000000-0000-4000-8000-0000000862f1'),
+        '00000000-0000-4000-8000-0000000862db','00000000-0000-4000-8000-0000000862a0',
+        '00000000-0000-4000-8000-0000000862a1','CTN862Z-1','received', NOW());
+
+SELECT is((SELECT status::text FROM public.discrepancies WHERE id = '00000000-0000-4000-8000-0000000862eb'), 'open', 'd11 (operator Z''s discrepancy, forged onto A''s rr1) stays open -- A''s scan does not close Z''s evidence (A2, operator_id guard)');
+SELECT is((SELECT resolved_by_user_id FROM public.discrepancies WHERE id = '00000000-0000-4000-8000-0000000862eb'), NULL, 'd11 is not stamped as resolved by A''s user');
 
 SELECT * FROM finish();
 ROLLBACK;

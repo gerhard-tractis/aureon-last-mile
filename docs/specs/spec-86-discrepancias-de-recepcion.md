@@ -464,9 +464,85 @@ avance de estado ya vive en producción.
 > `status = 'open'`, `deleted_at IS NULL`) sí matan exactamente una aserción
 > cada uno, probados uno a uno, restaurando entre cada corrida — no en bloque.
 >
-> Migración: `packages/database/supabase/migrations/20261001000001_spec86_fase2a_resolve_discrepancy_on_reception_scan.sql`.
+> **Ronda 2 de review (PR #722).** Cinco hallazgos, cuatro cerrados con
+> correcciones sólo en el test (`+8` líneas de fixtures/aserciones), uno
+> declarado como deuda a propósito:
+>
+> - **A1 — la independencia de las dos `UPDATE` no la probaba nadie.**
+>   Mutante: encadenar la segunda `UPDATE` a la primera con `IF NOT FOUND THEN
+>   RETURN NEW`. Sobrevivía 14/14. Añadidos `d9` (paquete `extraviado`,
+>   terminal) y `d10` (paquete `asignado`, ya pasado `en_bodega`): en ambos el
+>   avance de estado está bloqueado por `spec52_may_advance_status`, y la
+>   discrepancia debe resolverse igual — un bulto declarado extraviado que
+>   luego aparece y se escanea es exactamente el flujo de esta fase. Mutado y
+>   confirmado: muere **sólo** en las dos aserciones de `d9`/`d10`.
+> - **A2 — el comentario sobre `operator_id` era demostrablemente falso.**
+>   La versión anterior de esta nota (y del test) afirmaba que
+>   `route_reception_id` ya determina el operador vía su propia FK, así que el
+>   guard `operator_id = NEW.operator_id` era inalcanzable. Falso:
+>   `discrepancies.route_reception_id REFERENCES route_receptions(id)`
+>   (`20260913000001:63`) es una FK sobre `id` a secas, sin componente
+>   `operator_id` — nada la ata al tenant de la fila referenciada. Fixture
+>   `d11`: una discrepancia de un operador Z forjada para apuntar a la
+>   `route_reception` del operador A; el usuario de A escanea el mismo
+>   `package_id` (de Z) como recibido en A. Sin el guard, la evidencia de Z se
+>   cierra y queda estampada como resuelta por el usuario de A —
+>   exactamente el tipo de escritura cruzada de tenant contra la tabla que
+>   spec-85 llama "la evidencia contra una indemnización". Mutado y
+>   confirmado: muere **sólo** en las dos aserciones de `d11`. El guard ya
+>   existía y es correcto — sólo el comentario que lo describía como
+>   redundante era incorrecto, y quedaba invitando a que una migración futura
+>   lo quitara "por limpieza". Corregido en la cabecera del test.
+> - **B2 — nadie probaba que un escaneo NO `received` deje la discrepancia
+>   abierta.** Mutante: `NEW.scan_result = 'received'` → `NEW.scan_result IS
+>   NOT NULL`. Sobrevivía toda la suite (ésta, `spec52_state_engine` y
+>   `spec86_fase1` enteras). Añadido `d12`, escaneado como `route_mismatch`
+>   (el caso normal de spec-52, "llegó en otro camión" — mismo fixture que
+>   `d7` en fase 1). El `IF` es preexistente (20260318000001), pero esta fase
+>   le cambia el significado: antes sólo decidía "avanzar estado"; ahora
+>   también decide "cerrar evidencia". Mutado y confirmado: muere en las dos
+>   aserciones de `d12` (paquete Y discrepancia, porque el mismo `IF` gobierna
+>   ambas `UPDATE`).
+> - **C1 — la justificación para no llamar a `resolve_discrepancy()` era
+>   incompleta/parcialmente falsa.** El comentario original decía que "un
+>   reintento de la cola offline de spec-81 podría reproducir el `INSERT`
+>   sin el mismo JWT". Verificado contra el código: esa cola (`db.ts`,
+>   `PickupQueueOperationType`) sólo cubre `pickup_scan | close_manifest |
+>   manifest_photo` — `reception_scans` no tiene cola offline hoy;
+>   `useReceptionScan.ts:48-57` inserta siempre online. **La decisión de no
+>   llamar al RPC es correcta de todos modos, por razones distintas y sí
+>   verificadas:** `resolve_discrepancy` arranca con
+>   `get_operator_id()` y lanza `42501` si es NULL — cualquier `INSERT` sin
+>   JWT de operador (service_role, seed, backfill) abortaría el escaneo
+>   entero; y si la fila ya está `resolved`/`lost`, lanza `23505`
+>   (`DISCREPANCY_ALREADY_RESOLVED`) — un trigger que llamara al RPC
+>   **reventaría el `INSERT` del escaneo** cada vez que la discrepancia ya
+>   estuviera cerrada, justo el caso que hoy es un no-op benigno. No se
+>   modificó la migración (ya mergeada en la ronda 1) — la razón correcta
+>   queda documentada aquí para quien la lea después.
+> - **B1 — declarado, no arreglado (decisión de producto, no de esta fase).**
+>   Con una discrepancia `lost`, el paquete pasa a `en_bodega`, pero la
+>   discrepancia **sigue `lost` para siempre**: `resolve_discrepancy` rechaza
+>   cualquier transición fuera de `open` con `23505` ("una discrepancia
+>   cerrada es evidencia"), y esta fase no tiene ningún camino de reapertura.
+>   No es silencioso (fase 3 sigue listando `lost` en el panel, `status <>
+>   'resolved'`) y no es una regresión de esta fase (el estado ya era
+>   alcanzable antes) — pero esta fase sí lo convierte en la única excepción
+>   visible: "el bulto aparece" cierra solo, salvo cuando el bulto era el
+>   caro. Es la misma pregunta que fase 2b (`[parked]`) ya tiene abierta con
+>   el usuario sobre el efecto aguas abajo de `lost`; no se resuelve aquí.
+>
+> Test actualizado: 22/22 (antes 14/14), mismos cuatro guards de la ronda 1
+> reverificados sin cambios (`package_id`→muere sólo aserción 12,
+> `route_reception_id`→sólo 6, `status='open'`→sólo 11, `deleted_at IS
+> NULL`→sólo 13) más los tres mutantes nuevos de arriba, cada uno restaurado
+> antes del siguiente. Regresión repetida sin fallos.
+>
+> Migración: `packages/database/supabase/migrations/20261001000001_spec86_fase2a_resolve_discrepancy_on_reception_scan.sql`
+> (sin cambios en la ronda 2 — el comportamiento ya era correcto; sólo el
+> test y esta nota se corrigieron).
 > Test pgTAP: `packages/database/supabase/tests/spec86_fase2a_resolve_discrepancy_on_reception_scan.test.sql`
-> (14/14, `psql -tA -f` crudo contra `spec52-pg`, y vía `scripts/pgtap-local.sh`).
+> (22/22, `psql -tA -f` crudo contra `spec52-pg`, y vía `scripts/pgtap-local.sh`).
 > Regresión sin fallos: `spec52_state_engine`, `spec52_unexpected_count`,
 > `spec52_open_route_reception`, `spec52_migration_reconciliation`,
 > `spec86_fase1_complete_route_reception_discrepancies` (18/18),
