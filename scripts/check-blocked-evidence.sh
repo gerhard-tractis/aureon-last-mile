@@ -17,15 +17,18 @@
 # campos, porque el propio ejemplo canónico de `docs/specs/CLAUDE.md` los
 # reparte en tres líneas para que quepan sin desbordar:
 #   - qué se intentó (no "falta X", sino "se intentó Y y devolvió Z")
-#   - contra qué se verificó (fichero:línea, consulta, o salida de comando)
+#   - contra qué se verificó (p. ej. fichero:línea, consulta, o salida de comando)
 #   - cuándo (fecha real, YYYY-MM-DD)
 #   - quién puede desbloquearlo: usuario | agente | dependencia (spec-NN)
 #
 # Heurística léxica, no semántica — mismo trade-off que `check-spec-fields.sh`
 # ya acepta para `> Implementado por:`: el guard fuerza la forma, la revisión
-# humana (o del `reviewer`) juzga el contenido. Sí rechaza la negación vacía
-# más obvia ("se intentó nada", "no se verificó nada") — round 2 de spec-90
-# encontró que esas frases, con las palabras mágicas puestas, colaban.
+# humana (o del `reviewer`) juzga el contenido. Round 2 de spec-90 encontró
+# que "se intentó nada y no se verificó nada" colaba con las palabras mágicas
+# puestas; el guard rechaza ESA frase (negación explícita pegada a
+# "intentó"/"verificó"), no la clase — "se intentó absolutamente nada" sigue
+# colando. Es un parche puntual, no una prueba semántica; documentado así a
+# propósito para que nadie lo lea como que el hueco se cerró.
 #
 # "No tengo acceso a X" NO es un bloqueo válido por sí solo — sólo lo es si
 # la línea trae evidencia de que se escaló al orquestador y no llegó. Pasó
@@ -42,9 +45,16 @@
 #   > Bloqueo: (indeterminado — <razón real, no vacía>) — 2026-09-09 — desbloquea: usuario
 #
 # En este modo el guard NO exige "qué se intentó"/"contra qué se verificó" —
-# exige que la razón no esté vacía ni sea un relleno ("razón", "TODO", "???")
-# — pero SÍ exige fecha real y quién desbloquea, porque esas dos sí son
-# conocidas aunque la causa del bloqueo todavía no se pueda articular.
+# exige que la razón no esté vacía ni sea un relleno ("razón", "TODO", "???",
+# o un solo "token" repetido sin espacios) — pero SÍ exige fecha real y quién
+# desbloquea, porque esas dos sí son conocidas aunque la causa del bloqueo
+# todavía no se pueda articular.
+#
+# Round 3: el escape hatch NO es una puerta trasera para reabrir el caso que
+# la regla de "no tengo acceso" de arriba prohíbe — `(indeterminado — no
+# tengo acceso a producción)` fallaba antes sin decir nada más. Si la razón
+# dice "no tengo acceso"/"no puedo"/"sin acceso", también tiene que nombrar a
+# quién se escaló (`escaló`/`orquestador`), igual que en el modo normal.
 #
 # Valida SOLO los specs tocados en el PR, igual que check-spec-fields.sh y por
 # la misma razón: validar de golpe todos los `[blocked]` reales que hoy no
@@ -128,8 +138,22 @@ indeterminado_reason() { # $1 = línea completa -> imprime la razón o nada
 reason_ok() { # $1 = razón extraída
   local r; r="$(printf '%s' "$1" | tr -d '[:space:]')"
   [ "${#r}" -ge 12 ] || return 1
-  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+  # contador de caracteres puro deja pasar "aaaaaaaaaaaaaa" — exigir al menos
+  # dos palabras (un espacio) es barato y descarta el relleno más obvio sin
+  # pretender juzgar contenido real (mismo trade-off léxico que el resto).
+  printf '%s' "$1" | grep -qE '[[:alpha:]][[:space:]]+[[:alpha:]]' || return 1
+  local low; low="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  case "$low" in
     *razón*real*|*todo*|*'???'*|*'tbd'*|*pendiente' de razón'*) return 1 ;;
+  esac
+  # "no tengo acceso"/"no puedo" NO es un bloqueo válido por sí solo (mismo
+  # criterio que exige `docs/specs/CLAUDE.md` para el modo normal) — el
+  # escape hatch no es una puerta trasera para reabrir justo el caso que la
+  # doc prohíbe. Sólo cuenta si la razón también nombra a quién se escaló.
+  case "$low" in
+    *'no tengo acceso'*|*'sin acceso'*|*'no puedo'*)
+      printf '%s' "$low" | grep -qE 'escal|orquestador' || return 1
+      ;;
   esac
   return 0
 }
@@ -190,7 +214,7 @@ for f in $FILES; do
       fi
 
       if ! verify_ok "$line"; then
-        echo "::error file=$f::$f:$ln: '> Bloqueo:' no dice contra qué se verificó (fichero:línea, consulta, o salida de comando) — no vale 'no se verificó nada'."
+        echo "::error file=$f::$f:$ln: '> Bloqueo:' no dice contra qué se verificó (p. ej. fichero:línea, consulta, o salida de comando) — no vale 'no se verificó nada'."
         FAILED=1
       fi
     fi

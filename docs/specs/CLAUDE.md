@@ -230,7 +230,10 @@ fecha y quién desbloquea siguen siendo exigibles porque sí se conocen:
 ```
 
 Un relleno («razón», «TODO», «???») no cuenta como razón real — el guard lo
-rechaza igual que rechazaría un campo vacío.
+rechaza igual que rechazaría un campo vacío. Y no es una puerta trasera para
+reabrir el caso de arriba: si la razón dice «no tengo acceso»/«no puedo»/«sin
+acceso», también tiene que nombrar a quién se escaló — sólo `(indeterminado —
+no tengo acceso a producción)`, sin más, sigue siendo inválido.
 
 `scripts/check-blocked-evidence.sh` lo aplica en CI, sólo sobre los specs que
 toca el PR — igual que `**Verify:**`, los antiguos migran cuando se los toca.

@@ -192,30 +192,54 @@ jobs:
       # confundía con "no es un PR, no hay nada que validar" justo en la
       # corrida que decide el merge. Mismo fallback de tres niveles.
       #
-      # Round 2, segunda vuelta: el problema real no era QUÉ commit usar como
-      # base, sino contra QUÉ árbol se diffea. En `pull_request`,
-      # `actions/checkout` resuelve HEAD a `refs/pull/<N>/merge` — el merge
-      # sintético de esta rama con el `main` que fuera en el momento del
-      # checkout, no esta rama sola. Si otro PR toca mientras tanto un spec
-      # con `[blocked]` sin evidencia (pasó de verdad: #702/#703 tocaron
-      # spec-82/83/84/88 después de que esta rama se abriera), ese contenido
-      # queda horneado en el HEAD inflado, y diffearlo contra CUALQUIER base
-      # —vieja o recién buscada— lo muestra como "tocado" por esta rama
-      # aunque nunca lo tocó. Buscar un `main` más nuevo como base (intento
-      # anterior de este mismo commit) sólo cambia qué mitad de la deuda ajena
-      # aparece, no el problema.
+      # Round 2, segunda vuelta (y round 3, que encontró que ésta también
+      # estaba mal): el problema real no era QUÉ commit usar como base, sino
+      # que **cualquier diff con `git` de dos puntos entre una base y una
+      # cabeza que no comparten punta muestra deuda ajena, en un sentido o en
+      # el otro**. En `pull_request`, `actions/checkout` resuelve HEAD a
+      # `refs/pull/<N>/merge` — el merge sintético de esta rama con el `main`
+      # del momento del checkout. El primer intento (diffear contra
+      # `pull_request.base.sha`, una foto vieja) horneaba hacia adelante todo
+      # lo que `main` ganó después de esa foto. El segundo intento (diffear
+      # dos puntos contra `pull_request.head.sha`, el commit real de la rama)
+      # parecía arreglarlo pero sólo por coincidencia: si `base.sha` es
+      # ancestro directo de `head.sha` (como lo era en ese momento), dos
+      # puntos y tres puntos dan lo mismo. En cuanto `main` avanza más allá de
+      # esa foto —cosa que pasa varias veces por hora en este repo— dos
+      # puntos deja de coincidir con el merge-base real y vuelve a mostrar,
+      # ahora en sentido inverso, todo lo que `main` ganó y esta rama no
+      # tiene: el mismo síntoma (specs ajenos con `[blocked]` sin evidencia
+      # nombrados como si esta rama los hubiera tocado), la misma causa raíz.
       #
-      # Arreglo real: diffear la base contra el commit real de la rama
-      # (`pull_request.head.sha`), nunca contra el HEAD implícito del
-      # checkout. Un diff de dos commits explícitos no necesita merge-base —
-      # funciona aunque el fetch sea shallow — y el resultado es exactamente
-      # lo que esta rama cambió, sin el relleno del merge sintético.
+      # Arreglo real: no diffear con `git` en absoluto para `pull_request` —
+      # la lista de ficheros de la API de GitHub es autoritativa, la calcula
+      # GitHub contra el estado real del PR, y es inmune al shallow clone y
+      # al merge-ref inflado por definición (no depende de qué haya en el
+      # disco del runner). `merge_group`/`push` no tienen un PR de donde
+      # pedirla — ahí se mantiene el diff por `git`, con el mismo riesgo
+      # residual documentado en spec-90 (bajo, porque `merge_group` no está
+      # activo todavía y `push` a una rama no pasa por un merge-ref).
       - name: Check blocked-phase evidence on touched specs
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          BASE="${{ github.event.pull_request.base.sha }}"
-          if [ -z "$BASE" ]; then
-            BASE="${{ github.event.merge_group.base_sha }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          if [ -n "$PR_NUMBER" ]; then
+            RAW_FILES="$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/files" --paginate --jq '.[].filename')"
+            API_RC=$?
+            if [ "$API_RC" -ne 0 ]; then
+              echo "check-blocked-evidence: no se pudo obtener la lista de ficheros del PR vía API (exit $API_RC). Fallando cerrado — un fallo de API no es evidencia de que no hay nada que revisar." >&2
+              exit 1
+            fi
+            FILES="$(printf '%s\n' "$RAW_FILES" | grep -E '^docs/specs/spec-.*\.md$' || true)"
+            if [ -n "$FILES" ]; then
+              bash ./scripts/check-blocked-evidence.sh $FILES
+            else
+              echo "check-blocked-evidence: ningún spec tocado."
+            fi
+            exit $?
           fi
+          BASE="${{ github.event.merge_group.base_sha }}"
           if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
             BASE="${{ github.event.before }}"
           fi
@@ -224,18 +248,7 @@ jobs:
             exit 0
           fi
           git fetch --no-tags --depth=1 origin "$BASE" 2>/dev/null || git fetch --no-tags --unshallow 2>/dev/null || true
-          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
-          if [ -n "$HEAD_SHA" ]; then
-            git fetch --no-tags --depth=1 origin "$HEAD_SHA" 2>/dev/null || true
-            FILES="$(git diff --name-only "$BASE" "$HEAD_SHA" -- 'docs/specs/spec-*.md' 2>/dev/null || true)"
-            if [ -n "$FILES" ]; then
-              bash ./scripts/check-blocked-evidence.sh $FILES
-            else
-              echo "check-blocked-evidence: ningún spec tocado."
-            fi
-          else
-            bash ./scripts/check-blocked-evidence.sh --base "$BASE"
-          fi
+          bash ./scripts/check-blocked-evidence.sh --base "$BASE"
 
       - name: Test the blocked-evidence guard
         run: bash ./scripts/check-blocked-evidence.test.sh

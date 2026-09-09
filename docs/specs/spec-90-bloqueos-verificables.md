@@ -109,13 +109,24 @@ quién se escaló y «contra qué se verificó» dice qué contestó (o que no
 contestó). Es la corrección directa a los tres casos de hoy, donde "no tengo
 acceso" se usó para bajar el listón de verificación sin escalar nada.
 
-**Diff-scoped, igual que `check-spec-fields.sh` y por la misma razón.** El
-guard sólo mira los specs que el PR **toca** (mismo mecanismo de resolución
-de base que `check-spec-fields.sh`: `--base`, o archivos explícitos, con
-fallback a `merge_group`/`push` en CI — ver `.github/workflows/ci.yml`). Los
-specs viejos migran cuando alguien los toca — es el mismo patrón que ya
-usa `**Verify:**` en este mismo archivo, y ya está probado: no es una
-transición nueva, es la que este repo ya eligió para el mismo problema.
+**Diff-scoped, igual que `check-spec-fields.sh` en intención, ya no en
+mecanismo.** El guard sólo mira los specs que el PR **toca** — los specs
+viejos migran cuando alguien los toca, mismo patrón que ya usa `**Verify:**`
+en este mismo archivo. Pero **cómo** se calcula "qué toca el PR" cambió dos
+veces en `ci.yml` durante el review (round 2 y round 3; diagnóstico completo
+en *Decisión explícita* más abajo):
+
+- Localmente (`check-blocked-evidence.sh --base <ref>` o con archivos
+  explícitos), sigue siendo un diff de `git` — no hay merge-ref inflado en un
+  checkout normal, así que no hace falta más.
+- En CI, para `pull_request`, el paso ya **no** usa `git diff` en absoluto:
+  usa `gh api repos/.../pulls/<N>/files`, la lista autoritativa de GitHub —
+  inmune al `HEAD` inflado (`refs/pull/<N>/merge`, el merge sintético de esta
+  rama con el `main` del momento del checkout) que rompió los dos intentos
+  anteriores con `git`. Para `merge_group`/`push` (sin PR del que pedir la
+  lista) sigue el diff con `git` y `--base`, con el mismo riesgo residual que
+  el resto de guards diff-scoped del repo — documentado, no resuelto, en
+  *Decisión explícita*.
 
 **Cuántos fallarían hoy si el guard fuera repo-wide en vez de diff-scoped:**
 no se cuenta aquí a propósito — cualquier número fijo se pudre en cuanto se
@@ -211,6 +222,50 @@ porque un agente sin esa sección vuelve a poder repetir el error de hoy.
   vs. agente). Un solo número, documentado y justificado contra el
   precedente de cuarentena — introducir tres horizontes distintos sin un
   caso real que lo pida sería complejidad sin evidencia detrás.
+- **No se arreglan los pasos gemelos de `ci.yml` que comparten el mismo
+  defecto de diff-scoping** (`check-spec-fields.sh` en "Check spec fields on
+  touched specs", y `check-migration-safety.sh` en "Check new migrations for
+  unsafe patterns") — diagnóstico completo abajo, a propósito escrito aquí y
+  no sólo en el PR, para que quien retome esto no tenga que redescubrirlo.
+
+### Diagnóstico: tres pasos de `ci.yml` calculan "qué tocó este PR" de tres
+### formas distintas, y ninguna de las otras dos está arreglada
+
+Round 3 de review encontró que el propio arreglo de esta fase para
+`check-blocked-evidence` estaba incompleto (ver más abajo), y que confirmar
+eso llevó a mirar los pasos hermanos: **los tres pasos diff-scoped de
+`ci.yml` tienen hoy tres respuestas distintas al mismo problema**:
+
+1. **`check-spec-fields.sh`** (`ci.yml`, paso "Check spec fields on touched
+   specs"): conserva el patrón original completo — `--base
+   "${{ github.event.pull_request.base.sha }}"` diffeado con `git` contra el
+   `HEAD` implícito del checkout, sin fallback de `merge_group`, y con el
+   defecto de fondo (`HEAD` en `pull_request` es `refs/pull/<N>/merge`, el
+   merge sintético de esta rama con el `main` del momento del checkout — ver
+   el diagnóstico de la pieza 1 abajo). Es el bug tal cual round 2 lo
+   encontró en `check-blocked-evidence`, sin ninguno de los dos arreglos.
+2. **`check-migration-safety.sh`** (`ci.yml`, paso "Check new migrations for
+   unsafe patterns"): tiene el fallback de tres niveles
+   (`pull_request`/`merge_group`/`push`) desde antes de spec-90 (m10, review
+   round 1), pero **no se revisó** si el mismo defecto de fondo (diff contra
+   el `HEAD` inflado) le afecta igual. Probablemente sí, por el mismo
+   mecanismo — no confirmado aquí, fuera de alcance de esta fase.
+3. **`check-blocked-evidence.sh`** (esta pieza): arreglado en round 3 — ver
+   pieza 1 arriba — usando `gh api .../pulls/<N>/files` en vez de `git diff`,
+   que es inmune al `HEAD` inflado porque no depende de qué haya en el disco
+   del runner.
+
+**Por qué se aplaza arreglar los otros dos aquí, con la salida barata
+identificada:** la forma correcta y barata es una sola función/paso que
+calcule la lista de ficheros del PR vía API, reutilizada por los tres —
+elimina la posibilidad de que la próxima persona "arregle" uno de los otros
+dos reinventando una tercera variante distinta del mismo diff con `git`.
+Tocar `check-migration-safety.sh` y su wiring no es necesario para el
+guardarraíl de bloqueos que este spec construye, y esos pasos pertenecen a
+spec-87 (migration-safety) y spec-89/91 (spec-fields), no a éste. Queda
+declarado aquí, con el diagnóstico completo, para que quien lo tome no tenga
+que volver a encontrar el mismo síntoma que ya rompió dos PRs distintos esta
+semana.
 
 ## Coordinación con `feat/spec-89-guardarrail-paralelismo`
 
@@ -312,10 +367,31 @@ motivo que la fase 1.
   forma. Round 2 de review encontró que esto tenía un agujero más grave de lo
   que esta línea admitía: "se intentó nada y no se verificó nada" pasaba
   literalmente, con las palabras mágicas puestas y negando explícitamente
-  haber hecho algo. Ya se cierra ese caso concreto (el guard rechaza la
-  negación vacía: "intentó/verificó" seguido de "nada"/"ninguna"), pero sigue
-  siendo léxico — alguien puede rodear esa frase exacta con otra construcción
-  y seguir sin decir nada real. Mismo trade-off de fondo que
+  haber hecho algo. Se cierra **esa frase concreta** (el guard rechaza
+  "intentó"/"verificó" seguido directamente de "nada"/"ninguna"), no la
+  clase — round 3 lo confirmó con un test dedicado que documenta el límite a
+  propósito: "se intentó **absolutamente** nada y no se verificó
+  **absolutamente** nada" sigue pasando, porque la palabra extra separa la
+  negación del verbo y el regex ya no coincide. Es un parche puntual, no una
+  prueba semántica, y el nombre del test lo dice explícitamente para que
+  nadie lo lea como "cerrado". Mismo trade-off de fondo que
   `check-spec-fields.sh` acepta para `> Implementado por:`, con un listón más
   alto: el guard fuerza la forma y bloquea la negación más obvia, la revisión
   humana (o del `reviewer`) sigue juzgando el contenido.
+- **`reason_ok()` del escape hatch es, en el fondo, un contador de
+  caracteres** (`>= 12`, sin espacios) más una lista de placeholders — no
+  verifica que la razón diga algo real. Round 3 subió el listón mínimo
+  (exige al menos dos palabras separadas por un espacio, así que un solo
+  "token" repetido — `aaaaaaaaaaaaaa` — ya no cuela) y cerró el caso concreto
+  de "no tengo acceso"/"no puedo" sin nombrar a quién se escaló (ver la
+  sección `> Bloqueo:` de `docs/specs/CLAUDE.md`), pero sigue siendo el mismo
+  nivel de heurística que el resto: fuerza forma, no verdad.
+- **Residual de CI, tras el arreglo de round 3**: para `pull_request`, la
+  lista de ficheros ya viene de `gh api .../pulls/<N>/files` (autoritativa,
+  inmune al `HEAD` inflado). Para `merge_group`/`push` —sin PR del que
+  pedirla— el paso sigue usando `git diff --base`, que hereda el mismo riesgo
+  que el resto de guards diff-scoped si el `HEAD` de esos eventos también
+  resulta ser un merge sintético (no confirmado si le pasa a `merge_group`;
+  `push` no debería, porque su `HEAD` es el commit realmente empujado, no un
+  merge). Bajo impacto hoy porque la cola de merge (`merge_group`) todavía no
+  está activa en este repo.

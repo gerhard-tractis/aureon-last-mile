@@ -62,9 +62,18 @@ check "Bloqueo multilinea (ejemplo canonico de CLAUDE.md) pasa" 0 "$(mk ok-multi
 
 check "continuacion cortada por linea en blanco no se une" 1 "$(mk cut-multiline.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: se intentó X' '' '> — verificado en foo.sql:12 — 2026-09-08 — desbloquea: usuario')"
 
-# --- round 2 (B2 + S1): la negación vacía con las palabras mágicas puestas
-# ya no cuela. Es el ejemplo exacto que el review encontró.
-check "bingo de palabras clave sin evidencia real falla" 1 "$(mk bingo.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: se intentó nada y no se verificó nada — 2026-09-08 — desbloquea: usuario')"
+# --- round 2 (B2 + S1): la frase EXACTA que el review encontró ya no cuela.
+# round 3 (F2): esto tapa esa frase puntual, no la clase — el nombre del test
+# lo dice a propósito para que nadie lo lea como "S1 cerrado". La clase sigue
+# abierta (heurística léxica, no semántica): ver el test siguiente.
+check "bingo de palabras clave con 'nada' explicito falla (frase puntual, no la clase)" 1 "$(mk bingo.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: se intentó nada y no se verificó nada — 2026-09-08 — desbloquea: usuario')"
+
+# --- round 3 (F2), caracterización deliberada de un límite conocido: sólo se
+# tapó la frase con "nada" pegado a intentó/verificó. Reformular la misma
+# negación vacía sin esa palabra exacta sigue pasando — documentado como
+# comportamiento esperado, no como bug pendiente, para que quede explícito en
+# la suite y nadie lo redescubra como si fuera nuevo.
+check "negacion vacia SIN la palabra 'nada' sigue colando (limite conocido, no un bug)" 0 "$(mk bingo-class.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: se intentó absolutamente nada y no se verificó absolutamente nada — 2026-09-08 — desbloquea: usuario')"
 
 check "escalar al orquestador con respuesta real pasa" 0 "$(mk ok-escalado.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: se intentó escalar la pregunta al orquestador — verificado: escaló al orquestador el 2026-09-08 y no contestó — desbloquea: usuario')"
 
@@ -83,6 +92,20 @@ check "indeterminado con razon real pasa" 0 "$(mk ok-indet.md '# S' '**Status:**
 check "indeterminado sin razon falla" 1 "$(mk bad-indet-empty.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: (indeterminado —) — 2026-09-09 — desbloquea: usuario')"
 
 check "indeterminado con relleno (razon real) falla" 1 "$(mk bad-indet-fill.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: (indeterminado — razón real) — 2026-09-09 — desbloquea: usuario')"
+
+# --- round 3 (F3): un contador de caracteres puro dejaba pasar un solo
+# "token" repetido sin espacios. Exigir al menos dos palabras lo descarta sin
+# pretender juzgar contenido real — mismo nivel de heurística que el resto.
+check "indeterminado con token repetido sin espacios falla" 1 "$(mk bad-indet-token.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: (indeterminado — aaaaaaaaaaaaaaaaaa) — 2026-09-09 — desbloquea: usuario')"
+
+# --- round 3 (F1, el más serio): el escape hatch reabría justo el caso que
+# `docs/specs/CLAUDE.md` prohíbe — "(indeterminado — no tengo acceso a
+# producción)" pasaba sin ninguna evidencia de haber escalado nada.
+check "indeterminado con 'no tengo acceso' sin escalar falla" 1 "$(mk bad-indet-access.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: (indeterminado — no tengo acceso a producción) — 2026-09-09 — desbloquea: usuario')"
+
+check "indeterminado con 'no puedo' sin escalar falla" 1 "$(mk bad-indet-nopuedo.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: (indeterminado — no puedo verificar esto) — 2026-09-09 — desbloquea: usuario')"
+
+check "indeterminado con 'no tengo acceso' Y escalado pasa" 0 "$(mk ok-indet-access.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: (indeterminado — no tengo acceso a producción, se escaló al orquestador y no contestó) — 2026-09-09 — desbloquea: usuario')"
 
 check "indeterminado sigue exigiendo fecha" 1 "$(mk bad-indet-date.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: (indeterminado — todavía no se pudo determinar el efecto) — desbloquea: usuario')"
 
