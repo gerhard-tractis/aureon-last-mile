@@ -499,15 +499,34 @@ assert_exit 4 "order: exit 4 (unmet dependency) wins over exit 3 (unjudgeable su
   "docs/specs/spec-104-x.md#Fase 1" \
   "docs/specs/spec-105-x.md#Fase 1"
 
-# ── Real acceptance case, NOT a fixture: spec-84 fase 3 declares it depends
-# on spec-80 fase 3, which is genuinely [pending] in this repo today. Runs
-# against the actual worktree's docs/specs/, not a copy — this is the exact
-# case from the spec: "el guard dictaminó superficies disjuntas para spec-84
-# fase 3 junto a spec-80 fase 3", which was wrong because it ignored order.
+# ── Real acceptance case, NOT a fixture: spec-80 fase 3 is genuinely
+# [pending] in this repo today. Runs against the actual worktree's
+# docs/specs/, not a copy — this is the exact class of case from the spec
+# ("el guard dictaminó superficies disjuntas ... ignorando el orden").
+#
+# Originally this used spec-84 fase 3 as the dependent (it declared
+# `**Depende de:** spec-80 fase 3` for real, motivating this whole guard).
+# A real product decision superseded that WHILE this spec was in review —
+# spec-84 fase 3 is now `[parked]`: "ya no depende de spec-80 fase 3 — no
+# depende de nada, está aparcada" (la prueba de entrega la genera
+# DispatchTrack, no este repo). Reusing a real spec's mutable content as a
+# fixture is fragile against exactly this kind of independent edit — the
+# same lesson as the Bloqueante 1 repro below, applied here too: a scratch
+# spec, created inside the real repo and deleted after, proves the same
+# mechanism against real data without depending on which real spec happens
+# to still declare a matching dependency today.
 REAL_REPO="$(cd "$(dirname "$SCRIPT")/.." && pwd)"
-assert_exit 4 "REAL REPO: spec-84 fase 3 depends on spec-80 fase 3, still [pending] — exit 4, not 'disjoint'" \
+SCRATCH_DEP_SPEC="$REAL_REPO/docs/specs/spec-998-scratch-dep-repro.md"
+cat > "$SCRATCH_DEP_SPEC" <<'MD'
+### Fase 1 — depende de spec-80 fase 3 `[pending]`
+
+**Depende de:** spec-80 fase 3
+
+**Archivos:** `apps/frontend/src/lib/offline/deepest.ts`
+MD
+assert_exit 4 "REAL REPO: a phase depending on spec-80 fase 3 (still [pending] today) gets exit 4, not 'disjoint'" \
   bash "$SCRIPT" --repo "$REAL_REPO" \
-  "docs/specs/spec-84-movil-conductor-home-y-prueba-de-entrega.md#Fase 3" \
+  "docs/specs/spec-998-scratch-dep-repro.md#Fase 1" \
   "docs/specs/spec-80-recogida-movil-cierre-de-carga.md#Fase 3"
 
 # ── Bloqueante 1 (review ronda 2), reproducido contra el REPO REAL, no un
@@ -562,8 +581,9 @@ assert_contains "no se pudo determinar su estado con certeza" "ambiguous depende
 
 assert_contains "spec-80 fase 3" "REAL REPO: message names the real blocking phase" \
   bash "$SCRIPT" --repo "$REAL_REPO" \
-  "docs/specs/spec-84-movil-conductor-home-y-prueba-de-entrega.md#Fase 3" \
+  "docs/specs/spec-998-scratch-dep-repro.md#Fase 1" \
   "docs/specs/spec-80-recogida-movil-cierre-de-carga.md#Fase 3"
+rm -f "$SCRATCH_DEP_SPEC"
 
 # ── spec-91 fase 4: heuristic net — warns (::warning::) about an undeclared
 # spec-N fase M mention, never blocks (exit stays whatever the rest of the

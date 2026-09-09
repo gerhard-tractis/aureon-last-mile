@@ -53,6 +53,16 @@ fase 3 dice literalmente (línea 128):
 
 Esto se detectó leyendo, no con la herramienta. Otro despacho igual se cuela.
 
+> **Nota de reconciliación (ronda 3 de review, mientras este spec seguía
+> abierto):** una decisión de producto real —«la prueba de entrega la genera
+> DispatchTrack y la envía vía webhook», no este repo— aparcó spec-84 fase 3 y
+> le quitó la dependencia: «ya no depende de spec-80 fase 3 — no depende de
+> nada, está aparcada». El caso de arriba sigue siendo el motivador real y
+> verificado (así estaba el 2026-09-08, cuando se detectó), pero **ya no es el
+> caso de aceptación vivo** — la fase 3 y 4 del plan de implementación usan un
+> spec de scratch en su lugar, precisamente para no depender del contenido
+> mutable de un spec de producto ajeno a éste.
+
 ### Hueco 3 — el mensaje de `exit 3` miente cuando el campo existe pero no resuelve (PR #695)
 
 Regresión real, no hipotética: `check-spec-fields.sh` (spec-89) hizo
@@ -429,11 +439,17 @@ expone `fieldPresent` y el texto crudo), `scripts/check-phase-overlap-parse.test
 
 **Archivos:** `scripts/check-phase-overlap-depends.mjs`, `scripts/check-phase-overlap-depends.test.mjs`,
 `scripts/check-phase-overlap.mjs` (wiring del chequeo y `exit 4`), `scripts/check-phase-overlap.test.sh`,
-`docs/specs/CLAUDE.md` (documenta el campo, sus tres estados y la tabla de exit codes),
-`docs/specs/spec-84-movil-conductor-home-y-prueba-de-entrega.md` (declara
-`**Depende de:** spec-80 fase 3` en su fase 3 — un único caso real, no
-backfill del corpus, necesario para que el caso de aceptación de abajo corra
-contra datos reales)
+`docs/specs/CLAUDE.md` (documenta el campo, sus tres estados y la tabla de exit codes)
+
+> **Nota de reconciliación (ronda 3):** el plan original tocaba
+> `docs/specs/spec-84-...md` para declarar `**Depende de:** spec-80 fase 3` en
+> su fase 3, como caso real de aceptación. Mientras este spec seguía abierto,
+> una decisión de producto real aparcó esa fase y le quitó la dependencia
+> (ver la nota junto al "Caso real" del Hueco 2, arriba) — el spec de
+> producto ya no es el ejemplo correcto. El caso de aceptación de abajo usa
+> un spec de scratch dentro del repo real en su lugar (creado y borrado por
+> el propio test), targeteando `spec-80 fase 3` (que sigue `[pending]`) sin
+> depender del contenido mutable de un spec ajeno a éste.
 
 - [ ] `extractDependsField(mdContent, faseMatch)`: localiza la fase, lee
       `**Depende de:**` (misma convención de continuación de línea que
@@ -470,10 +486,15 @@ contra datos reales)
       Y depende de spec-N fase M, que está `[token]`»), `exit 4`, **antes**
       de calcular solapamiento de superficie (no se llega a imprimir el
       reporte de conflicto duro/blando).
-- [ ] Caso de aceptación real, sin fixture: `spec-84 fase 3` declarando
-      `**Depende de:** spec-80 fase 3` — dado que `spec-80 fase 3` sigue
-      `[pending]` hoy en el repo real, el CLI corrido contra los specs reales
-      (no una copia) devuelve `exit 4` nombrando ambos.
+- [ ] Caso de aceptación real, sin fixture: un spec de scratch dentro del
+      repo real (`spec-998-scratch-dep-repro.md`, creado y borrado por el
+      propio test) declarando `**Depende de:** spec-80 fase 3` — dado que
+      `spec-80 fase 3` sigue `[pending]` hoy en el repo real, el CLI corrido
+      contra los specs reales (no una copia) devuelve `exit 4` nombrando
+      ambos. **Reemplaza al plan original** (que usaba `spec-84 fase 3` de
+      verdad): una decisión de producto real le quitó esa dependencia
+      mientras este spec seguía abierto — ver la nota de reconciliación
+      junto al "Caso real" del Hueco 2, arriba.
 - [ ] Caso de aceptación real del bloqueante 1: un spec temporal dentro del
       repo real declarando `**Depende de:** spec-85 fase 2` — el CLI corrido
       contra el repo real devuelve `exit 0` (spec-85 fase 2 SÍ está `[done]`),
@@ -497,10 +518,12 @@ contra datos reales)
       (mismo spec + misma fase que la que se está escaneando).
 - [ ] Cada referencia encontrada que no esté en `**Depende de:**` de esa fase
       se imprime como `::warning::` nombrándola — nunca cambia el exit code.
-- [ ] Caso de aceptación real: `spec-84 fase 3` con su `**Depende de:**` ya
-      declarado (fase 3) NO genera warning para `spec-80 fase 3` (está
-      declarada); una fase de control con una mención de `spec-N fase M` sin
-      declarar SÍ genera warning nombrándola.
+- [ ] Caso de aceptación real (unitario, texto inline — no lee el fichero
+      real, así que no depende de su contenido mutable): reproduce el texto
+      literal que `spec-84 fase 3` tenía cuando declaraba `**Depende de:**
+      spec-80 fase 3` — con esa declaración, NO genera warning para
+      `spec-80 fase 3`; una fase de control con una mención de `spec-N fase
+      M` sin declarar SÍ genera warning nombrándola.
 - [ ] Mutation-test: invertir la condición de exclusión de autorreferencia y
       confirmar que el test de aceptación (arriba) empieza a fallar (ruido
       sobre sí misma) — prueba que el guard realmente distingue las dos
