@@ -939,7 +939,7 @@ el que `invoke()` usa de verdad, puede imprimir y salir.
 
 Cada uno de estos cuatro arreglos se mutation-testeó de uno en uno.
 
-### Fase 4 — Check automático de ACL huérfana `[pending]`
+### Fase 4 — Check automático de ACL huérfana `[in_progress]`
 
 **Archivos:** `scripts/check-migration-safety.sh`, `scripts/check-migration-safety-rule1-match.mjs`, `+ test`
 
