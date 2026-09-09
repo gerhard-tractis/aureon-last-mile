@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MetricCard } from '@/components/metrics/MetricCard';
 import { SignaturePad } from '@/components/pickup/SignaturePad';
+import { ManifestPhotoStrip } from '@/components/pickup/ManifestPhotoStrip';
 import { usePickupScans } from '@/hooks/pickup/usePickupScans';
 import { useMissingPackages } from '@/hooks/pickup/useDiscrepancies';
 import { classifyCloseManifestError } from '@/lib/pickup/closeManifestErrors';
@@ -305,6 +306,15 @@ export default function CompletionPage() {
         </button>
       )}
 
+      {/* spec-80 fase 3, mock `5f` — "bloque de fotos arriba": el respaldo
+          fotográfico del manifiesto firmado se monta antes de la línea de
+          seguridad offline y de ambas firmas. */}
+      <ManifestPhotoStrip
+        operatorId={operatorId}
+        manifestId={manifestId}
+        userId={userId}
+      />
+
       {/*
         Decisión del usuario, 2026-09-08 (ronda 3 de review del PR #679) —
         línea estática del mock de `5f` (`docs/design/Recogida.dc.html`),
@@ -320,19 +330,14 @@ export default function CompletionPage() {
         </p>
       </div>
 
-      {/* Operator Signature (required) */}
+      {/* Client ("del local") Signature (optional) — el mock `5f` la coloca
+          ANTES de la firma del operario; se conserva el checkbox opcional
+          (spec-80 fase 1: "la del local es opcional, el mock permite cerrar
+          sin ella"), que el mock (una captura ya llena) no contempla. */}
       <div className="space-y-2">
-        <p className="text-sm text-text-secondary">
-          Operador: <strong className="text-text">{operatorName}</strong>
-        </p>
-        <SignaturePad
-          label="Firma del operador (obligatoria)"
-          onChange={setOperatorSignature}
-        />
-      </div>
-
-      {/* Client Signature (optional) */}
-      <div className="space-y-2">
+        <span className="text-xs font-semibold tracking-wide text-text-secondary uppercase">
+          FIRMA DEL LOCAL
+        </span>
         <label htmlFor="client-sig" className="flex items-center gap-2">
           <Checkbox
             id="client-sig"
@@ -358,6 +363,20 @@ export default function CompletionPage() {
         )}
       </div>
 
+      {/* Operator ("tu firma") Signature (required) */}
+      <div className="space-y-2">
+        <span className="text-xs font-semibold tracking-wide text-text-secondary uppercase">
+          TU FIRMA
+        </span>
+        <p className="text-sm text-text-secondary">
+          Operador: <strong className="text-text">{operatorName}</strong>
+        </p>
+        <SignaturePad
+          label="Firma del operador (obligatoria)"
+          onChange={setOperatorSignature}
+        />
+      </div>
+
       {/* Complete Button with Confirmation Dialog */}
       <AlertDialog>
         <AlertDialogTrigger asChild>
@@ -366,7 +385,7 @@ export default function CompletionPage() {
             className="w-full disabled:opacity-50"
             size="lg"
           >
-            {isSubmitting ? 'Completando...' : 'Completar y generar recibo'}
+            {isSubmitting ? 'Completando...' : 'Confirmar y cerrar carga'}
           </Button>
         </AlertDialogTrigger>
         <AlertDialogContent>

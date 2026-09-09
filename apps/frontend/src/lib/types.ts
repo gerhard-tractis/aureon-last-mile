@@ -207,6 +207,61 @@ export type Database = {
           },
         ]
       }
+      manifest_documents: {
+        Row: {
+          captured_at: string
+          deleted_at: string | null
+          id: string
+          manifest_id: string
+          operator_id: string
+          sheet_number: number
+          storage_path: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          captured_at?: string
+          deleted_at?: string | null
+          id?: string
+          manifest_id: string
+          operator_id: string
+          sheet_number: number
+          storage_path: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          captured_at?: string
+          deleted_at?: string | null
+          id?: string
+          manifest_id?: string
+          operator_id?: string
+          sheet_number?: number
+          storage_path?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manifest_documents_manifest_id_fkey"
+            columns: ["manifest_id"]
+            isOneToOne: false
+            referencedRelation: "manifests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manifest_documents_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manifest_documents_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       manifests: {
         Row: {
           assigned_to_user_id: string | null

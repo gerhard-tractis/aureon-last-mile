@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import CompletionPage from './page';
 
+vi.mock('@/components/pickup/ManifestPhotoStrip', () => ({
+  ManifestPhotoStrip: () => <div data-testid="manifest-photo-strip" />,
+}));
+
 const mockUsePickupScans = vi.fn();
 vi.mock('@/hooks/pickup/usePickupScans', () => ({
   usePickupScans: (...args: unknown[]) => mockUsePickupScans(...args),
@@ -267,11 +271,22 @@ describe('CompletionPage', () => {
     expect(await screen.findByText('Agregar firma del cliente')).toBeInTheDocument();
   });
 
-  it('renders Spanish button text', async () => {
+  it('renders Spanish button text (5f CTA: "Confirmar y cerrar carga")', async () => {
     render(<CompletionPage />);
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /completar y generar recibo/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /confirmar y cerrar carga/i })).toBeInTheDocument();
     });
+  });
+
+  // spec-80 fase 3 — "bloque de fotos arriba" (5f): el respaldo fotográfico
+  // se monta antes de la línea de seguridad offline y de ambas firmas.
+  it('renders the manifest photo strip before the offline-safety line (5f: fotos arriba)', async () => {
+    render(<CompletionPage />);
+    const strip = await screen.findByTestId('manifest-photo-strip');
+    const line = await screen.findByText(
+      'Todo queda en el teléfono y se sube al recuperar señal. Las fotos también.',
+    );
+    expect(strip.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('has responsive padding', async () => {
@@ -286,7 +301,7 @@ describe('CompletionPage', () => {
     fireEvent.click(sigPad);
 
     const submitButton = await screen.findByRole('button', {
-      name: /completar y generar recibo/i,
+      name: /confirmar y cerrar carga/i,
     });
     fireEvent.click(submitButton);
 
@@ -320,7 +335,7 @@ describe('CompletionPage', () => {
     fireEvent.click(sigPad);
 
     const submitButton = await screen.findByRole('button', {
-      name: /completar y generar recibo/i,
+      name: /confirmar y cerrar carga/i,
     });
     fireEvent.click(submitButton);
 
@@ -491,7 +506,7 @@ describe('CompletionPage', () => {
     });
     await waitFor(() => {
       expect(
-        screen.getByRole('button', { name: /completar y generar recibo/i }),
+        screen.getByRole('button', { name: /confirmar y cerrar carga/i }),
       ).not.toBeDisabled();
     });
     expect(mockPush).not.toHaveBeenCalled();

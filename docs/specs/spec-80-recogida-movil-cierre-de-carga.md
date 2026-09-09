@@ -627,7 +627,19 @@ pestaña Completados en absoluto.
 - [ ] Tests primero.
 - [ ] Cablear a `review/[loadId]` (fase 2, ya construida) como destino final.
 
-### Fase 3 — `5f` firma y fotos `[pending]`
+### Fase 3 — `5f` firma y fotos `[in_progress]`
+
+> **Corrección (2026-09-08) a la nota de abajo sobre la leyenda offline.**
+> El checklist original decía que «Todo queda en el teléfono y se sube al
+> recuperar señal» **no se muestra hasta spec-81**, para no prometer una cola
+> que no existía. Eso ya no es cierto: **spec-81 fase 2 mergeó** y añadió
+> exactamente esa cola sobre esta misma pantalla — clasificación de errores
+> (`classifyCloseManifestError`), la rama `idempotent`, la línea estática
+> literal del mock, y el disparo de `PICKUP_QUEUE_WAKE_EVENT` tras encolar.
+> El revisor de esa fase midió **750 segundos sin señal con la firma
+> sobreviviendo y subiendo** — la promesa de la leyenda es verdad hoy, no
+> aspiracional. Esta fase **preserva** todo ese comportamiento (no se tocó
+> ninguna rama de `handleComplete`); sólo reordena el layout alrededor de él.
 
 **Archivos:** migración `manifest_documents`, `app/app/pickup/complete/[loadId]/page.tsx` (reescritura contra `5f`), `components/pickup/ManifestPhotoStrip.tsx`
 
@@ -649,9 +661,67 @@ CREATE TABLE public.manifest_documents (
 
 `operator_id` en la tabla y en la RLS, como toda tabla del repo. Borrado suave. Ruta en el bucket `manifests`, prefijada por `operator_id/manifest_id/`.
 
-- [ ] Migración + test pgTAP de aislamiento por operador.
-- [ ] Reescritura de la pantalla contra `5f`: bloque de fotos arriba, `FIRMA DEL LOCAL` y `TU FIRMA` debajo, CTA **«Confirmar y cerrar carga»**. `SignaturePad` se conserva; es lo único de spec-19 que el mock mantiene.
-- [ ] La leyenda «Todo queda en el teléfono y se sube al recuperar señal» **no se muestra hasta spec-81**. Prometer una cola que no existe es peor que no prometerla.
+- [x] Migración + test pgTAP de aislamiento por operador.
+- [x] Reescritura de la pantalla contra `5f`: bloque de fotos arriba, `FIRMA DEL LOCAL` y `TU FIRMA` debajo, CTA **«Confirmar y cerrar carga»**. `SignaturePad` se conserva; es lo único de spec-19 que el mock mantiene.
+- [x] ~~La leyenda … no se muestra hasta spec-81~~ — ya la muestra desde spec-81 fase 2 (ver corrección arriba); esta fase la deja donde estaba y sólo la reordena bajo el bloque de fotos.
+
+> Implementado por: sesión de agente, rama `feat/spec-80-fase-3-firma-y-fotos`.
+> `manifest_documents` (migración `20260918000001`, mismo patrón que
+> `discrepancy_notes` — `FOR ALL`/`WITH CHECK` sobre `operator_id`, GRANT a
+> `authenticated`, REVOKE de `anon` — **client-writable**, no un RPC
+> `SECURITY DEFINER` como `discrepancies`/spec-85, porque el móvil sube cada
+> foto directamente al capturarla). `useManifestDocuments.ts` (lista +
+> mutación de subida, mismo patrón que `useCameraIntake.ts`: sube al bucket
+> `manifests` primero, sólo inserta la fila si la subida no falló).
+> `ManifestPhotoStrip.tsx` — grid de 3 columnas, tile «hoja N» por foto
+> capturada + tile «Agregar» con borde discontinuo, literal del mock.
+>
+> **Hallazgo declarado, no inventado:** el mock `5f` no dibuja la captura en
+> sí — sólo el resultado final (2 hojas ya subidas). La captura real con
+> encuadre de cámara y paso de revisión (`5g`/`5h`) es fase 4. Para que esta
+> fase entregue un botón "Agregar" funcional sin adelantar ese trabajo, usa
+> el mismo patrón ya existente en el repo (`useCameraIntake.ts`/
+> `CameraIntake.tsx`): un `<input type="file" accept="image/*"
+> capture="environment">` oculto que sube directo, sin paso de revisión
+> intermedio. Fase 4 sustituye ese disparo por la hoja de cámara + revisión
+> sin tocar `useUploadManifestDocument` (la subida en sí).
+>
+> `complete/[loadId]/page.tsx`: `<ManifestPhotoStrip>` montado antes de la
+> línea de seguridad offline (bloque de fotos arriba, per mock). Las dos
+> secciones de firma se reordenaron a FIRMA DEL LOCAL (opcional, con el
+> checkbox existente) primero, TU FIRMA (operador, obligatoria) segunda —
+> el mock las dibuja en ese orden; el código las tenía al revés (operador
+> primero). El CTA cambió de «Completar y generar recibo» a **«Confirmar y
+> cerrar carga»**, literal del mock. Ninguna rama de `handleComplete` se
+> tocó: la cola offline de spec-81 fase 2 (clasificación de errores, rama
+> `idempotent`, `PICKUP_QUEUE_WAKE_EVENT`) queda intacta — se leyó el
+> archivo entero antes de tocarlo, como pedía el encargo.
+>
+> `apps/frontend/src/lib/types.ts`: añadida la entrada `manifest_documents`
+> a los tipos generados de Supabase (Row/Insert/Update/Relationships) — sin
+> esto `tsc` rechaza `.from('manifest_documents')` porque el nombre de tabla
+> no está en la unión de tablas conocidas.
+>
+> Tests: `useManifestDocuments.test.ts` (6), `ManifestPhotoStrip.test.tsx`
+> (5), `complete/[loadId]/page.test.tsx` reescrito (21, incluyendo un test
+> nuevo de orden de documento para "fotos arriba" y la renombrada del CTA).
+> Suite completa de Recogida (`src/lib/pickup src/components/pickup
+> src/app/app/pickup src/hooks/pickup`): 88 archivos / 780 tests, verde.
+> `tsc --noEmit` y `eslint` limpios sobre los archivos tocados.
+>
+> Mutation-testeado: (1) SQL — debilitar la policy RLS a `USING(true)` mata
+> TEST 1/2/3 de `spec80_fase3_manifest_documents.test.sql`; otorgar
+> `SELECT` a `anon` mata TEST 5 — ambas mutaciones corridas dentro de una
+> transacción con `\i` + `ROLLBACK`, nunca persistidas en el contenedor
+> compartido. (2) Frontend — revertir el CTA a «Completar y generar recibo»
+> mata 8/21 tests; mover `<ManifestPhotoStrip>` a después de la línea
+> offline mata el test de orden dedicado.
+>
+> QA: **pendiente** — falta PR, `gh pr checks` y lectura de `e2e-qa`. La
+> fase queda en `[in_progress]`, no en `[done]`; la cierra el orquestador
+> tras review y CI.
+> Downstream: revisado spec-81, spec-82, spec-83, spec-84, spec-86 (ver
+> sección dedicada más abajo, "Impacto downstream de la fase 3").
 
 ### Fase 4 — `5g`/`5h` cámara y revisión `[pending]`
 
@@ -674,6 +744,47 @@ Resumen del mock: Verificados / Faltantes / Ajenos a la carga / Respaldo «N fot
 El bloque «Guardado en el teléfono — N registros y N fotos esperan señal» es de spec-81; hasta entonces se omite.
 
 ---
+
+## Impacto downstream de la fase 3
+
+Releído cada spec downstream contra lo que **realmente** se mergeó en esta fase, no contra lo planeado:
+
+- **spec-81 (cola offline).** Su fase 5 (`Fotos`, `[pending]`) ya declara explícitamente
+  que integrará con `ManifestPhotoStrip` (spec-80 fase 3) y exige "`manifest_documents`
+  se inserta **después** de que la subida confirme, nunca antes". Verificado: es
+  exactamente lo que `useUploadManifestDocument` hace hoy — `supabase.storage...upload()`
+  primero, `throw` si falla, `insert` en `manifest_documents` sólo si la subida tuvo
+  éxito. **Sin cambios de contrato** para esa fase futura: puede envolver la llamada a
+  `mutateAsync` con la cola de IndexedDB sin que cambie la forma de
+  `ManifestPhotoStrip` ni de `useManifestDocuments.ts`. La leyenda «Todo queda en el
+  teléfono…» (fase 2 de spec-81, ya `[done]`) tampoco cambió: esta fase no tocó ninguna
+  rama de `handleComplete`, sólo reordenó JSX alrededor de él.
+- **spec-82 (asignación y ruta).** Cero menciones a `manifest_documents`, `5f`, `close_manifest`
+  o `ManifestPhotoStrip` en su spec, y superficie de archivos disjunta (confirmado antes
+  de empezar con `check-phase-overlap.mjs`, per el encargo). Sin cambios.
+- **spec-83 (escritorio, datos faltantes).** Su única mención relacionada es sobre el
+  alcance de `close_manifest` fase 1 (qué persiste `record_discrepancies` vs qué
+  devuelve el RPC) — esta fase no tocó `close_manifest` en absoluto, sólo el layout de
+  `5f` y la tabla `manifest_documents`. Sin cambios.
+- **spec-84 (conductor home y prueba de entrega).** Su fase 3 (`Prueba de entrega
+  multi-archivo`, `[pending]`) depende explícitamente de que esta fase aterrice y dice
+  "reusar el patrón de `manifest_documents` (spec-80 fase 3), no inventar uno nuevo".
+  Verificado que el patrón realmente entregado coincide con el que esa fase asume:
+  tabla `operator_id` + `manifest_id`-equivalente + `storage_path` + `sheet_number`-
+  equivalente + `deleted_at`, RLS `FOR ALL`/`WITH CHECK` sobre `operator_id`
+  (client-writable, no un RPC `SECURITY DEFINER`), GRANT a `authenticated`/REVOKE de
+  `anon`, ruta en el bucket prefijada `operator_id/<entidad>/`. **Quien tome spec-84
+  fase 3 debe leer `packages/database/supabase/migrations/20260918000001_spec80_fase3_manifest_documents.sql`
+  entero** (no sólo la firma de columnas citada en su propio spec) como plantilla —
+  copiar también el `UNIQUE (manifest_id, sheet_number)` equivalente y el patrón de
+  `useManifestDocuments.ts`/`ManifestPhotoStrip.tsx` (subida antes que insert, nunca al
+  revés). Nota aparte: la cita de spec-84 a "spec-80-recogida-movil-cierre-de-carga.md:439-455"
+  quedó con el número de línea desactualizado — esta fase añadió contenido a fase 2 y
+  a esta misma fase 3 antes de esas líneas; el bloque `CREATE TABLE` referenciado sigue
+  existiendo, sólo se movió más abajo en el archivo.
+- **spec-86 (discrepancias de recepción).** Cero menciones a `manifest_documents`, `5f`
+  o `ManifestPhotoStrip`. Su superficie es `complete_route_reception` y lo que cuelgue
+  de recepción — ningún archivo tocado por esta fase. Sin cambios.
 
 ## Riesgos
 
