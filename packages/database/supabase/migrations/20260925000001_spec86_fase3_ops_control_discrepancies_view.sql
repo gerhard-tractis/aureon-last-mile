@@ -42,6 +42,31 @@
 -- ambos aquí invitaría a comparar "el cierre dijo N, discrepancias dice M" en
 -- la MISMA pantalla -- esta vista sólo enseña lo que discrepancies sabe con
 -- certeza, fila por paquete, no un recuento agregado que puede contradecirla.
+--
+-- Ronda 2 de review (#715), B1 -- p_status='open' significa "status <>
+-- 'resolved'", NO una igualdad literal. 20260917000002 (spec-83,
+-- get_completed_manifests) ya tomó y documentó esta decisión de producto el
+-- 2026-09-08: "Filtering on `= 'open'` instead ... would have made the panel
+-- go GREEN the moment an ops manager marks a real loss as 'lost' -- the
+-- worst possible outcome painted as a clean close." 'lost' es el disparador
+-- de indemnización (spec-85), no un cierre limpio -- sigue siendo una acción
+-- pendiente para Ops hasta que exista el flujo de indemnización, así que la
+-- cola de "abiertas" de este RPC lo incluye. p_status='resolved' o
+-- p_status='lost' siguen siendo igualdad literal -- sólo 'open' se reinterpreta,
+-- porque es el único valor que el frontend usa para pedir "la cola de lo que
+-- falta actuar" en vez de un estado exacto.
+--
+-- Ronda 2 (#715), B3/menores -- ps.deleted_at IS NULL y u.deleted_at IS NULL
+-- añadidos (soft-deletes es no-negociable en toda consulta nueva, y el hueco
+-- de fase 1 en el primero no se hereda aquí sin más). LATERAL gana ORDER BY +
+-- LIMIT 1 determinista (scan verificado más reciente primero, desempatado por
+-- id) -- nada en el esquema impide dos scans 'verified' del mismo paquete en
+-- la misma ruta, y sin desempate la fila devuelta dependía del plan. La
+-- COALESCE(pm, rm) se reemplaza por un CASE explícito sobre operation_type:
+-- pm y rm nunca son ambos no-NULL a la vez (discrepancy_source_matches_operation
+-- ya lo garantiza), así que el orden de la COALESCE era un mutante
+-- estructuralmente imposible de matar con un test -- el CASE lo hace
+-- imposible de confundir en vez de imposible de probar.
 -- =============================================================================
 
 BEGIN;
@@ -74,8 +99,14 @@ AS $$
     d.note,
     o.order_number,
     p.label AS package_label,
-    COALESCE(pm.external_load_id, rm.external_load_id) AS carga,
-    COALESCE(prp.code, prr.code) AS ruta,
+    CASE d.operation_type
+      WHEN 'pickup'    THEN pm.external_load_id
+      WHEN 'reception' THEN rm.external_load_id
+    END AS carga,
+    CASE d.operation_type
+      WHEN 'pickup'    THEN prp.code
+      WHEN 'reception' THEN prr.code
+    END AS ruta,
     u.full_name AS closed_by_name
   FROM public.discrepancies d
   LEFT JOIN public.packages p
@@ -99,32 +130,58 @@ AS $$
       JOIN public.manifests m
         ON m.id = ps.manifest_id AND m.operator_id = public.get_operator_id()
      WHERE ps.operator_id = public.get_operator_id()
+       AND ps.deleted_at IS NULL
        AND ps.package_id = d.package_id
        AND ps.scan_result = 'verified'
        AND m.pickup_route_id = rr.pickup_route_id
+     -- Desempate determinista: nada en el esquema impide dos scans
+     -- 'verified' del mismo paquete en la misma ruta (un rescaneo). El más
+     -- reciente gana; scanned_at empatado se rompe por id para que el
+     -- resultado no dependa del plan.
+     ORDER BY ps.scanned_at DESC, ps.id DESC
      LIMIT 1
   ) rm ON d.operation_type = 'reception'
   LEFT JOIN public.users u
-    ON u.id = d.detected_by_user_id AND u.operator_id = public.get_operator_id()
+    ON u.id = d.detected_by_user_id
+   AND u.operator_id = public.get_operator_id()
+   AND u.deleted_at IS NULL
  WHERE d.operator_id = public.get_operator_id()
    AND d.deleted_at IS NULL
-   AND (p_status IS NULL OR d.status = p_status)
- ORDER BY d.detected_at DESC;
+   AND (
+     p_status IS NULL
+     -- 'open' pedido por el caller es "la cola de lo que falta actuar", no
+     -- una igualdad literal -- ver comentario de cabecera, B1 de #715.
+     OR (p_status = 'open' AND d.status <> 'resolved')
+     OR (p_status <> 'open' AND d.status = p_status)
+   )
+ ORDER BY d.detected_at DESC
+ -- Ronda 2 (#715, menor): no hay paginación real (page={1} pageCount={1} en
+ -- el panel, sin p_page/p_page_size aquí) -- prod son ~112k despachos/~61k
+ -- bultos y esta cola no está acotada por fecha ni por operación. Un LIMIT
+ -- fijo es un tope de seguridad, NO la solución: sólo evita que una cola sin
+ -- resolver crezca sin límite y tumbe al navegador; una cola real con más de
+ -- 500 filas seguiría estando incompleta en pantalla sin que nada lo avise.
+ -- Paginación de verdad (p_page/p_page_size + total_count) queda declarada
+ -- como trabajo pendiente, no resuelta aquí.
+ LIMIT 500;
 $$;
 
 COMMENT ON FUNCTION public.get_discrepancies_ops_control(public.discrepancy_status_enum) IS
 'spec-86 fase 3. Lectura enriquecida de public.discrepancies para el panel
 Discrepancias de Ops Control: orden, paquete, carga, ruta y quién cerró la
 operación que las detectó, además de las columnas propias de la tabla.
-p_status filtra por estado (default ''open'' -- la cola de lo que Ops todavía
-tiene que resolver; NULL devuelve todos los estados, incluido lost, para uso
-futuro). No expone route_receptions.expected_count/received_count: ver
-comentario de cabecera de este archivo sobre por qué esta vista no compara un
-agregado que puede desincronizarse de las filas reales de discrepancies.
-SECURITY INVOKER: discrepancies y cada tabla unida aquí ya tienen RLS +
-GRANT SELECT a authenticated; el filtro por operator_id en cada join es
-defensa en profundidad, mismo patrón que get_discrepancies
-(20260913000003).';
+p_status=''open'' (el default) NO es una igualdad literal: devuelve
+status <> ''resolved'' -- incluye ''lost'', que sigue siendo una acción
+pendiente de Ops (el disparador de indemnización, spec-85) hasta que exista
+ese flujo, no un cierre limpio (decisión de producto ya tomada en
+20260917000002/spec-83, reafirmada aquí en #715 B1). p_status=''resolved'' o
+p_status=''lost'' sí son igualdad literal. NULL devuelve todos los estados.
+No expone route_receptions.expected_count/received_count: ver comentario de
+cabecera de este archivo sobre por qué esta vista no compara un agregado que
+puede desincronizarse de las filas reales de discrepancies. SECURITY
+INVOKER: discrepancies y cada tabla unida aquí ya tienen RLS + GRANT SELECT
+a authenticated; el filtro por operator_id en cada join es defensa en
+profundidad, mismo patrón que get_discrepancies (20260913000003).';
 
 REVOKE ALL ON FUNCTION public.get_discrepancies_ops_control(public.discrepancy_status_enum) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_discrepancies_ops_control(public.discrepancy_status_enum) TO authenticated;
