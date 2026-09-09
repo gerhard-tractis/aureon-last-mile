@@ -92,7 +92,7 @@ Ver arriba. Reparto móvil no tiene ronda propia.
 | **3 — Prueba de entrega multi-archivo** | Dónde y cómo se guarda la prueba | spec-80 fase 3 (orden, no decisión humana) |
 | **4 — `1j` parada y prueba de entrega** | La parada | fase 3 + rediseño |
 
-### Fase 1 — `drivers.user_id` usable `[in_progress]`
+### Fase 1 — `drivers.user_id` usable `[done]`
 
 > **Corrección (2026-09-08):** esta fase estaba `[blocked]` por una decisión de
 > modelo que resulta que ya tomó el esquema hace cinco meses
@@ -279,6 +279,47 @@ del alcance de esta fase, que sólo tenía que dejar `drivers.user_id` usable.
   `/admin/audit-logs` están en la misma situación — pero una "superficie de
   admin" que sólo se llega tecleando la URL no cumple del todo el criterio de
   la fase. Pendiente: añadir un enlace desde `AdminPage`/`/admin`.
+
+> Implementado por: `feat/spec-84-fase-1-drivers-user-id`, PR #698 (mergeado
+> 2026-09-09, squash). Migración `20260917000001` — índice único parcial
+> **global** sobre `drivers.user_id`, no por `(operator_id, user_id)` como
+> sugería el checklist: `users.operator_id` es `NOT NULL` y `users.id` es PK
+> con FK a `auth.users`, así que un `auth.uid()` no puede tener dos
+> operadores; y aunque `unique_email_per_operator` permite el mismo string de
+> email en dos tenants, GoTrue keyea email único globalmente, o sea que hacen
+> falta dos logins reales. El checklist era el que estaba mal.
+> Review: tres rondas. Ronda 1 — dos bloqueantes: el pgTAP no ejecutaba tres
+> de sus ocho tests (TESTs 6/7/8 apuntaban a una fila creada dentro de un
+> `BEGIN/EXCEPTION` que revierte, así que nunca existía; uno fallaba, tres no
+> corrían, uno pasaba vacuamente) y la mutación que expulsa a
+> `operations_manager` **sobrevivía en las dos rutas de API** con CI verde —
+> un jefe de operaciones habría visto la pantalla y recibido 403 de la API.
+> Ronda 2 — cerradas ambas, verificadas por el revisor mutando la policy
+> contra el fichero de test. Ronda 3 — TEST 8 decía cubrir `WITH CHECK` y
+> ejercitaba `USING`: al re-parentar por `UPDATE` bloquea `USING`, así que
+> vaciar la cláusula `operator_id` del `WITH CHECK` sobrevivía. Esa cláusula
+> es portante para el `INSERT`, donde no hay fila vieja — sin ella, un admin
+> del operador A puede insertar un driver dentro del operador B (`INSERT 0 1`
+> medido). Añadido TEST 9 y renombrado TEST 8.
+> Review: además, hallazgo colateral que llevaba desde marzo sin nombrarse —
+> `20260318000005:99-105` daba `GRANT UPDATE ... TO authenticated` sobre
+> `drivers` mientras la única policy era `FOR SELECT`, así que bajo RLS toda
+> escritura estaba denegada. La policy `drivers_admin_write` que añade esta
+> fase es lo que convierte ese grant en efectivo.
+> QA: pgTAP ejecutado contra `spec52-pg` — 9 bloques `DO`, cero líneas
+> `ERROR:`, `ROLLBACK` limpio. El estilo de la casa (`RAISE EXCEPTION`, sin
+> salida TAP) hace que «cero ERROR» sea indistinguible de «no assertó nada»,
+> así que se mutation-testeó el producto contra el test: `DROP POLICY` mata
+> TEST 6; añadir `pickup_crew` a los roles mata TEST 7; estrechar el
+> `WITH CHECK` a sólo-rol mata TEST 9. Frontend 28/28 con `--pool=forks`, con
+> la mutación del gate de rol muerta en `route.test.ts` y en
+> `[id]/route.test.ts`. CI verde en `426de43`.
+> Downstream: los cuatro seguimientos (M-1 a M-4) quedan escritos en esta
+> misma sección sin resolver, con acción nombrada. El poblado de
+> `drivers.user_id` es vía acción de admin, no backfill: la columna está 100%
+> `NULL` y sin escritores, y no existe heurística segura para casar
+> conductores con logins — la misma ambigüedad ya documentada para
+> `driver_name` en spec-72.
 
 ### Fase 2 — `1g` home del operario `[blocked]`
 
