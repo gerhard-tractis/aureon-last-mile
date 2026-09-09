@@ -73,7 +73,15 @@ check "bingo de palabras clave con 'nada' explicito falla (frase puntual, no la 
 # negación vacía sin esa palabra exacta sigue pasando — documentado como
 # comportamiento esperado, no como bug pendiente, para que quede explícito en
 # la suite y nadie lo redescubra como si fuera nuevo.
-check "negacion vacia SIN la palabra 'nada' sigue colando (limite conocido, no un bug)" 0 "$(mk bingo-class.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: se intentó absolutamente nada y no se verificó absolutamente nada — 2026-09-08 — desbloquea: usuario')"
+#
+# Round 4: aserta exit 0 duro, así que si mañana alguien refuerza
+# attempt_ok()/verify_ok() para pillar la clase entera, este test falla con
+# "esperaba 0, obtuvo 1" — se lee como regresión aunque sea una mejora, y la
+# salida barata sería aflojar el guard para volver a verde (el mecanismo
+# exacto que spec-83 castiga). Sin comentario que lo explique en ese momento
+# —el comentario de arriba no se imprime en un `FAIL`—, así que la
+# instrucción va en el propio nombre.
+check "negacion sin 'nada' cuela hoy — SI ESTE TEST FALLA CON 1, EL GUARD MEJORO: BORRA EL TEST, NO LO ARREGLES" 0 "$(mk bingo-class.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: se intentó absolutamente nada y no se verificó absolutamente nada — 2026-09-08 — desbloquea: usuario')"
 
 check "escalar al orquestador con respuesta real pasa" 0 "$(mk ok-escalado.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: se intentó escalar la pregunta al orquestador — verificado: escaló al orquestador el 2026-09-08 y no contestó — desbloquea: usuario')"
 

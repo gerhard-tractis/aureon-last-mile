@@ -112,9 +112,9 @@ acceso" se usó para bajar el listón de verificación sin escalar nada.
 **Diff-scoped, igual que `check-spec-fields.sh` en intención, ya no en
 mecanismo.** El guard sólo mira los specs que el PR **toca** — los specs
 viejos migran cuando alguien los toca, mismo patrón que ya usa `**Verify:**`
-en este mismo archivo. Pero **cómo** se calcula "qué toca el PR" cambió dos
-veces en `ci.yml` durante el review (round 2 y round 3; diagnóstico completo
-en *Decisión explícita* más abajo):
+en este mismo archivo. Pero **cómo** se calcula "qué toca el PR" cambió tres
+veces en `ci.yml` durante el review (round 2, 3 y 4; diagnóstico completo en
+*Decisión explícita* más abajo):
 
 - Localmente (`check-blocked-evidence.sh --base <ref>` o con archivos
   explícitos), sigue siendo un diff de `git` — no hay merge-ref inflado en un
@@ -123,10 +123,17 @@ en *Decisión explícita* más abajo):
   usa `gh api repos/.../pulls/<N>/files`, la lista autoritativa de GitHub —
   inmune al `HEAD` inflado (`refs/pull/<N>/merge`, el merge sintético de esta
   rama con el `main` del momento del checkout) que rompió los dos intentos
-  anteriores con `git`. Para `merge_group`/`push` (sin PR del que pedir la
-  lista) sigue el diff con `git` y `--base`, con el mismo riesgo residual que
-  el resto de guards diff-scoped del repo — documentado, no resuelto, en
-  *Decisión explícita*.
+  anteriores con `git`.
+- Para `merge_group`, sigue el diff con `git` y `--base` — no confirmado si
+  le afecta algún defecto equivalente; no está activo todavía en este repo.
+- Para `push` (sin PR del que pedir la lista), el paso **se salta** — round 4
+  encontró que la base `github.event.before` tenía el mismo bug que el
+  `HEAD` inflado, sólo que por el lado del `push`: un diff de tres puntos
+  contra `before` abarca cualquier fusión de `main` que venga en el rango
+  (medido sobre el propio commit de sincronización de esta rama: 10 specs
+  en vez de 0). La corrida de `pull_request` ya es autoritativa y cubre el
+  caso real, así que se salta en vez de buscar una base mejor — mismo
+  criterio que ya usa `check-spec-fields.sh`.
 
 **Cuántos fallarían hoy si el guard fuera repo-wide en vez de diff-scoped:**
 no se cuenta aquí a propósito — cualquier número fijo se pudre en cuanto se
@@ -247,25 +254,43 @@ eso llevó a mirar los pasos hermanos: **los tres pasos diff-scoped de
 2. **`check-migration-safety.sh`** (`ci.yml`, paso "Check new migrations for
    unsafe patterns"): tiene el fallback de tres niveles
    (`pull_request`/`merge_group`/`push`) desde antes de spec-90 (m10, review
-   round 1), pero **no se revisó** si el mismo defecto de fondo (diff contra
-   el `HEAD` inflado) le afecta igual. Probablemente sí, por el mismo
-   mecanismo — no confirmado aquí, fuera de alcance de esta fase.
-3. **`check-blocked-evidence.sh`** (esta pieza): arreglado en round 3 — ver
-   pieza 1 arriba — usando `gh api .../pulls/<N>/files` en vez de `git diff`,
-   que es inmune al `HEAD` inflado porque no depende de qué haya en el disco
-   del runner.
+   round 1), pero **no se revisó** si el mismo defecto de fondo le afecta
+   igual — y round 4 encontró que el defecto de fondo tiene **dos** formas,
+   no una: el `HEAD` inflado en `pull_request` (que este paso no sufre,
+   porque no usa el `HEAD` implícito del checkout para nada propio — corre
+   sobre los ficheros de migración, no sobre un diff de specs) y la base
+   `github.event.before` en `push`, que **si** afecta a este paso, porque su
+   fallback de `push` es textualmente el mismo patrón que rompió round 4 en
+   `check-blocked-evidence` (un diff de tres puntos contra `before` que
+   puede abarcar una fusión entera de `main`). No confirmado con una prueba
+   aquí — fuera de alcance de esta fase — pero el mecanismo es idéntico, no
+   análogo, así que la sospecha es alta.
+3. **`check-blocked-evidence.sh`** (esta pieza): arreglado — para
+   `pull_request`, `gh api .../pulls/<N>/files` en vez de `git diff` (round
+   3), inmune al `HEAD` inflado porque no depende de qué haya en el disco
+   del runner. Para `push` (sin PR del que pedir la lista), round 4 encontró
+   que la base `github.event.before` tenía el mismo bug por una vía
+   distinta —medido sobre el propio commit de sincronización de esta rama,
+   10 specs en el diff en vez de 0— y la respuesta elegida fue **saltar en
+   `push`**, no buscar una base mejor: la corrida de `pull_request` ya es
+   autoritativa y cubre el caso real, y es el mismo criterio que
+   `check-spec-fields.sh` ya usa (ver punto 1). `merge_group` se mantiene
+   con diff por `git` sin cambios — no confirmado si comparte el bug de
+   `push`, y no está activo todavía en este repo.
 
 **Por qué se aplaza arreglar los otros dos aquí, con la salida barata
 identificada:** la forma correcta y barata es una sola función/paso que
 calcule la lista de ficheros del PR vía API, reutilizada por los tres —
 elimina la posibilidad de que la próxima persona "arregle" uno de los otros
-dos reinventando una tercera variante distinta del mismo diff con `git`.
-Tocar `check-migration-safety.sh` y su wiring no es necesario para el
-guardarraíl de bloqueos que este spec construye, y esos pasos pertenecen a
-spec-87 (migration-safety) y spec-89/91 (spec-fields), no a éste. Queda
-declarado aquí, con el diagnóstico completo, para que quien lo tome no tenga
-que volver a encontrar el mismo síntoma que ya rompió dos PRs distintos esta
-semana.
+dos reinventando una tercera variante distinta del mismo diff con `git`, o
+peor, copiando el fallback de `push` de `check-migration-safety.sh` sin
+saber que puede compartir el mismo bug. Tocar `check-migration-safety.sh` y
+su wiring no es necesario para el guardarraíl de bloqueos que este spec
+construye, y esos pasos pertenecen a spec-87 (migration-safety) y spec-89/91
+(spec-fields), no a éste. Queda declarado aquí, con el diagnóstico completo
+—incluida la sospecha sobre `check-migration-safety.sh` en `push`, sin
+confirmar—, para que quien lo tome no tenga que volver a encontrar el mismo
+síntoma que ya rompió tres corridas distintas esta semana.
 
 ## Coordinación con `feat/spec-89-guardarrail-paralelismo`
 
@@ -327,9 +352,13 @@ paralelo. Decisiones tomadas aquí para minimizar el choque:
       vacía ("se intentó nada y no se verificó nada") ahora tiene su propio
       test (`bingo de palabras clave sin evidencia real falla`) que falla si
       se retira cualquiera de los dos chequeos de negación nuevos.
-- [x] Wireado en `.github/workflows/ci.yml`, junto a los guards hermanos, con
-      el mismo fallback de `merge_group`/`push` que ya usa el guard de
-      migraciones (S4, round 2 — antes `merge_group` lo saltaba en silencio).
+- [x] Wireado en `.github/workflows/ci.yml`, junto a los guards hermanos.
+      S4 (round 2): `merge_group` ya no se salta en silencio. Round 3: para
+      `pull_request`, la lista de ficheros viene de `gh api .../pulls/<N>/files`
+      en vez de `git diff`, inmune al `HEAD` inflado del merge-ref. Round 4:
+      `push` se salta en vez de diffear contra `github.event.before`, que
+      compartía el mismo bug por un camino distinto (medido sobre el propio
+      commit de sincronización de esta rama: 10 specs en el diff en vez de 0).
 
 Construido en esta sesión, rama `feat/spec-90-bloqueos-verificables`. Sin
 review ni PR todavía — se abre el PR **sin auto-merge**, a propósito, para
@@ -382,16 +411,24 @@ motivo que la fase 1.
   caracteres** (`>= 12`, sin espacios) más una lista de placeholders — no
   verifica que la razón diga algo real. Round 3 subió el listón mínimo
   (exige al menos dos palabras separadas por un espacio, así que un solo
-  "token" repetido — `aaaaaaaaaaaaaa` — ya no cuela) y cerró el caso concreto
-  de "no tengo acceso"/"no puedo" sin nombrar a quién se escaló (ver la
-  sección `> Bloqueo:` de `docs/specs/CLAUDE.md`), pero sigue siendo el mismo
-  nivel de heurística que el resto: fuerza forma, no verdad.
-- **Residual de CI, tras el arreglo de round 3**: para `pull_request`, la
-  lista de ficheros ya viene de `gh api .../pulls/<N>/files` (autoritativa,
-  inmune al `HEAD` inflado). Para `merge_group`/`push` —sin PR del que
-  pedirla— el paso sigue usando `git diff --base`, que hereda el mismo riesgo
-  que el resto de guards diff-scoped si el `HEAD` de esos eventos también
-  resulta ser un merge sintético (no confirmado si le pasa a `merge_group`;
-  `push` no debería, porque su `HEAD` es el commit realmente empujado, no un
-  merge). Bajo impacto hoy porque la cola de merge (`merge_group`) todavía no
-  está activa en este repo.
+  "token" repetido — `aaaaaaaaaaaaaa` — ya no cuela) y cerró **las tres
+  frases literales** "no tengo acceso"/"no puedo"/"sin acceso" sin nombrar a
+  quién se escaló (ver la sección `> Bloqueo:` de `docs/specs/CLAUDE.md`),
+  pero sigue siendo el mismo nivel de heurística léxica que el resto: una
+  paráfrasis que evite esas tres frases exactas —"no me dejan entrar al
+  panel de producción", por ejemplo— sigue pasando sin nombrar ninguna
+  escalada. Cerrado el caso literal que se demostró, no la clase; mismo
+  trade-off que F2/F3, dicho aquí con la misma honestidad.
+- **Residual de CI, tras los arreglos de round 3 y 4**: para `pull_request`,
+  la lista de ficheros viene de `gh api .../pulls/<N>/files` (autoritativa,
+  inmune al `HEAD` inflado). Para `push`, round 4 encontró que la base
+  `github.event.before` tenía el mismo bug por una vía distinta —no el
+  `HEAD` inflado, sino un diff de tres puntos que puede abarcar una fusión
+  entera de `main` (medido sobre `3a3892f`, el propio commit de
+  sincronización de esta rama: 10 specs en el diff en vez de 0)— así que el
+  paso ahora se salta en `push`, no busca una base mejor. Sólo `merge_group`
+  sigue con diff por `git` y `--base`, sin revisar si comparte alguno de los
+  dos defectos — bajo impacto hoy porque la cola de merge no está activa en
+  este repo, pero sin confirmar. `check-migration-safety.sh` tiene el mismo
+  fallback de `push` con `before` que ya demostró estar roto aquí — sospecha
+  alta, no confirmada, documentada en *Decisión explícita*.
