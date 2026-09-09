@@ -165,6 +165,21 @@ export async function listPending(
  * avanza con normalidad; entre fotos muertas entre sí, el orden de "hoja N"
  * no protege ningún conteo.
  */
+/**
+ * spec-81 fase 4 — el mismo criterio de arriba (B-1, ronda 3 de review del
+ * PR #712), extraído para que la UI del chip de sync pueda explicarle al
+ * operario POR QUÉ un `dead` concreto bloquea el cierre de la carga o no,
+ * sin duplicar la regla ni arriesgar que las dos copias diverjan.
+ * `getBlockedPickupCount` (`@/lib/db`) cuenta CUALQUIER `dead` como
+ * "requiere ayuda" — una foto muerta sigue necesitando intervención humana,
+ * sólo que no bloquea el `close_manifest` de la carga.
+ */
+export function deadEntryBlocksManifestClose(
+  type: PickupQueueOperationType,
+): boolean {
+  return type !== "manifest_photo";
+}
+
 export async function manifestHasDeadEntry(
   db: PickupQueueStore,
   operatorId: string,
@@ -177,7 +192,7 @@ export async function manifestHasDeadEntry(
       (entry) =>
         entry.manifestId === manifestId &&
         entry.status === "dead" &&
-        entry.type !== "manifest_photo",
+        deadEntryBlocksManifestClose(entry.type),
     )
     .count();
   return count > 0;

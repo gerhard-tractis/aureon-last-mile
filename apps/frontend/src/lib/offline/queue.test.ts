@@ -19,6 +19,7 @@ import {
   markDead,
   reclaimStale,
   retryDead,
+  deadEntryBlocksManifestClose,
 } from "./queue";
 
 const OPERATOR_A = "operator-a";
@@ -1210,6 +1211,23 @@ describe("recogida offline queue", () => {
       const stored = await db.pickup_queue.get(dead.id!);
       expect(stored).toBeDefined();
       expect(stored?.status).toBe("dead");
+    });
+  });
+
+  // spec-81 fase 4 — el chip de sync necesita explicarle al operario si un
+  // `dead` concreto bloquea el cierre de la carga o no, sin duplicar el
+  // criterio que `manifestHasDeadEntry` ya aplica fila a fila (B-1, ronda 3
+  // de review del PR #712: una foto muerta no bloquea; cualquier otro tipo
+  // sí). Una sola fuente de verdad para las dos preguntas ("¿hay algo que
+  // bloquee este manifiesto?" y "¿bloquea ESTA fila en particular?").
+  describe("deadEntryBlocksManifestClose", () => {
+    it("is true for pickup_scan and close_manifest — their loss corrupts the signed count", () => {
+      expect(deadEntryBlocksManifestClose("pickup_scan")).toBe(true);
+      expect(deadEntryBlocksManifestClose("close_manifest")).toBe(true);
+    });
+
+    it("is false for manifest_photo — a lost photo is backup, not count", () => {
+      expect(deadEntryBlocksManifestClose("manifest_photo")).toBe(false);
     });
   });
 });

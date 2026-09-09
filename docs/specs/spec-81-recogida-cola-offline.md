@@ -1138,7 +1138,7 @@ review):**
 > en la propia fase 1 de spec-82). Revisado también spec-80 (fase 2, en
 > paralelo) — coordinado explícitamente en el PR para no compartir archivos.
 
-### Fase 4 — Chip de sync `[pending]`
+### Fase 4 — Chip de sync `[in_progress]`
 
 **Archivos:** `components/ConnectionStatusBanner.tsx` → chip; su test e i18n
 
