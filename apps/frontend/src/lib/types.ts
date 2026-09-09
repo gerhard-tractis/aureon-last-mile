@@ -2328,8 +2328,17 @@ export type Database = {
         Args: { p_route_id: string }
         Returns: Json
       }
+      // spec-86 fase 1 (20260920000001): gained p_missing_reasons — an
+      // optional array of {package_id, note} the client MAY send for
+      // packages it knows are missing. The RPC does not depend on it: every
+      // expected package with no 'received' reception_scan opens a 'missing'
+      // discrepancy regardless, with or without a matching reason.
       complete_route_reception: {
-        Args: { p_route_id: string; p_discrepancy_notes?: string | null }
+        Args: {
+          p_route_id: string
+          p_discrepancy_notes?: string | null
+          p_missing_reasons?: Json
+        }
         Returns: Database["public"]["Tables"]["route_receptions"]["Row"]
       }
       // spec-52 Task 5 (20260812000005). Hand-added like the rest of this file —

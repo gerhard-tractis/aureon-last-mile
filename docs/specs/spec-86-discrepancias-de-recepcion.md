@@ -3,7 +3,7 @@
 > **Related:** **spec-85** (**entrega la tabla única de discrepancias: fase 1
 > — esquema — y fase 2 — RPCs — ya mergeadas**), [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (el cierre de carga en recogida, que escribe discrepancias `operation_type = 'pickup'` vía `record_discrepancies`), [spec-83](spec-83-recogida-escritorio-datos-faltantes.md) (su «2 faltantes de 44» lee la misma tabla), [spec-52](spec-52-pickup-route-vehicle-and-state-engine.md) (`open_route_reception`, `complete_route_reception`), [spec-62](spec-62-reception-mobile.md) (la hoja de cierre móvil), [spec-47](spec-47-pickup-route-and-consolidated-reception.md) (`route_receptions` y el guard de `discrepancy_notes`)
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit, sql, e2e-qa
 **Bloqueado por:** nada. Fase 1, 2a y 3 están `[pending]`; fase 2b — la pata
 de indemnización — pasó a `[parked]` el 2026-09-08 (`dd6f921`, PR #677): el
@@ -177,7 +177,7 @@ Una tabla, un panel, y nunca se etiqueta mal de quién es la pérdida.
 
 ## Fases
 
-### Fase 1 — Captura por paquete al cerrar la recepción `[pending]`
+### Fase 1 — Captura por paquete al cerrar la recepción `[in_progress]`
 
 **Archivos:** migración (`complete_route_reception`, `CREATE OR REPLACE` sobre la última definición, `packages/database/supabase/migrations/20260820000002_spec61_pickup_route_crew.sql`), test pgTAP en `packages/database/supabase/tests/`, `apps/frontend/src/hooks/reception/useCompleteRouteReception.ts`, `apps/frontend/src/app/app/reception/ReturnReceptionSession.tsx`, y sus tests
 
@@ -207,6 +207,70 @@ registro del faltante.
 > trabajo de spec-56. **Esta fase no la cierra**; sólo añade el registro por
 > paquete. Al reescribir la RPC, usar como plantilla la **última** migración que
 > la define, nunca la original.
+
+> **Nota de implementación (2026-09-08).** Dos correcciones sobre lo que el
+> spec asumía, verificadas contra el código, no contra la memoria:
+>
+> 1. **La última definición de `complete_route_reception` NO es
+>    `20260820000002`** (esa migración sólo la *menciona* en un comentario de
+>    otra función). `git grep -l complete_route_reception
+>    packages/database/supabase/migrations/` devuelve tres archivos; la única
+>    que la define con `CREATE OR REPLACE FUNCTION` es
+>    `20260625000001_spec47_pickup_routes_consolidated_reception.sql:566`, y
+>    `20260812000006_spec52_unexpected_count.sql` PART 3 dice explícitamente
+>    *"complete_route_reception: DELIBERATELY NOT TOUCHED HERE"*. Esa fue la
+>    plantilla usada.
+> 2. **`ReturnReceptionSession.tsx` no es un archivo de esta fase.** Es la
+>    pantalla de **reingresos** (returns), un flujo completamente distinto —
+>    su propio comentario de cabecera dice *"There is no RPC call... that
+>    machinery — complete_route_reception — belongs to the other, spec-52 hub
+>    reception, not returns"*. El llamador real de `complete_route_reception`
+>    es `apps/frontend/src/app/app/reception/route/[routeId]/page.tsx` (vía
+>    `useCompleteRouteReception` y `FinalizeReceptionButton`/
+>    `ReceptionMobileSession`).
+>
+> **Cambio de firma, no `CREATE OR REPLACE` sobre la misma lista de
+> parámetros.** La RPC gana `p_missing_reasons JSONB DEFAULT '[]'::jsonb` (un
+> array opcional `{package_id, note}` que el cliente puede mandar) — Postgres
+> trata una lista de parámetros distinta como una función distinta, así que
+> se usó el patrón del repo para esto: `DROP FUNCTION IF EXISTS
+> complete_route_reception(UUID, TEXT)` antes del `CREATE OR REPLACE` de la
+> firma nueva (mismo patrón que `20260310100002`, `20260409000008`,
+> `20260427000001`). El default hace que las llamadas existentes con 2
+> argumentos sigan funcionando sin cambios — **no se tocó el frontend**
+> (`useCompleteRouteReception.ts` ni `page.tsx`): el respaldo automático de
+> esta fase no depende de que la UI mande nada, así que no había necesidad de
+> construir una UI de razones por paquete todavía; sólo se actualizó la firma
+> hand-mantenida en `apps/frontend/src/lib/types.ts` para que el tipo del RPC
+> no mienta.
+>
+> No existe una tabla `discrepancy_notes`-equivalente para recepción (esa
+> tabla es `manifest_id NOT NULL`, sólo de pickup), así que a diferencia de
+> `close_manifest` (spec-80 fase 2), el payload de razones no se lee de una
+> tabla persistida — viaja en la misma llamada, en `p_missing_reasons`.
+>
+> **Implementado por:** implementer — rama `feat/spec-86-fase-1-captura-por-paquete`.
+> Migración: `packages/database/supabase/migrations/20260920000001_spec86_fase1_complete_route_reception_discrepancies.sql`.
+> Test pgTAP: `packages/database/supabase/tests/spec86_fase1_complete_route_reception_discrepancies.test.sql`
+> (12 aserciones, corridas contra `psql` crudo en `spec52-pg`, no contra el
+> resumen de `pgtap-local.sh`). Mutation-tested: quitar `p.deleted_at IS NULL`
+> tumba 5/12 aserciones (con un efecto en cascada no anticipado — ver abajo);
+> quitar `rs.deleted_at IS NULL` tumba 1/12. Ambas restauradas y reverificadas
+> en verde antes de terminar.
+>
+> **Hallazgo del mutation test que vale la pena anotar:** quitar
+> `p.deleted_at IS NULL` no sólo deja pasar un paquete borrado como
+> "faltante" — **rompe el cierre entero**. `record_discrepancies` valida
+> `package_id ... AND deleted_at IS NULL` y lanza `PACKAGE_NOT_FOUND` (42501)
+> si no lo encuentra; como todo corre en una sola transacción, esa excepción
+> revierte también los faltantes legítimos que sí se habían calculado bien.
+> Es una razón más fuerte que la meramente correctiva para mantener ese
+> guard: sin él, un solo bulto borrado en la ruta le impide cerrarse a los
+> demás faltantes reales.
+>
+> **Review:** no aplica todavía — pendiente del agente `reviewer` sobre este
+> rango de SHAs.
+> **QA:** no aplica todavía — pendiente de PR + `qa-e2e`.
 
 ### Fase 2a — Resolver: el bulto aparece `[pending]`
 
