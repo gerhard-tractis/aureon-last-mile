@@ -906,7 +906,7 @@ CREATE TABLE public.manifest_documents (
 > hasta que esa conexión se haga, en esta fase o en la que toque después
 > `ManifestPhotoStrip.tsx`.
 
-### Fase 4 — `5g`/`5h` cámara y revisión `[pending]`
+### Fase 4 — `5g`/`5h` cámara y revisión `[in_progress]`
 
 **Archivos:** `components/pickup/ManifestCameraSheet.tsx`, `components/pickup/PhotoReviewSheet.tsx`
 
@@ -915,10 +915,143 @@ El mock dice «expo-camera», que es la app Expo dormida (`apps/mobile`, ver `ls
 `5g`: encuadre a pantalla completa, «Encuadra la hoja completa, con la firma visible», tira de `YA CAPTURADAS`, botón **Listo**.
 `5h`: revisión con la pregunta del mock — «¿Se lee la firma? Una foto borrosa no sirve como respaldo» — y **Repetir** / **Usar foto**.
 
-- [ ] Tests con `getUserMedia` mockeado.
+- [x] Tests con `getUserMedia` mockeado.
 - [ ] Verificación en dispositivo real: `awaiting_user_test`, la cierra una persona con el teléfono.
 
+> **M4 (accesibilidad, seguimiento no bloqueante, PR #713) — no gatea el cierre de esta fase.** Trampa de foco y manejo de `Escape`/atrás de Android en `5g`/`5h`; `role="dialog"`/`aria-modal` ya están. Ronda 4 de review: vivía como `- [ ]` de esta checklist, lo que bloqueaba `[done]` de fase 4 por un cableado (5g/5h → `ManifestPhotoStrip`) que pertenece a una fase todavía sin número — movido a prosa sin checkbox precisamente para no atarlo a esa dependencia inexistente. Se retoma cuando se cree la fase que hace ese cableado.
+
 **Pendiente aparte del checklist de arriba — con dueño: lo cierra quien cablee `5g`/`5h` a `ManifestPhotoStrip.tsx` (M3, review del PR #712; nota de coordinación: este párrafo vive separado de la lista de checkboxes a propósito, para no chocar con la línea que #713 modifica).** `#713` entrega `5g`/`5h` **sin cablear**: `onUsePhoto` le pasa el `File` capturado al caller, y `ManifestPhotoStrip.tsx` queda intacto, con su `<input>` oculto — a propósito, para que la decisión de subir-o-encolar la tome quien una las dos piezas, no quien construyó la cámara. Esa unión debe llamar a `enqueueManifestPhoto` (`lib/offline/photos.ts`, spec-81 fase 5 — blob a IndexedDB, subida diferida con reintento, huérfano imposible), no a `useUploadManifestDocument` directo (la ruta ONLINE, sin salida sin señal): es lo que hace verdad «Las fotos también» (`5f`) en el código que corre, no sólo en la infraestructura que exista para recibirla.
+
+> **Ronda 2 de review del PR #713 — bloqueante cerrado, más seguimientos.**
+> B1 (bloqueante): el obturador estaba habilitado desde el primer render, antes
+> de que `getUserMedia` resolviera — un toque durante el diálogo de permiso del
+> sistema producía un canvas 1080×1440 sin señal (negro sólido, ~1.5MB, `File`
+> "válido") entregado como si fuera el respaldo fotográfico. Corregido: el
+> obturador se gatea con `videoReady` (derivado de `loadedmetadata` +
+> `videoWidth/videoHeight > 0`), y `handleShutter` rechaza defensivamente
+> `videoWidth === 0` en vez de sustituirlo por un tamaño por defecto.
+> M2: `PhotoReviewSheet.onUsePhoto`/`photo` se estrechó de `File | Blob` a
+> `File` — es lo único que `ManifestCameraSheet` produce, y `File | Blob` no
+> compilaba contra `useUploadManifestDocument`.
+> M3: el fallback (`<input capture>`) ahora valida tamaño (10MiB) y mime
+> contra la lista del bucket `manifests`
+> (`20260430000001_create_manifests_storage_bucket.sql`) **en la captura**,
+> no al drenar la cola de spec-81 horas después sin nadie para repetir la foto.
+> M1 (seguimiento, no bloqueante): `ManifestCameraSheet` acepta `open` para
+> quien siga la convención local de Radix (montado siempre); documentado que
+> `5g`/`5h` nunca deben montarse/abrirse a la vez.
+> M4 (seguimiento, no bloqueante): ambas pantallas llevan `role="dialog"`/
+> `aria-modal`, pero siguen sin trampa de foco ni manejo de `Escape`/atrás de
+> Android — queda declarado como hueco, no resuelto aquí.
+> El icono `Zap` decorativo del header de `5g` (parecía un control sin
+> función) se quitó en vez de implementarse.
+> Mutation-testing repetido tras los arreglos, incluidos los 5 mutantes que la
+> ronda 2 señaló como sobrevivientes (calidad JPEG, `capture`, bytes del
+> `File`, mime derivado del blob real, y los nuevos guards de B1/M1/M3) —
+> todos mueren contra su test.
+>
+> **Ronda 3 de review del PR #713 — B2 cerrado (bloqueante), M-A y M-B
+> cerrados, menores cerrados.** B1/M3/`capture="environment"` verificados
+> vivos por mutación en esta ronda (dos correcciones del reviewer a su
+> propia ronda 2, a favor de la implementación: el mutante de `capture`
+> **sí** moría, y la lista de MIME de `manifestPhotoValidation.ts` es la
+> segunda copia del bucket, no la tercera — `photos.ts` de spec-81 sólo
+> tiene el tope de bytes).
+> B2 (bloqueante): `open` paraba el stream pero el JSX nunca lo consultaba —
+> `open={false}` dejaba un overlay `fixed inset-0 z-50` negro, con
+> `aria-modal="true"`, tapando la PWA entera. Arreglado con
+> `if (!open) return null` después de todos los hooks.
+> M-A: el chequeo de dimensiones no detecta una pista muerta a mitad de
+> sesión (un navegador real no pone `videoWidth`/`videoHeight` a 0 cuando la
+> pista termina — se queda congelado en el último frame, lo que producía una
+> foto PLAUSIBLE pero de la hoja equivocada, no una foto negra obvia).
+> Arreglado escuchando `ended`/`mute` en las pistas y `visibilitychange` en
+> el documento para devolver `videoReady` a `false`; el chequeo de
+> dimensiones queda como defensa en profundidad, no como detector principal.
+> M-B: un `file.type` vacío (varios WebViews de Android, para el resultado
+> de `capture`) se trataba como formato rechazado sin salida posible.
+> Arreglado infiriendo el mime por la extensión antes de rechazar
+> (`lib/pickup/manifestPhotoValidation.ts`, extraído de
+> `ManifestCameraSheet.tsx` para poder testear la validación sin DOM y
+> mantener el componente bajo 300 líneas).
+> Menores cerrados: `>`→`>=` en el tope de 10MiB, `accept="image/*"`,
+> `setVideoReady(false)` en la limpieza del efecto (el estado de React
+> sobrevive a que el JSX devuelva `null`, no es un desmontaje),
+> `role="dialog"`/`aria-modal` sin test en ambas pantallas,
+> `useEffect(..., [photo]) → []` en `PhotoReviewSheet.tsx`, el solapamiento
+> de la leyenda de encuadre con el mensaje de error del fallback (ambos
+> `absolute ... bottom-[26px]`, la leyenda vivía fuera del ternario), y el
+> JSDoc de `PhotoReviewSheet.tsx` que afirmaba "sin `role=dialog`" tres
+> líneas por encima del `role="dialog"` ya añadido en la ronda 2.
+> El hueco M4 pasó de prosa suelta dentro de este blockquote a un `- [ ]`
+> (ronda 4: movido otra vez, ver más abajo — no tenía fase de destino real).
+> Mutation-testing repetido sobre cada guard nuevo de esta ronda (B2, los
+> tres detectores de M-A, M-B, y los 6 menores señalados) — verificado uno a
+> uno que cada uno muere contra su test; no leído como "no queda ningún
+> mutante vivo en el fichero" (la ronda 4 encontró más).
+>
+> **Ronda 4 de review del PR #713 — el único bloqueante era que los dos
+> detectores reversibles no tenían su contrario.** `visibilitychange` sólo
+> tenía la rama `hidden`: al volver de segundo plano el obturador quedaba
+> deshabilitado para siempre, porque `loadedmetadata` no vuelve a disparar
+> (es de una vez por carga). Igual con `mute` sin `unmute` — iOS silencia la
+> pista en una interrupción (llamada, bloqueo de pantalla) y la devuelve
+> viva con `unmute`; sin el listener, el visor se movía de nuevo pero el
+> botón quedaba gris permanentemente. Ambos casos tenían salida hoy (cerrar
+> y reabrir), por eso no bloqueaban, pero eran indescubribles.
+> Arreglado con `isVideoReady(video, track)` (extraído a
+> `lib/pickup/cameraReadiness.ts`, 7 tests propios): deriva de dimensiones +
+> `track.readyState === 'live'` + `!track.muted`, y es la misma función que
+> usan las tres rutas de habilitación (`loadedmetadata`, `unmute`, `visible`)
+> y las tres de deshabilitación (`ended`, `mute`, `hidden`) — ninguna rama
+> tiene ida sin vuelta.
+> M-B: un fichero con `type` vacío y sin extensión resoluble (algunos
+> DocumentsProvider de Android) ya no es un callejón sin salida — se asume
+> JPEG, válido porque esta función sólo se llama desde el fallback de
+> captura. Documentado y no resuelto (alcanzabilidad baja, sin magic-byte
+> sniffing a propósito): un `File` con `type` vacío, nombre de imagen y
+> contenido real distinto se reetiqueta igual — Supabase Storage valida el
+> Content-Type declarado, no los bytes.
+> Menores cerrados: spies sobre `document.addEventListener`/
+> `removeEventListener` y sobre `track.removeEventListener` confirmando que
+> la limpieza del efecto hace exactamente lo que dice (antes la suite
+> quedaba verde sin ellos); `getVideoTracks()` vs `getTracks()` distinguido
+> con streams que devuelven tracks distintos por cada método; el eje del
+> alto del guard defensivo de `handleShutter` cubierto por separado; el
+> título del test de dimensiones del canvas corregido para no afirmar que
+> prueba el default `|| 1080` (sigue siendo equivalente-por-diseño: el guard
+> de arriba ya lo hace inalcanzable, y eso es correcto, no un hueco).
+> El hueco M4 se sacó de la checklist de fase 4 (no debía gatear su cierre
+> por una dependencia — el cableado a `ManifestPhotoStrip` — que vive en una
+> fase todavía sin número) y quedó como nota sin checkbox más arriba.
+> Mutation-testing repetido sobre los cinco arreglos de esta ronda — todos
+> mueren contra su test correspondiente.
+>
+> **Ronda 4 aprobada — mergeable sin condiciones.** Verificado por el
+> reviewer: las dos transiciones de vuelta (`mute → unmute`, `hidden →
+> visible`) dan `true`; el mutante que delató el bug original muere; y tres
+> sondas de falso positivo salen limpias (`visible` tras `ended` no
+> rehabilita, `unmute` de la pista del ciclo anterior tampoco, `visible`
+> antes de que `getUserMedia` resuelva tampoco). Extraer `isVideoReady`
+> como fuente única para habilitar y deshabilitar cerró la clase entera de
+> bug, no sólo los dos casos reportados.
+>
+> **Tres lagunas de cobertura anotadas, no perseguidas — código hoy
+> correcto, test que no lo distingue de una versión rota:**
+> - `handleTrackUp` puesto a `setVideoReady(true)` a pelo (sin re-derivar)
+>   pasa la suite completa: el test de `unmute` sólo cubre el camino feliz
+>   (dimensiones ya válidas), no distingue "re-deriva con `isVideoReady`"
+>   de "pone `true` sin más".
+> - `trackRef.current = null` en la limpieza del efecto no está cubierto —
+>   misma laguna: falta el caso "evento disparado por una pista que ya no
+>   es la actual" (p.ej. tras un ciclo `open` cerrar/reabrir).
+> - `resolveMimeForEmptyType` (`lib/pickup/manifestPhotoValidation.ts`) es
+>   más ancha que su JSDoc: `factura.pdf`/`VID_001.mp4` con `type` vacío
+>   también se aceptan como `image/jpeg`, no sólo `IMG_0042` sin extensión
+>   — un `null` por extensión desconocida es indistinguible de un `null`
+>   por no tener extensión. El `type` explícito sigue mandando (alcanzabilidad
+>   baja), pero la documentación promete menos de lo que el código hace.
+>   Cierre si algún día importa: `?? (tieneExtensión ? null : 'image/jpeg')`.
 
 ### Fase 5 — `5i` carga cerrada `[pending]`
 
