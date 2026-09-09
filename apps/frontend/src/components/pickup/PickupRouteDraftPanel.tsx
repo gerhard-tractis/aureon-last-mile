@@ -6,12 +6,16 @@ import { StartRouteButton } from './StartRouteButton';
 import type { ManifestRow } from './ManifestTable';
 
 /**
- * spec-54 phase 4.4 — "Nueva ruta de recogida" (mock 1l, right column top).
+ * spec-54 phase 4.4 — "Nueva ruta de recogida" (mock `5a`, right column top).
  *
- * The mock shows an estimated vehicle occupancy bar. It is not rendered:
- * occupancy needs a vehicle capacity and a package volume, and neither
- * `vehicles` nor `packages` carries one. A guessed percentage on the screen
- * that decides whether a van is full would be actively harmful.
+ * The mock shows an inline vehicle/driver picker with an estimated vehicle
+ * occupancy bar. Neither is rendered here: occupancy needs a vehicle
+ * capacity and a package volume, and neither `vehicles` nor `packages`
+ * carries one — a guessed percentage on the screen that decides whether a
+ * van is full would be actively harmful (spec-83 fase 3). The vehicle
+ * itself is picked in `StartRouteButton`'s dialog instead of inline — a
+ * spec-61 interaction decision with its own tests, not a missing-data gap,
+ * and out of this file's scope to redo.
  *
  * When a route is already open the panel steps aside — the driver has one
  * active route at a time (start_pickup_route enforces it), so offering to
@@ -87,7 +91,7 @@ export function PickupRouteDraftPanel({
           Ciérrala antes de armar otra.
         </p>
       ) : !canLead && !roleUnknown ? (
-        // spec-61 Task 5 — `1l`'s own start affordance, gated the same way
+        // spec-61 Task 5 — `5a`'s own start affordance, gated the same way
         // 3j is. Placed AHEAD of the empty-selection prompt on purpose: a
         // crew member should learn they cannot open a route before they
         // spend time ticking manifests for one, not after.
@@ -132,7 +136,8 @@ export function PickupRouteDraftPanel({
                     {m.externalLoadId}
                   </span>
                   <span className="truncate text-[10.5px] leading-none text-text-muted">
-                    {m.retailerName ?? 'Sin cliente'} · {m.packageCount} paq.
+                    {m.retailerName ?? 'Sin cliente'}
+                    {m.pickupPoint ? ` · ${m.pickupPoint}` : ''} · {m.packageCount} paq.
                   </span>
                 </div>
                 <button

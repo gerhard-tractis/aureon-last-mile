@@ -4,13 +4,19 @@ import { Check, TriangleAlert } from 'lucide-react';
 import type { CompletedManifest } from '@/hooks/pickup/useManifests';
 
 /**
- * spec-54 phase 4.4 — "Cierres de hoy" (mock 1l/5a, right column bottom).
+ * spec-54 phase 4.4 — "Cierres de hoy" (mock `5a`, right column bottom).
  *
  * spec-83 fase 1: get_completed_manifests now returns missing_count, a COUNT
  * over public.discrepancies (spec-85, kind='missing', operation_type=
  * 'pickup') for this manifest. A row with missing_count > 0 renders in the
- * warning palette with "N faltantes de M"; a clean close (missing_count = 0)
- * keeps the original success palette and "M paquetes" line.
+ * warning palette; a clean close (missing_count = 0) keeps the original
+ * success palette.
+ *
+ * spec-83 fase 4 (round 2 review) — `5a` (Recogida.dc.html:261,266,271,276)
+ * puts the retailer name on both lines and, on a clean close, a
+ * verified/total ratio ("38/38 paquetes"), not a bare total. Neither total
+ * is ever shown as a fabricated zero: when `total_packages` is null the
+ * numeric clause is omitted rather than guessed.
  */
 
 function timeLabel(iso: string): string {
@@ -37,6 +43,9 @@ export function TodayClosuresPanel({ rows }: { rows: CompletedManifest[] }) {
         ) : (
           rows.map((row) => {
             const hasMissing = row.missing_count > 0;
+            const retailer = row.retailer_name ?? 'Sin cliente';
+            const total = row.total_packages;
+            const verified = total != null ? total - row.missing_count : null;
 
             return (
               <div
@@ -66,12 +75,13 @@ export function TodayClosuresPanel({ rows }: { rows: CompletedManifest[] }) {
                   </span>
                   {hasMissing ? (
                     <span className="truncate text-[10.5px] font-semibold leading-none text-status-warning-text">
-                      {row.missing_count} {row.missing_count === 1 ? 'faltante' : 'faltantes'}
-                      {row.total_packages != null ? ` de ${row.total_packages}` : ''}
+                      {retailer} · {row.missing_count} {row.missing_count === 1 ? 'faltante' : 'faltantes'}
+                      {total != null ? ` de ${total}` : ''}
                     </span>
                   ) : (
                     <span className="truncate text-[10.5px] leading-none text-text-muted">
-                      {row.retailer_name ?? 'Sin cliente'} · {row.total_packages ?? 0} paquetes
+                      {retailer}
+                      {total != null ? ` · ${verified}/${total} paquetes` : ''}
                     </span>
                   )}
                 </div>
