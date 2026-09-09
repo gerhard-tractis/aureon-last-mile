@@ -309,7 +309,44 @@ Implementa la distinción `service_role` real vs. `anon`/ausencia de sesión, pr
 > Downstream: ninguno declarado para este spec (`**Downstream:** ninguno
 > todavía`, cabecera).
 
-### Fase 3 — `custom_access_token_hook` `[pending]`
+### Fase 3 — `custom_access_token_hook` `[in_progress]`
+
+> Implementado por: implementer — rama `feat/spec-88-fase-3-auth-hook`,
+> SHA `63d20f7`. Migración `20260922000001` — `GRANT` a `supabase_auth_admin`
+> antes de `REVOKE ALL ... FROM PUBLIC/anon/authenticated`; `service_role`
+> intacto (mismo criterio que fase 1). `authenticated` se cierra también,
+> más allá de lo que pedía el texto de esta fase — decisión propia, no del
+> spec: el hook acepta cualquier `user_id` en su argumento, así que
+> cualquier sesión `authenticated`, no sólo `anon`, podía leer el
+> `operator_id`/`role`/`permissions` de otra cuenta. TDD: test pgTAP
+> (`spec88_fase3_custom_access_token_hook_acl.test.sql`) confirmado en rojo
+> contra el ACL real de `spec52-pg` antes de escribir la migración (5/6
+> asserts fallando por la razón correcta), verde después, con `throws_ok`
+> exigiendo `permission denied` real de `anon` — no sólo el ACL. Sin
+> regresión en `spec88_fase1_revoke_anon`,
+> `spec88_fase2_assert_operator_access_service_role`,
+> `spec88_assert_operator_access_internal_guard`.
+> PR: #710, **sin auto-merge** (deliberado — ver más abajo).
+> Review: pendiente — no lo hice yo (implementer no se revisa a sí mismo).
+> QA: `gh pr checks 710` verde (dos runs de Lint/Type-Check/Test/Build,
+> Vercel, Vercel Preview Comments) a las 2026-09-09T13:28:56Z. **La prueba
+> de login en vivo con los seis `qa-*@qa.test` NO se ejecutó en esta
+> sesión** — SSH al VPS bloqueado por el clasificador de permisos del
+> entorno, y aplicar la migración a mano contra la QA compartida fuera del
+> pipeline de deploy arriesga pisar otras sesiones/Musan. En su lugar
+> verifiqué que `deploy.yml` ya impone el orden correcto de forma
+> estructural: `deploy-qa` aplica la migración a QA, `e2e-qa` corre después
+> y hace un login real contra Supabase Auth (`signIn()` en
+> `apps/frontend/e2e/support/spec52-fixture.ts`, vía GoTrue real, mismo
+> hook que producción) usando usuarios fixture — no los seis `qa-*@qa.test`
+> — y `approve-production` exige `e2e-qa` en verde. **Falta, explícito:**
+> después de mergear, alguien con acceso a QA debe loguearse manualmente
+> como cada uno de los seis `qa-*@qa.test` (`QaTest123!`,
+> `docs/qa-environment.md`) y confirmar `operator_id`/`role`/`permissions`
+> en el JWT, **antes** de aprobar `approve-production` en este PR. Por eso
+> el PR se abrió sin auto-merge.
+> Downstream: `**Downstream:** ninguno todavía` en la cabecera del spec —
+> sin cambios.
 
 **Archivos:** migración nueva en `packages/database/supabase/migrations/`
 (`GRANT EXECUTE ON FUNCTION public.custom_access_token_hook(jsonb) TO
