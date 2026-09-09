@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 // `load` directly rather than reaching for createRequire.
 import { load } from 'js-yaml';
 import { checkQuarantineStep } from './check-deploy-gating-quarantine.mjs';
+import { checkAutoApproveShape, VALID_CONDITIONAL_ENV } from './check-deploy-gating-autoapprove.mjs';
 
 const GATE = 'approve-production';
 
@@ -72,10 +73,15 @@ if (!gate) {
   const env = typeof gate.environment === 'object' && gate.environment !== null
     ? gate.environment.name
     : gate.environment;
-  if (env !== 'production') {
+  // spec-92: an unconditional 'production' (spec-57's original, still safe —
+  // it just always pauses) OR the correct-polarity auto-approve expression
+  // are both valid here. check-deploy-gating-autoapprove.mjs is the one that
+  // rejects a malformed/inverted conditional; this check only rejects
+  // "no environment at all", which still means the job never pauses.
+  if (env !== 'production' && !(typeof env === 'string' && VALID_CONDITIONAL_ENV.test(env))) {
     errors.push(
-      `${GATE} must declare "environment: production" — without it the job never ` +
-      `pauses and the gate is decorative (found: ${JSON.stringify(gate.environment)})`
+      `${GATE} must declare "environment: production" (or spec-92's conditional form) — ` +
+      `without it the job never pauses and the gate is decorative (found: ${JSON.stringify(gate.environment)})`
     );
   }
   if (!needsOf(GATE).includes('deploy-qa')) {
@@ -136,6 +142,12 @@ for (const job of PROD_JOBS) {
 // themselves — split out to keep both files under the repo's 300-line
 // guideline.
 errors.push(...checkQuarantineStep(jobs, doc));
+
+// ── Auto-approve shape (spec-92) — environment polarity, the freshness
+// step, and no PROD_JOBS job bypassing approve-production with its own
+// environment:. Split out for the same reason as the quarantine checks —
+// keeps both files under the repo's 300-line guideline.
+errors.push(...checkAutoApproveShape(jobs));
 
 // ── needs: is not enough once if: opts into always() ─────────────────────────
 // Normally a skipped dependency skips the dependent job, which is what makes
