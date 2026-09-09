@@ -11,19 +11,21 @@ const ROWS: DiscrepancyRow[] = [
     detected_at: '2026-09-07T10:00:00Z', note: null,
     order_number: 'ORD-01', package_label: 'CTN-1',
     carga: 'CARGA-EASY-001', ruta: 'PR-2026-2298', closed_by_name: 'Ana Recepción',
+    total_count: 2,
   },
   {
-    id: 'd-2', kind: 'missing', operation_type: 'pickup', status: 'open',
+    id: 'd-2', kind: 'missing', operation_type: 'pickup', status: 'lost',
     detected_at: '2026-09-06T12:00:00Z', note: 'El local no lo entregó.',
     order_number: 'ORD-02', package_label: 'CTN-2',
     carga: 'CARGA-EASY-002', ruta: 'PR-2026-2299', closed_by_name: 'Beto Recogida',
+    total_count: 2,
   },
 ];
 
 describe('DiscrepancyTable', () => {
   it('shows an empty state when there are no rows', () => {
     render(<DiscrepancyTable rows={[]} now={NOW} />);
-    expect(screen.getByText('Sin discrepancias abiertas')).toBeDefined();
+    expect(screen.getByText('Sin discrepancias sin resolver')).toBeDefined();
   });
 
   it('renders one row per discrepancy with order, package, carga and ruta', () => {
@@ -41,6 +43,15 @@ describe('DiscrepancyTable', () => {
     render(<DiscrepancyTable rows={ROWS} now={NOW} />);
     expect(screen.getByTestId('discrepancy-stage-d-1').textContent).toBe('Recepción');
     expect(screen.getByTestId('discrepancy-stage-d-2').textContent).toBe('Recogida');
+  });
+
+  // Ronda 3 (#715, M2): a 'lost' row and an 'open' row must not read the
+  // same on screen — the default query returns both (status <> 'resolved'),
+  // and this column is the only thing telling them apart.
+  it('labels the status of each row, per row', () => {
+    render(<DiscrepancyTable rows={ROWS} now={NOW} />);
+    expect(screen.getByTestId('discrepancy-status-d-1').textContent).toBe('Abierta');
+    expect(screen.getByTestId('discrepancy-status-d-2').textContent).toBe('Perdida');
   });
 
   it('shows who closed the operation that detected it', () => {
@@ -61,6 +72,7 @@ describe('DiscrepancyTable', () => {
       id: 'd-3', kind: 'unexpected', operation_type: 'pickup', status: 'open',
       detected_at: '2026-09-07T09:00:00Z', note: null,
       order_number: null, package_label: null, carga: null, ruta: null, closed_by_name: null,
+      total_count: 1,
     };
     render(<DiscrepancyTable rows={[barcodeOnly]} now={NOW} />);
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(5);
@@ -68,10 +80,10 @@ describe('DiscrepancyTable', () => {
 });
 
 describe('computeDiscrepancyKpis', () => {
-  it('counts total, pickup-source and reception-source rows', () => {
+  it('counts total (open+lost), pickup-source and reception-source rows', () => {
     const kpis = computeDiscrepancyKpis(ROWS);
     expect(kpis).toEqual([
-      { label: 'Abiertas', value: '2' },
+      { label: 'Sin resolver', value: '2' },
       { label: 'De recogida', value: '1' },
       { label: 'De recepción', value: '1' },
     ]);
@@ -80,10 +92,14 @@ describe('computeDiscrepancyKpis', () => {
   // Unequal counts on purpose: a 1/1 split would still look correct even if
   // the pickup and reception filters were swapped with each other.
   it('does not confuse pickup-source with reception-source when the counts differ', () => {
-    const skewed = [ROWS[0], ROWS[0], ROWS[1]];
+    const skewed: DiscrepancyRow[] = [
+      { ...ROWS[0], total_count: 3 },
+      { ...ROWS[0], id: 'd-1b', total_count: 3 },
+      { ...ROWS[1], total_count: 3 },
+    ];
     const kpis = computeDiscrepancyKpis(skewed);
     expect(kpis).toEqual([
-      { label: 'Abiertas', value: '3' },
+      { label: 'Sin resolver', value: '3' },
       { label: 'De recogida', value: '1' },
       { label: 'De recepción', value: '2' },
     ]);
@@ -91,9 +107,29 @@ describe('computeDiscrepancyKpis', () => {
 
   it('returns zeroes for an empty list', () => {
     expect(computeDiscrepancyKpis([])).toEqual([
-      { label: 'Abiertas', value: '0' },
+      { label: 'Sin resolver', value: '0' },
       { label: 'De recogida', value: '0' },
       { label: 'De recepción', value: '0' },
     ]);
+  });
+
+  // Ronda 3 (#715, M3): LIMIT 500 truncation must be visible, not silent.
+  it('adds a 4th KPI showing truncation when total_count exceeds the rows received', () => {
+    const truncated: DiscrepancyRow[] = [
+      { ...ROWS[0], total_count: 617 },
+      { ...ROWS[1], total_count: 617 },
+    ];
+    const kpis = computeDiscrepancyKpis(truncated);
+    expect(kpis).toEqual([
+      { label: 'Sin resolver', value: '617' },
+      { label: 'De recogida', value: '1' },
+      { label: 'De recepción', value: '1' },
+      { label: 'Mostradas', value: '2 de 617' },
+    ]);
+  });
+
+  it('does not add the truncation KPI when total_count matches the rows received', () => {
+    const kpis = computeDiscrepancyKpis(ROWS);
+    expect(kpis).toHaveLength(3);
   });
 });

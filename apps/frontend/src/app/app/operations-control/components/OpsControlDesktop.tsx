@@ -5,7 +5,7 @@ import { useOpsControlSnapshot } from '@/hooks/ops-control/useOpsControlSnapshot
 import { useAtRiskOrders } from '@/hooks/ops-control/useAtRiskOrders';
 import { useDayPromise } from '@/hooks/ops-control/useDayPromise';
 import { useActiveRoutes } from '@/hooks/useActiveRoutes';
-import { useDiscrepancies } from '@/hooks/ops-control/useDiscrepancies';
+import { useDiscrepancies, isDiscrepanciesUnknown, totalDiscrepancyCount } from '@/hooks/ops-control/useDiscrepancies';
 import { useStageQuery } from '../lib/useStageQuery';
 import { computeStageHealth, type HealthStatus } from '../lib/health';
 import { stagePackageCount } from '../lib/packages';
@@ -84,9 +84,14 @@ export function OpsControlDesktop({ operatorId, onSelectOrder }: OpsControlDeskt
   // `data === undefined`, which `?? 0` turns into a confident, wrong "0 ·
   // Sin incidencias · ok" — the exact "looks resolved" failure this fase
   // exists to close, just moved into the tile that reports on it.
-  const discrepanciesUnknown =
-    openDiscrepancies === undefined &&
-    (discrepanciesLoading || discrepanciesError || discrepanciesFetchStatus === 'paused');
+  // isDiscrepanciesUnknown is shared with DiscrepanciesPanel (ronda 3, M1) —
+  // duplicating this check let the tile and the panel it opens disagree.
+  const discrepanciesUnknown = isDiscrepanciesUnknown({
+    data: openDiscrepancies,
+    isLoading: discrepanciesLoading,
+    isError: discrepanciesError,
+    fetchStatus: discrepanciesFetchStatus,
+  });
 
   if (isLoading && !snapshot) {
     // Geometry matches the loaded layout so the page does not reflow.
@@ -107,7 +112,13 @@ export function OpsControlDesktop({ operatorId, onSelectOrder }: OpsControlDeskt
   }
 
   const now = new Date();
-  const discrepancyCount = openDiscrepancies?.length ?? 0;
+  const discrepancyRows = openDiscrepancies ?? [];
+  const discrepancyCount = discrepancyRows.length;
+  // Ronda 3 (#715, M3): totalDiscrepancyCount reads total_count off the RPC's
+  // window function — the count BEFORE LIMIT 500. When it exceeds what came
+  // back, the tile says so instead of quietly showing a truncated "N".
+  const discrepancyTotal = totalDiscrepancyCount(discrepancyRows);
+  const discrepancyTruncated = discrepancyTotal > discrepancyCount;
   const stages = STAGE_KEYS.map((key) => {
     // spec-86 fase 3: Discrepancias' count and health come from
     // useDiscrepancies, not from the generic snapshot-driven pipeline below —
@@ -119,10 +130,15 @@ export function OpsControlDesktop({ operatorId, onSelectOrder }: OpsControlDeskt
         return { key, count: null, delta: 'Sin datos', health: 'neutral' as HealthStatus, packageCount: null };
       }
       const health: HealthStatus = discrepancyCount > 0 ? 'warn' : 'ok';
+      const delta = discrepancyCount === 0
+        ? 'Sin incidencias'
+        : discrepancyTruncated
+          ? `${discrepancyCount} de ${discrepancyTotal} sin resolver`
+          : `${discrepancyCount} sin resolver`;
       return {
         key,
-        count: discrepancyCount,
-        delta: discrepancyCount > 0 ? `${discrepancyCount} sin resolver` : 'Sin incidencias',
+        count: discrepancyTruncated ? discrepancyTotal : discrepancyCount,
+        delta,
         health,
         packageCount: null,
       };

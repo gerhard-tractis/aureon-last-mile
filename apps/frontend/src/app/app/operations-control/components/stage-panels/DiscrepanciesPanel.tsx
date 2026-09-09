@@ -1,7 +1,7 @@
 'use client';
 
 import { StagePanel } from '../StagePanel';
-import { useDiscrepancies } from '@/hooks/ops-control/useDiscrepancies';
+import { useDiscrepancies, isDiscrepanciesUnknown } from '@/hooks/ops-control/useDiscrepancies';
 import { DiscrepancyTable, computeDiscrepancyKpis } from './DiscrepancyTable';
 import type { StagePanelProps } from './PickupPanel';
 
@@ -17,7 +17,16 @@ import type { StagePanelProps } from './PickupPanel';
  * instead — and nowhere else.
  */
 export function DiscrepanciesPanel({ operatorId }: StagePanelProps) {
-  const { data } = useDiscrepancies(operatorId, 'open');
+  const { data, isLoading, isError, fetchStatus } = useDiscrepancies(operatorId, 'open');
+  // Ronda 3 (#715, M1): the tile this panel opens from already learned (ronda
+  // 2) to show "—"/neutral instead of a confident "0" while loading, offline
+  // (fetchStatus='paused'), or errored. This panel kept `data ?? []`, so
+  // clicking the honest "—" tile opened a panel that confidently said "Sin
+  // discrepancias abiertas" across three KPIs — worse than the original bug,
+  // because the click happens PRECISELY when the user does not know the
+  // answer. isDiscrepanciesUnknown is the same check the tile uses, shared so
+  // the two cannot drift again.
+  const unknown = isDiscrepanciesUnknown({ data, isLoading, isError, fetchStatus });
   const rows = data ?? [];
 
   return (
@@ -25,7 +34,7 @@ export function DiscrepanciesPanel({ operatorId }: StagePanelProps) {
       title="Discrepancias"
       subtitle="Bultos que faltaron en recogida o recepción — un registro por paquete"
       deepLink={null}
-      kpis={computeDiscrepancyKpis(rows)}
+      kpis={unknown ? [] : computeDiscrepancyKpis(rows)}
       page={1}
       pageCount={1}
       onPageChange={() => {}}
@@ -37,7 +46,13 @@ export function DiscrepanciesPanel({ operatorId }: StagePanelProps) {
       lastSyncAt={null}
       liveLabel={null}
     >
-      <DiscrepancyTable rows={rows} />
+      {unknown ? (
+        <div data-testid="discrepancies-panel-unknown" className="px-4 py-8 text-center text-sm text-text-muted">
+          No se pudo confirmar el estado de las discrepancias todavía.
+        </div>
+      ) : (
+        <DiscrepancyTable rows={rows} />
+      )}
     </StagePanel>
   );
 }

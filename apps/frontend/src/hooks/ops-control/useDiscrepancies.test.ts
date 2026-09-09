@@ -29,6 +29,7 @@ const MOCK_ROW: DiscrepancyRow = {
   carga: 'CARGA-EASY-001',
   ruta: 'PR-2026-2298',
   closed_by_name: 'Ana Recepción',
+  total_count: 1,
 };
 
 describe('useDiscrepancies', () => {

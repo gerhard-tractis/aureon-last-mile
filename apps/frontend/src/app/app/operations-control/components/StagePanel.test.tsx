@@ -92,5 +92,9 @@ describe('StagePanel', () => {
       </StagePanel>
     );
     expect(screen.queryByText(/Tiempo real/)).toBeNull();
+    // Ronda 3 (#715, menor): not just "no text" — no element at all. An
+    // empty <span data-testid="stage-panel-freshness" /> would also fail the
+    // text query above while still being a real (if invisible) regression.
+    expect(screen.queryByTestId('stage-panel-freshness')).toBeNull();
   });
 });

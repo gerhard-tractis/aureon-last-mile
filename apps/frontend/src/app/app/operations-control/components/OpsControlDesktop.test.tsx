@@ -30,9 +30,10 @@ vi.mock('@/hooks/useActiveRoutes', () => ({
   useActiveRoutes: () => ({ data: [], isLoading: false }),
 }));
 
-vi.mock('@/hooks/ops-control/useDiscrepancies', () => ({
-  useDiscrepancies: vi.fn(),
-}));
+vi.mock('@/hooks/ops-control/useDiscrepancies', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/hooks/ops-control/useDiscrepancies')>();
+  return { ...actual, useDiscrepancies: vi.fn() };
+});
 import { useDiscrepancies } from '@/hooks/ops-control/useDiscrepancies';
 const mockUseDiscrepancies = vi.mocked(useDiscrepancies);
 
@@ -93,11 +94,22 @@ describe('OpsControlDesktop — Discrepancias tile', () => {
 
   it('shows the real count with "warn" health when there are open discrepancies', () => {
     mockUseDiscrepancies.mockReturnValue({
-      data: [{ id: 'd-1' }, { id: 'd-2' }], isLoading: false, isError: false, fetchStatus: 'idle',
+      data: [{ id: 'd-1', total_count: 2 }, { id: 'd-2', total_count: 2 }],
+      isLoading: false, isError: false, fetchStatus: 'idle',
     } as unknown as ReturnType<typeof useDiscrepancies>);
     render(<OpsControlDesktop operatorId="op-1" />);
     expect(discrepancyCount()).toBe('2');
     expect(screen.getByTestId('stage-health-discrepancies').className).toContain('bg-status-warning');
     expect(within(discrepancyTile()).getByText('2 sin resolver')).toBeInTheDocument();
+  });
+
+  it('says "N de M" and shows the real total when LIMIT 500 truncated the rows (#715 M3)', () => {
+    const rows = Array.from({ length: 3 }, (_, i) => ({ id: `d-${i}`, total_count: 617 }));
+    mockUseDiscrepancies.mockReturnValue({
+      data: rows, isLoading: false, isError: false, fetchStatus: 'idle',
+    } as unknown as ReturnType<typeof useDiscrepancies>);
+    render(<OpsControlDesktop operatorId="op-1" />);
+    expect(discrepancyCount()).toBe('617');
+    expect(within(discrepancyTile()).getByText('3 de 617 sin resolver')).toBeInTheDocument();
   });
 });

@@ -84,7 +84,7 @@ export function StagePanel({
           </Button>
         </div>
         {liveLabel !== null && (
-          <span className="text-xs text-text-muted">
+          <span data-testid="stage-panel-freshness" className="text-xs text-text-muted">
             {liveLabel}
             {lastSyncAt && <> · {lastSyncAt.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</>}
           </span>
