@@ -319,49 +319,43 @@ declare aquí; eso no cambia.)
       chip gana si ambos predicados aplicaran a la vez por un dato
       inconsistente, antes de renderizar `DESCARGAR` ahí.
 
-### Fase 3 — Asignación `[pending]`
+### Fase 3 — Asignación `[parked]`
 
-**Decisión del usuario (2026-09-09), textual:** «El líder de recogida define la
-asignación. Al llegar al punto de retiro recibe los manifiestos, y en ese
-momento los asigna.»
+**Aparcada por decisión del usuario (2026-09-09): no se construye, porque no
+hay nada que construir.** Lo que faltaba no era una pantalla — era saber si el
+concepto de "asignación" existe. No existe.
 
-**Consecuencia de diseño, no invención de esta sesión.** La asignación **no es
-previa a la ruta** — no se decide en un escritorio antes de salir — sino **in
-situ y posterior a la llegada** al punto de retiro. Cualquier pantalla que dé
-por hecho que la asignación ya existe cuando la cuadrilla arranca la ruta está
-mal planteada.
+**Decisión del usuario, textual:** «nadie asigna, el conductor llega, ve lo
+disponible y los incluye en la ruta con una pantalla, tal cual estaba hoy».
 
-**Hallazgo: el mock de `5b` supone justo eso.** `5b` es la pantalla de **antes**
-de iniciar la ruta — el mock la titula «MANIFIESTOS ASIGNADOS A TI · 4» y deja
-elegir cuáles entran a la ruta (pie «2 manifiestos · 67 paq. entran a la
-ruta»), es decir, presenta una asignación ya resuelta **antes de llegar a
-ningún punto de retiro**. Con la decisión del usuario, esa asignación todavía
-no puede existir en ese momento: se hace al llegar y recibir los manifiestos
-físicos, no antes de salir. El mock y la decisión de producto están en tensión
-y esta sesión no la resuelve — se deja escrita para que el diseño de `5b` (o
-una pantalla nueva de asignación en el punto de retiro) se revise contra esto
-antes de implementar.
+O sea: **`5b` ya es la pantalla correcta y el código ya hace lo correcto.** El
+conductor ve los manifiestos pendientes sin rutear del operador y elige cuáles
+entran a su ruta. No hay un paso previo de reparto, ni una persona que asigne,
+ni un estado "asignado a X" que consultar.
 
-Lo que sí queda claro sin inventar nada más: `manifests.assigned_to_user_id`
-(hoy NULL en todas las filas de QA, según el diagnóstico de arriba) se escribe
-por el líder de la cuadrilla, en el móvil, en el momento de llegada al punto de
-retiro — no desde `5a` (spec-83) ni por derivación de zona. El camino (b) del
-listado original queda descartado por esta decisión.
+**Consecuencia directa: `manifests.assigned_to_user_id` es una columna muerta,
+y su muerte queda confirmada, no supuesta.** Ya lo estaba de hecho — cero
+escritores en todo el repo (frontend, agents, worker), NULL en todas las filas,
+y leída una sola vez por un backfill que sólo copia un NULL
+(`20260625000001_spec47…:674`). Lo que cambia hoy es que **deja de ser una
+carencia pendiente y pasa a ser una decisión**: nadie la va a escribir nunca.
 
-**Archivos:** (indeterminado — la decisión resuelve *quién* y *cuándo* asigna,
-no *dónde* en la interfaz ocurre esa asignación. Falta una pantalla o
-interacción de asignación in-situ que hoy no existe en ningún mock revisado por
-este spec — `5b` no la muestra, muestra el resultado de una asignación previa
-que la decisión del usuario contradice. Nombrar componentes antes de que exista
-ese diseño sería inventarlo. `check-phase-overlap.mjs` la reporta como «no
-puedo juzgar» (exit 3), correctamente.)
+**El código ya se anticipó a esto, y acertó.** `PickupMobileStartRoute.tsx:23-35`
+documenta que filtrar por esa columna «mostraría a todo conductor real una
+pantalla vacía para siempre», y por eso renderiza los manifiestos pendientes
+reales del operador y **etiqueta el encabezado honestamente como «MANIFIESTOS
+POR RETIRAR»** en vez de afirmar una asignación inexistente. Esa desviación
+deliberada del mock **queda ratificada**: era correcta.
 
-- [ ] Resolver la tensión con el mock `5b` (arriba) antes de tocar código:
-      ¿nueva pantalla de asignación al llegar al punto de retiro, o `5b` se
-      redefine como esa pantalla?
-- [ ] Escribir en `manifests.assigned_to_user_id` desde esa interacción.
-- [ ] `5b` (o la pantalla que resulte) lee `assigned_to_user_id` en vez de
-      "pendientes del operador".
+**Lo único que queda desalineado es el mock**, cuyo encabezado dice
+«MANIFIESTOS ASIGNADOS A TI · 4». El usuario se ofreció a corregirlo. No
+bloquea nada: el código ya no lo sigue, y ahora hay una decisión escrita que
+explica por qué.
+
+**Si alguien reabre esto**, que sea con una necesidad de negocio nueva y
+explícita, no con el mock como argumento — el mock describe un flujo que el
+usuario descartó.
+
 
 ### Fase 4 — Andén `[parked]`
 
