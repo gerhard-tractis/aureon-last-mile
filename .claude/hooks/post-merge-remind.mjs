@@ -161,6 +161,13 @@ function main() {
   if (!segment) process.exit(0);
 
   const prArg = extractPrArg(segment);
+  // Menor (review ronda 2): `extractPrArg` sólo puede devolver dígitos o
+  // `null` por construcción (regex `/^\d+$/` dentro de la función) — nada
+  // más de `segment` llega a interpolarse en el string que arma `execSync`
+  // más abajo. Este guard hace esa invariante EXPLÍCITA y mutation-testeable
+  // en este archivo, en vez de confiar en que nadie afloje `extractPrArg`
+  // en un cambio futuro sin que nada aquí se dé cuenta.
+  if (prArg !== null && !/^\d+$/.test(prArg)) process.exit(0);
   const ghArgs = ['pr', 'view'];
   if (prArg) ghArgs.push(prArg);
   ghArgs.push('--json', 'number,headRefName,state,mergedAt');
