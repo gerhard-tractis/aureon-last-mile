@@ -56,13 +56,20 @@ check "archivo inexistente no rompe" 0 "$D/no-existe.md"
 # --- validación contra la realidad: hoy NINGUNA fase [blocked] real del repo
 # trae `> Bloqueo:` (la línea no existía antes de spec-90) — así que el guard
 # debe fallar sobre cada uno de los specs reales que la auditoría encontró.
+#
+# spec-86 estaba en esta lista originalmente; salió el 2026-09-08 porque
+# `dd6f921` (PR #677, mergeado en `main` después de que esta lista se
+# escribiera) resolvió la decisión de producto pendiente y movió su única
+# fase `[blocked]` (2b) a `[parked]` — un token que este guard no vigila a
+# propósito (`docs/specs/CLAUDE.md`: `parked` no exige `> Bloqueo:`, sólo
+# `blocked`). El spec ya no es un ejemplo real de "blocked sin evidencia";
+# dejarlo en la lista convertía la deriva del corpus en un falso rojo de CI.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 for real in \
   spec-75-despacho-desktop-reshape.md \
   spec-82-recogida-movil-asignacion-y-ruta.md \
   spec-83-recogida-escritorio-datos-faltantes.md \
   spec-84-movil-conductor-home-y-prueba-de-entrega.md \
-  spec-86-discrepancias-de-recepcion.md \
   spec-88-anon-security-definer-audit.md \
 ; do
   f="$ROOT/docs/specs/$real"

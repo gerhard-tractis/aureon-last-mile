@@ -211,6 +211,10 @@ paralelo. Decisiones tomadas aquí para minimizar el choque:
 
 ### Fase 1 — `check-blocked-evidence.sh` y `check-blocked-freshness.sh` `[in_progress]`
 
+**Archivos:** `scripts/check-blocked-evidence.sh`,
+`scripts/check-blocked-evidence.test.sh`, `scripts/check-blocked-freshness.sh`,
+`scripts/check-blocked-freshness.test.sh`, `.github/workflows/ci.yml`
+
 - [x] TDD: tests primero (`check-blocked-evidence.test.sh`,
       `check-blocked-freshness.test.sh`), RED confirmado por la razón
       correcta (`127`, script inexistente), luego implementación.
@@ -231,6 +235,10 @@ review ni PR todavía — se abre el PR **sin auto-merge**, a propósito, para
 que el review y QA ocurran antes de que alguien la mueva a `[done]`.
 
 ### Fase 2 — Agentes declaran capacidad, no imposibilidad `[in_progress]`
+
+**Archivos:** `.claude/agents/implementer.md`, `.claude/agents/reviewer.md`,
+`.claude/agents/qa-e2e.md`, `docs/specs/CLAUDE.md`,
+`scripts/check-harness-present.sh`, `scripts/check-harness-present.test.sh`
 
 - [x] Sección `## No declares algo imposible — declara qué capacidad falta y
       quién la tiene` en `implementer.md`, `reviewer.md`, `qa-e2e.md`, con la
