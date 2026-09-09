@@ -191,9 +191,27 @@ jobs:
       # `github.event.pull_request.base.sha` está vacío ahí, y ese "vacío" se
       # confundía con "no es un PR, no hay nada que validar" justo en la
       # corrida que decide el merge. Mismo fallback de tres niveles.
+      #
+      # Round 2, segunda vuelta: `pull_request.base.sha` es una foto fija del
+      # último `synchronize`, no la punta viva de `main`. `actions/checkout`
+      # sí trae `refs/pull/<PR>/merge` — el HEAD de esta corrida es el merge
+      # de esta rama con el `main` de AHORA, no con el de esa foto. Si otro PR
+      # toca mientras tanto un spec con `[blocked]` sin evidencia (pasó de
+      # verdad: PR #702/#703 tocaron spec-82/83/84/88 después de que este
+      # branch se abriera), ese spec aparece "tocado" en el diff contra la
+      # foto vieja aunque esta rama nunca lo tocó — y el guard lo bloquea por
+      # deuda ajena, exactamente lo que el diff-scoping existe para evitar.
+      # Se prefiere la punta viva de `main` (recién buscada) como base; el
+      # `base.sha` del evento queda de único respaldo si ese fetch falla.
       - name: Check blocked-phase evidence on touched specs
         run: |
-          BASE="${{ github.event.pull_request.base.sha }}"
+          BASE=""
+          if git fetch --no-tags --depth=1 origin main 2>/dev/null; then
+            BASE="$(git rev-parse FETCH_HEAD)"
+          fi
+          if [ -z "$BASE" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          fi
           if [ -z "$BASE" ]; then
             BASE="${{ github.event.merge_group.base_sha }}"
           fi
@@ -201,7 +219,7 @@ jobs:
             BASE="${{ github.event.before }}"
           fi
           if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-            echo "No hay base determinable (ni pull_request, ni merge_group, ni push con before) — saltando."
+            echo "No hay base determinable (ni main vivo, ni pull_request, ni merge_group, ni push con before) — saltando."
             exit 0
           fi
           git fetch --no-tags --depth=1 origin "$BASE" 2>/dev/null || git fetch --no-tags --unshallow 2>/dev/null || true
