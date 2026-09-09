@@ -230,7 +230,7 @@ segunda, requiere el inventario que `spec-93` está construyendo aparte.
 | `scripts/check-deploy-gating-autoapprove.test.sh` | Tests + mutation-test de las invariantes nuevas | Crear |
 | `.github/workflows/ci.yml` | Corre el test nuevo | Modificar |
 | `scripts/deploy-approval-watchdog.mjs` | Decisión pura: ¿el run de la punta de `main` lleva > X sin resolverse? | Crear |
-| `scripts/deploy-approval-watchdog.test.mjs` | Tests del anterior | Crear |
+| `scripts/deploy-approval-watchdog.test.sh` | Tests del anterior | Crear |
 | `.github/workflows/deploy-approval-watchdog.yml` | Cron 15min, reúne estado vía `gh api`, abre/actualiza un único issue | Crear |
 | `.github/workflows/README.md` | Diagrama y tabla de jobs actualizados | Modificar |
 | `docs/runbooks/approve-production-deploy.md` | Reescrito: la pausa ahora es la excepción (hook de auth), no la norma | Modificar |
@@ -268,6 +268,12 @@ segunda, requiere el inventario que `spec-93` está construyendo aparte.
 ---
 
 ### Fase 2 — el guardarraíl aprende la regla nueva `[in_progress]`
+
+**Archivos:**
+- Crear: `scripts/check-deploy-gating-autoapprove.mjs`
+- Crear: `scripts/check-deploy-gating-autoapprove.test.sh`
+- Modificar: `scripts/check-deploy-gating.mjs`
+- Modificar: `.github/workflows/ci.yml`
 
 **Implementado** — commit `8c077a2` en esta rama.
 `scripts/check-deploy-gating-autoapprove.mjs`,
@@ -325,10 +331,10 @@ GitHub, no de leer un checkout en el VPS.
 
 **Archivos:**
 - Crear: `scripts/deploy-approval-watchdog.mjs`
-- Crear: `scripts/deploy-approval-watchdog.test.mjs`
+- Crear: `scripts/deploy-approval-watchdog.test.sh`
 - Crear: `.github/workflows/deploy-approval-watchdog.yml`
 
-- [ ] TDD: escribir `deploy-approval-watchdog.test.mjs` primero. Casos
+- [ ] TDD: escribir `deploy-approval-watchdog.test.sh` primero. Casos
   (mismo formato de estado que `qa-drift-check.mjs`: JSON con `now`,
   `mainSha`, `mainCommittedAt`, `graceMinutes`, `runs: [{databaseId,
   headSha, status, conclusion, createdAt}]`):
