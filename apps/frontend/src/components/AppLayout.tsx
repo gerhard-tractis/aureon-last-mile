@@ -95,13 +95,15 @@ export default function AppLayout({
   // servidor ya tenía, produciendo un 23505 nuevo en la siguiente captura.
   // `AppLayout` es el único punto de esta cadena con `useQueryClient()`
   // real (`lib/pickup/offlineQueueSender.ts` no puede depender de React
-  // Query) — el callback dispara la invalidación en cuanto el drenador
-  // confirma el envío.
+  // Query) — `onManifestDocumentsChanged` (renombrado en la ronda 4: también
+  // se dispara al renumerar tras una colisión, no sólo en `sent`) invalida
+  // en cuanto el drenador tiene evidencia de que la lista del servidor
+  // cambió o quedó desactualizada.
   const queryClient = useQueryClient();
   const pickupQueueSender = useMemo(
     () =>
       createLazyPickupQueueSender(createSPAClient, db, {
-        onManifestPhotoSent: (entry) => {
+        onManifestDocumentsChanged: (entry) => {
           queryClient.invalidateQueries({
             queryKey: ['pickup', 'manifest-documents', entry.manifestId],
           });

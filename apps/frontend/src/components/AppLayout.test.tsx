@@ -172,7 +172,7 @@ describe('AppLayout — spec-81 fase 2 offline queue drainer (B2, ronda 1 review
   // tira, y la siguiente captura propone el mismo `sheet_number` que el
   // servidor ya tiene (23505). Verifica el cableado real, no lo que hace
   // `sendManifestPhoto` (cubierto en `offlineQueueSender.test.ts`).
-  it('wires onManifestPhotoSent to invalidate the manifest-documents query for that manifest', () => {
+  it('wires onManifestDocumentsChanged to invalidate the manifest-documents query for that manifest', () => {
     render(
       <AppLayout>
         <div>content</div>
@@ -180,11 +180,11 @@ describe('AppLayout — spec-81 fase 2 offline queue drainer (B2, ronda 1 review
     );
 
     const options = createLazyPickupQueueSenderSpy.mock.calls[0][2] as {
-      onManifestPhotoSent?: (entry: { manifestId: string }) => void;
+      onManifestDocumentsChanged?: (entry: { manifestId: string }) => void;
     };
-    expect(options.onManifestPhotoSent).toBeInstanceOf(Function);
+    expect(options.onManifestDocumentsChanged).toBeInstanceOf(Function);
 
-    options.onManifestPhotoSent!({ manifestId: 'manifest-123' });
+    options.onManifestDocumentsChanged!({ manifestId: 'manifest-123' });
 
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: ['pickup', 'manifest-documents', 'manifest-123'],

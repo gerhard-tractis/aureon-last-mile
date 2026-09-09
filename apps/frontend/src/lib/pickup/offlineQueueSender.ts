@@ -14,14 +14,20 @@ import { sendManifestPhoto } from '@/lib/offline/photos';
  * vuelve a proponer el mismo número (que `purgeConfirmed` ya borró de la
  * cola local, así que B3 tampoco lo ve venir) y llega un 23505 nuevo — un
  * conductor con un solo teléfono y señal intermitente, más probable que el
- * residual de dos dispositivos. `onManifestPhotoSent` es el gancho que le
- * permite a `AppLayout.tsx` (que sí tiene `useQueryClient()`, un componente
- * React) invalidar `['pickup','manifest-documents', manifestId]` cuando el
- * envío offline tenga éxito — este módulo de `lib/` no puede llamar a
- * React Query directamente (capas: `lib` no depende de `hooks`/React).
+ * residual de dos dispositivos.
+ *
+ * Renombrado en la ronda 4 de review del PR #712 (de `onManifestPhotoSent`):
+ * `sendManifestPhoto` (`lib/offline/photos-send.ts`) también lo dispara
+ * cuando renumera tras una colisión de `sheet_number` — ese 23505 acaba de
+ * revelar una fila del servidor que la tira no conocía, el mismo estado que
+ * esto existe para arreglar, no sólo el caso `sent`. `AppLayout.tsx` (que sí
+ * tiene `useQueryClient()`, un componente React) lo usa para invalidar
+ * `['pickup','manifest-documents', manifestId]` — este módulo de `lib/` no
+ * puede llamar a React Query directamente (capas: `lib` no depende de
+ * `hooks`/React).
  */
 export interface PickupQueueSenderOptions {
-  onManifestPhotoSent?: (entry: PickupQueueEntry) => void;
+  onManifestDocumentsChanged?: (entry: PickupQueueEntry) => void;
 }
 
 /**
@@ -84,11 +90,11 @@ export function createPickupQueueSender(
     // ver `lib/offline/photos.ts`) tiene su propio camino de red, distinto
     // del RPC `close_manifest` de abajo.
     if (entry.type === 'manifest_photo') {
-      const result = await sendManifestPhoto(supabase, db, entry);
-      if (result.outcome === 'sent') {
-        options.onManifestPhotoSent?.(entry);
-      }
-      return result;
+      // Ronda 4 de review del PR #712 — `sendManifestPhoto` decide POR SU
+      // CUENTA cuándo disparar `onManifestDocumentsChanged` (envío
+      // confirmado o renumerado tras colisión); este dispatcher ya no
+      // inspecciona `result.outcome` para decidirlo, sólo pasa la opción.
+      return sendManifestPhoto(supabase, db, entry, options);
     }
     if (entry.type !== 'close_manifest') {
       return {

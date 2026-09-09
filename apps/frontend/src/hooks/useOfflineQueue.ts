@@ -20,11 +20,13 @@ import {
 } from '@/lib/offline/queue-blocking';
 import { PICKUP_QUEUE_WAKE_EVENT } from '@/lib/offline/wake-event';
 
-// M-2, review del PR #712 — re-exportado desde su nueva ubicación
-// (`lib/offline/wake-event.ts`) para que `complete/[loadId]/page.tsx` (el
-// otro productor del evento) no tenga que cambiar su import. Ver el
-// docstring del módulo nuevo para por qué se movió.
-export { PICKUP_QUEUE_WAKE_EVENT } from '@/lib/offline/wake-event';
+// M-2, review del PR #712 — re-exporta la constante importada arriba (no un
+// segundo `export … from` contra el módulo — ronda 4, menor: esa forma
+// duplicaba la referencia al módulo origen sin usar el binding local pese a
+// que el resto de este fichero sí lo usa, `window.addEventListener`/
+// `dispatchEvent` más abajo). `complete/[loadId]/page.tsx` (el otro
+// productor del evento) sigue importándolo desde aquí sin cambios.
+export { PICKUP_QUEUE_WAKE_EVENT };
 
 /**
  * spec-81 fase 2 — el drenador de `pickup_queue`.

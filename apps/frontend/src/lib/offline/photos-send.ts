@@ -75,13 +75,24 @@ function isPostgrestNetworkFailure(err: { code?: string } | null): boolean {
  * conflicto (el servidor, ya que la colisión ES con una fila del servidor)
  * y se reintenta.
  *
- * Devuelve el primer número libre después del máximo usado, o el error si
- * la consulta misma falla (sin red, sin permiso…) — en ese caso el llamador
- * reintenta más tarde sin renumerar todavía; el mismo 23505 se repetirá y
- * esta función se volverá a intentar en la próxima pasada del drenador.
+ * Devuelve el error si la consulta misma falla (sin red, sin permiso…) — en
+ * ese caso el llamador reintenta más tarde sin renumerar todavía; el mismo
+ * 23505 se repetirá y esta función se volverá a intentar en la próxima
+ * pasada del drenador.
+ *
+ * Menor, ronda 4 de review del PR #712 — el número que devuelve ya NO es
+ * sólo "el máximo del servidor + 1": también evita cualquier `sheetNumber`
+ * que la cola LOCAL de este manifiesto ya esté usando (`status !== 'sent'`,
+ * mismo conjunto que `nextAvailableSheetNumber` en `photos.ts` calcula al
+ * encolar). Medido por el reviewer: con dos fotos locales — una ya en la
+ * hoja 8 — y el servidor en `MAX=7`, renumerar sin este chequeo proponía 8
+ * de nuevo, chocando con la otra entrada local; converge en la vuelta
+ * siguiente, pero cada choque consume una unidad de `MAX_RETRY_ATTEMPTS`
+ * que un error transitorio real necesita.
  */
-async function nextServerAvailableSheetNumber(
+async function nextAvailableSheetNumberAfterCollision(
   supabase: SupabaseClient,
+  db: PickupQueueStore,
   operatorId: string,
   manifestId: string,
 ): Promise<{ sheetNumber: number } | { error: string }> {
@@ -99,7 +110,23 @@ async function nextServerAvailableSheetNumber(
     return { error: error.message };
   }
   const maxUsed = (data as { sheet_number: number } | null)?.sheet_number ?? 0;
-  return { sheetNumber: maxUsed + 1 };
+
+  const queuedLocally = await db.pickup_queue
+    .where('operatorId')
+    .equals(operatorId)
+    .and(
+      (e) => e.manifestId === manifestId && e.type === 'manifest_photo' && e.status !== 'sent',
+    )
+    .toArray();
+  const takenLocally = new Set(
+    queuedLocally.map((e) => (e.payload as ManifestPhotoPayload).sheetNumber),
+  );
+
+  let candidate = maxUsed + 1;
+  while (takenLocally.has(candidate)) {
+    candidate += 1;
+  }
+  return { sheetNumber: candidate };
 }
 
 /**
@@ -122,10 +149,25 @@ async function nextServerAvailableSheetNumber(
  * colisión se resuelve (más abajo); el resto de esta función sólo lee
  * `entry`, que ya llega con los datos vigentes desde el drenador.
  */
+export interface SendManifestPhotoOptions {
+  /**
+   * B-2 (ronda 3) + menor (ronda 4) de review del PR #712 — se dispara
+   * cuando esta llamada tiene evidencia de que
+   * `['pickup','manifest-documents', manifestId]` cambió o quedó
+   * desactualizada en el cliente: un envío que SÍ se aplicó (`sent`), o un
+   * 23505 que reveló una fila del servidor que la tira no conocía
+   * (renumerado por colisión, más abajo — "acaba de descubrir que el
+   * servidor tiene una fila que la tira no conoce", el mismo estado que B-2
+   * vino a arreglar). `AppLayout.tsx` lo usa para invalidar esa query.
+   */
+  onManifestDocumentsChanged?: (entry: PickupQueueEntry) => void;
+}
+
 export async function sendManifestPhoto(
   supabase: SupabaseClient,
   db: PickupQueueStore,
   entry: PickupQueueEntry,
+  options: SendManifestPhotoOptions = {},
 ): Promise<OfflineQueueOutcome> {
   if (!entry.blob || entry.id === undefined) {
     return {
@@ -157,18 +199,42 @@ export async function sendManifestPhoto(
   // M-4, ronda 3 de review del PR #712 (mayor) — `uploaded_by` NO puede ser
   // `entry.userId` (B2, ronda 1: rompía la policy cross-user) NI un `null`
   // fijo (M-4: sobre una tabla cuyo COMMENT dice "es el respaldo si después
-  // falta un paquete", perder "quién fotografió" es un hueco de
-  // trazabilidad real, y deja la columna medio poblada — no-nula online,
-  // siempre nula offline). Se resuelve `auth.uid()` de la SESIÓN QUE DRENA
-  // en el momento del envío — la misma fuente que la policy compara
-  // (`uploaded_by IS NULL OR uploaded_by = auth.uid()`) y el mismo patrón
-  // que `close_manifest` ya usa para `signature_operator_name`: derivado del
-  // actor real en el servidor, nunca de un campo que viajó en el payload.
-  // Si no hay sesión resoluble (edge inalcanzable en producción — el
-  // drenador vive detrás de auth), cae a `null`, que la policy admite
-  // explícito, en vez de fallar la subida entera por esto.
-  const { data: authData } = await supabase.auth.getUser();
-  const uploadedBy = authData?.user?.id ?? null;
+  // falta un paquete", `null` fijo dejaba la columna medio poblada — no-nula
+  // online, siempre nula offline). Se resuelve de la SESIÓN QUE DRENA en el
+  // momento del envío — la misma fuente que la policy compara
+  // (`uploaded_by IS NULL OR uploaded_by = auth.uid()`).
+  //
+  // Corrección de la ronda 4 — este campo registra quién SUBIÓ la fila, NO
+  // quién CAPTURÓ la foto; en el escenario cross-user que motivó B2 son
+  // personas distintas (B, bajo su propia sesión, drenando lo que A
+  // fotografió), y "quién capturó" no se persiste en ningún sitio — el
+  // `userId` de la entrada vive sólo en IndexedDB y `purgeConfirmed` lo
+  // borra. La afirmación de la ronda 3 ("cierra el hueco de trazabilidad de
+  // quién fotografió") era falsa; lo que sí es cierto es que la columna deja
+  // de estar sistemáticamente vacía en la ruta offline.
+  //
+  // `getSession()`, no `getUser()` (bloqueante, ronda 4) — medido contra
+  // `@supabase/auth-js@2.72.0` (`GoTrueClient.js:1179-1226`): `getUser()` es
+  // una llamada de RED real (un round-trip por foto), pasa por
+  // `_acquireLock(-1, …)` — espera de lock SIN TIMEOUT, así que un lock de
+  // GoTrue atascado en otra pestaña deja esta entrada `sending` hasta que
+  // `reclaimStale` la libere a los 90s — y su `catch` puede disparar
+  // `_removeSession()` (`AuthSessionMissingError`), cerrando la sesión local
+  // del conductor a media jornada por una subida de foto en segundo plano.
+  // `getSession()` da el mismo `user.id`, es LOCAL (sin red, sin el lock sin
+  // timeout, sin `_removeSession`). `try/catch` de todas formas: sin él, una
+  // excepción aquí escapaba de `sendManifestPhoto` DESPUÉS de una subida ya
+  // exitosa sin limpiar el objeto — el único camino post-subida que rompía
+  // "fila huérfana imposible", el contrato que esta fase defiende en todas
+  // las demás ramas.
+  let uploadedBy: string | null = null;
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    uploadedBy = sessionData?.session?.user?.id ?? null;
+  } catch {
+    // Sin sesión resoluble: cae a `null`, que la policy admite
+    // explícitamente, en vez de fallar la subida entera por esto.
+  }
 
   const { error: insertError } = await supabase.from('manifest_documents').insert({
     operator_id: entry.operatorId,
@@ -179,6 +245,7 @@ export async function sendManifestPhoto(
   });
 
   if (!insertError) {
+    options.onManifestDocumentsChanged?.(entry);
     return { outcome: 'sent' };
   }
 
@@ -239,7 +306,12 @@ export async function sendManifestPhoto(
       );
     }
 
-    const next = await nextServerAvailableSheetNumber(supabase, entry.operatorId, entry.manifestId);
+    const next = await nextAvailableSheetNumberAfterCollision(
+      supabase,
+      db,
+      entry.operatorId,
+      entry.manifestId,
+    );
     if ('error' in next) {
       // No se pudo determinar el siguiente número disponible (sin red, sin
       // permiso…) — reintentar más tarde con el MISMO número; la próxima
@@ -253,6 +325,11 @@ export async function sendManifestPhoto(
     await db.pickup_queue.update(entry.id, {
       payload: { sheetNumber: next.sheetNumber } satisfies ManifestPhotoPayload,
     });
+    // Menor, ronda 4 de review del PR #712 — este 23505 acaba de revelar que
+    // el servidor tiene una fila (la que causó la colisión) que la tira
+    // puede no conocer todavía. Mismo motivo que B-2: invalidar aquí cierra
+    // el círculo en vez de esperar al próximo `sent`.
+    options.onManifestDocumentsChanged?.(entry);
     return {
       outcome: 'retry',
       reason: `sheet_number ${sheetNumber} ya estaba ocupado por otra foto — renumerada a ${next.sheetNumber} y reintentando`,
@@ -273,6 +350,7 @@ export async function sendManifestPhoto(
 export function createManifestPhotoSender(
   supabase: SupabaseClient,
   db: PickupQueueStore,
+  options: SendManifestPhotoOptions = {},
 ): OfflineQueueSender {
-  return (entry: PickupQueueEntry) => sendManifestPhoto(supabase, db, entry);
+  return (entry: PickupQueueEntry) => sendManifestPhoto(supabase, db, entry, options);
 }

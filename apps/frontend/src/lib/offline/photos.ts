@@ -32,6 +32,7 @@ import { PICKUP_QUEUE_WAKE_EVENT } from '@/lib/offline/wake-event';
 import type { ManifestPhotoPayload, EnqueueManifestPhotoInput } from './photos-types';
 
 export type { ManifestPhotoPayload, EnqueueManifestPhotoInput } from './photos-types';
+export type { SendManifestPhotoOptions } from './photos-send';
 export {
   manifestPhotoStoragePath,
   sendManifestPhoto,

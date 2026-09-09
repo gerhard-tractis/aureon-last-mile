@@ -265,14 +265,15 @@ describe('createPickupQueueSender — close_manifest', () => {
     const rpc = vi.fn();
     const upload = vi.fn(async () => ({ data: { path: 'x' }, error: null }));
     const insert = vi.fn(async () => ({ data: [{}], error: null }));
-    const getUser = vi.fn(async () => ({ data: { user: null }, error: null }));
+    const getSession = vi.fn(async () => ({ data: { session: null }, error: null }));
+    const remove = vi.fn(async () => ({ data: [], error: null }));
     const supabase = {
       rpc,
-      auth: { getUser },
-      storage: { from: vi.fn(() => ({ upload, remove: vi.fn() })) },
+      auth: { getSession },
+      storage: { from: vi.fn(() => ({ upload, remove })) },
       from: vi.fn(() => ({ insert })),
     } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    return { supabase, rpc, upload, insert, getUser };
+    return { supabase, rpc, upload, insert, getSession, remove };
   }
 
   it('dispatches a manifest_photo entry to the storage/insert path instead of close_manifest', async () => {
@@ -296,10 +297,13 @@ describe('createPickupQueueSender — close_manifest', () => {
   // este gancho para invalidar `useManifestDocuments` cuando el drenador
   // confirma una foto offline; sin este test, un futuro refactor del
   // enrutamiento podía dejar de llamarlo sin que ningún test lo notara.
-  it('calls onManifestPhotoSent only when the outcome is sent', async () => {
+  // Renombrado en la ronda 4 (de `onManifestPhotoSent`): `sendManifestPhoto`
+  // también lo dispara al renumerar tras una colisión — ver el test de más
+  // abajo y `photos.test.ts` para el detalle de esa rama.
+  it('calls onManifestDocumentsChanged only when the outcome is sent', async () => {
     const { supabase } = manifestPhotoSupabaseStub();
-    const onManifestPhotoSent = vi.fn();
-    const send = createPickupQueueSender(supabase, db, { onManifestPhotoSent });
+    const onManifestDocumentsChanged = vi.fn();
+    const send = createPickupQueueSender(supabase, db, { onManifestDocumentsChanged });
     const entry = closeManifestEntry({
       type: 'manifest_photo',
       payload: { sheetNumber: 1 },
@@ -308,18 +312,18 @@ describe('createPickupQueueSender — close_manifest', () => {
 
     await send(entry);
 
-    expect(onManifestPhotoSent).toHaveBeenCalledTimes(1);
-    expect(onManifestPhotoSent).toHaveBeenCalledWith(entry);
+    expect(onManifestDocumentsChanged).toHaveBeenCalledTimes(1);
+    expect(onManifestDocumentsChanged).toHaveBeenCalledWith(entry);
   });
 
-  it('does not call onManifestPhotoSent when the manifest_photo send does not succeed', async () => {
+  it('does not call onManifestDocumentsChanged when the manifest_photo send does not succeed', async () => {
     const { supabase } = manifestPhotoSupabaseStub();
     supabase.storage.from = vi.fn(() => ({
       upload: vi.fn(async () => ({ data: null, error: { name: 'StorageApiError', message: 'nope' } })),
       remove: vi.fn(),
     })) as unknown as typeof supabase.storage.from;
-    const onManifestPhotoSent = vi.fn();
-    const send = createPickupQueueSender(supabase, db, { onManifestPhotoSent });
+    const onManifestDocumentsChanged = vi.fn();
+    const send = createPickupQueueSender(supabase, db, { onManifestDocumentsChanged });
 
     await send(
       closeManifestEntry({
@@ -329,18 +333,66 @@ describe('createPickupQueueSender — close_manifest', () => {
       }),
     );
 
-    expect(onManifestPhotoSent).not.toHaveBeenCalled();
+    expect(onManifestDocumentsChanged).not.toHaveBeenCalled();
   });
 
-  it('does not call onManifestPhotoSent for a close_manifest send', async () => {
+  it('does not call onManifestDocumentsChanged for a close_manifest send', async () => {
     const { rpc } = rpcMock({ error: null, data: null });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const onManifestPhotoSent = vi.fn();
-    const send = createPickupQueueSender(supabase, db, { onManifestPhotoSent });
+    const onManifestDocumentsChanged = vi.fn();
+    const send = createPickupQueueSender(supabase, db, { onManifestDocumentsChanged });
 
     await send(closeManifestEntry());
 
-    expect(onManifestPhotoSent).not.toHaveBeenCalled();
+    expect(onManifestDocumentsChanged).not.toHaveBeenCalled();
+  });
+
+  // Menor, ronda 4 de review del PR #712 — un renumerado por colisión
+  // (`outcome: 'retry'`) también dispara el gancho, a través del mismo
+  // enrutamiento sin inspección de `outcome` que el test de arriba verifica.
+  it('calls onManifestDocumentsChanged when a collision is discovered and renumbered', async () => {
+    const { supabase, insert } = manifestPhotoSupabaseStub();
+    let insertCalls = 0;
+    insert.mockImplementation(async () => {
+      insertCalls += 1;
+      if (insertCalls === 1) {
+        return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } };
+      }
+      return { data: [{}], error: null };
+    });
+    const select = vi.fn(() => {
+      let usedOrder = false;
+      const chain = {
+        eq: vi.fn(() => chain),
+        is: vi.fn(() => chain),
+        order: vi.fn(() => {
+          usedOrder = true;
+          return chain;
+        }),
+        limit: vi.fn(() => chain),
+        maybeSingle: vi.fn(async () =>
+          usedOrder
+            ? { data: { sheet_number: 5 }, error: null }
+            : { data: { storage_path: 'someone-else/other-manifest/sheet-1-different-client-op.jpg' }, error: null },
+        ),
+      };
+      return chain;
+    });
+    supabase.from = vi.fn(() => ({ insert, select })) as unknown as typeof supabase.from;
+    const onManifestDocumentsChanged = vi.fn();
+    const send = createPickupQueueSender(supabase, db, { onManifestDocumentsChanged });
+
+    const result = await send(
+      closeManifestEntry({
+        id: 1,
+        type: 'manifest_photo',
+        payload: { sheetNumber: 1 },
+        blob: new Blob(['x'], { type: 'image/jpeg' }),
+      }),
+    );
+
+    expect(result.outcome).toBe('retry');
+    expect(onManifestDocumentsChanged).toHaveBeenCalledTimes(1);
   });
 });
 

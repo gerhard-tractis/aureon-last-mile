@@ -602,11 +602,23 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
       maxSheetRow = null as { sheet_number: number } | null,
       maxSheetError = null as { code?: string; message: string } | null,
       authUserId = null as string | null,
+      getSessionThrows = false,
     } = {}) {
       const upload = vi.fn(async () => (uploadError ? { data: null, error: uploadError } : { data: { path: 'x' }, error: null }));
       const remove = vi.fn(async () => ({ data: [], error: null }));
       const insert = vi.fn(async () => (insertError ? { data: null, error: insertError } : { data: [{}], error: null }));
-      const getUser = vi.fn(async () => ({ data: { user: authUserId ? { id: authUserId } : null }, error: null }));
+      // Ronda 4 de review del PR #712 (bloqueante) — `getSession()`, no
+      // `getUser()`: medido contra `@supabase/auth-js@2.72.0` — `getUser()`
+      // es una llamada de red real con `_acquireLock(-1, …)` (espera de lock
+      // SIN timeout) y puede disparar `_removeSession()` en su `catch`.
+      // `getSession()` da el mismo `user.id`, es local.
+      const getSession = vi.fn(async () => {
+        if (getSessionThrows) throw new Error('getSession failed');
+        return {
+          data: { session: authUserId ? { user: { id: authUserId } } : null },
+          error: null,
+        };
+      });
 
       const select = vi.fn(() => {
         let usedOrder = false;
@@ -632,7 +644,7 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
       });
 
       const supabase = {
-        auth: { getUser },
+        auth: { getSession },
         storage: {
           from: vi.fn(() => ({ upload, remove })),
         },
@@ -645,7 +657,7 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
         remove,
         insert,
         select,
-        getUser,
+        getSession,
       };
     }
 
@@ -690,15 +702,42 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
       expect(result).toEqual({ outcome: 'sent' });
     });
 
+    // B-2, ronda 3 de review del PR #712 (bloqueante) — `sendManifestPhoto`
+    // dispara `onManifestDocumentsChanged` cuando el envío SÍ se aplicó, no
+    // sólo cuando el llamador (`offlineQueueSender.ts`) lo inspecciona desde
+    // fuera — el llamador de la ronda 4 ya no distingue por `outcome`.
+    it('calls onManifestDocumentsChanged on a successful send', async () => {
+      const { supabase } = storageStub();
+      const entry = photoEntry();
+      const onManifestDocumentsChanged = vi.fn();
+
+      await sendManifestPhoto(supabase, db, entry, { onManifestDocumentsChanged });
+
+      expect(onManifestDocumentsChanged).toHaveBeenCalledTimes(1);
+      expect(onManifestDocumentsChanged).toHaveBeenCalledWith(entry);
+    });
+
+    it('does not call onManifestDocumentsChanged when the upload fails', async () => {
+      const { supabase } = storageStub({
+        uploadError: { name: 'StorageApiError', message: 'nope' },
+      });
+      const onManifestDocumentsChanged = vi.fn();
+
+      await sendManifestPhoto(supabase, db, photoEntry(), { onManifestDocumentsChanged });
+
+      expect(onManifestDocumentsChanged).not.toHaveBeenCalled();
+    });
+
     // M-4, ronda 3 de review del PR #712 (mayor) — `uploaded_by` NO puede
     // venir de `entry.userId` (B2, ronda 1: rompe la policy cross-user) NI
-    // ser `null` fijo (M-4: pierde "quién fotografió" en una tabla cuyo
-    // COMMENT dice "es el respaldo si después falta un paquete" — hueco de
-    // trazabilidad real, y la columna queda medio poblada, no-nula online,
-    // siempre nula offline). Se resuelve `auth.uid()` de la sesión que
-    // DRENA, en el momento del envío — la misma fuente que compara la
-    // policy, nunca del payload.
-    it('resolves uploaded_by from the draining session (auth.uid()), never from the queued entry', async () => {
+    // ser `null` fijo (M-4: sobre una tabla cuyo COMMENT dice "es el
+    // respaldo si después falta un paquete", `null` fijo dejaba la columna
+    // medio poblada — no-nula online, siempre nula offline). Se resuelve de
+    // la sesión que DRENA, en el momento del envío — la misma fuente que
+    // compara la policy, nunca del payload. Registra quién SUBIÓ, no quién
+    // CAPTURÓ (corrección de la ronda 4: en el escenario cross-user son
+    // personas distintas, y "quién capturó" no se persiste en ningún sitio).
+    it('resolves uploaded_by from the draining session, never from the queued entry', async () => {
       const { supabase, insert } = storageStub({ authUserId: 'draining-session-user' });
       const entry = photoEntry({ userId: 'a-different-user-than-the-draining-session' });
 
@@ -715,6 +754,21 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
       await sendManifestPhoto(supabase, db, photoEntry());
 
       expect(insert).toHaveBeenCalledWith(expect.objectContaining({ uploaded_by: null }));
+    });
+
+    // Bloqueante, ronda 4 de review del PR #712 — sin `try/catch`, una
+    // excepción de `getSession()` escapaba de `sendManifestPhoto` DESPUÉS de
+    // una subida ya exitosa, sin limpiar el objeto — el único camino
+    // post-subida que rompía "fila huérfana imposible". Con el `catch`, cae
+    // a `uploaded_by: null` y sigue hasta el insert con normalidad.
+    it('falls back to null uploaded_by (and still inserts) when getSession itself throws', async () => {
+      const { supabase, insert, remove } = storageStub({ getSessionThrows: true });
+
+      const result = await sendManifestPhoto(supabase, db, photoEntry());
+
+      expect(insert).toHaveBeenCalledWith(expect.objectContaining({ uploaded_by: null }));
+      expect(result).toEqual({ outcome: 'sent' });
+      expect(remove).not.toHaveBeenCalled();
     });
 
     // M2, review del PR #712 — el bucket `manifests` sólo acepta
@@ -838,6 +892,39 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
       updateSpy.mockRestore();
     });
 
+    // Menor, ronda 4 de review del PR #712 — este 23505 acaba de revelar una
+    // fila del servidor que la tira puede no conocer todavía (la que causó
+    // la colisión); invalidar aquí, no sólo en `sent`, cierra el círculo que
+    // B-2 abrió.
+    it('calls onManifestDocumentsChanged when a collision is discovered and renumbered', async () => {
+      const entry = photoEntry();
+      const { supabase } = storageStub({
+        insertError: { code: '23505', message: 'duplicate key value violates unique constraint' },
+        existingRow: { storage_path: 'someone-else/other-manifest/sheet-3-different-client-op.jpg' },
+        maxSheetRow: { sheet_number: 5 },
+      });
+      const onManifestDocumentsChanged = vi.fn();
+
+      await sendManifestPhoto(supabase, db, entry, { onManifestDocumentsChanged });
+
+      expect(onManifestDocumentsChanged).toHaveBeenCalledTimes(1);
+      expect(onManifestDocumentsChanged).toHaveBeenCalledWith(entry);
+    });
+
+    it('does not call onManifestDocumentsChanged when the renumber query itself fails', async () => {
+      const entry = photoEntry();
+      const { supabase } = storageStub({
+        insertError: { code: '23505', message: 'duplicate key value violates unique constraint' },
+        existingRow: { storage_path: 'someone-else/other-manifest/sheet-3-different-client-op.jpg' },
+        maxSheetError: { message: 'permission denied' },
+      });
+      const onManifestDocumentsChanged = vi.fn();
+
+      await sendManifestPhoto(supabase, db, entry, { onManifestDocumentsChanged });
+
+      expect(onManifestDocumentsChanged).not.toHaveBeenCalled();
+    });
+
     it('B-1: renumbers starting at 1 when the manifest has no manifest_documents rows yet', async () => {
       const entry = photoEntry();
       const { supabase } = storageStub({
@@ -850,6 +937,44 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
       await sendManifestPhoto(supabase, db, entry);
 
       expect(updateSpy).toHaveBeenCalledWith(entry.id, { payload: { sheetNumber: 1 } });
+      updateSpy.mockRestore();
+    });
+
+    // Menor, ronda 4 de review del PR #712 — medido por el reviewer: con dos
+    // fotos locales (una ya en la hoja 8) y el servidor en `MAX=7`,
+    // renumerar SIN mirar la cola local proponía 8 de nuevo, chocando con la
+    // otra entrada local (converge en la vuelta siguiente, pero cada choque
+    // consume una unidad de `MAX_RETRY_ATTEMPTS`). El siguiente número libre
+    // debe evitar TAMBIÉN lo que la cola local ya está usando.
+    it('B-1: renumbering also avoids a sheetNumber another local queue entry already has', async () => {
+      const entry = photoEntry();
+      await db.pickup_queue.add({
+        clientOperationId: 'local-sheet-8',
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'manifest_photo',
+        payload: { sheetNumber: 8 },
+        blob: blobOfSize(10),
+        status: 'pending',
+        retryCount: 0,
+        claimToken: null,
+        lastAttemptAt: null,
+        nextAttemptAt: null,
+        createdAt: new Date().toISOString(),
+      });
+      const { supabase } = storageStub({
+        insertError: { code: '23505', message: 'duplicate key value violates unique constraint' },
+        existingRow: { storage_path: 'someone-else/other-manifest/sheet-3-different-client-op.jpg' },
+        maxSheetRow: { sheet_number: 7 },
+      });
+      const updateSpy = vi.spyOn(db.pickup_queue, 'update');
+
+      await sendManifestPhoto(supabase, db, entry);
+
+      // Servidor propone 8 (MAX 7 + 1), pero 8 ya está tomado localmente —
+      // salta a 9.
+      expect(updateSpy).toHaveBeenCalledWith(entry.id, { payload: { sheetNumber: 9 } });
       updateSpy.mockRestore();
     });
 
