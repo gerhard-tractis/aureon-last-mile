@@ -360,6 +360,44 @@ export async function signIn(
   await page.waitForURL(/\/app(\/|$)/, { timeout: 90_000 });
 }
 
+/**
+ * Reads the JWT `@supabase/ssr` stored in cookies after `signIn()` and
+ * decodes its `app_metadata.claims` — the shape
+ * `custom_access_token_hook` writes (spec-88 fase 3). This is the assertion
+ * that closes the gap that fase left open: `signIn()` on its own only
+ * proves the login form redirected to `/app`, which a *degraded* hook
+ * (its own `EXCEPTION WHEN OTHERS ... RETURN event` branch) would still do
+ * — a JWT with no `operator_id`/`role`/`permissions` still authenticates.
+ * Reading the claims is the only way to prove the hook actually ran.
+ *
+ * `@supabase/ssr` (browser client, cookie storage) writes the session under
+ * a cookie named `sb-<ref>-auth-token`, chunked into `.0`/`.1`/... if the
+ * value is long, each chunk `base64-`-prefixed base64url. This does not
+ * hardcode `<ref>` (self-hosted QA derives it from the API hostname, not a
+ * Supabase project id) — it matches any cookie name of that shape instead.
+ */
+export async function getAccessTokenClaims(page: Page): Promise<Record<string, unknown>> {
+  const cookies = await page.context().cookies();
+  const chunks = cookies
+    .filter((c) => /^sb-.+-auth-token(\.\d+)?$/.test(c.name))
+    .sort((a, b) => {
+      const ai = Number(a.name.split('.')[1] ?? -1);
+      const bi = Number(b.name.split('.')[1] ?? -1);
+      return ai - bi;
+    });
+  if (chunks.length === 0) {
+    throw new Error('getAccessTokenClaims: no sb-*-auth-token cookie found — not signed in?');
+  }
+  let raw = chunks.map((c) => decodeURIComponent(c.value)).join('');
+  if (raw.startsWith('base64-')) raw = raw.slice('base64-'.length);
+  const sessionJson = Buffer.from(raw, 'base64url').toString('utf8');
+  const session = JSON.parse(sessionJson) as { access_token: string };
+  const accessToken = session.access_token;
+  const payload = accessToken.split('.')[1];
+  const claimsJson = Buffer.from(payload, 'base64url').toString('utf8');
+  return JSON.parse(claimsJson) as Record<string, unknown>;
+}
+
 /** Types a barcode into a focused scanner input and submits it. */
 export async function scanBarcode(page: Page, label: string, code: string) {
   const input = page.getByLabel(label);

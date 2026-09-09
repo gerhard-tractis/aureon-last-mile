@@ -14,7 +14,7 @@ import {
   seed, teardown, closeDb, db, signIn, scanUntilStatus,
   activeRoute, packageStatus, packageId, routeReception, manifestStates,
   DRIVER, RECEPTIONIST, PLATE, LOADS, COLLECTED, UNEXPECTED, LEFT_BEHIND,
-  OPERATOR_ID, suppressCookieBanner,
+  OPERATOR_ID, suppressCookieBanner, getAccessTokenClaims,
 } from './support/spec52-fixture';
 
 const PICKUP_SCANNER = 'Barcode scanner input';
@@ -73,6 +73,20 @@ test.describe('spec-52 pickup route and consolidated reception', () => {
   test('driver departs the hub — the vehicle is required', async () => {
     test.setTimeout(120_000);
     await signIn(driver, DRIVER);
+
+    // spec-88 fase 3 — the only real proof custom_access_token_hook ran (as
+    // opposed to just not blocking the login). Its EXCEPTION handler swallows
+    // any internal failure and returns the JWT unchanged, so `signIn()`
+    // reaching /app on its own proves nothing about the hook — a degraded
+    // hook still authenticates. This reads the actual JWT's
+    // app_metadata.claims, the shape the hook writes and the frontend reads.
+    const claims = await getAccessTokenClaims(driver);
+    const appClaims = claims.app_metadata as { claims?: Record<string, unknown> } | undefined;
+    expect(appClaims?.claims?.operator_id).toBe(OPERATOR_ID);
+    expect(appClaims?.claims?.role).toBe(DRIVER.role);
+    expect(Array.isArray(appClaims?.claims?.permissions)).toBe(true);
+    expect((appClaims?.claims?.permissions as unknown[]).length).toBeGreaterThan(0);
+
     await driver.goto('/app/pickup');
 
     // spec-54 (#425) rebuilt Recogida: PickupRouteDraftPanel renders the

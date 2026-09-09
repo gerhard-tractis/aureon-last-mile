@@ -15,12 +15,17 @@
 -- privilege que Supabase concede a todo rol de PostgREST en funciones
 -- nuevas de `public` — nunca por un GRANT propio.
 --
--- ORDEN NO NEGOCIABLE: el GRANT explícito a supabase_auth_admin va ANTES de
--- cualquier REVOKE. Si el REVOKE FROM PUBLIC llegara primero, la ventana
--- entre ambas sentencias dejaría a supabase_auth_admin sin EXECUTE alguno —
--- dentro de la misma transacción no hay ventana real (todo corre en un solo
--- COMMIT), pero el orden se mantiene también documentalmente: nunca debe
--- reordenarse en un futuro REPLACE de esta migración.
+-- El GRANT explícito a supabase_auth_admin va antes de los REVOKE, y así se
+-- mantiene por legibilidad y por seguir el orden que pidió la tarea — pero,
+-- corrección sobre una afirmación mía anterior: el orden NO es lo que
+-- protege el login. Dentro de una sola transacción el ACL final es idéntico
+-- sin importar si el GRANT va antes o después del REVOKE FROM PUBLIC (uno
+-- borra la entrada grantee=0, el otro añade una entrada distinta para
+-- supabase_auth_admin — son conmutativos), y se comprobó moviendo el GRANT
+-- al final: mismo resultado, 6/6 verde. Lo que sí es crítico, y lo que el
+-- test y el DO block de abajo protegen de verdad, es que el GRANT EXISTA —
+-- confirmado quitándolo: el test da `not ok 5` y el DO block de esta misma
+-- migración levanta EXCEPTION antes de llegar a COMMIT.
 --
 -- authenticated se cierra también, no sólo anon/PUBLIC: no hay ningún
 -- llamante legítimo autenticado (el frontend nunca invoca este RPC — lo
