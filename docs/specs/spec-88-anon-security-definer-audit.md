@@ -554,40 +554,75 @@ Implementa la distinción `service_role` real vs. `anon`/ausencia de sesión, pr
 >
 > **Catch-up manual de una sola vez, hecho por mí vía SSH (sólo esta
 > operación de escritura; todo lo demás de esta ronda fue lectura):**
-> `docker compose -f infra/supabase-qa/docker-compose.yml --env-file
-> /home/aureon/.env.qa up -d --no-deps auth` — el mismo comando exacto que
-> `restart_auth()` ejecuta. Confirmado después: `docker inspect
-> supabase-qa-auth` muestra `GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED=true`,
+> ```
+> docker compose -f infra/supabase-qa/docker-compose.yml \
+>   --env-file /home/aureon/.env.qa up -d --no-deps auth
+> ```
+> — el mismo comando exacto que `restart_auth()` ejecuta. Confirmado
+> después: `docker inspect supabase-qa-auth` muestra
+> `GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED=true`,
 > `..._URI=pg-functions://postgres/public/custom_access_token_hook`,
-> `StartedAt=2026-09-09T19:04:43Z`, `Health.Status=healthy`. Y la prueba que
-> esta fase pedía desde el principio, ahora genuinamente cierta: login real
-> contra Kong (`POST /auth/v1/token?grant_type=password`) como
-> `qa-admin@qa.test`, JWT decodificado — `operator_id:
-> 00000000-0000-4000-8000-000000000001`, `permissions: [pickup, warehouse,
-> loading, operations, admin, dispatch]`, `app_metadata.claims.role: admin`.
-> El hook corre, y corre bien. También sembré `QA_STATE_FILE` a
-> `a3caa7b2ef1978293ab39b858b77c225ae30e475` (el HEAD real del checkout en
-> ese momento) para que la corrida que aplique este PR arranque desde un
-> estado consistente con la realidad, no desde "archivo ausente" otra vez.
+> `StartedAt=2026-09-09T19:04:43Z`, `Health.Status=healthy`.
 >
-> **Este catch-up manual NO sustituye el arreglo en código.** Sin
-> `QA_STATE_FILE`, el próximo `restart_functions()` que muera a mitad de
-> camino por cualquier otra razón reproduce exactamente este mismo patrón
-> para cualquier flag `CHANGED_*`, no sólo `CHANGED_QA_COMPOSE`.
+> **Y la prueba que esta fase pedía desde la ronda 1, hasta hoy sólo
+> afirmada, ahora genuinamente ejecutada:**
+> ```
+> ANON_KEY="$(grep -E '^ANON_KEY=' /home/aureon/.env.qa | cut -d= -f2- | tr -d '\r')"
+> curl -s -X POST "http://localhost:8100/auth/v1/token?grant_type=password" \
+>   -H "apikey: $ANON_KEY" -H "Content-Type: application/json" \
+>   -d '{"email":"qa-admin@qa.test","password":"QaTest123!"}'
+> # → access_token, JWT decodificado:
+> ```
+> Root del JWT: `operator_id: 00000000-0000-4000-8000-000000000001`,
+> `role: authenticated`, `permissions: [pickup, warehouse, loading,
+> operations, admin, dispatch]`. `app_metadata.claims`: `{operator_id:
+> 00000000-0000-4000-8000-000000000001, permissions: [pickup, warehouse,
+> loading, operations, admin, dispatch], role: admin}`. El hook corre, y
+> corre bien — `operator_id`/`role`/`permissions` correctos, exactamente lo
+> que un login normal debía emitir desde el principio de esta fase.
 >
-> PR: nuevo, rama `feat/spec-88-fase-3-ronda-6-qa-state-marker`, **sin
-> auto-merge** — pendiente número y `gh pr checks` verde.
+> También sembré `QA_STATE_FILE` a `a3caa7b2ef1978293ab39b858b77c225ae30e475`
+> (el HEAD real del checkout en ese momento) para que la corrida que aplique
+> este PR arranque desde un estado consistente con la realidad, no desde
+> "archivo ausente" otra vez.
+>
+> **Este catch-up manual NO sustituye el arreglo en código**, y el arreglo
+> en código **tampoco está verificado de punta a punta todavía** — hueco
+> honesto, no una casilla marcada de más: `QA_STATE_FILE` está unit-testeado
+> (3 tests, mutation-verificados) y razonado contra el incidente real que lo
+> motivó, pero **nadie lo ha visto sostener un deploy que muere a mitad de
+> camino**, porque desde que se escribió no ha ocurrido otro. Se verificará
+> genuinamente la próxima vez que algo se caiga a mitad de `main()` — que
+> ojalá no sea pronto — y hasta entonces sigue siendo una corrección
+> razonada, no una observada dos veces.
+>
+> **Rebase sobre `origin/main` (pedido en ronda 6, tras mergear #718 —
+> mismo fichero: `clear_merge_dir()`, el trap `on_err()`, el health-check
+> de `edge-functions`):** limpio, sin conflictos — `git rebase origin/main`
+> resolvió solo. Verificado explícitamente que ninguna de las dos
+> intervenciones se pisa: `read_qa_prev_sha()` y `on_err()` tocan puntos
+> distintos de `main()` (lectura de `QA_PREV_SHA` al principio de
+> `sync_checkout()` vs. el trap `ERR` instalado justo antes de
+> `guard_provisioned`), y las 4 suites de shell (`drift` con mis 3 tests
+> nuevos, `functions` con sus 8 tests nuevos + los míos, `guard-sudo`,
+> `seed`, `sql-tests`) corren juntas en verde: 10+36+6+10+15.
+>
+> PR: #721, **sin auto-merge**.
 > Review: pendiente — ronda 6 en curso, no revisada todavía por nadie más.
 > QA: **la prueba de login en vivo, pedida desde el inicio de esta fase, se
 > ejecutó de punta a punta contra la VPS real esta ronda — y salió roja la
 > primera vez**, exactamente como predijo la ronda 3 y exactamente lo que
 > el assert de esa ronda existe para cazar. Diagnosticada, arreglada en
-> código, y el estado en vivo de QA corregido a mano una vez. El PR de
-> ronda 6 todavía no se ha mergeado ni desplegado — la próxima corrida real
-> de `deploy-qa` es la que prueba que `QA_STATE_FILE` sostiene esto sin
-> intervención manual la próxima vez que algo se caiga a mitad de camino.
+> código, y el estado en vivo de QA corregido a mano una vez — comando y
+> resultado del login arriba, ya no una promesa. El PR de ronda 6 todavía
+> no se ha mergeado ni desplegado — la próxima corrida real de `deploy-qa`
+> es la que prueba que `QA_STATE_FILE` sostiene esto sin intervención
+> manual la próxima vez que algo se caiga a mitad de camino.
 > Downstream: `**Downstream:** ninguno todavía` en la cabecera del spec —
-> sin cambios.
+> sin cambios. Nota para spec-93 (paridad QA↔prod, fase 1): el contenedor
+> `auth` llevando un mes sin recrearse mientras el compose declaraba otra
+> cosa es exactamente la clase de divergencia QA↔prod que ese spec
+> inventaría — no se actúa aquí, sólo se deja dicho para que encaje ahí.
 
 **Archivos:** (actualizado en ronda 4 — el índice se había quedado en el plan
 de ronda 1, ver el hallazgo C de la ronda 4 en la evidencia de arriba):
