@@ -44,14 +44,14 @@ export function DiscrepancyTable({ rows, now = new Date() }: DiscrepancyTablePro
             </tr>
           ) : (
             rows.map((row) => (
-              <tr key={row.id} className={cn(TR)}>
+              <tr key={row.id} className={cn(TR)} data-testid={`discrepancy-row-${row.id}`}>
                 <td className={TD}>{row.order_number ?? '—'}</td>
                 <td className={TD_MONO}>{row.package_label ?? '—'}</td>
                 <td className={TD_MONO}>{row.carga ?? '—'}</td>
                 <td className={TD_MONO}>{row.ruta ?? '—'}</td>
-                <td className={TD}>{OPERATION_LABELS[row.operation_type]}</td>
+                <td className={TD} data-testid={`discrepancy-stage-${row.id}`}>{OPERATION_LABELS[row.operation_type]}</td>
                 <td className={TD}>{row.closed_by_name ?? '—'}</td>
-                <td className={TD_MONO}>{openSince(row.detected_at, now)}</td>
+                <td className={TD_MONO} data-testid={`discrepancy-since-${row.id}`}>{openSince(row.detected_at, now)}</td>
               </tr>
             ))
           )}

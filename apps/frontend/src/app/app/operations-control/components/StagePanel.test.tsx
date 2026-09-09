@@ -81,4 +81,16 @@ describe('StagePanel', () => {
     );
     expect(screen.getByText(/Tiempo real/)).toBeInTheDocument();
   });
+
+  it('omits the freshness indicator entirely when liveLabel is null', () => {
+    // spec-86 fase 3, ronda 2 (#715): a panel with no Realtime subscription
+    // (Discrepancias) must not claim "Tiempo real" just because it is the
+    // default.
+    render(
+      <StagePanel title="T" subtitle="S" deepLink={null} kpis={KPIS} page={1} pageCount={1} onPageChange={() => {}} lastSyncAt={null} liveLabel={null}>
+        <div />
+      </StagePanel>
+    );
+    expect(screen.queryByText(/Tiempo real/)).toBeNull();
+  });
 });

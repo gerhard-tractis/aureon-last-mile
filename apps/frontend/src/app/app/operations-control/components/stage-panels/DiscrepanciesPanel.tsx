@@ -16,7 +16,7 @@ import type { StagePanelProps } from './PickupPanel';
  * shown as further along than it really is. This panel is where it surfaces
  * instead — and nowhere else.
  */
-export function DiscrepanciesPanel({ operatorId, lastSyncAt }: StagePanelProps) {
+export function DiscrepanciesPanel({ operatorId }: StagePanelProps) {
   const { data } = useDiscrepancies(operatorId, 'open');
   const rows = data ?? [];
 
@@ -29,7 +29,13 @@ export function DiscrepanciesPanel({ operatorId, lastSyncAt }: StagePanelProps) 
       page={1}
       pageCount={1}
       onPageChange={() => {}}
-      lastSyncAt={lastSyncAt}
+      // Ronda 2 (#715, mayor): lastSyncAt (from useOpsControlSnapshot,
+      // unrelated to this panel's own query) is deliberately NOT passed
+      // through, and liveLabel is null — this panel has no Realtime
+      // subscription on public.discrepancies, so claiming "Tiempo real" (or
+      // stamping an unrelated channel's timestamp) would be false.
+      lastSyncAt={null}
+      liveLabel={null}
     >
       <DiscrepancyTable rows={rows} />
     </StagePanel>

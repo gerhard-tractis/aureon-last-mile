@@ -27,7 +27,17 @@ import { ReturnsPanel } from './stage-panels/ReturnsPanel';
 import { ReversePlaceholderPanel } from './stage-panels/ReversePlaceholderPanel';
 import { DiscrepanciesPanel } from './stage-panels/DiscrepanciesPanel';
 
-function getItemsForStage(key: StageKey, snapshot: OpsSnapshot): Record<string, unknown>[] {
+// spec-86 fase 3, ronda 2 (#715, menor): 'discrepancies' is deliberately
+// excluded from this function's key type, not just from its switch. The
+// `stages` map below early-returns for 'discrepancies' before ever calling
+// this — Discrepancias is not sourced from get_ops_control_snapshot at all,
+// it comes from useDiscrepancies directly — so a case here would be dead
+// code a reader has to double-check is really unreachable. Excluding it from
+// the type makes the compiler the one checking that, not a comment.
+function getItemsForStage(
+  key: Exclude<StageKey, 'discrepancies'>,
+  snapshot: OpsSnapshot,
+): Record<string, unknown>[] {
   switch (key) {
     case 'pickup':        return snapshot.pickups as Record<string, unknown>[];
     case 'reception':     return snapshot.orders.filter((o) => o['stage'] === 'reception') as Record<string, unknown>[];
@@ -39,10 +49,6 @@ function getItemsForStage(key: StageKey, snapshot: OpsSnapshot): Record<string, 
     case 'delivery':      return snapshot.routes.filter((r) => r['stage'] === 'delivery' || r['status'] === 'active') as Record<string, unknown>[];
     case 'returns':       return snapshot.returns as Record<string, unknown>[];
     case 'reverse':       return [];
-    // spec-86 fase 3: Discrepancias is not sourced from get_ops_control_snapshot
-    // at all — see useDiscrepancies below, which feeds its tile and panel
-    // directly from public.discrepancies.
-    case 'discrepancies': return [];
   }
 }
 
@@ -61,7 +67,26 @@ export function OpsControlDesktop({ operatorId, onSelectOrder }: OpsControlDeskt
     useAtRiskOrders(operatorId, new Date(), atRiskPage);
   const promise = useDayPromise(operatorId);
   const { data: activeRoutes, isLoading: routesLoading } = useActiveRoutes(operatorId);
-  const { data: openDiscrepancies } = useDiscrepancies(operatorId, 'open');
+  const {
+    data: openDiscrepancies,
+    isLoading: discrepanciesLoading,
+    isError: discrepanciesError,
+    fetchStatus: discrepanciesFetchStatus,
+  } = useDiscrepancies(operatorId, 'open');
+  // spec-86 fase 3, ronda 2 (#715, mayor): the other seven tiles are all
+  // covered by the `isLoading && !snapshot` gate below, which blocks the
+  // whole page behind a skeleton until useOpsControlSnapshot resolves. This
+  // tile's data comes from an independent query with its own lifecycle, so
+  // it needs its own "do I actually know the answer" check — without it,
+  // three unrelated states (still loading with no cache; offline, so
+  // TanStack Query's networkMode:'online' leaves the query permanently
+  // `paused`; or a failed RPC after retries) all fall through to
+  // `data === undefined`, which `?? 0` turns into a confident, wrong "0 ·
+  // Sin incidencias · ok" — the exact "looks resolved" failure this fase
+  // exists to close, just moved into the tile that reports on it.
+  const discrepanciesUnknown =
+    openDiscrepancies === undefined &&
+    (discrepanciesLoading || discrepanciesError || discrepanciesFetchStatus === 'paused');
 
   if (isLoading && !snapshot) {
     // Geometry matches the loaded layout so the page does not reflow.
@@ -86,9 +111,13 @@ export function OpsControlDesktop({ operatorId, onSelectOrder }: OpsControlDeskt
   const stages = STAGE_KEYS.map((key) => {
     // spec-86 fase 3: Discrepancias' count and health come from
     // useDiscrepancies, not from the generic snapshot-driven pipeline below —
-    // its items are never part of get_ops_control_snapshot (see
-    // getItemsForStage's 'discrepancies' case).
+    // its items are never part of get_ops_control_snapshot at all (see
+    // getItemsForStage above, which excludes 'discrepancies' from its own
+    // key type rather than special-casing it).
     if (key === 'discrepancies') {
+      if (discrepanciesUnknown) {
+        return { key, count: null, delta: 'Sin datos', health: 'neutral' as HealthStatus, packageCount: null };
+      }
       const health: HealthStatus = discrepancyCount > 0 ? 'warn' : 'ok';
       return {
         key,

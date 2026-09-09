@@ -22,7 +22,14 @@ import { cn } from '@/lib/utils';
 
 interface StageData {
   key: StageKey;
-  count: number;
+  /**
+   * null when the caller genuinely does not know the count yet (loading,
+   * offline/paused, or errored) — spec-86 fase 3, ronda 2 (#715): a tile that
+   * shows "0" while its query hasn't resolved reads as "confirmed empty",
+   * indistinguishable from an honest zero. Rendered as "—", same convention
+   * as packageCount below.
+   */
+  count: number | null;
   delta: string;
   health: HealthStatus;
   /**
@@ -128,7 +135,7 @@ export function StageRail({ stages, activeStage, onStageChange }: StageRailProps
               </div>
 
               <span className="font-mono text-[25px] font-bold leading-none text-text">
-                {stage.count}
+                {stage.count ?? '—'}
               </span>
 
               {/* The mock sized this slot for a token like "+18". computeStageHealth

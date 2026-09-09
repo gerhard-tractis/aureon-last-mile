@@ -52,4 +52,9 @@ describe('DiscrepanciesPanel', () => {
     expect(screen.getByText('ORD-01')).toBeDefined();
     expect(screen.getByText('CTN-1')).toBeDefined();
   });
+
+  it('does not claim "Tiempo real" — there is no Realtime subscription on discrepancies', () => {
+    render(<DiscrepanciesPanel {...defaultProps} />);
+    expect(screen.queryByText(/Tiempo real/)).toBeNull();
+  });
 });

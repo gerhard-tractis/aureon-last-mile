@@ -34,16 +34,26 @@ describe('DiscrepancyTable', () => {
     expect(screen.getByText('PR-2026-2298')).toBeDefined();
   });
 
-  it('labels the source operation in Spanish', () => {
+  it('labels the source operation in Spanish, per row — not just present somewhere', () => {
+    // A same-string presence check ("Recepción" and "Recogida" both exist in
+    // the document) would still pass if the two labels were swapped with
+    // each other. Assert each row's OWN "Etapa" cell instead.
     render(<DiscrepancyTable rows={ROWS} now={NOW} />);
-    expect(screen.getByText('Recepción')).toBeDefined();
-    expect(screen.getByText('Recogida')).toBeDefined();
+    expect(screen.getByTestId('discrepancy-stage-d-1').textContent).toBe('Recepción');
+    expect(screen.getByTestId('discrepancy-stage-d-2').textContent).toBe('Recogida');
   });
 
   it('shows who closed the operation that detected it', () => {
     render(<DiscrepancyTable rows={ROWS} now={NOW} />);
     expect(screen.getByText('Ana Recepción')).toBeDefined();
     expect(screen.getByText('Beto Recogida')).toBeDefined();
+  });
+
+  it('computes "abierta hace" from detected_at and the injected now, not a hardcoded value', () => {
+    render(<DiscrepancyTable rows={ROWS} now={NOW} />);
+    // d-1 detected 2h before NOW (12:00 - 10:00); d-2 detected 24h before.
+    expect(screen.getByTestId('discrepancy-since-d-1').textContent).toBe('2h');
+    expect(screen.getByTestId('discrepancy-since-d-2').textContent).toBe('24h');
   });
 
   it('falls back to em-dash for missing order/package/carga/ruta/closer', () => {
