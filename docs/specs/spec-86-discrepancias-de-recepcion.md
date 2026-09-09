@@ -433,6 +433,54 @@ escritores del mismo estado es como se producen los desacuerdos.
 No depende de nada pendiente: `resolve_discrepancy` existe y el disparador de
 avance de estado ya vive en producción.
 
+> **Nota de implementación (2026-09-09).** El texto de arriba dice que la
+> discrepancia pasa a `resolved` "vía `resolve_discrepancy`" — **no es lo que
+> se construyó**, a propósito. `resolve_discrepancy` (20260913000003/
+> 20260913000005) resuelve `auth.jwt()->>'sub'` para el actor y exige rol
+> elevado sólo para `lost` — pero el propio disparador de escaneo no tiene
+> garantía de traer esa sesión (un reintento de la cola offline de spec-81
+> podría reproducir el `INSERT` sobre `reception_scans` sin el mismo JWT). En
+> vez de llamar al RPC, `trg_reception_scan_advance_package_status`
+> (`CREATE OR REPLACE` sobre la última definición real,
+> `20260812000002_spec52_package_state_engine.sql:124`) gana una segunda
+> `UPDATE`, independiente de la que avanza el paquete a `en_bodega`, que
+> replica a mano el mismo guard de "no reabrir una fila cerrada"
+> (`status = 'open'`) y usa `NEW.scanned_by` como `resolved_by_user_id` en vez
+> de `auth.jwt()` — mismo patrón que los dos triggers de spec-52 ya usan
+> (`NEW.operator_id`, no `get_operator_id()`, para el tenant).
+>
+> **Hallazgo de la ronda de mutation-testing, corregido en el mismo commit:**
+> el comentario original de la migración afirmaba que `operation_type =
+> 'reception'` era el guard que protegía a una discrepancia `pickup` del
+> mismo paquete (probado, se pensó, con un fixture `d4`). Mutado y
+> re-corrido: **sobrevivió 14/14** — el fixture no lo mataba. La razón real:
+> `discrepancy_source_matches_operation` (CHECK, `20260913000001`) ya obliga
+> a que una fila `pickup` tenga `route_reception_id IS NULL`, así que nunca
+> puede igualar `NEW.reception_id` (siempre no-NULL en esta rama) sin importar
+> ese predicado — es defensa en profundidad, igual que `operator_id =
+> NEW.operator_id` (que también sobrevivió 14/14, y por la misma razón
+> estructural: `route_reception_id` ya determina el operador vía su propia
+> FK). Los cuatro guards restantes (`package_id`, `route_reception_id`,
+> `status = 'open'`, `deleted_at IS NULL`) sí matan exactamente una aserción
+> cada uno, probados uno a uno, restaurando entre cada corrida — no en bloque.
+>
+> Migración: `packages/database/supabase/migrations/20261001000001_spec86_fase2a_resolve_discrepancy_on_reception_scan.sql`.
+> Test pgTAP: `packages/database/supabase/tests/spec86_fase2a_resolve_discrepancy_on_reception_scan.test.sql`
+> (14/14, `psql -tA -f` crudo contra `spec52-pg`, y vía `scripts/pgtap-local.sh`).
+> Regresión sin fallos: `spec52_state_engine`, `spec52_unexpected_count`,
+> `spec52_open_route_reception`, `spec52_migration_reconciliation`,
+> `spec86_fase1_complete_route_reception_discrepancies` (18/18),
+> `spec85_discrepancies_rpcs` (29/29), `spec85_discrepancies_schema`,
+> `spec86_fase3_ops_control_discrepancies_view`.
+>
+> No se tocó ningún archivo de frontend — esta fase es puramente SQL
+> (trigger existente, ya invocado hoy por `useReceptionScan.ts` en cada
+> `INSERT` a `reception_scans`); no hay `node_modules` en este worktree y no
+> se corrió `npm install`/`ci` por la regla del repo, así que Vitest no se
+> ejecutó aquí — nada en `apps/frontend` cambió.
+>
+> Implementado por: implementer — rama `feat/spec-86-fase-2a-resolver-bulto-aparece`, SHA `6a6c504`.
+
 ### Fase 2b — Perdida e indemnización `[parked]`
 
 > **Corrección (2026-09-08).** Esta fase estaba `[blocked]` esperando la
