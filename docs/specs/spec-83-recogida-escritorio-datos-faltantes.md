@@ -211,12 +211,29 @@ esté tomada y este campo se rellene de verdad.)
 - [ ] Leer spec-73 y decidir: mismo proxy, o omisión razonada escrita en este spec.
 - [ ] Si se implementa: capacidad en `vehicles` primero, que es la mitad barata y ya se muestra en el mock.
 
-### Fase 4 — Diff visual `[pending]`
+### Fase 4 — Diff visual `[in_progress]`
 
 **Archivos:** `apps/frontend/src/components/pickup/ManifestTable.tsx`, `apps/frontend/src/components/pickup/PickupRouteDraftPanel.tsx`, `apps/frontend/src/components/pickup/TodayClosuresPanel.tsx`, `apps/frontend/src/components/StatTile.tsx`, y sus tests
 
-- [ ] Screenshot diff `1l` contra `5a`. Se espera poco: `5a` es el mismo diseño con los datos que faltaban.
-- [ ] **Conservar la séptima columna** (impresión de etiquetas, spec-53). El mock no la tiene y spec-54 la añadió a propósito: quitarla sería una regresión funcional disfrazada de fidelidad al diseño.
+- [x] Diff contra el mock. **Nota:** `1l` ya no existe como artboard independiente en `docs/design/`; el único mock de Recogida en el repo es `docs/design/Recogida.dc.html`, artboard **`5a`** (línea 50 en adelante). Ese es el que se usó como fuente de verdad — no hay un `1l` contra el cual comparar por separado, así que el diff fue "código actual contra `5a`", filtrando lo que `5a` pide y que depende de datos que las fases 2 y 3 (bloqueadas/pendientes) todavía no proveen.
+- [x] **Conservar la séptima columna** (impresión de etiquetas, spec-53). Sigue ahí — no se tocó `GRID` ni la columna de impresión.
+
+**Hallazgo y fix (dentro del alcance declarado, sin datos nuevos):**
+`TodayClosuresPanel.tsx` — la línea de merma usaba `{row.total_packages ?? 0}` (heredado de spec-54, spec-83 fase 1 no lo tocó a propósito). Un manifiesto cerrado con `total_packages` nulo mostraba «N faltantes de 0», que lee como si no se hubiera esperado nada. Fix: si `total_packages` es `null`, se omite la cláusula «de M» y sólo se muestra «N faltante(s)» — no se inventa un cero. Test añadido cubriendo ambos lados (con total conocido sigue mostrando «de 44»; sin total, lo omite) — mutation-tested manualmente invirtiendo la condición `!= null` y confirmando que el test que exige "de 44" falla si se rompe esa rama.
+
+**Divergencias encontradas y NO tocadas (declaradas, no arregladas):**
+1. **Fondo de fila completo en `TodayClosuresPanel` cuando hay merma.** El mock (`5a`, líneas 264-268) sólo tiñe el badge del ícono (`bg:var(--warn-bg)`) — la fila en sí no lleva fondo, sólo el `border-bottom` normal. El código actual aplica `bg-status-warning-bg` a la fila completa (`TodayClosuresPanel.tsx`, fase 1). **No lo cambié**: `TodayClosuresPanel.test.tsx` (fase 1, PR #696) afirma explícitamente `row.className` debe **contener** `'status-warning'` en el caso con merma y **no contenerlo** en el caso limpio — es una aserción a nivel de fila, no del ícono. Quitar el fondo de la fila rompe ese test de fase 1 a propósito escrito hace minutos. Tratarlo como visual-only y "corregirlo" habría sido exactamente el error que este spec pide no cometer: tocar una decisión de producto ya cerrada bajo la excusa de fidelidad al mock. Queda como hallazgo para quien reabra el diseño de esa paleta, no como algo que esta fase decida.
+2. **Panel "VEHÍCULO Y CONDUCTOR" inline con barra de ocupación** (`5a`, dentro del panel de ruta en armado). El mock muestra el vehículo/conductor elegidos inline, con "Cambiar", antes de crear la ruta. La implementación actual (`PickupRouteDraftPanel.tsx` + `StartRouteButton.tsx`, spec-61) selecciona el vehículo en un diálogo modal al momento de confirmar, y no hay conductor que elegir (lo asigna quien lidera la ruta). **No es un dato faltante** — es un modelo de interacción distinto, decidido en spec-61 con sus propios tests. `StartRouteButton.tsx` y `VehicleSelect.tsx` no están en el alcance de archivos de esta fase, y reescribir el flujo de creación de ruta para que coincida con el mock sería un cambio de comportamiento, no un diff visual. Se declara sin tocar.
+3. **Texto del botón de confirmación.** Mock: "Crear ruta y generar QR". Código: "Iniciar ruta de retiro" (en `StartRouteButton.tsx`, fuera de alcance). Mismo motivo que (2): cambiar el texto sin cambiar el archivo que lo posee, o cambiar el archivo fuera del alcance declarado, no corresponde a esta fase.
+4. **La barra de ocupación estimada** (68%) — ya cubierta por la fase 3 de este mismo spec (`[pending]`, depende de spec-73); no se inventó ningún porcentaje aquí, consistente con la decisión de spec-54.
+5. **La columna VENTANA y el semáforo de cierre** — cubiertos por la fase 2 (`[blocked]`); `ManifestTable.tsx` sigue sin esa columna, correctamente.
+
+`ManifestTable.tsx`, `PickupRouteDraftPanel.tsx` (salvo (2)/(3) arriba) y `StatTile.tsx` ya coincidían con lo que `5a` pide sin datos nuevos — tipografías, tamaños, paletas de estado, numeración de la ruta en armado y agregados del pie ("N órdenes · M paquetes") ya son fieles. **`StatTile.tsx` no se modificó** — se comprobó `git grep StatTile` y lo usan además `distribution/page.tsx`, `reception/page.tsx`, `DistributionMobileView.tsx`, `PickupMobileActiveRoute.tsx`, `ReceptionCounts.tsx` y un componente local homónimo en `DispatchTabletSidePanel.tsx` que no importa el compartido; al no tocarlo, ninguna de esas pantallas ni sus specs quedan afectadas.
+
+**Impacto downstream.**
+- **spec-82** declara a spec-83 como downstream suyo, pero no al revés: `spec-82-recogida-movil-asignacion-y-ruta.md` no menciona `ManifestTable`, `PickupRouteDraftPanel`, `TodayClosuresPanel` ni `StatTile` (verificado con `grep`) — es enteramente móvil (`5b`–`5i`). Nada que reconciliar en esa dirección.
+- **Ningún otro spec activo describe estos cuatro componentes de escritorio** más allá de spec-54 (que ya se citó como el origen y quedó superado por este mismo spec) y este propio spec-83.
+- El **filtro de merma `status <> 'resolved'`** (spec-85, fase 1 de este spec) no se tocó: esta fase no cambió ninguna consulta ni el hook `useManifests`, sólo el render de un campo ya presente en `CompletedManifest`. El mock no pide nada que lo contradiga — `5a` no distingue estados de discrepancia, sólo muestra el conteo.
 
 ---
 

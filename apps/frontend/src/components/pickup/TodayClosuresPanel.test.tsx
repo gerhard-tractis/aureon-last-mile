@@ -59,4 +59,23 @@ describe('TodayClosuresPanel', () => {
 
     expect(screen.getByText('2 faltantes de 44')).toBeInTheDocument();
   });
+
+  // spec-83 fase 4 — diff visual: spec-54's `?? 0` made a manifest with no
+  // package count read "2 faltantes de 0", which reads as if nothing was
+  // ever expected. Omit the "de M" clause entirely when the total is
+  // unknown rather than lying with a zero.
+  it('omits "de M" when total_packages is null, instead of showing "de 0"', () => {
+    render(
+      <TodayClosuresPanel rows={[completedManifest({ missing_count: 2, total_packages: null })]} />,
+    );
+
+    expect(screen.getByText('2 faltantes')).toBeInTheDocument();
+    expect(screen.queryByText(/de 0/)).not.toBeInTheDocument();
+  });
+
+  it('still shows "de M" when total_packages is a real number', () => {
+    render(<TodayClosuresPanel rows={[completedManifest({ missing_count: 2, total_packages: 44 })]} />);
+
+    expect(screen.getByText('2 faltantes de 44')).toBeInTheDocument();
+  });
 });
