@@ -18,6 +18,13 @@ import {
   manifestIsBlocked,
   manifestRetryEta,
 } from '@/lib/offline/queue-blocking';
+import { PICKUP_QUEUE_WAKE_EVENT } from '@/lib/offline/wake-event';
+
+// M-2, review del PR #712 — re-exportado desde su nueva ubicación
+// (`lib/offline/wake-event.ts`) para que `complete/[loadId]/page.tsx` (el
+// otro productor del evento) no tenga que cambiar su import. Ver el
+// docstring del módulo nuevo para por qué se movió.
+export { PICKUP_QUEUE_WAKE_EVENT } from '@/lib/offline/wake-event';
 
 /**
  * spec-81 fase 2 — el drenador de `pickup_queue`.
@@ -516,28 +523,6 @@ export function useOfflineQueue(
 
   return { drainNow: drain };
 }
-
-/**
- * M-1, ronda 5 de review del PR #679 (mayor) — `retryBlockedManifest`
- * despertaba al drenador con `window.dispatchEvent(new Event('online'))`.
- * `online` es un evento GLOBAL con siete suscriptores reales en la app
- * (`Providers.tsx`: React Query's `onlineManager`; `useSyncQueue.ts`;
- * `scanStore.ts`; y otros) — tocar "REQUIERE AYUDA" sin señal de verdad les
- * mentía a TODOS ellos a la vez: React Query reanudaba mutaciones pausadas y
- * refetcheaba contra un dispositivo sin cobertura, el chip de sync pintaba
- * "online" en verde, Recepción se marcaba online. Y nada se autocorregía:
- * el navegador nunca iba a disparar el `offline` real que los devolviera a
- * la realidad, porque el estado de red real nunca cambió — la app creía que
- * había señal el resto de la sesión. Medido por el reviewer:
- * `navigator.onLine === false` pero `SyncChip.status === 'online'` y
- * `onlineManager.isOnline() === true` tras un solo tap.
- *
- * Este evento propio (`CustomEvent`, no reutiliza el tipo `'online'`) tiene
- * exactamente UN suscriptor: el propio `useOfflineQueue`, más arriba en
- * este archivo. "Hay trabajo nuevo que intentar ahora, no esperes al
- * próximo backoff" sin fingir que la red volvió.
- */
-export const PICKUP_QUEUE_WAKE_EVENT = 'aureon:pickup-queue-wake';
 
 /**
  * Decisión del usuario, 2026-09-08 (ronda 4 de review del PR #679, B-1) —

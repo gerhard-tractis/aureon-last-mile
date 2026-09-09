@@ -424,6 +424,69 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
       // lo que la cola LOCAL todavía no confirmó.
       expect((entry.payload as { sheetNumber: number }).sheetNumber).toBe(1);
     });
+
+    // M-1, ronda 3 de review del PR #712 (mayor) — el mutante superviviente:
+    // restringir la consulta a `status === 'pending'` no rompía ningún test,
+    // porque los tres de arriba sólo siembran `pending`. El CÓDIGO ya mira
+    // toda la cola (`status !== 'sent'`, sin filtro de `userId`); estos dos
+    // tests fijan que la SUITE también lo exige — una entrada `sending`
+    // puede ya haber insertado su fila en el servidor con ese número, y una
+    // `dead` sigue ocupando ese número hasta que un humano la resuelva.
+    it('B3/M-1: a sheetNumber taken by a sending entry still counts (not just pending)', async () => {
+      await db.pickup_queue.add({
+        clientOperationId: 'seed-sending',
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'manifest_photo',
+        payload: { sheetNumber: 1 },
+        blob: fakeBlob(10),
+        status: 'sending',
+        retryCount: 0,
+        claimToken: 'token-x',
+        lastAttemptAt: null,
+        nextAttemptAt: null,
+        createdAt: new Date().toISOString(),
+      });
+
+      const entry = await enqueueManifestPhoto(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        sheetNumber: 1,
+        blob: blobOfSize(10),
+      });
+
+      expect((entry.payload as { sheetNumber: number }).sheetNumber).toBe(2);
+    });
+
+    it('B3/M-1: a sheetNumber taken by a dead entry from a different user still counts', async () => {
+      await db.pickup_queue.add({
+        clientOperationId: 'seed-dead-other-user',
+        operatorId: OPERATOR_A,
+        userId: 'a-different-user',
+        manifestId: MANIFEST_1,
+        type: 'manifest_photo',
+        payload: { sheetNumber: 1 },
+        blob: fakeBlob(10),
+        status: 'dead',
+        retryCount: 10,
+        claimToken: null,
+        lastAttemptAt: null,
+        nextAttemptAt: null,
+        createdAt: new Date().toISOString(),
+      });
+
+      const entry = await enqueueManifestPhoto(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        sheetNumber: 1,
+        blob: blobOfSize(10),
+      });
+
+      expect((entry.payload as { sheetNumber: number }).sheetNumber).toBe(2);
+    });
   });
 
   describe('unconfirmedPhotoBytes', () => {
@@ -521,50 +584,95 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
       };
     }
 
+    /**
+     * `select()` puede pedirse por DOS motivos distintos aquí — verificar si
+     * un 23505 es la MISMA foto (`.eq().eq().eq().is().maybeSingle()`) o
+     * encontrar el siguiente `sheet_number` libre al renumerar tras una
+     * colisión real (`.eq().eq().is().order().limit().maybeSingle()`, B-1
+     * ronda 3). Cada llamada a `select()` construye una cadena nueva; si esa
+     * cadena ve `.order()`, es la consulta de renumerado — el resultado que
+     * da su `maybeSingle()` se controla por separado del de verificación de
+     * 23505.
+     */
     function storageStub({
       uploadError = null as { name?: string; message: string } | null,
       insertError = null as { code?: string; message: string } | null,
       existingRow = null as { storage_path: string } | null,
       selectError = null as { code?: string; message: string } | null,
+      maxSheetRow = null as { sheet_number: number } | null,
+      maxSheetError = null as { code?: string; message: string } | null,
+      authUserId = null as string | null,
     } = {}) {
       const upload = vi.fn(async () => (uploadError ? { data: null, error: uploadError } : { data: { path: 'x' }, error: null }));
       const remove = vi.fn(async () => ({ data: [], error: null }));
       const insert = vi.fn(async () => (insertError ? { data: null, error: insertError } : { data: [{}], error: null }));
-      const maybeSingle = vi.fn(async () =>
-        selectError ? { data: null, error: selectError } : { data: existingRow, error: null },
-      );
-      const selectChain = {
-        eq: vi.fn(() => selectChain),
-        is: vi.fn(() => selectChain),
-        maybeSingle,
-      };
-      const select = vi.fn(() => selectChain);
+      const getUser = vi.fn(async () => ({ data: { user: authUserId ? { id: authUserId } : null }, error: null }));
+
+      const select = vi.fn(() => {
+        let usedOrder = false;
+        const chain = {
+          eq: vi.fn(() => chain),
+          is: vi.fn(() => chain),
+          order: vi.fn(() => {
+            usedOrder = true;
+            return chain;
+          }),
+          limit: vi.fn(() => chain),
+          maybeSingle: vi.fn(async () =>
+            usedOrder
+              ? maxSheetError
+                ? { data: null, error: maxSheetError }
+                : { data: maxSheetRow, error: null }
+              : selectError
+                ? { data: null, error: selectError }
+                : { data: existingRow, error: null },
+          ),
+        };
+        return chain;
+      });
 
       const supabase = {
+        auth: { getUser },
         storage: {
           from: vi.fn(() => ({ upload, remove })),
         },
         from: vi.fn(() => ({ insert, select })),
       };
 
-      return { supabase: supabase as unknown as Parameters<typeof sendManifestPhoto>[0], upload, remove, insert, select, maybeSingle };
+      return {
+        supabase: supabase as unknown as Parameters<typeof sendManifestPhoto>[1],
+        upload,
+        remove,
+        insert,
+        select,
+        getUser,
+      };
     }
 
     it('reports dead without any network call when the entry carries no blob', async () => {
       const { supabase, upload, insert } = storageStub();
 
-      const result = await sendManifestPhoto(supabase, photoEntry({ blob: undefined }));
+      const result = await sendManifestPhoto(supabase, db, photoEntry({ blob: undefined }));
 
       expect(result.outcome).toBe('dead');
       expect(upload).not.toHaveBeenCalled();
       expect(insert).not.toHaveBeenCalled();
     });
 
+    it('reports dead without any network call when the entry has no id', async () => {
+      const { supabase, upload } = storageStub();
+
+      const result = await sendManifestPhoto(supabase, db, photoEntry({ id: undefined }));
+
+      expect(result.outcome).toBe('dead');
+      expect(upload).not.toHaveBeenCalled();
+    });
+
     it('uploads to the deterministic path, inserts the row, and reports sent on the happy path', async () => {
       const { supabase, upload, insert } = storageStub();
       const entry = photoEntry();
 
-      const result = await sendManifestPhoto(supabase, entry);
+      const result = await sendManifestPhoto(supabase, db, entry);
 
       expect(upload).toHaveBeenCalledWith(
         manifestPhotoStoragePath(entry),
@@ -582,29 +690,31 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
       expect(result).toEqual({ outcome: 'sent' });
     });
 
-    // B2, review del PR #712 — `uploaded_by` NO puede venir de
-    // `entry.userId` (la identidad de quien encoló, congelada en la entrada).
-    // `drainManifest` procesa la cabeza del FIFO sea de quien sea, pasado
-    // `CROSS_USER_RECLAIM_MS` (`queue-blocking.ts`) — decisión del usuario,
-    // justificada porque `close_manifest` deriva el firmante de `auth.uid()`
-    // en el servidor, NUNCA del payload. `manifest_photo` es el primer tipo
-    // de esta cola que llevaba la identidad del actor en el payload, y eso
-    // rompía esa premisa: B (bajo su propio JWT) reintentando la foto de A
-    // insertaba `uploaded_by = A`, y la policy `uploaded_by IS NULL OR
-    // uploaded_by = auth.uid()` la rechazaba con 42501 — retry × 10 → dead →
-    // manifiesto bloqueado para siempre, subiendo y borrando el blob en cada
-    // vuelta. La policy admite `NULL` explícitamente; no hay sesión fiable de
-    // la que derivarlo en el drenador de fondo (mismo problema, mismo motivo
-    // que `close_manifest` no manda `operator_name` en el payload).
-    it('never sends uploaded_by from the queued entry — insert leaves it null, RLS-safe for any session', async () => {
-      const { supabase, insert } = storageStub();
+    // M-4, ronda 3 de review del PR #712 (mayor) — `uploaded_by` NO puede
+    // venir de `entry.userId` (B2, ronda 1: rompe la policy cross-user) NI
+    // ser `null` fijo (M-4: pierde "quién fotografió" en una tabla cuyo
+    // COMMENT dice "es el respaldo si después falta un paquete" — hueco de
+    // trazabilidad real, y la columna queda medio poblada, no-nula online,
+    // siempre nula offline). Se resuelve `auth.uid()` de la sesión que
+    // DRENA, en el momento del envío — la misma fuente que compara la
+    // policy, nunca del payload.
+    it('resolves uploaded_by from the draining session (auth.uid()), never from the queued entry', async () => {
+      const { supabase, insert } = storageStub({ authUserId: 'draining-session-user' });
       const entry = photoEntry({ userId: 'a-different-user-than-the-draining-session' });
 
-      await sendManifestPhoto(supabase, entry);
+      await sendManifestPhoto(supabase, db, entry);
 
       expect(insert).toHaveBeenCalledWith(
-        expect.objectContaining({ uploaded_by: null }),
+        expect.objectContaining({ uploaded_by: 'draining-session-user' }),
       );
+    });
+
+    it('falls back to null uploaded_by when no session is resolvable, instead of failing the upload', async () => {
+      const { supabase, insert } = storageStub({ authUserId: null });
+
+      await sendManifestPhoto(supabase, db, photoEntry());
+
+      expect(insert).toHaveBeenCalledWith(expect.objectContaining({ uploaded_by: null }));
     });
 
     // M2, review del PR #712 — el bucket `manifests` sólo acepta
@@ -618,7 +728,7 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
       const { supabase, upload } = storageStub();
       const entry = photoEntry({ blob: new Blob(['x'], { type: 'image/heic' }) });
 
-      await sendManifestPhoto(supabase, entry);
+      await sendManifestPhoto(supabase, db, entry);
 
       expect(upload).toHaveBeenCalledWith(
         manifestPhotoStoragePath(entry),
@@ -627,12 +737,29 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
       );
     });
 
+    // Menor, ronda 3 de review del PR #712 — un `Blob`/`File` sin MIME
+    // (medido: algunos `<input capture>` en Android lo dejan vacío) manda
+    // `contentType: ''`, que un bucket con lista blanca de MIME rechaza de
+    // forma PERMANENTE — un rechazo que reintentar nunca arregla.
+    it('falls back to image/jpeg when the blob has no MIME type', async () => {
+      const { supabase, upload } = storageStub();
+      const entry = photoEntry({ blob: new Blob(['x'], { type: '' }) });
+
+      await sendManifestPhoto(supabase, db, entry);
+
+      expect(upload).toHaveBeenCalledWith(
+        manifestPhotoStoragePath(entry),
+        entry.blob,
+        expect.objectContaining({ contentType: 'image/jpeg' }),
+      );
+    });
+
     it('reports offline when the upload fails on a network error, and never attempts the insert', async () => {
       const { supabase, insert } = storageStub({
         uploadError: { name: 'StorageUnknownError', message: 'Failed to fetch' },
       });
 
-      const result = await sendManifestPhoto(supabase, photoEntry());
+      const result = await sendManifestPhoto(supabase, db, photoEntry());
 
       expect(result.outcome).toBe('offline');
       expect(insert).not.toHaveBeenCalled();
@@ -643,7 +770,7 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
         uploadError: { name: 'StorageApiError', message: 'The resource already exists' },
       });
 
-      const result = await sendManifestPhoto(supabase, photoEntry());
+      const result = await sendManifestPhoto(supabase, db, photoEntry());
 
       expect(result.outcome).toBe('retry');
     });
@@ -660,7 +787,7 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
       });
       const entry = photoEntry();
 
-      const result = await sendManifestPhoto(supabase, entry);
+      const result = await sendManifestPhoto(supabase, db, entry);
 
       expect(upload).toHaveBeenCalled();
       expect(remove).toHaveBeenCalledWith([manifestPhotoStoragePath(entry)]);
@@ -680,28 +807,70 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
         existingRow: { storage_path: manifestPhotoStoragePath(entry) },
       });
 
-      const result = await sendManifestPhoto(supabase, entry);
+      const result = await sendManifestPhoto(supabase, db, entry);
 
       expect(result).toEqual({ outcome: 'sent' });
       expect(remove).not.toHaveBeenCalled();
     });
 
-    // Colisión real: otra foto ya ocupa este sheet_number (una carrera entre
-    // dos capturas). Reintentar nunca va a resolver un número ya ocupado por
-    // OTRO objeto — se limpia lo que acabamos de subir (huérfano evitable) y
-    // se da por muerta, con la misma afordancia humana que cualquier otro
-    // `dead` de esta cola.
-    it('reports dead and removes the uploaded object when a 23505 on insert is a genuine sheet_number collision', async () => {
+    // B-1, ronda 3 de review del PR #712 (bloqueante, parte 1) — decisión
+    // del usuario: una colisión de `sheet_number` NO muere. Una foto es
+    // respaldo, no conteo — su pérdida no falsea la cifra que el cliente
+    // firma en `close_manifest` — y el número es sólo una etiqueta de
+    // presentación ("hoja N"), no una identidad. Se limpia el objeto subido
+    // bajo el número viejo, se calcula el siguiente número libre CONTRA EL
+    // SERVIDOR (la fuente real del conflicto) y se reintenta con ese número
+    // nuevo — nunca `dead`.
+    it('B-1: renumbers and retries (never dead) when a 23505 on insert is a genuine sheet_number collision', async () => {
       const entry = photoEntry();
       const { supabase, remove } = storageStub({
         insertError: { code: '23505', message: 'duplicate key value violates unique constraint' },
         existingRow: { storage_path: 'someone-else/other-manifest/sheet-3-different-client-op.jpg' },
+        maxSheetRow: { sheet_number: 5 },
       });
+      const updateSpy = vi.spyOn(db.pickup_queue, 'update');
 
-      const result = await sendManifestPhoto(supabase, entry);
+      const result = await sendManifestPhoto(supabase, db, entry);
 
-      expect(result.outcome).toBe('dead');
+      expect(result.outcome).toBe('retry');
       expect(remove).toHaveBeenCalledWith([manifestPhotoStoragePath(entry)]);
+      expect(updateSpy).toHaveBeenCalledWith(entry.id, { payload: { sheetNumber: 6 } });
+      updateSpy.mockRestore();
+    });
+
+    it('B-1: renumbers starting at 1 when the manifest has no manifest_documents rows yet', async () => {
+      const entry = photoEntry();
+      const { supabase } = storageStub({
+        insertError: { code: '23505', message: 'duplicate key value violates unique constraint' },
+        existingRow: { storage_path: 'someone-else/other-manifest/sheet-3-different-client-op.jpg' },
+        maxSheetRow: null,
+      });
+      const updateSpy = vi.spyOn(db.pickup_queue, 'update');
+
+      await sendManifestPhoto(supabase, db, entry);
+
+      expect(updateSpy).toHaveBeenCalledWith(entry.id, { payload: { sheetNumber: 1 } });
+      updateSpy.mockRestore();
+    });
+
+    // Si la consulta que busca el siguiente número libre falla (sin red, sin
+    // permiso…), no se renumera todavía — se reintenta más tarde con el
+    // MISMO número; la próxima pasada repetirá el mismo 23505 y volverá a
+    // intentar renumerar. Nunca `dead` por esto.
+    it('B-1: retries with the same number (no db update) when the renumber query itself fails', async () => {
+      const entry = photoEntry();
+      const { supabase } = storageStub({
+        insertError: { code: '23505', message: 'duplicate key value violates unique constraint' },
+        existingRow: { storage_path: 'someone-else/other-manifest/sheet-3-different-client-op.jpg' },
+        maxSheetError: { message: 'permission denied' },
+      });
+      const updateSpy = vi.spyOn(db.pickup_queue, 'update');
+
+      const result = await sendManifestPhoto(supabase, db, entry);
+
+      expect(result.outcome).toBe('retry');
+      expect(updateSpy).not.toHaveBeenCalled();
+      updateSpy.mockRestore();
     });
 
     // Fallo de red DURANTE el insert (tras una subida que sí tuvo éxito): no
@@ -715,7 +884,7 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
         insertError: { code: '', message: 'TypeError: Failed to fetch' },
       });
 
-      const result = await sendManifestPhoto(supabase, photoEntry());
+      const result = await sendManifestPhoto(supabase, db, photoEntry());
 
       expect(result.outcome).toBe('offline');
       expect(remove).not.toHaveBeenCalled();
@@ -739,7 +908,7 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
         selectError: { code: '', message: 'TypeError: Failed to fetch' },
       });
 
-      const result = await sendManifestPhoto(supabase, entry);
+      const result = await sendManifestPhoto(supabase, db, entry);
 
       expect(result.outcome).toBe('offline');
       expect(remove).not.toHaveBeenCalled();
@@ -756,7 +925,7 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
         selectError: { code: '42501', message: 'permission denied' },
       });
 
-      const result = await sendManifestPhoto(supabase, entry);
+      const result = await sendManifestPhoto(supabase, db, entry);
 
       expect(result.outcome).toBe('retry');
       expect(remove).not.toHaveBeenCalled();

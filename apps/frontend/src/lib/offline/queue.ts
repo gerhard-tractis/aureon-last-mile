@@ -149,6 +149,21 @@ export async function listPending(
  * Deliberadamente permanente: nada en este módulo vuelve a poner en marcha
  * un manifiesto envenenado — eso es una decisión de negocio (resolver la
  * discrepancia), no algo que este drenador deba automatizar.
+ *
+ * B-1, ronda 3 de review del PR #712 (spec-81 fase 5), decisión del usuario
+ * — `type: 'manifest_photo'` NUNCA cuenta aquí, aunque esté `dead`. El
+ * razonamiento de arriba es correcto para `pickup_scan`/`close_manifest`,
+ * cuyo fallo corrompe el CONTEO que el cliente firma; una foto es
+ * respaldo, no conteo — su pérdida no falsea esa cifra. Bloquear el
+ * `close_manifest` de una carga entera porque una foto de respaldo no pudo
+ * subir era el mismo patrón de "estado sin salida" que esta cola existe
+ * para evitar (`retryDead` repite la misma colisión para siempre sin este
+ * cambio). `manifestHead`/`listPending` ya excluyen `dead` de cualquier
+ * tipo por su cuenta (filtran `pending`/`sending`), así que esto sólo
+ * decide qué cuenta como "el manifiesto está envenenado" — una entrada
+ * `pickup_scan`/`close_manifest` detrás de una foto muerta en el FIFO
+ * avanza con normalidad; entre fotos muertas entre sí, el orden de "hoja N"
+ * no protege ningún conteo.
  */
 export async function manifestHasDeadEntry(
   db: PickupQueueStore,
@@ -158,7 +173,12 @@ export async function manifestHasDeadEntry(
   const count = await db.pickup_queue
     .where("operatorId")
     .equals(operatorId)
-    .and((entry) => entry.manifestId === manifestId && entry.status === "dead")
+    .and(
+      (entry) =>
+        entry.manifestId === manifestId &&
+        entry.status === "dead" &&
+        entry.type !== "manifest_photo",
+    )
     .count();
   return count > 0;
 }

@@ -94,6 +94,23 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
+// B-2, ronda 3 de review del PR #712 (spec-81 fase 5) — `AppLayout` ahora
+// llama a `useQueryClient()` directamente (para invalidar
+// `manifest-documents` cuando el drenador de fotos confirma un envío
+// offline). Mismo motivo que `useNavCounts` de abajo: estos tests no montan
+// un `QueryClientProvider` real, así que sin este mock `useQueryClient()`
+// lanzaría "No QueryClient set".
+const mockInvalidateQueries = vi.fn();
+// Referencia ESTABLE entre renders — igual que el `QueryClient` real de
+// `Providers.tsx` (memoizado con `useState`). Un objeto nuevo en cada
+// llamada rompía m9 más abajo: `useMemo` de `AppLayout` lleva `queryClient`
+// en sus deps, así que una identidad distinta en cada render invalidaba la
+// memoización que ese test existe para verificar.
+const mockQueryClient = { invalidateQueries: mockInvalidateQueries };
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => mockQueryClient,
+}));
+
 // Counters come from a TanStack Query hook; the layout tests have no
 // QueryClientProvider and no Supabase, so the mapped result is stubbed here.
 // The mapping itself is covered in useNavCounts.test.ts.
@@ -147,6 +164,31 @@ describe('AppLayout — spec-81 fase 2 offline queue drainer (B2, ronda 1 review
 
     expect(createLazyPickupQueueSenderSpy).toHaveBeenCalled();
     expect(useOfflineQueueSpy).toHaveBeenCalledWith(mockOperatorId, mockUserId, mockSender);
+  });
+
+  // B-2, ronda 3 de review del PR #712 (spec-81 fase 5, bloqueante) — sin
+  // este cableado, un conductor con un solo teléfono y señal intermitente
+  // sube una foto offline, `manifest-documents` nunca se refresca en la
+  // tira, y la siguiente captura propone el mismo `sheet_number` que el
+  // servidor ya tiene (23505). Verifica el cableado real, no lo que hace
+  // `sendManifestPhoto` (cubierto en `offlineQueueSender.test.ts`).
+  it('wires onManifestPhotoSent to invalidate the manifest-documents query for that manifest', () => {
+    render(
+      <AppLayout>
+        <div>content</div>
+      </AppLayout>,
+    );
+
+    const options = createLazyPickupQueueSenderSpy.mock.calls[0][2] as {
+      onManifestPhotoSent?: (entry: { manifestId: string }) => void;
+    };
+    expect(options.onManifestPhotoSent).toBeInstanceOf(Function);
+
+    options.onManifestPhotoSent!({ manifestId: 'manifest-123' });
+
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['pickup', 'manifest-documents', 'manifest-123'],
+    });
   });
 
   it('passes null operatorId through when it is not known yet, instead of skipping the mount', () => {

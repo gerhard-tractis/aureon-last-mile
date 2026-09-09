@@ -139,6 +139,23 @@ describe('queue-blocking', () => {
       expect(await manifestIsBlocked(db, OPERATOR_A, MANIFEST_1, USER_A)).toBe(true);
     });
 
+    // B-1, ronda 3 de review del PR #712 (spec-81 fase 5), decisión del
+    // usuario — una foto es respaldo, no conteo; su pérdida no falsea la
+    // cifra que el cliente firma en `close_manifest`. A diferencia de
+    // `pickup_scan` (arriba), una entrada `manifest_photo` muerta NO
+    // envenena el manifiesto.
+    it('is false when the only dead entry is a manifest_photo — a lost photo does not block close_manifest', async () => {
+      const dead = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'manifest_photo',
+        payload: { sheetNumber: 1 },
+      });
+      await db.pickup_queue.update(dead.id!, { status: 'dead' });
+      expect(await manifestIsBlocked(db, OPERATOR_A, MANIFEST_1, USER_A)).toBe(false);
+    });
+
     it('is true when a fresh cross-user pending entry is the head', async () => {
       await enqueue(db, {
         operatorId: OPERATOR_A,

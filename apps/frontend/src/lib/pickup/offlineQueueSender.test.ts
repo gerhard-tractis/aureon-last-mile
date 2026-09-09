@@ -13,9 +13,18 @@
  * mocks de `rpc` de aquí en adelante devuelven el builder encadenable real
  * (`.abortSignal(signal)` → promesa), no una promesa directa.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createPickupQueueSender, createLazyPickupQueueSender } from './offlineQueueSender';
+import { db } from '@/lib/db';
 import type { PickupQueueEntry } from '@/lib/db';
+
+beforeEach(async () => {
+  await db.pickup_queue.clear();
+});
+
+afterEach(async () => {
+  await db.pickup_queue.clear();
+});
 
 function closeManifestEntry(overrides: Partial<PickupQueueEntry> = {}): PickupQueueEntry {
   return {
@@ -62,7 +71,7 @@ describe('createPickupQueueSender — close_manifest', () => {
   it('calls close_manifest with the queued manifest id and signatures, and reports sent on success', async () => {
     const { rpc } = rpcMock({ error: null, data: null });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    const send = createPickupQueueSender(supabase, db);
 
     const result = await send(closeManifestEntry());
 
@@ -80,7 +89,7 @@ describe('createPickupQueueSender — close_manifest', () => {
   it('imposes its own AbortSignal.timeout on the rpc call, not the browser default', async () => {
     const { rpc, abortSignal } = rpcMock({ error: null, data: null });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    const send = createPickupQueueSender(supabase, db);
 
     await send(closeManifestEntry());
 
@@ -97,7 +106,7 @@ describe('createPickupQueueSender — close_manifest', () => {
     const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
     const { rpc } = rpcMock({ error: null, data: null });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    const send = createPickupQueueSender(supabase, db);
 
     await send(closeManifestEntry());
 
@@ -120,7 +129,7 @@ describe('createPickupQueueSender — close_manifest', () => {
     try {
       const { rpc, abortSignal } = rpcMock({ error: null, data: null });
       const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-      const send = createPickupQueueSender(supabase);
+      const send = createPickupQueueSender(supabase, db);
 
       const result = await send(closeManifestEntry());
 
@@ -147,7 +156,7 @@ describe('createPickupQueueSender — close_manifest', () => {
       data: null,
     });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    const send = createPickupQueueSender(supabase, db);
 
     const result = await send(closeManifestEntry());
 
@@ -163,7 +172,7 @@ describe('createPickupQueueSender — close_manifest', () => {
       data: null,
     });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    const send = createPickupQueueSender(supabase, db);
 
     const result = await send(closeManifestEntry());
 
@@ -181,7 +190,7 @@ describe('createPickupQueueSender — close_manifest', () => {
       data: null,
     });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    const send = createPickupQueueSender(supabase, db);
 
     const result = await send(closeManifestEntry());
 
@@ -206,7 +215,7 @@ describe('createPickupQueueSender — close_manifest', () => {
       data: null,
     });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    const send = createPickupQueueSender(supabase, db);
 
     const result = await send(closeManifestEntry());
 
@@ -228,7 +237,7 @@ describe('createPickupQueueSender — close_manifest', () => {
   ])('reports retry (not dead) for a transient error: %s', async (_label, errorShape) => {
     const { rpc } = rpcMock({ error: errorShape, data: null });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    const send = createPickupQueueSender(supabase, db);
 
     const result = await send(closeManifestEntry());
 
@@ -238,7 +247,7 @@ describe('createPickupQueueSender — close_manifest', () => {
   it('reports retry for an unrecognized pickup_scan entry instead of throwing (no producer enqueues these yet)', async () => {
     const rpc = vi.fn();
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    const send = createPickupQueueSender(supabase, db);
 
     const result = await send(closeManifestEntry({ type: 'pickup_scan', payload: { barcode: 'X' } }));
 
@@ -252,16 +261,23 @@ describe('createPickupQueueSender — close_manifest', () => {
   // completo de `sendManifestPhoto` (subida, insert, huérfano imposible,
   // idempotencia) cubierto en `lib/offline/photos.test.ts`; aquí sólo se
   // verifica el enrutamiento.
-  it('dispatches a manifest_photo entry to the storage/insert path instead of close_manifest', async () => {
+  function manifestPhotoSupabaseStub() {
     const rpc = vi.fn();
     const upload = vi.fn(async () => ({ data: { path: 'x' }, error: null }));
     const insert = vi.fn(async () => ({ data: [{}], error: null }));
+    const getUser = vi.fn(async () => ({ data: { user: null }, error: null }));
     const supabase = {
       rpc,
+      auth: { getUser },
       storage: { from: vi.fn(() => ({ upload, remove: vi.fn() })) },
       from: vi.fn(() => ({ insert })),
     } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    return { supabase, rpc, upload, insert, getUser };
+  }
+
+  it('dispatches a manifest_photo entry to the storage/insert path instead of close_manifest', async () => {
+    const { supabase, rpc, upload } = manifestPhotoSupabaseStub();
+    const send = createPickupQueueSender(supabase, db);
 
     const result = await send(
       closeManifestEntry({
@@ -274,6 +290,57 @@ describe('createPickupQueueSender — close_manifest', () => {
     expect(rpc).not.toHaveBeenCalled();
     expect(upload).toHaveBeenCalled();
     expect(result).toEqual({ outcome: 'sent' });
+  });
+
+  // B-2, ronda 3 de review del PR #712 (bloqueante) — `AppLayout.tsx` usa
+  // este gancho para invalidar `useManifestDocuments` cuando el drenador
+  // confirma una foto offline; sin este test, un futuro refactor del
+  // enrutamiento podía dejar de llamarlo sin que ningún test lo notara.
+  it('calls onManifestPhotoSent only when the outcome is sent', async () => {
+    const { supabase } = manifestPhotoSupabaseStub();
+    const onManifestPhotoSent = vi.fn();
+    const send = createPickupQueueSender(supabase, db, { onManifestPhotoSent });
+    const entry = closeManifestEntry({
+      type: 'manifest_photo',
+      payload: { sheetNumber: 1 },
+      blob: new Blob(['x'], { type: 'image/jpeg' }),
+    });
+
+    await send(entry);
+
+    expect(onManifestPhotoSent).toHaveBeenCalledTimes(1);
+    expect(onManifestPhotoSent).toHaveBeenCalledWith(entry);
+  });
+
+  it('does not call onManifestPhotoSent when the manifest_photo send does not succeed', async () => {
+    const { supabase } = manifestPhotoSupabaseStub();
+    supabase.storage.from = vi.fn(() => ({
+      upload: vi.fn(async () => ({ data: null, error: { name: 'StorageApiError', message: 'nope' } })),
+      remove: vi.fn(),
+    })) as unknown as typeof supabase.storage.from;
+    const onManifestPhotoSent = vi.fn();
+    const send = createPickupQueueSender(supabase, db, { onManifestPhotoSent });
+
+    await send(
+      closeManifestEntry({
+        type: 'manifest_photo',
+        payload: { sheetNumber: 1 },
+        blob: new Blob(['x'], { type: 'image/jpeg' }),
+      }),
+    );
+
+    expect(onManifestPhotoSent).not.toHaveBeenCalled();
+  });
+
+  it('does not call onManifestPhotoSent for a close_manifest send', async () => {
+    const { rpc } = rpcMock({ error: null, data: null });
+    const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
+    const onManifestPhotoSent = vi.fn();
+    const send = createPickupQueueSender(supabase, db, { onManifestPhotoSent });
+
+    await send(closeManifestEntry());
+
+    expect(onManifestPhotoSent).not.toHaveBeenCalled();
   });
 });
 
@@ -300,7 +367,7 @@ describe('createLazyPickupQueueSender', () => {
   it('does not call the client factory at construction time', () => {
     const getClient = vi.fn();
 
-    createLazyPickupQueueSender(getClient);
+    createLazyPickupQueueSender(getClient, db);
 
     expect(getClient).not.toHaveBeenCalled();
   });
@@ -310,7 +377,7 @@ describe('createLazyPickupQueueSender', () => {
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
     const getClient = vi.fn(() => supabase);
 
-    const send = createLazyPickupQueueSender(getClient);
+    const send = createLazyPickupQueueSender(getClient, db);
     expect(getClient).not.toHaveBeenCalled();
 
     await send(closeManifestEntry());
@@ -323,7 +390,7 @@ describe('createLazyPickupQueueSender', () => {
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
     const getClient = vi.fn(() => supabase);
 
-    const send = createLazyPickupQueueSender(getClient);
+    const send = createLazyPickupQueueSender(getClient, db);
     await send(closeManifestEntry());
     await send(closeManifestEntry());
 
@@ -336,7 +403,7 @@ describe('createLazyPickupQueueSender', () => {
       data: null,
     });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createLazyPickupQueueSender(() => supabase);
+    const send = createLazyPickupQueueSender(() => supabase, db);
 
     const result = await send(closeManifestEntry());
 

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { Menu, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { useGlobal } from '@/lib/context/GlobalContext';
 import { useBranding } from '@/providers/BrandingProvider';
@@ -10,6 +11,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { createSPAClient } from '@/lib/supabase/client';
+import { db } from '@/lib/db';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { createLazyPickupQueueSender } from '@/lib/pickup/offlineQueueSender';
 import { useSidebarPin } from './sidebar/useSidebarPin';
@@ -83,7 +85,30 @@ export default function AppLayout({
   // enviaba (y firmaba con su propio nombre, vía `auth.uid()` en el
   // servidor) lo que el conductor anterior había encolado. `user.id` es ese
   // mismo `auth.uid()`.
-  const pickupQueueSender = useMemo(() => createLazyPickupQueueSender(createSPAClient), []);
+  //
+  // B-2, ronda 3 de review del PR #712 (spec-81 fase 5, bloqueante) — la
+  // única invalidación de `['pickup','manifest-documents', manifestId]`
+  // (`useManifestDocuments.ts`) vivía en `useUploadManifestDocument.onSuccess`
+  // — la ruta ONLINE. Un conductor con un solo teléfono y señal
+  // intermitente que sube una foto offline no veía su lista refrescada:
+  // `ManifestPhotoStrip` seguía proponiendo el mismo `sheetNumber` que el
+  // servidor ya tenía, produciendo un 23505 nuevo en la siguiente captura.
+  // `AppLayout` es el único punto de esta cadena con `useQueryClient()`
+  // real (`lib/pickup/offlineQueueSender.ts` no puede depender de React
+  // Query) — el callback dispara la invalidación en cuanto el drenador
+  // confirma el envío.
+  const queryClient = useQueryClient();
+  const pickupQueueSender = useMemo(
+    () =>
+      createLazyPickupQueueSender(createSPAClient, db, {
+        onManifestPhotoSent: (entry) => {
+          queryClient.invalidateQueries({
+            queryKey: ['pickup', 'manifest-documents', entry.manifestId],
+          });
+        },
+      }),
+    [queryClient],
+  );
   useOfflineQueue(operatorId, user?.id ?? null, pickupQueueSender);
   const { pinned, togglePin } = useSidebarPin();
   const pathname = usePathname();

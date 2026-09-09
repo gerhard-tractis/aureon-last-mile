@@ -1,8 +1,28 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { PickupQueueEntry } from '@/lib/db';
+import type { PickupQueueStore } from '@/lib/offline/queue-claims';
 import type { OfflineQueueOutcome, OfflineQueueSender } from '@/hooks/useOfflineQueue';
 import { classifyCloseManifestError } from '@/lib/pickup/closeManifestErrors';
 import { sendManifestPhoto } from '@/lib/offline/photos';
+
+/**
+ * B-2, ronda 3 de review del PR #712 (bloqueante) — `useManifestDocuments`
+ * (`hooks/pickup/useManifestDocuments.ts`) sólo se invalida en
+ * `useUploadManifestDocument.onSuccess`, la ruta ONLINE. La ruta offline no
+ * invalida nada: cuando el drenador sube una foto y la marca `sent`, la tira
+ * de `ManifestPhotoStrip` sigue mostrando la lista vieja, `nextSheetNumber`
+ * vuelve a proponer el mismo número (que `purgeConfirmed` ya borró de la
+ * cola local, así que B3 tampoco lo ve venir) y llega un 23505 nuevo — un
+ * conductor con un solo teléfono y señal intermitente, más probable que el
+ * residual de dos dispositivos. `onManifestPhotoSent` es el gancho que le
+ * permite a `AppLayout.tsx` (que sí tiene `useQueryClient()`, un componente
+ * React) invalidar `['pickup','manifest-documents', manifestId]` cuando el
+ * envío offline tenga éxito — este módulo de `lib/` no puede llamar a
+ * React Query directamente (capas: `lib` no depende de `hooks`/React).
+ */
+export interface PickupQueueSenderOptions {
+  onManifestPhotoSent?: (entry: PickupQueueEntry) => void;
+}
 
 /**
  * spec-81 fase 2, B2 (ronda 1 de review del PR #679) — el `OfflineQueueSender`
@@ -54,13 +74,21 @@ function closeManifestTimeoutSignal(): AbortSignal | undefined {
     : undefined;
 }
 
-export function createPickupQueueSender(supabase: SupabaseClient): OfflineQueueSender {
+export function createPickupQueueSender(
+  supabase: SupabaseClient,
+  db: PickupQueueStore,
+  options: PickupQueueSenderOptions = {},
+): OfflineQueueSender {
   return async (entry: PickupQueueEntry): Promise<OfflineQueueOutcome> => {
     // spec-81 fase 5 — `manifest_photo` (blob a subir al bucket `manifests`,
     // ver `lib/offline/photos.ts`) tiene su propio camino de red, distinto
     // del RPC `close_manifest` de abajo.
     if (entry.type === 'manifest_photo') {
-      return sendManifestPhoto(supabase, entry);
+      const result = await sendManifestPhoto(supabase, db, entry);
+      if (result.outcome === 'sent') {
+        options.onManifestPhotoSent?.(entry);
+      }
+      return result;
     }
     if (entry.type !== 'close_manifest') {
       return {
@@ -98,11 +126,13 @@ export function createPickupQueueSender(supabase: SupabaseClient): OfflineQueueS
  */
 export function createLazyPickupQueueSender(
   getClient: () => SupabaseClient,
+  db: PickupQueueStore,
+  options: PickupQueueSenderOptions = {},
 ): OfflineQueueSender {
   let cached: OfflineQueueSender | null = null;
   return async (entry: PickupQueueEntry): Promise<OfflineQueueOutcome> => {
     if (!cached) {
-      cached = createPickupQueueSender(getClient());
+      cached = createPickupQueueSender(getClient(), db, options);
     }
     return cached(entry);
   };
