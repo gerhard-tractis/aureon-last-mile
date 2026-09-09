@@ -906,7 +906,7 @@ CREATE TABLE public.manifest_documents (
 > hasta que esa conexión se haga, en esta fase o en la que toque después
 > `ManifestPhotoStrip.tsx`.
 
-### Fase 4 — `5g`/`5h` cámara y revisión `[pending]`
+### Fase 4 — `5g`/`5h` cámara y revisión `[in_progress]`
 
 **Archivos:** `components/pickup/ManifestCameraSheet.tsx`, `components/pickup/PhotoReviewSheet.tsx`
 
