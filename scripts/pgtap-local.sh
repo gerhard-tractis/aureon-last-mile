@@ -144,17 +144,51 @@ case "${1:-}" in
       fi
       printf "%-56s " "$file"
       out=$(psq -tA -f "/supabase/tests/$file" 2>&1)
-      # Two real failure shapes, matched precisely (not a bare case-insensitive
-      # "ERROR" — several tests RAISE NOTICE with the lowercase word "error"
-      # inside a passing message, e.g. "raises no error", "not an error";
-      # a loose -i match turned those into false FAILs):
+      # Three real failure shapes. The first two are matched precisely (not a
+      # bare case-insensitive "ERROR" — several tests RAISE NOTICE with the
+      # lowercase word "error" inside a passing message, e.g. "raises no
+      # error", "not an error"; a loose -i match turned those into false
+      # FAILs):
       #   1. `psql:<file>:<line>: ERROR:  <msg>` — a RAISE EXCEPTION inside a
       #      DO block, this repo's house style for a failing assertion.
       #   2. `psql: error: could not open file...` — the file itself is
-      #      missing/unreadable (the exact bug this fix exists for).
-      if echo "$out" | grep -qE "ERROR:|^psql: error:"; then
+      #      missing/unreadable.
+      #   3. Real pgTAP TAP output (`plan()`/`ok()`/`finish()`, ~12 of the 83
+      #      test files use it): a failed assertion prints `not ok N - ...`
+      #      and psql's own exit code stays 0 — no ERROR: line, nothing the
+      #      first two checks can see. A `1..N` plan whose count of executed
+      #      `ok`/`not ok` lines falls short (the script died mid-file, e.g.
+      #      an unhandled exception outside a DO block) is caught the same
+      #      way, via pgTAP's own "# Looks like you planned N tests but ran M"
+      #      diagnostic in finish()'s output.
+      hard_error=""
+      echo "$out" | grep -qE "ERROR:|^psql: error:" && hard_error=1
+      ok_n=$(echo "$out" | grep -cE '^ok [0-9]+ ')
+      notok_n=$(echo "$out" | grep -cE '^not ok [0-9]+ ')
+      plan_diag=$(echo "$out" | grep -E '^# Looks like you planned [0-9]+ tests? but ran [0-9]+' | head -1)
+      missing_n=0
+      if [ -n "$plan_diag" ]; then
+        planned_n=$(echo "$plan_diag" | grep -oE 'planned [0-9]+' | grep -oE '[0-9]+')
+        ran_n=$(echo "$plan_diag" | grep -oE 'ran [0-9]+' | grep -oE '[0-9]+')
+        missing_n=$((planned_n - ran_n))
+        [ "$missing_n" -lt 0 ] && missing_n=0
+      fi
+      if [ -n "$hard_error" ]; then
+        # Transaction aborted — partial TAP counts inside it aren't
+        # trustworthy, so count the file as one failure, matching the
+        # non-TAP (RAISE EXCEPTION style) files' granularity.
         fail=$((fail+1)); echo "FAIL"; echo "$out" | grep -E "ERROR:|^psql: error:" | head -2 | sed 's/^/      /'
+      elif [ "$notok_n" -gt 0 ] || [ "$missing_n" -gt 0 ]; then
+        fail=$((fail + notok_n + missing_n)); [ "$ok_n" -gt 0 ] && pass=$((pass + ok_n))
+        echo "FAIL"
+        echo "$out" | grep -E '^not ok [0-9]+ |^# Looks like you' | head -3 | sed 's/^/      /'
+      elif [ "$ok_n" -gt 0 ]; then
+        # Real TAP output, every assertion passed — count assertions, not
+        # the file, so the summary reflects real asserts run.
+        pass=$((pass + ok_n)); echo "PASS"
       else
+        # No TAP output at all (RAISE EXCEPTION style file) and no error —
+        # per-file is the only granularity available.
         pass=$((pass+1)); echo "PASS"
       fi
     done
