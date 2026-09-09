@@ -24,9 +24,16 @@ export interface PendingRouteSummary {
 /**
  * `closedManifestId` is excluded explicitly, not just by status — a
  * manifest whose `close_manifest` write has not reached this screen's
- * `useRouteManifests` cache yet (same query, invalidated on close but not
- * guaranteed to have refetched before this renders) must not count itself
- * as still pending.
+ * `useRouteManifests` cache yet must not count itself as still pending.
+ *
+ * Correction: an earlier version of this comment claimed the close
+ * "invalidates" that query. It does not — nothing in `complete/[loadId]/
+ * page.tsx` calls `queryClient.invalidateQueries` for `['pickup',
+ * 'route-manifests', routeId]` on close. This `id !== closedManifestId`
+ * filter is the ONLY thing standing between a stale cache and a wrong
+ * count; there is no invalidation backing it up. Whoever removes this
+ * filter assuming the cache is fresh by the time this renders is wrong —
+ * `staleTime: 10_000` on that query means it usually is not.
  *
  * `useRouteManifests` already orders its result oldest-attached-first (see
  * that hook's own comment) — the first manifest left pending in that order

@@ -7,13 +7,7 @@
  * nueva (version 2) en la misma base que ya usa `db.scan_queue`.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import {
-  db,
-  getBlockedPickupCount,
-  getPendingPickupCount,
-  getPendingPickupCountsByType,
-  requestPersistentStorage,
-} from './db';
+import { db, getBlockedPickupCount, getPendingPickupCount, requestPersistentStorage } from './db';
 import * as queueBlockingLib from './offline/queue-blocking';
 
 describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
@@ -232,103 +226,6 @@ describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
       await getPendingPickupCount('op-1');
 
       expect(manifestIsBlockedSpy.mock.calls.length).toBeLessThanOrEqual(1);
-    });
-  });
-
-  // spec-80 fase 5, mock `5i` — "Guardado en el teléfono: N registros y N
-  // fotos esperan señal para subir". `getPendingPickupCount` already sums
-  // every type into one number; 5i needs the two buckets split, so it can
-  // say "registros" and "fotos" separately rather than one figure the mock
-  // does not draw.
-  describe('getPendingPickupCountsByType (spec-80 fase 5)', () => {
-    const baseEntry = {
-      manifestId: 'm-1',
-      payload: {},
-      retryCount: 0,
-      claimToken: null,
-      lastAttemptAt: null,
-      nextAttemptAt: null,
-      createdAt: new Date().toISOString(),
-    };
-
-    it('splits manifest_photo entries into "photos", everything else into "records"', async () => {
-      // Asymmetric on purpose: 2 records of two DIFFERENT non-photo types
-      // (pickup_scan, close_manifest) vs 1 photo — a fixture with the same
-      // count on both sides could pass even if the bucket assignment were
-      // swapped.
-      await db.pickup_queue.bulkAdd([
-        { ...baseEntry, clientOperationId: 'a', operatorId: 'op-1', status: 'pending', type: 'pickup_scan' },
-        { ...baseEntry, clientOperationId: 'b', operatorId: 'op-1', status: 'pending', type: 'close_manifest' },
-        { ...baseEntry, clientOperationId: 'c', operatorId: 'op-1', status: 'pending', type: 'manifest_photo' },
-      ]);
-
-      await expect(getPendingPickupCountsByType('op-1')).resolves.toEqual({
-        records: 2,
-        photos: 1,
-      });
-    });
-
-    it('excludes dead entries from both buckets', async () => {
-      await db.pickup_queue.bulkAdd([
-        { ...baseEntry, clientOperationId: 'a', operatorId: 'op-1', status: 'dead', type: 'pickup_scan' },
-        { ...baseEntry, clientOperationId: 'b', operatorId: 'op-1', status: 'dead', type: 'manifest_photo' },
-      ]);
-
-      await expect(getPendingPickupCountsByType('op-1')).resolves.toEqual({
-        records: 0,
-        photos: 0,
-      });
-    });
-
-    it('a pending entry blocked behind a dead entry in the same manifest does not count, in either bucket', async () => {
-      await db.pickup_queue.bulkAdd([
-        { ...baseEntry, clientOperationId: 'a', operatorId: 'op-1', status: 'dead', type: 'pickup_scan' },
-        { ...baseEntry, clientOperationId: 'b', operatorId: 'op-1', status: 'pending', type: 'manifest_photo' },
-      ]);
-
-      await expect(getPendingPickupCountsByType('op-1')).resolves.toEqual({
-        records: 0,
-        photos: 0,
-      });
-    });
-
-    it('counts a sending photo — reclaimed and in flight, not invisible', async () => {
-      await db.pickup_queue.bulkAdd([
-        { ...baseEntry, clientOperationId: 'a', operatorId: 'op-1', status: 'sending', type: 'manifest_photo' },
-      ]);
-
-      await expect(getPendingPickupCountsByType('op-1')).resolves.toEqual({
-        records: 0,
-        photos: 1,
-      });
-    });
-
-    // Distinguishes "sending always counts" from "sending happens to pass
-    // the same blocked-check pending goes through" — a fixture where the
-    // manifest is ALSO blocked (a dead entry sits in it) still must count
-    // the sending photo, same rule getPendingPickupCount already applies.
-    it('a sending photo counts even when its manifest also has a dead entry', async () => {
-      await db.pickup_queue.bulkAdd([
-        { ...baseEntry, clientOperationId: 'a', operatorId: 'op-1', status: 'dead', type: 'pickup_scan' },
-        { ...baseEntry, clientOperationId: 'b', operatorId: 'op-1', status: 'sending', type: 'manifest_photo' },
-      ]);
-
-      await expect(getPendingPickupCountsByType('op-1')).resolves.toEqual({
-        records: 0,
-        photos: 1,
-      });
-    });
-
-    it('scopes to the requesting operator only', async () => {
-      await db.pickup_queue.bulkAdd([
-        { ...baseEntry, clientOperationId: 'a', operatorId: 'op-1', status: 'pending', type: 'manifest_photo' },
-        { ...baseEntry, clientOperationId: 'b', operatorId: 'op-2', status: 'pending', type: 'manifest_photo' },
-      ]);
-
-      await expect(getPendingPickupCountsByType('op-1')).resolves.toEqual({
-        records: 0,
-        photos: 1,
-      });
     });
   });
 

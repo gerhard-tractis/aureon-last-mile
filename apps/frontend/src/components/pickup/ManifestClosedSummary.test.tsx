@@ -1,11 +1,20 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ManifestClosedSummary } from './ManifestClosedSummary';
 
 /**
  * spec-80 fase 5, mock `5i` — "Móvil · carga cerrada, cierre del proceso
  * (vuelve a 5c)".
+ *
+ * Ronda 2 de review del PR #726 (B1) — asimétrico: verifiedCount=39,
+ * missingCount=3, unexpectedCount=1, no todos iguales ni intercambiables
+ * en pares, y cada aserción de cifra usa `within(row)` anclado por
+ * `data-testid`, no `getByText` global — un `getByText('3')` global no
+ * distingue "Faltantes: 3" de "Ajenos a la carga: 3" si alguna vez
+ * coinciden, y con valores distintos como aquí, no distingue los
+ * bindings invertidos de los correctos (`getByText` simplemente
+ * encuentra el nodo con ese texto en cualquier fila).
  */
 const baseProps = {
   loadId: 'CARGA-99814',
@@ -15,12 +24,10 @@ const baseProps = {
   unexpectedCount: 1,
   photosCount: 2,
   signaturesCount: 2,
-  pendingSync: null as { records: number; photos: number } | null,
   routeExternalId: null as string | null,
   pendingRouteCount: 0,
   nextManifestLabel: null as string | null,
   onBackToRoute: vi.fn(),
-  onViewSummary: vi.fn(),
 };
 
 describe('ManifestClosedSummary', () => {
@@ -30,38 +37,30 @@ describe('ManifestClosedSummary', () => {
     expect(screen.getByText('CARGA-99814 · Falabella')).toBeInTheDocument();
   });
 
-  it('renders the four summary rows literal to the mock', () => {
+  it('renders each summary row anchored to its own label — B1, ronda 2 de review del PR #726', () => {
     render(<ManifestClosedSummary {...baseProps} />);
-    expect(screen.getByText('Verificados')).toBeInTheDocument();
-    expect(screen.getByText('39')).toBeInTheDocument();
-    expect(screen.getByText('Faltantes')).toBeInTheDocument();
-    expect(screen.getByText('3')).toBeInTheDocument();
-    expect(screen.getByText('Ajenos a la carga')).toBeInTheDocument();
-    expect(screen.getByText('1')).toBeInTheDocument();
-    expect(screen.getByText('Respaldo')).toBeInTheDocument();
-    expect(screen.getByText('2 fotos · 2 firmas')).toBeInTheDocument();
+
+    const verified = screen.getByTestId('summary-row-verified');
+    expect(within(verified).getByText('Verificados')).toBeInTheDocument();
+    expect(within(verified).getByText('39')).toBeInTheDocument();
+
+    const missing = screen.getByTestId('summary-row-missing');
+    expect(within(missing).getByText('Faltantes')).toBeInTheDocument();
+    expect(within(missing).getByText('3')).toBeInTheDocument();
+
+    const unexpected = screen.getByTestId('summary-row-unexpected');
+    expect(within(unexpected).getByText('Ajenos a la carga')).toBeInTheDocument();
+    expect(within(unexpected).getByText('1')).toBeInTheDocument();
+
+    const backup = screen.getByTestId('summary-row-backup');
+    expect(within(backup).getByText('Respaldo')).toBeInTheDocument();
+    expect(within(backup).getByText('2 fotos · 2 firmas')).toBeInTheDocument();
   });
 
   it('omits the load id · retailer separator when the retailer is unknown', () => {
     render(<ManifestClosedSummary {...baseProps} retailerName={null} />);
     expect(screen.getByText('CARGA-99814')).toBeInTheDocument();
     expect(screen.queryByText(/·/)).not.toHaveTextContent('CARGA-99814 ·');
-  });
-
-  it('shows the "guardado en el teléfono" warning only when something is queued', () => {
-    const { rerender } = render(
-      <ManifestClosedSummary {...baseProps} pendingSync={{ records: 6, photos: 2 }} />,
-    );
-    expect(screen.getByText('Guardado en el teléfono')).toBeInTheDocument();
-    expect(
-      screen.getByText('6 registros y 2 fotos esperan señal para subir'),
-    ).toBeInTheDocument();
-
-    rerender(<ManifestClosedSummary {...baseProps} pendingSync={{ records: 0, photos: 0 }} />);
-    expect(screen.queryByText('Guardado en el teléfono')).toBeNull();
-
-    rerender(<ManifestClosedSummary {...baseProps} pendingSync={null} />);
-    expect(screen.queryByText('Guardado en el teléfono')).toBeNull();
   });
 
   it('shows the "sigue en la ruta" block only when there is a pending load ahead', () => {
@@ -111,13 +110,14 @@ describe('ManifestClosedSummary', () => {
     expect(onBackToRoute).toHaveBeenCalledOnce();
   });
 
-  it('the secondary action calls onViewSummary', async () => {
-    const user = userEvent.setup();
-    const onViewSummary = vi.fn();
-    render(<ManifestClosedSummary {...baseProps} onViewSummary={onViewSummary} />);
+  // B4, ronda 2 de review del PR #726 — el mock dibuja este elemento como un
+  // `<span>`, no como un control. Sin destino real en el código, un botón
+  // aquí es indistinguible de uno vivo que no hace nada al pulsarlo, en la
+  // pantalla que cierra un traspaso de custodia.
+  it('B4 — "Ver resumen de la carga" is not a button, matching the mock\'s <span>', () => {
+    render(<ManifestClosedSummary {...baseProps} />);
 
-    await user.click(screen.getByRole('button', { name: 'Ver resumen de la carga' }));
-
-    expect(onViewSummary).toHaveBeenCalledOnce();
+    expect(screen.getByText('Ver resumen de la carga')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ver resumen de la carga' })).toBeNull();
   });
 });

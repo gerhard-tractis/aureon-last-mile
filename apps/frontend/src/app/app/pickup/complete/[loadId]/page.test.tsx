@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import CompletionPage from './page';
 
 vi.mock('@/components/pickup/ManifestPhotoStrip', () => ({
@@ -131,8 +131,8 @@ describe('CompletionPage', () => {
   beforeEach(() => {
     mockUsePickupScans.mockReturnValue({
       data: [
-        { id: 's1', scan_result: 'verified' },
-        { id: 's2', scan_result: 'verified' },
+        { id: 's1', scan_result: 'verified', package_id: 'pkg-a' },
+        { id: 's2', scan_result: 'verified', package_id: 'pkg-b' },
       ],
     });
     mockUseMissingPackages.mockReturnValue({
@@ -142,8 +142,6 @@ describe('CompletionPage', () => {
       status: 'online',
       queuedCount: 0,
       blockedCount: 0,
-      pickupRecordsCount: 0,
-      pickupPhotoCount: 0,
       recent: [],
       retryNow: vi.fn(),
       isRetrying: false,
@@ -175,6 +173,27 @@ describe('CompletionPage', () => {
     expect(valueEls).toHaveLength(4);
     expect(valueEls[0].textContent).toBe('2');  // verified
     expect(valueEls[1].textContent).toBe('1');  // missing
+  });
+
+  // Ronda 2 de review del PR #726 (B2) — asimétrico a propósito: dos filas
+  // 'verified' que comparten package_id (dos miembros de la cuadrilla, sin
+  // señal, escaneando el mismo bulto — dos client_operation_id distintos,
+  // el único índice único del repo no los frena) deben contar como UN
+  // paquete verificado, no dos. Con un conteo de filas este test falla en 2.
+  it('B2 — dedupes verified scans by package_id, matching close_manifest\'s own COUNT(DISTINCT)', async () => {
+    mockUsePickupScans.mockReturnValue({
+      data: [
+        { id: 's1', scan_result: 'verified', package_id: 'pkg-shared' },
+        { id: 's2', scan_result: 'verified', package_id: 'pkg-shared' },
+        { id: 's3', scan_result: 'verified', package_id: 'pkg-other' },
+      ],
+    });
+
+    const { container } = render(<CompletionPage />);
+    await screen.findByText('Verificados');
+
+    const valueEls = container.querySelectorAll('[data-value]');
+    expect(valueEls[0].textContent).toBe('2');
   });
 
   it('renders Spanish legal notice', async () => {
@@ -407,6 +426,12 @@ describe('CompletionPage', () => {
       expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/ya fue firmado/i));
     });
     expect(await screen.findByText('Carga cerrada')).toBeInTheDocument();
+    // B1, ronda 2 de review del PR #726 — al menos un camino de la página
+    // ancla las cifras reales del acta, no sólo la existencia del texto.
+    // scans por defecto: 2 filas 'verified' con package_id distinto (pkg-a,
+    // pkg-b) → 2; missingPackages por defecto: 1 fila → 1.
+    expect(within(screen.getByTestId('summary-row-verified')).getByText('2')).toBeInTheDocument();
+    expect(within(screen.getByTestId('summary-row-missing')).getByText('1')).toBeInTheDocument();
     expect(mockPush).not.toHaveBeenCalled();
     expect(toast.error).not.toHaveBeenCalled();
   });
