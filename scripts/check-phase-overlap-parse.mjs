@@ -60,7 +60,7 @@ export function extractArchivosFiles(mdContent, faseMatch) {
     }
   }
   if (phaseStart === -1) {
-    return { headingFound: false, files: [], directories: [], warnings: [] };
+    return { headingFound: false, fieldPresent: false, files: [], directories: [], warnings: [], raw: '' };
   }
 
   let phaseEnd = lines.length;
@@ -79,7 +79,7 @@ export function extractArchivosFiles(mdContent, faseMatch) {
     }
   }
   if (archivosStart === -1) {
-    return { headingFound: true, files: [], directories: [], warnings: [] };
+    return { headingFound: true, fieldPresent: false, files: [], directories: [], warnings: [], raw: '' };
   }
 
   let archivosEnd = archivosStart + 1;
@@ -87,6 +87,9 @@ export function extractArchivosFiles(mdContent, faseMatch) {
     archivosEnd++;
   }
   const block = lines.slice(archivosStart, archivosEnd).join('\n');
+  // El texto declarado, sin la etiqueta — para citarlo tal cual en un mensaje
+  // (spec-91 fase 2: "el campo existe pero no resolvió a ningún fichero: <raw>").
+  const raw = block.replace(/^\*\*Archivos:\*\*\s*/, '').trim();
 
   const rawEntries = [];
   const spanRe = /`([^`]+)`/g;
@@ -99,7 +102,7 @@ export function extractArchivosFiles(mdContent, faseMatch) {
     }
   }
   const { files, directories, warnings } = resolveArchivosEntries(rawEntries);
-  return { headingFound: true, files, directories, warnings };
+  return { headingFound: true, fieldPresent: true, files, directories, warnings, raw };
 }
 
 /**

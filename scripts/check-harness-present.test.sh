@@ -16,7 +16,7 @@ newrepo() { # imprime la ruta de un repo con el harness completo y trackeado
   for a in implementer reviewer qa-e2e; do
     printf -- '---\nname: %s\ndescription: hace cosas\n---\ncuerpo\n' "$a" > "$d/.claude/agents/$a.md"
   done
-  for h in keep-going.sh resume-check.sh; do echo '#!/usr/bin/env bash' > "$d/.claude/hooks/$h"; done
+  for h in keep-going.sh resume-check.sh post-merge-remind.sh; do echo '#!/usr/bin/env bash' > "$d/.claude/hooks/$h"; done
   echo '{}' > "$d/.claude/settings.json"
   git -C "$d" add -A >/dev/null 2>&1
   git -C "$d" commit -qm init >/dev/null 2>&1
@@ -51,6 +51,11 @@ check "agente sin description falla" 1 "$R"
 
 R="$(newrepo)"; rm "$R/.claude/hooks/keep-going.sh"
 check "hook borrado falla" 1 "$R"
+
+# spec-91 fase 1: post-merge-remind.sh es harness, no accesorio — sin él,
+# nadie recuerda cerrar el token de fase tras un merge.
+R="$(newrepo)"; rm "$R/.claude/hooks/post-merge-remind.sh"
+check "post-merge-remind.sh borrado falla" 1 "$R"
 
 R="$(newrepo)"; rm "$R/.claude/settings.json"
 check "settings.json borrado falla" 1 "$R"

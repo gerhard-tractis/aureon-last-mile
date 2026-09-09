@@ -240,6 +240,70 @@ siguiente heading — la de otra fase no cuenta.
 Declararlo es del que escribe el spec: si al escribirlo tienes que leer otro
 spec para saber qué asumir, ese otro spec te tiene a ti como downstream.
 
+## `**Depende de:**` — orden entre fases, por fase (spec-91)
+
+`**Archivos:**` le dice a `scripts/check-phase-overlap.mjs` qué superficie
+toca una fase, para decidir si **dos fases se pisan** si se despachan en
+paralelo. No le dice si una fase **puede empezar** — spec-84 fase 3
+declaraba «depende de que aterrice spec-80 fase 3» sólo en prosa, y el guard
+las declaró «superficies disjuntas, despachable» porque tocan ficheros
+distintos. Acertó en la pregunta que sabe hacer y se equivocó en la que no
+le hicieron.
+
+`**Depende de:**` va dentro del cuerpo de cada fase, mismo trato que
+`**Archivos:**` — no es un campo de cabecera del spec. Tres estados
+explícitos, no dos, porque un campo obligado con sólo "sí/no" ya rompió CI
+una vez (ver más abajo):
+
+| Valor | Significa | ¿Bloquea el guard? |
+|---|---|---|
+| *(campo ausente)* | Nadie lo rellenó todavía | No — el campo no es obligatorio hoy (ver "Orden de entrega" abajo) |
+| `ninguna` | Declarado explícito: esta fase no depende de ninguna otra | No |
+| `spec-N fase M[, spec-N2 fase M2, ...]` | Depende de que esa(s) fase(s) lleguen a `[done]` | **Sí**, si alguna no está `[done]` |
+| `(indeterminado — <razón real>)` | Se evaluó y no se pudo determinar todavía, con la razón escrita | No — se reporta, no se falla |
+
+```
+### Fase 3 — Prueba de entrega multi-archivo `[pending]`
+
+**Depende de:** spec-80 fase 3
+
+**Archivos:** migración nueva en `packages/database/supabase/migrations/`, ...
+```
+
+**`scripts/check-phase-overlap.mjs` lee el campo y comprueba el token de la
+fase de la que depende**, antes de calcular si las superficies chocan — el
+orden es una pregunta distinta de la colisión, y se responde primero:
+
+| Exit | Significa |
+|---|---|
+| `0` | Despachable — sin conflicto duro de superficie (puede haber acoplamiento blando, se imprime) |
+| `1` | Conflicto duro — dos targets escriben el mismo fichero |
+| `2` | Error de uso |
+| `3` | No se puede juzgar la superficie — el mensaje distingue campo `**Archivos:**` ausente de campo presente que no resolvió a ningún fichero (ver la nota de abajo) |
+| `4` | Dependencia declarada en `**Depende de:**` no satisfecha: la fase de la que depende no está `[done]` |
+
+Además, mientras el campo no está backfilleado en todo el corpus, el mismo
+guard escanea el cuerpo de la fase buscando menciones en prosa a
+`spec-N fase M` que no estén en `**Depende de:**`, y las **avisa
+(`::warning::`), sin bloquear** — los specs de este repo se citan
+constantemente entre sí sin que eso implique una dependencia de orden activa,
+así que bloquear ahí generaría falsos positivos.
+
+**Orden de entrega, deliberado — guard primero, backfill después,
+obligatoriedad al final.** No se hizo obligatorio en `check-spec-fields.sh`
+al mismo tiempo que se construyó el guard, y es a propósito: `**Archivos:**`
+sí se hizo obligatorio de inmediato (spec-89) y **rompió CI** en ramas largas
+que heredaban dos fases genuinamente indeclarables — spec-83 fase 3
+(condicional: su primer punto es decidir si se implementa) y spec-82 fase 2
+(habla de un almacén de lectura que no existe todavía en el código). El
+backfill (#693) se negó, con razón, a inventar una lista para ninguna de las
+dos; el arreglo (#695) fue declarar el campo con **`(indeterminado — razón
+real)`** en vez de mentir con una lista inventada. La lección: un campo
+obligatorio en CI **antes** de que exista una forma honesta de decir «todavía
+no lo sé» convierte una negativa correcta en un build rojo. `**Depende de:**`
+nace con ese tercer estado desde el primer día — no se retrofitea tras romper
+CI una segunda vez.
+
 ## `**Verify:**`, junto al `**Status:**`
 
 Un spec que declara fases con token **debe** llevar una línea `**Verify:**` nombrando los jueces de aceptación. Sin ella no hay criterio de término.

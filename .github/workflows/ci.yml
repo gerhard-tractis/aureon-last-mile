@@ -193,6 +193,13 @@ jobs:
       - name: Test the harness guard
         run: bash ./scripts/check-harness-present.test.sh
 
+      # post-merge-remind.sh (spec-91 fase 1, ronda 2): atajo de latencia
+      # cero para el camino manual de `gh pr merge` — la garantía real es
+      # la fase 5 (reconcile-stale-phases, más abajo), que corre en CI.
+      # Corre contra un `gh` falso en PATH, nunca la red.
+      - name: Test the post-merge reminder hook
+        run: bash ./.claude/hooks/post-merge-remind.test.sh
+
       # check-phase-overlap: "¿estas fases, si se despachan en paralelo,
       # pueden pisarse?" (spec-89). No es un gate — el orquestador lo corre
       # antes de dispatchar; sólo sus tests corren en CI.
@@ -204,6 +211,20 @@ jobs:
 
       - name: Test the phase-overlap CLI (real temp git repo, not fixtures)
         run: bash ./scripts/check-phase-overlap.test.sh
+
+      # **Depende de:** (spec-91 fase 3/4): orden entre fases, separado del
+      # solapamiento de superficie.
+      - name: Test the phase-overlap dependency field
+        run: node ./scripts/check-phase-overlap-depends.test.mjs
+
+      # reconcile-stale-phases.mjs (spec-91 fase 5): la garantía real —
+      # corre en CI, no en un hook. Inyecta toda su E/S, nunca llama a gh de
+      # verdad en el test.
+      - name: Test the stale-phase reconciliation logic
+        run: node ./scripts/reconcile-stale-phases-lib.test.mjs
+
+      - name: Test the stale-phase reconciliation orchestration
+        run: node ./scripts/reconcile-stale-phases.test.mjs
 
       - name: Lint
         run: npx turbo run lint

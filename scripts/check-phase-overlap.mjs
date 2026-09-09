@@ -19,15 +19,26 @@
  *   0  sin conflicto duro (puede haber acoplamiento blando — se imprime, no bloquea)
  *   1  conflicto duro: dos targets escriben el mismo fichero
  *   2  error de uso (menos de 2 targets, spec o fase no encontrados)
- *   3  no se puede juzgar: algún target no declara **Archivos:** y su rama
- *      (si se dio) no tiene commits — no hay ninguna superficie con la que
- *      comparar. Nunca se informa como "disjunto": eso sería decir "lo
- *      comprobé y está limpio" cuando en realidad no se comprobó nada.
+ *   3  no se puede juzgar la superficie: dos causas posibles, distinguidas en
+ *      el mensaje —
+ *        (a) el target no declara **Archivos:** y su rama (si se dio) no
+ *            tiene commits — no hay ninguna superficie con la que comparar;
+ *        (b) **Archivos:** SÍ está declarado, pero su contenido no resolvió
+ *            a ningún fichero ni directorio (p.ej. "(indeterminado — ...)",
+ *            ver spec-91 fase 2 / PR #695) — el campo existe, sólo no
+ *            resuelve.
+ *      Nunca se informa como "disjunto": eso sería decir "lo comprobé y está
+ *      limpio" cuando en realidad no se comprobó nada.
+ *   4  dependencia declarada en **Depende de:** no satisfecha (spec-91 fase
+ *      3): un target depende de otra fase que no está `[done]`. Se calcula
+ *      ANTES que el solapamiento de superficie — si el orden no está listo,
+ *      la pregunta de si los ficheros chocan todavía no toca.
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { parseTarget, extractArchivosFiles, normalizeFrontendPath } from './check-phase-overlap-parse.mjs';
+import { extractDependsField, scanUndeclaredReferences, checkDependencies } from './check-phase-overlap-depends.mjs';
 import { buildClosure, computeOverlap } from './check-phase-overlap-closure.mjs';
 
 function usageError(msg) {
@@ -173,15 +184,31 @@ function buildTarget(targetStr, { repo, base, maxDepth }) {
   const specMd = readFileSync(specFull, 'utf8');
   const {
     headingFound,
+    fieldPresent: archivosFieldPresent,
     files: declaredRaw,
     directories: declaredDirs,
     warnings: archivosWarnings,
+    raw: archivosRaw,
   } = extractArchivosFiles(specMd, faseMatch);
   if (!headingFound) {
     usageError(`fase no encontrada en ${specPath}: "${faseMatch}"`);
   }
   const declared = declaredRaw.map(normalizeFrontendPath);
   const name = `${specPath}#${faseMatch}`;
+
+  // spec-91 fase 3/4: id propio del spec (para no autorreferenciarse al
+  // escanear) + estado declarado de **Depende de:**.
+  const ownSpecId = (path.basename(specPath).match(/^spec-(\d+[a-z]?)-/i) || [])[1] || null;
+  const depends = extractDependsField(specMd, faseMatch);
+
+  // Red heurística (fase 4): avisa, no bloquea — el campo tarda en
+  // backfillearse. Sólo nombra lo que NO está ya en **Depende de:**.
+  const undeclaredRefs = scanUndeclaredReferences(specMd, faseMatch, ownSpecId);
+  for (const r of undeclaredRefs) {
+    console.error(
+      `::warning:: ${name} — menciona spec-${r.specId} fase ${r.faseNum} en prosa pero no la declara en **Depende de:**. Si es una dependencia de orden real, decláralo.`,
+    );
+  }
 
   // Blocker 5 (review round 1): a rejected/degraded **Archivos:** entry
   // (a bare filename with no directory to inherit, a directory declaration)
@@ -210,6 +237,14 @@ function buildTarget(targetStr, { repo, base, maxDepth }) {
     // so they never exercise this seam). Found by review round 3 against
     // real data, not by any test.
     directories: declaredDirs,
+    // spec-91 fase 2: si el campo **Archivos:** existe pero no resolvió a
+    // ningún fichero (p.ej. "(indeterminado — <razón>)", PR #695), el
+    // mensaje de exit 3 necesita saberlo para no decir "declara
+    // **Archivos:**" a una fase que ya lo hizo.
+    archivosFieldPresent,
+    archivosRaw,
+    ownSpecId,
+    depends,
     diffFiles,
     writeSet,
     closure,
@@ -282,6 +317,29 @@ function main() {
 
   const targets = targetStrs.map((s) => buildTarget(s, { repo, base, maxDepth }));
 
+  // spec-91 fase 3: chequeo de ORDEN, antes que el de superficie. Si una
+  // fase declara **Depende de:** una fase que no está [done], discutir si
+  // sus ficheros chocan con otra es una pregunta que todavía no toca — así
+  // que este chequeo corre primero y, si encuentra algo, ni siquiera llega
+  // a calcular solapamiento (exit 4 gana sobre 1/3). La lógica vive en
+  // check-phase-overlap-depends.mjs (bloqueante 1 de la ronda 2 incluido:
+  // un heading que MENCIONA "fase N" sin ser un heading de fase real se
+  // reporta como ambiguo, nunca bloquea) — movida ahí, junto al resto del
+  // módulo, para mantener este fichero bajo el límite de líneas del repo.
+  const { unmetDeps, ambiguousDeps } = checkDependencies(targets, repo);
+  for (const a of ambiguousDeps) {
+    console.error(
+      `::warning:: ${a.target} depende de spec-${a.dep.specId} fase ${a.dep.faseNum}, pero no se pudo determinar su estado con certeza en ${a.specFile} (ningún heading con token reconocido calza ese número) — revisa a mano.`,
+    );
+  }
+  if (unmetDeps.length > 0) {
+    console.error('check-phase-overlap: no despachable todavía — dependencia(s) declarada(s) sin satisfacer:');
+    for (const u of unmetDeps) {
+      console.error(`  ${u.target} depende de spec-${u.dep.specId} fase ${u.dep.faseNum}, que ${u.reason}.`);
+    }
+    process.exit(4);
+  }
+
   // Blocker 3 (review round 1): a target with no **Archivos:** and no
   // committed branch has an EMPTY write set — there is nothing to compare it
   // against, and computeOverlap would silently report "disjoint" for lack of
@@ -303,7 +361,19 @@ function main() {
   if (unjudgeable.length > 0) {
     console.error('check-phase-overlap: no puedo juzgar — target(s) sin superficie alguna:');
     for (const t of unjudgeable) {
-      console.error(`  ${t.name} — sin **Archivos:** en el spec y sin rama (o rama sin commits todavía).`);
+      // spec-91 fase 2 (regresión real, #695): dos causas MUY distintas
+      // producen el mismo writeSet vacío. Sin distinguirlas, el mensaje le
+      // dice a una fase que YA declaró **Archivos:** que la declare —
+      // instrucción cumplida, mensaje falso. `archivosFieldPresent` es la
+      // señal: la línea existe, sólo que su contenido (p.ej. "(indeterminado
+      // — <razón>)") no resolvió a ningún fichero ni directorio.
+      if (t.archivosFieldPresent) {
+        console.error(
+          `  ${t.name} — declara **Archivos:** pero su contenido no resuelve a ningún fichero del repo: "${t.archivosRaw}"`,
+        );
+      } else {
+        console.error(`  ${t.name} — sin **Archivos:** en el spec y sin rama (o rama sin commits todavía).`);
+      }
     }
     console.error('Declara **Archivos:** en el spec, o pasa la rama una vez tenga commits, antes de dispatchar en paralelo.');
     process.exit(3);

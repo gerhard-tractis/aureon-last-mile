@@ -10,7 +10,15 @@ set -uo pipefail
 
 SCRIPT="$(cd "$(dirname "$0")" && pwd)/check-phase-overlap.sh"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+REAL_REPO="$(cd "$(dirname "$SCRIPT")/.." && pwd)"
+# R3-3 (review ronda 3): los scratch specs que se escriben DENTRO del repo
+# real (docs/specs/) — no en $TMP — tienen que limpiarse igual con un Ctrl-C
+# a mitad de corrida. Rutas fijas, en el trap desde el principio, en vez de
+# un `rm -f` en línea recta que un `exit`/señal se salta.
+SCRATCH_DEP_SPEC="$REAL_REPO/docs/specs/spec-998-scratch-dep-repro.md"
+SCRATCH_DEP_TARGET="$REAL_REPO/docs/specs/spec-997-scratch-dep-target.md"
+SCRATCH_B1_SPEC="$REAL_REPO/docs/specs/spec-999-scratch-b1-repro.md"
+trap 'rm -rf "$TMP"; rm -f "$SCRATCH_DEP_SPEC" "$SCRATCH_DEP_TARGET" "$SCRATCH_B1_SPEC"' EXIT
 pass=0
 fail=0
 
@@ -278,6 +286,45 @@ assert_exit 0 "undeclared Archivos but a real branch diff IS judgeable (not refu
   "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
   "docs/specs/spec-92-sin-archivos.md#Fase 1@feat/spec-92-fase-1"
 
+# ── spec-91 fase 2: the exit-3 message used to LIE when **Archivos:** IS
+# declared but resolves to nothing (the real #695 regression: spec-83 fase 3
+# and spec-82 fase 2 both declare `**Archivos:** (indeterminado — <razón>)`).
+# It must still refuse to judge (exit 3, correct behavior preserved) but the
+# message must say "the field is present, it just didn't resolve" — not
+# "declare **Archivos:**" to someone who already did.
+cat > "$REPO/docs/specs/spec-96-indeterminado.md" <<'MD'
+### Fase 1 — condicional, no hay nada que nombrar todavía `[pending]`
+
+**Archivos:** (indeterminado — esta fase es condicional: su primer punto es
+decidir si se implementa. Si la decisión es "no", el write set real es cero
+ficheros de código.)
+
+- [ ] decidir si se implementa
+MD
+(cd "$REPO" && git add -A && git commit -q -m "add spec-96 with a declared-but-unresolvable Archivos field")
+
+assert_exit 3 "declared-but-unresolvable Archivos field: still refuses to judge (exit 3)" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
+  "docs/specs/spec-96-indeterminado.md#Fase 1"
+
+assert_contains "declara **Archivos:** pero" "declared-but-unresolvable: message says the field IS present" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
+  "docs/specs/spec-96-indeterminado.md#Fase 1"
+
+assert_contains "esta fase es condicional" "declared-but-unresolvable: message quotes the declared reason" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
+  "docs/specs/spec-96-indeterminado.md#Fase 1"
+
+# The OTHER case (field genuinely absent) must keep the OLD wording — the
+# fix must not blur the two messages into one that's wrong for both.
+assert_contains "sin **Archivos:** en el spec" "genuinely-absent Archivos field: keeps the original wording" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
+  "docs/specs/spec-92-sin-archivos.md#Fase 1"
+
 # ── Regression (found running against the real repo, not a fixture): a
 # resolveSpecifier candidate with no extension can match a REAL DIRECTORY on
 # disk when it isn't in either ref's git tree (`readWorkingTree` fallback).
@@ -377,6 +424,221 @@ assert_exit 0 "docs/** exclusion through the real CLI path: two sibling branches
   bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
   "docs/specs/spec-95-x.md#Fase 1@feat/spec-95-fase-1-a" \
   "docs/specs/spec-95-x.md#Fase 1@feat/spec-95-fase-1-b"
+
+# ── spec-91 fase 3: **Depende de:** — chequeo de orden, exit 4 ─────────────
+# spec-97 fase 1 declares it depends on spec-98 fase 1, which is [pending]
+# (not [done]) in this fixture — must refuse with exit 4, BEFORE even
+# computing surface overlap (their **Archivos:** are disjoint on purpose,
+# so exit 4 proves the dependency check runs first, not that it masks a
+# real conflict).
+cat > "$REPO/docs/specs/spec-97-x.md" <<'MD'
+### Fase 1 — depende de spec-98 `[pending]`
+
+**Depende de:** spec-98 fase 1
+
+**Archivos:** `apps/frontend/src/lib/offline/queue.ts`
+MD
+cat > "$REPO/docs/specs/spec-98-x.md" <<'MD'
+### Fase 1 — todavía no aterriza `[pending]`
+
+**Archivos:** `apps/frontend/src/lib/offline/db.ts`
+MD
+(cd "$REPO" && git add -A && git commit -q -m "add spec-97 (depends on spec-98 fase 1) and spec-98 (still pending)")
+
+assert_exit 4 "declared dependency on a non-done phase: refuses (exit 4), not the surface-overlap codes" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-97-x.md#Fase 1" \
+  "docs/specs/spec-98-x.md#Fase 1"
+
+assert_contains "no despachable todavía" "unmet dependency: message says explicitly it's an order problem" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-97-x.md#Fase 1" \
+  "docs/specs/spec-98-x.md#Fase 1"
+
+assert_contains "spec-98 fase 1" "unmet dependency: message names the blocking phase" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-97-x.md#Fase 1" \
+  "docs/specs/spec-98-x.md#Fase 1"
+
+# Mark spec-98 fase 1 as [done]: the same declared dependency now resolves
+# clean, and the CLI proceeds to the normal (disjoint) surface verdict.
+sed -i "s/\[pending\]/[done]/" "$REPO/docs/specs/spec-98-x.md"
+(cd "$REPO" && git add -A && git commit -q -m "spec-98 fase 1: done")
+assert_exit 0 "once the declared dependency IS [done], surface overlap proceeds normally" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-97-x.md#Fase 1" \
+  "docs/specs/spec-98-x.md#Fase 1"
+
+# "ninguna" (explicit no-dependency) and an absent field must never trigger
+# exit 4 — only an actual declared, unresolved reference does.
+cat > "$REPO/docs/specs/spec-99-x.md" <<'MD'
+### Fase 1 — sin dependencias `[pending]`
+
+**Depende de:** ninguna
+
+**Archivos:** `apps/frontend/src/lib/offline/deepest.ts`
+MD
+(cd "$REPO" && git add -A && git commit -q -m "add spec-99 with an explicit ninguna")
+assert_exit 0 "explicit 'ninguna' never triggers the dependency check" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-99-x.md#Fase 1" \
+  "docs/specs/spec-88-x.md#Fase 2"
+
+# ── Menor (review ronda 2): "exit 4 gana sobre exit 3" no tenía ningún test
+# — nada fijaba el ORDEN. spec-104 fase 1 no declara **Archivos:** en
+# absoluto (sería exit 3 por sí sola: no juzgable) Y depende de spec-105
+# fase 1, que sigue [pending] — el resultado combinado debe ser exit 4, no 3.
+cat > "$REPO/docs/specs/spec-104-x.md" <<'MD'
+### Fase 1 — sin Archivos y con dependencia sin satisfacer `[pending]`
+
+**Depende de:** spec-105 fase 1
+
+Prosa nada más — nadie declaró **Archivos:** para esta fase.
+MD
+cat > "$REPO/docs/specs/spec-105-x.md" <<'MD'
+### Fase 1 — todavía no aterriza `[pending]`
+
+**Archivos:** `apps/frontend/src/lib/offline/deepest.ts`
+MD
+(cd "$REPO" && git add -A && git commit -q -m "add spec-104 (no Archivos + unmet dep) and spec-105 (still pending)")
+
+assert_exit 4 "order: exit 4 (unmet dependency) wins over exit 3 (unjudgeable surface) when both would apply" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-104-x.md#Fase 1" \
+  "docs/specs/spec-105-x.md#Fase 1"
+
+# ── Real acceptance case, NOT a fixture on the resolving side: proves
+# `resolveDependency`/`findPhaseTokenByNumber` against the REAL docs/specs/
+# directory (real `readdirSync`, ~100 real files sitting alongside the two
+# scratch ones, real markdown-heading parsing) — only the DECLARING side is
+# fabricated (a `**Depende de:**` line, trivially parseable, already
+# covered by 25 unit tests). That split is the point: spec-89's lesson was
+# that fabricating the shape the CONSUMER validates proves nothing; here the
+# consumer-facing side (the target spec's real file, real token) stays real.
+#
+# R3-1 (review ronda 3): the FIRST version of this test used spec-84 fase 3
+# as the dependent — a real spec that really declared this dependency,
+# motivating the whole guard. A product decision parked it mid-review
+# (fixed via a downstream-reconciliation commit). The SECOND version swapped
+# in spec-80 fase 3 as the target, reasoning "it's real and still pending" —
+# but `[pending]` isn't terminal the way `[done]` is (contrast the
+# Bloqueante-1 repro below, which asserts `exit 0` against phases that ARE
+# `[done]` — safe, because `done` never reverts). spec-80 fase 3 was in
+# review for closure at the exact moment this was written; the day it
+# lands, THIS test goes red in the PR that closes it, for a reason that has
+# nothing to do with that PR. Same fragility one step removed.
+#
+# Fix: BOTH sides are scratch specs now, freshly written each run — the
+# target's token is under this test's own control, so no real spec's
+# lifecycle can break it. Directory scan and markdown parsing stay real.
+cat > "$SCRATCH_DEP_TARGET" <<'MD'
+### Fase 1 — objetivo de dependencia, todavía no aterriza `[pending]`
+
+**Archivos:** `apps/frontend/src/lib/offline/db.ts`
+MD
+cat > "$SCRATCH_DEP_SPEC" <<'MD'
+### Fase 1 — depende de spec-997 fase 1 `[pending]`
+
+**Depende de:** spec-997 fase 1
+
+**Archivos:** `apps/frontend/src/lib/offline/deepest.ts`
+MD
+assert_exit 4 "REAL REPO: a phase depending on a [pending] target gets exit 4, not 'disjoint'" \
+  bash "$SCRIPT" --repo "$REAL_REPO" \
+  "docs/specs/spec-998-scratch-dep-repro.md#Fase 1" \
+  "docs/specs/spec-997-scratch-dep-target.md#Fase 1"
+
+# The transition itself, still against the real CLI/fs path: once the
+# target reaches [done], the SAME declared dependency resolves clean.
+sed -i "s/\[pending\]/[done]/" "$SCRATCH_DEP_TARGET"
+assert_exit 0 "REAL REPO: once the target reaches [done], the dependency resolves clean" \
+  bash "$SCRIPT" --repo "$REAL_REPO" \
+  "docs/specs/spec-998-scratch-dep-repro.md#Fase 1" \
+  "docs/specs/spec-997-scratch-dep-target.md#Fase 1"
+# Reset for the next assertion below (message-naming test), which wants the
+# unmet case again.
+cat > "$SCRATCH_DEP_TARGET" <<'MD'
+### Fase 1 — objetivo de dependencia, todavía no aterriza `[pending]`
+
+**Archivos:** `apps/frontend/src/lib/offline/db.ts`
+MD
+
+# ── Bloqueante 1 (review ronda 2), reproducido contra el REPO REAL, no un
+# fixture: spec-85-discrepancias.md tiene un heading en prosa ("### La
+# costura entre esta fase y spec-80 fase 2", línea 222, sin token) ANTES del
+# heading real "### Fase 2 — RPCs `[done]`" (línea 338). Un target que
+# declare depender de spec-85 fase 2 no debe recibir `[null]` ni exit 4 —
+# spec-85 fase 2 SÍ está `[done]`. Se crea un spec temporal DENTRO del repo
+# real (necesario: la dependencia se resuelve leyendo docs/specs/ del propio
+# `--repo`) y se borra al terminar, sin commitear nada.
+cat > "$SCRATCH_B1_SPEC" <<'MD'
+### Fase 1 — depende de spec-85 fase 2 `[pending]`
+
+**Depende de:** spec-85 fase 2
+
+**Archivos:** `apps/frontend/src/lib/offline/deepest.ts`
+MD
+assert_exit 0 "REAL REPO, Bloqueante 1: spec-85 fase 2 resolves [done] despite the earlier prose heading — no exit 4" \
+  bash "$SCRIPT" --repo "$REAL_REPO" \
+  "docs/specs/spec-999-scratch-b1-repro.md#Fase 1" \
+  "docs/specs/spec-88-anon-security-definer-audit.md#Fase 2"
+rm -f "$SCRATCH_B1_SPEC"
+
+# ── The genuinely-ambiguous case: a declared dependency on a fase number
+# that has NO real phase heading anywhere (only a prose mention) must warn,
+# not exit 4 — the surface-overlap verdict still proceeds normally.
+cat > "$REPO/docs/specs/spec-101-x.md" <<'MD'
+### La costura entre esta fase y spec-102 fase 9
+
+Nunca hay un heading real de "Fase 9" en este documento — sólo esta mención
+en prosa, sin token.
+MD
+cat > "$REPO/docs/specs/spec-102-x.md" <<'MD'
+### Fase 1 — depende de una fase ambigua `[pending]`
+
+**Depende de:** spec-101 fase 9
+
+**Archivos:** `apps/frontend/src/lib/offline/deepest.ts`
+MD
+(cd "$REPO" && git add -A && git commit -q -m "add spec-101 (no real fase 9 heading) and spec-102 (depends on it)")
+
+assert_exit 0 "ambiguous dependency (no heading with a recognized token matches): does NOT force exit 4" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-102-x.md#Fase 1" \
+  "docs/specs/spec-88-x.md#Fase 2"
+
+assert_contains "no se pudo determinar su estado con certeza" "ambiguous dependency: reported as a warning, not silently dropped" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-102-x.md#Fase 1" \
+  "docs/specs/spec-88-x.md#Fase 2"
+
+assert_contains "spec-997 fase 1" "REAL REPO: message names the real blocking phase" \
+  bash "$SCRIPT" --repo "$REAL_REPO" \
+  "docs/specs/spec-998-scratch-dep-repro.md#Fase 1" \
+  "docs/specs/spec-997-scratch-dep-target.md#Fase 1"
+rm -f "$SCRATCH_DEP_SPEC" "$SCRATCH_DEP_TARGET"
+
+# ── spec-91 fase 4: heuristic net — warns (::warning::) about an undeclared
+# spec-N fase M mention, never blocks (exit stays whatever the rest of the
+# run would have been).
+cat > "$REPO/docs/specs/spec-100-x.md" <<'MD'
+### Fase 1 — menciona otra fase sin declararla `[pending]`
+
+**Archivos:** `apps/frontend/src/lib/offline/deepest.ts`
+
+Nota: esto en realidad depende de que aterrice spec-98 fase 1 primero, pero
+nadie rellenó **Depende de:** todavía.
+MD
+(cd "$REPO" && git add -A && git commit -q -m "add spec-100 with an undeclared prose reference")
+assert_contains "spec-98 fase 1" "heuristic net: warns about an undeclared prose reference" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-100-x.md#Fase 1" \
+  "docs/specs/spec-82-x.md#Fase 1"
+
+assert_exit 0 "heuristic net: the warning does not turn into a block by itself" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-100-x.md#Fase 1" \
+  "docs/specs/spec-82-x.md#Fase 1"
 
 echo
 echo "$pass passed, $fail failed"
