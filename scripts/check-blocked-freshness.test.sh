@@ -39,6 +39,14 @@ f="$(mk over30.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: s
 out=$(run "$f");
 if printf '%s' "$out" | grep -q '::warning'; then echo "  ok   31 dias caduca"; PASS=$((PASS+1)); else echo "  FAIL debia avisar a los 31 dias: $out"; FAIL=$((FAIL+1)); fi
 
+# Bloqueo multi-línea (round 2, B1): la fecha real vive en la línea de
+# continuación, no en la primera — igual que el ejemplo canónico de
+# docs/specs/CLAUDE.md. Antes de concatenar el bloque, esto se reportaba
+# como "sin fecha real" pese a traer una fecha válida.
+f="$(mk multiline.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: se intentó resolver X contra Y' '> — verificado en foo.sql:12' '> — 2026-09-01 — desbloquea: usuario')"
+out=$(run "$f")
+if ! printf '%s' "$out" | grep -q '::warning'; then echo "  ok   fecha en linea de continuacion se detecta (fresco, sin warning)"; PASS=$((PASS+1)); else echo "  FAIL fecha multilinea no detectada: $out"; FAIL=$((FAIL+1)); fi
+
 # GITHUB_STEP_SUMMARY: el aviso tiene que quedar tambien en el resumen del job,
 # no solo en stdout — un ::warning sin file=/line= es invisible en gh pr checks
 # (hallazgo de spec-87); el summary es el respaldo legible.

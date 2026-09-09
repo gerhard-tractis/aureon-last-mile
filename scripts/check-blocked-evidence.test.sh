@@ -53,32 +53,96 @@ check "dos fases blocked, una sin evidencia falla" 1 "$(mk two.md '# S' '**Statu
 
 check "archivo inexistente no rompe" 0 "$D/no-existe.md"
 
-# --- validación contra la realidad: hoy NINGUNA fase [blocked] real del repo
-# trae `> Bloqueo:` (la línea no existía antes de spec-90) — así que el guard
-# debe fallar sobre cada uno de los specs reales que la auditoría encontró.
+# --- round 2 (B1): el `> Bloqueo:` puede repartirse en varias líneas de
+# blockquote consecutivas — es literalmente lo que enseña el ejemplo canónico
+# de docs/specs/CLAUDE.md (y su copia en spec-90-...md). Antes de esto, un
+# spec que siguiera la documentación al pie de la letra se comía un rojo por
+# los tres campos que sí trajo, sólo porque vivían en la línea 2 y 3.
+check "Bloqueo multilinea (ejemplo canonico de CLAUDE.md) pasa" 0 "$(mk ok-multiline.md '# S' '**Status:** backlog' '### Fase 3 — Asignación `[blocked]`' '> Bloqueo: se intentó resolver "asignados a ti" contra manifests.assigned_to_user_id' '> — verificado en el esquema QA: la columna existe y está NULL en todas las filas' '> — 2026-09-08 — desbloquea: usuario (quién asigna y desde dónde: spec-82 §1)')"
+
+check "continuacion cortada por linea en blanco no se une" 1 "$(mk cut-multiline.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: se intentó X' '' '> — verificado en foo.sql:12 — 2026-09-08 — desbloquea: usuario')"
+
+# --- round 2 (B2 + S1): la negación vacía con las palabras mágicas puestas
+# ya no cuela. Es el ejemplo exacto que el review encontró.
+check "bingo de palabras clave sin evidencia real falla" 1 "$(mk bingo.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: se intentó nada y no se verificó nada — 2026-09-08 — desbloquea: usuario')"
+
+check "escalar al orquestador con respuesta real pasa" 0 "$(mk ok-escalado.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: se intentó escalar la pregunta al orquestador — verificado: escaló al orquestador el 2026-09-08 y no contestó — desbloquea: usuario')"
+
+# --- round 2 (S2): conjugaciones reales del español, no sólo la 3a persona
+# del pretérito ("intentó"/"verificó"). "usuarios" en plural también cuenta.
+check "primera persona (intente/verifique) pasa" 0 "$(mk ok-conj.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: lo intenté y lo verifiqué en foo.sql:12 — 2026-09-08 — desbloquea: usuario')"
+
+check "desbloquea usuario en plural pasa" 0 "$(mk ok-plural.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: se intentó X y devolvió Z — verificado en foo.sql:12 — 2026-09-08 — desbloquea: usuarios')"
+
+# --- round 2 (escape hatch): `(indeterminado — razón)` — la lección de
+# `**Depende de:**` (spec-91, #699) aplicada aquí desde el primer día: un
+# campo obligatorio sin forma honesta de decir "todavía no lo sé" convierte
+# una negativa correcta en un build rojo.
+check "indeterminado con razon real pasa" 0 "$(mk ok-indet.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: (indeterminado — la pantalla de indemnización no está diseñada, no se puede evaluar el efecto aguas abajo todavía) — 2026-09-09 — desbloquea: usuario')"
+
+check "indeterminado sin razon falla" 1 "$(mk bad-indet-empty.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: (indeterminado —) — 2026-09-09 — desbloquea: usuario')"
+
+check "indeterminado con relleno (razon real) falla" 1 "$(mk bad-indet-fill.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: (indeterminado — razón real) — 2026-09-09 — desbloquea: usuario')"
+
+check "indeterminado sigue exigiendo fecha" 1 "$(mk bad-indet-date.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: (indeterminado — todavía no se pudo determinar el efecto) — desbloquea: usuario')"
+
+check "indeterminado sigue exigiendo desbloquea" 1 "$(mk bad-indet-quien.md '# S' '**Status:** backlog' '### F1 `[blocked]`' '> Bloqueo: (indeterminado — todavía no se pudo determinar el efecto) — 2026-09-09')"
+
+# --- round 2 (S6): un diff que no se pudo calcular NO es lo mismo que "nada
+# tocado" — antes ambos devolvían exit 0 en silencio.
+out=$(cd "$(cd "$(dirname "$0")/.." && pwd)" && bash "$S" --base "refs/heads/rama-que-no-existe-en-ningun-lado-xyz" 2>&1); code=$?
+if [ "$code" -ne 0 ]; then echo "  ok   --base irresoluble falla cerrado, no pasa en silencio"; PASS=$((PASS+1))
+else echo "  FAIL --base irresoluble debia fallar cerrado, obtuvo exit 0: $out"; FAIL=$((FAIL+1)); fi
+
+# --- validación contra la realidad, derivada dinámicamente (round 2): la
+# lista fija de specs murió porque congelaba una foto del corpus a un SHA —
+# spec-86 salió de ella sin que el guard cambiara, sólo porque `bbc6eb7`
+# (PR #687, 2026-09-08T15:18:52Z) resolvió su decisión pendiente 18 minutos
+# ANTES de que este mismo fixture se escribiera (`fb6fa0a`,
+# 2026-09-08T15:37:19Z) — no fue deriva concurrente, fue que el checkout de
+# esta rama partía de un commit (`8fcb4c8`, 14:58:41Z) ya viejo para cuando
+# se escribió la lista. Fijar a un SHA no arregla eso, sólo lo pospone al
+# próximo spec que se backfillee.
 #
-# spec-86 estaba en esta lista originalmente; salió el 2026-09-08 porque
-# `dd6f921` (PR #677, mergeado en `main` después de que esta lista se
-# escribiera) resolvió la decisión de producto pendiente y movió su única
-# fase `[blocked]` (2b) a `[parked]` — un token que este guard no vigila a
-# propósito (`docs/specs/CLAUDE.md`: `parked` no exige `> Bloqueo:`, sólo
-# `blocked`). El spec ya no es un ejemplo real de "blocked sin evidencia";
-# dejarlo en la lista convertía la deriva del corpus en un falso rojo de CI.
+# En su lugar: recorre docs/specs/spec-*.md HOY, construye el conjunto de
+# specs con al menos una fase `[blocked]` sin `> Bloqueo:` en su cuerpo (una
+# detección independiente de la del guard, para no validar el guard contra sí
+# mismo), y afirma dos invariantes que no dependen de qué specs sean:
+#   (a) el conjunto no está vacío — mata el mutante "el guard no ve nada",
+#       que es el fallo real que costó una ronda de review esta semana;
+#   (b) cada miembro del conjunto hace fallar al guard de verdad (exit 1).
+# Si mañana alguien backfillea uno, el conjunto encoge solo y el test sigue
+# verde — no hay lista que mantener.
+has_unguarded_blocked() { # $1=archivo -> "yes" si tiene [blocked] sin > Bloqueo:
+  awk '
+    function flush() { if (pend && !bloq) found=1 }
+    /^#{2,4} .*\[blocked\]`?[ \t]*$/ { flush(); pend=1; bloq=0; next }
+    /^#{2,4} /                       { flush(); pend=0; next }
+    /^> Bloqueo:/                    { if (pend) bloq=1 }
+    END { flush(); if (found) print "yes" }
+  ' "$1"
+}
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-for real in \
-  spec-75-despacho-desktop-reshape.md \
-  spec-82-recogida-movil-asignacion-y-ruta.md \
-  spec-83-recogida-escritorio-datos-faltantes.md \
-  spec-84-movil-conductor-home-y-prueba-de-entrega.md \
-  spec-88-anon-security-definer-audit.md \
-; do
-  f="$ROOT/docs/specs/$real"
-  if [ -f "$f" ]; then
-    check "spec real $real sin Bloqueo falla (pre-spec-90)" 1 "$f"
-  else
-    echo "  SKIP $real (no existe en este checkout)"
-  fi
+CANDIDATES=""
+for f in "$ROOT"/docs/specs/spec-*.md; do
+  [ -f "$f" ] || continue
+  [ "$(has_unguarded_blocked "$f")" = "yes" ] || continue
+  CANDIDATES="$CANDIDATES $f"
 done
+CANDIDATES="$(printf '%s' "$CANDIDATES" | sed -E 's/^ +//')"
+
+if [ -z "$CANDIDATES" ]; then
+  echo "  FAIL smoke: el corpus real no tiene HOY ningún spec [blocked] sin '> Bloqueo:' — el conjunto no debería estar vacío (o el backfill ya terminó y este test necesita repensarse, no sólo pasar)."
+  FAIL=$((FAIL+1))
+else
+  n=0; for _ in $CANDIDATES; do n=$((n+1)); done
+  echo "  ok   smoke: hay $n spec(s) real(es) con [blocked] sin '> Bloqueo:' hoy"
+  PASS=$((PASS+1))
+  for f in $CANDIDATES; do
+    check "smoke: $(basename "$f") sin Bloqueo falla contra el guard real" 1 "$f"
+  done
+fi
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"

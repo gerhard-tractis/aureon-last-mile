@@ -186,8 +186,12 @@ el 2026-09-08: dos specs afirmaron que `public.users` y `public.drivers` no
 tenían nada que las ligara, cuando `20260318000004_agent_suite_tables.sql:253-254`
 ya las ligaba desde marzo — esa única afirmación sin comprobar paró cuatro
 fases. Igual que `[done]` necesita evidencia para cerrarse, `[blocked]` la
-necesita para abrirse: **toda fase `[blocked]` lleva, en su cuerpo, una línea
-`> Bloqueo:`** con las cuatro cosas que ese día demostró que faltaban:
+necesita para abrirse: **toda fase `[blocked]` lleva, en su cuerpo, un bloque
+`> Bloqueo:`** con las cuatro cosas que ese día demostró que faltaban. Puede
+ser una sola línea o varias líneas de blockquote consecutivas (sin línea en
+blanco de por medio) — el guard concatena el bloque completo antes de leer
+los campos, así que repartirlo en varias líneas para que quepa sin desbordar
+es válido, no un adorno:
 
 ```
 ### Fase 3 — Asignación `[blocked]`
@@ -210,13 +214,26 @@ intentó» tiene que decir a quién se escaló, y «contra qué se verificó» t
 que decir qué contestó (o que no contestó nada). El 2026-09-08 se usó "no
 tengo acceso" tres veces para bajar el listón de verificación sin escalar
 nada, y las tres veces el orquestador sí tenía la capacidad que el subagente
-decía no tener.
+decía no tener. Una negación vacía con las palabras correctas puestas
+("se intentó nada y no se verificó nada") **no** cuenta — el guard la rechaza
+explícitamente.
+
+**Escape hatch, igual que `**Depende de:**` (spec-91):** si de verdad no se
+puede articular todavía contra qué se verificó, `(indeterminado — <razón
+real>)` reemplaza los dos primeros campos sin reemplazar los otros dos —
+fecha y quién desbloquea siguen siendo exigibles porque sí se conocen:
+
+```
+> Bloqueo: (indeterminado — la pantalla de indemnización no está diseñada
+> todavía, no se puede evaluar el efecto aguas abajo) — 2026-09-09 —
+> desbloquea: usuario
+```
+
+Un relleno («razón», «TODO», «???») no cuenta como razón real — el guard lo
+rechaza igual que rechazaría un campo vacío.
 
 `scripts/check-blocked-evidence.sh` lo aplica en CI, sólo sobre los specs que
 toca el PR — igual que `**Verify:**`, los antiguos migran cuando se los toca.
-Hoy (2026-09-08) hay ~10 fases `[blocked]` reales en el repo y **ninguna**
-trae esta línea porque no existía antes de este guard; tocar cualquiera de
-esos seis specs exige añadirla desde ese momento.
 
 Un bloqueo caducado no es un error — es una revisión pendiente.
 `scripts/check-blocked-freshness.sh` corre sobre **todos** los specs en cada

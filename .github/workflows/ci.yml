@@ -185,11 +185,23 @@ jobs:
       # [done] — qué se intentó, contra qué se verificó, cuándo, y quién
       # desbloquea. Sólo sobre los specs tocados en este PR, igual que el
       # guard de arriba y por la misma razón de transición.
+      #
+      # Round 2 (S4): igual que el guard de migraciones de arriba, la cola de
+      # merge dispara `merge_group`, no `pull_request` —
+      # `github.event.pull_request.base.sha` está vacío ahí, y ese "vacío" se
+      # confundía con "no es un PR, no hay nada que validar" justo en la
+      # corrida que decide el merge. Mismo fallback de tres niveles.
       - name: Check blocked-phase evidence on touched specs
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
           if [ -z "$BASE" ]; then
-            echo "No es un pull_request; este guard valida los specs del PR. Saltando."
+            BASE="${{ github.event.merge_group.base_sha }}"
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            BASE="${{ github.event.before }}"
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "No hay base determinable (ni pull_request, ni merge_group, ni push con before) — saltando."
             exit 0
           fi
           git fetch --no-tags --depth=1 origin "$BASE" 2>/dev/null || git fetch --no-tags --unshallow 2>/dev/null || true

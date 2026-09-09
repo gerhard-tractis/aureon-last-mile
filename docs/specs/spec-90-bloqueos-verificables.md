@@ -54,15 +54,24 @@ número de "ocho" del encargo original contaba probablemente sólo el rango
 80–88 con un criterio ligeramente distinto de qué cuenta como fase — la
 discrepancia no cambia la conclusión: la mayoría de los bloqueos declarados
 no traían evidencia verificable, y con la regla nueva, ninguno la trae
-todavía.
+todavía. **Es una foto del 2026-09-08, no una invariante** — `bbc6eb7`
+(PR #687) backfilleó la decisión de spec-86 esa misma tarde y la sacó de la
+lista horas después de escribirse este párrafo; por eso ningún test de este
+spec fija ya un recuento ni una lista de nombres (ver pieza 1).
 
 ## Las tres piezas
 
 ### 1. `scripts/check-blocked-evidence.sh` — evidencia obligatoria en toda fase bloqueada
 
 Nuevo script, hermano de `check-spec-fields.sh` (no lo modifica — ver
-*Coordinación con spec-89* más abajo), que exige una línea `> Bloqueo:` en el
-cuerpo de toda fase `[blocked]`, con cuatro cosas en una sola línea:
+*Coordinación con spec-89* más abajo), que exige un bloque `> Bloqueo:` en el
+cuerpo de toda fase `[blocked]`, con cuatro cosas. Puede ser una línea o
+varias líneas de blockquote consecutivas — el guard concatena el bloque
+completo antes de validar, porque el propio ejemplo canónico las reparte en
+tres para que quepan sin desbordar (**round 2 de review**: un spec que
+siguiera el ejemplo de `docs/specs/CLAUDE.md` al pie de la letra se comía un
+rojo reclamándole justo los tres campos que sí había escrito, porque el guard
+original sólo leía la primera línea):
 
 ```
 > Bloqueo: se intentó resolver "asignados a ti" contra manifests.assigned_to_user_id
@@ -71,15 +80,27 @@ cuerpo de toda fase `[blocked]`, con cuatro cosas en una sola línea:
 ```
 
 - **Qué se intentó** — heurística: la línea debe nombrar el intento
-  (`intentó`/`intentó`), no "falta X".
+  (cualquier conjugación de "intentar"), y no ser la negación vacía
+  "(no) se intentó nada".
 - **Contra qué se verificó** — heurística: debe nombrar la verificación
-  (`verificado`/`verificó`) — fichero:línea, consulta, o salida de comando.
+  (cualquier conjugación de "verificar", incluida "verifiqué") — fichero:línea,
+  consulta, o salida de comando — y tampoco vale como negación vacía
+  "(no) se verificó nada".
 - **Cuándo** — una fecha real de calendario, `YYYY-MM-DD` (mismo chequeo de
   fecha-real que `check-quarantine-validate.mjs`: `2026-02-30` no cuela).
-- **Quién puede desbloquearlo** — `desbloquea: usuario | agente | dependencia`.
-  `dependencia` exige nombrar el spec (`dependencia (spec-81)`); una
-  dependencia sin nombrar no es información, es la misma frase de siempre con
-  una palabra nueva.
+- **Quién puede desbloquearlo** — `desbloquea: usuario | agente | dependencia`
+  (singular o plural). `dependencia` exige nombrar el spec
+  (`dependencia (spec-81)`); una dependencia sin nombrar no es información,
+  es la misma frase de siempre con una palabra nueva.
+
+**Escape hatch desde el primer día:** `(indeterminado — <razón real>)`
+reemplaza "qué se intentó"/"contra qué se verificó" cuando de verdad no se
+puede articular todavía contra qué se verificó — fecha y quién desbloquea
+siguen siendo obligatorios porque sí son conocidos. Un relleno ("razón",
+"TODO", "???") no pasa. Es la misma lección que `**Depende de:**` (spec-91,
+#699) documentó primero: un campo obligatorio sin salida honesta convierte
+una negativa correcta en un build rojo, y no se retrofitea después de romper
+CI una vez — nace con la salida desde el día uno.
 
 **«No tengo acceso a X» no es un bloqueo válido por sí solo.** El guard no
 puede leer intención, pero la regla queda escrita en `docs/specs/CLAUDE.md` y
@@ -88,18 +109,21 @@ quién se escaló y «contra qué se verificó» dice qué contestó (o que no
 contestó). Es la corrección directa a los tres casos de hoy, donde "no tengo
 acceso" se usó para bajar el listón de verificación sin escalar nada.
 
-**Diff-scoped, igual que `check-spec-fields.sh` y por la misma razón.**
-Validar los ~10 `[blocked]` reales de hoy —ninguno trae la línea, porque no
-existía— haría que el primer PR que toque cualquiera de esos seis specs
-fallara en masa por deuda acumulada, no por algo que ese PR introdujo. El
+**Diff-scoped, igual que `check-spec-fields.sh` y por la misma razón.** El
 guard sólo mira los specs que el PR **toca** (mismo mecanismo de resolución
-de base que `check-spec-fields.sh`: `--base`, o archivos explícitos). Los
+de base que `check-spec-fields.sh`: `--base`, o archivos explícitos, con
+fallback a `merge_group`/`push` en CI — ver `.github/workflows/ci.yml`). Los
 specs viejos migran cuando alguien los toca — es el mismo patrón que ya
 usa `**Verify:**` en este mismo archivo, y ya está probado: no es una
 transición nueva, es la que este repo ya eligió para el mismo problema.
 
 **Cuántos fallarían hoy si el guard fuera repo-wide en vez de diff-scoped:**
-las 10 fases de los 6 specs de arriba. Es exactamente por eso que no lo es.
+no se cuenta aquí a propósito — cualquier número fijo se pudre en cuanto se
+backfillea o se rompe un spec más. `scripts/check-blocked-evidence.test.sh`
+lo mide **dinámicamente** contra el corpus real en cada corrida (recorre
+`docs/specs/spec-*.md`, junta los `[blocked]` sin `> Bloqueo:` de hoy, y
+afirma que el conjunto no está vacío y que cada miembro falla contra el
+guard) — así el número correcto es "el que sea hoy", no una foto congelada.
 
 ### 2. `scripts/check-blocked-freshness.sh` — caducidad, en modo aviso
 
@@ -132,9 +156,12 @@ bloqueo caducado hace que alguien desactive el guard; un aviso no. El script:
 - vuelca también a `$GITHUB_STEP_SUMMARY` una tabla legible, como respaldo
   del `::warning::` línea por línea.
 
-Corrida real contra el repo hoy (`--today 2026-09-08`): 10 avisos, uno por
-cada fase `[blocked]` sin `> Bloqueo:` — coincide exactamente con el recuento
-de la pieza 1. `exit 0` en los 10 casos.
+Corrida real contra el repo el 2026-09-08 (`--today 2026-09-08`, antes de que
+`bbc6eb7`/PR #687 backfilleara spec-86 esa misma tarde): 10 avisos, uno por
+cada fase `[blocked]` sin `> Bloqueo:` en ese momento. Ese número ya no es el
+de hoy — es una foto, no una invariante — y no se vuelve a fijar aquí por la
+misma razón que la pieza 1 dejó de contar specs por nombre: `exit 0` siempre,
+sea cual sea el recuento del día.
 
 ### 3. Los agentes declaran capacidad que les falta, no imposibilidad
 
@@ -165,17 +192,20 @@ porque un agente sin esa sección vuelve a poder repetir el error de hoy.
   `check-migration-safety.mjs`.** Es el mismo defecto que este spec evita
   cometer de nuevo, pero arreglarlo ahí es una fase de otro spec — tocar ese
   archivo no es necesario para el guardarraíl de bloqueos.
-- **No se retrofitea `> Bloqueo:` en los 6 specs reales que hoy carecen de
-  él.** Es tentador —ya sé exactamente cuáles son y qué deberían decir— pero
-  esos specs pertenecen a fases activas de otros implementers (82–88) y
-  escribir contenido de dominio ahí no es "construir el guardarraíl", es
-  "usar el guardarraíl", que le toca a quien tome esa fase la próxima vez que
-  la toque. El guard mismo se probó contra esos 6 ficheros tal como están hoy
-  (ver *Verify*), así que la validación no depende de retrofitearlos.
+- **No se retrofitea `> Bloqueo:` en los specs reales que hoy carecen de él.**
+  Es tentador —para varios ya sé exactamente qué deberían decir— pero esos
+  specs pertenecen a fases activas de otros implementers y escribir contenido
+  de dominio ahí no es "construir el guardarraíl", es "usar el guardarraíl",
+  que le toca a quien tome esa fase la próxima vez que la toque. El guard se
+  prueba contra el corpus real de forma dinámica (ver *Verify* y
+  `check-blocked-evidence.test.sh`), así que la validación no depende de
+  retrofitear ninguno en concreto ni de mantener una lista.
 - **No se valida contenido semántico del `> Bloqueo:`** más allá de los
-  cuatro chequeos heurísticos descritos — el guard no puede juzgar si "se
-  intentó Y" es verdad, sólo que la línea tiene la forma que un bloqueo real
-  necesita. Es el mismo nivel de rigor que `check-spec-fields.sh` ya aplica a
+  chequeos heurísticos descritos — el guard no puede juzgar si "se intentó Y"
+  es verdad, sólo que el bloque tiene la forma que un bloqueo real necesita
+  (y, desde la ronda 2 de review, que no es una negación vacía de sí mismo:
+  "se intentó nada" y "no se verificó nada" ya fallan explícitamente). Es un
+  nivel de rigor más alto que el que `check-spec-fields.sh` ya aplica a
   `> Implementado por:`/`> Review:`/`> QA:`: comprueba presencia, no verdad.
 - **No se cambia el horizonte por tipo de bloqueo** (usuario vs. dependencia
   vs. agente). Un solo número, documentado y justificado contra el
@@ -222,13 +252,29 @@ paralelo. Decisiones tomadas aquí para minimizar el choque:
       cuatro campos en toda fase `[blocked]` de los specs tocados.
 - [x] `check-blocked-freshness.sh`: repo-wide, warn-only, horizonte 30 días,
       `::warning file=,line=`, vuelca a `$GITHUB_STEP_SUMMARY`.
-- [x] Validado contra la realidad: los 6 specs reales con `[blocked]`
-      (spec-75, 82, 83, 84, 86, 88) se usan como fixtures directamente en
-      ambos `.test.sh` — hoy fallan/avisan todos, como debe ser.
-- [x] Mutation-test: desactivar el chequeo `desbloquea:` mata 3 tests
-      (`falta desbloquea falla`, `desbloquea con valor invalido falla`,
-      `desbloquea dependencia sin nombrar spec falla`); restaurado y verde.
-- [x] Wireado en `.github/workflows/ci.yml`, junto a los guards hermanos.
+- [x] Validado contra la realidad, **round 2**: `check-blocked-evidence.test.sh`
+      ya no fija una lista de specs por nombre — round 1 la fijó
+      (spec-75/82/83/84/86/88) y `bbc6eb7` (PR #687) sacó a spec-86 de la
+      realidad 18 minutos antes de que ese fixture se escribiera, tumbando CI
+      por deriva de corpus, no por un bug del guard. Ahora recorre
+      `docs/specs/spec-*.md` en cada corrida, construye el conjunto de
+      `[blocked]` sin `> Bloqueo:` **hoy**, y afirma que no está vacío y que
+      cada miembro falla contra el guard real — el número y los nombres ya no
+      importan. `check-blocked-freshness.test.sh` nunca tuvo una lista fija;
+      su prueba contra la realidad es "correr sobre `docs/specs/` completo no
+      rompe nunca" (sí la tiene, sin cambios en round 2).
+- [x] Mutation-test, **round 2** (contra el guard reescrito): comentar el
+      `FAILED=1` de la rama "falta `> Bloqueo:`" (la detección de que una
+      fase `[blocked]` no trae nada) mata 8 tests, incluidos los 5+ del
+      smoke dinámico contra el corpus real — es el mutante que de verdad
+      importaba (`check-blocked-evidence: ok` pese a que el guard dejó de ver
+      fases bloqueadas) y round 1 lo había probado ya. Además: la negación
+      vacía ("se intentó nada y no se verificó nada") ahora tiene su propio
+      test (`bingo de palabras clave sin evidencia real falla`) que falla si
+      se retira cualquiera de los dos chequeos de negación nuevos.
+- [x] Wireado en `.github/workflows/ci.yml`, junto a los guards hermanos, con
+      el mismo fallback de `merge_group`/`push` que ya usa el guard de
+      migraciones (S4, round 2 — antes `merge_group` lo saltaba en silencio).
 
 Construido en esta sesión, rama `feat/spec-90-bloqueos-verificables`. Sin
 review ni PR todavía — se abre el PR **sin auto-merge**, a propósito, para
@@ -262,7 +308,14 @@ motivo que la fase 1.
   igual resulta lento ahí, es una optimización de un guard *que ya no
   bloquea nada* (warn-only), no una corrección.
 - **El heurístico de "qué se intentó"/"contra qué se verificó" es léxico, no
-  semántico.** Alguien puede escribir "se intentó nada y se verificó nada"
-  con las palabras correctas y pasar el guard. Es el mismo trade-off que
-  `check-spec-fields.sh` ya acepta para `> Implementado por:` — el guard
-  fuerza la forma, la revisión humana (o del `reviewer`) juzga el contenido.
+  semántico** — el guard no puede juzgar si "se intentó Y" es verdad, sólo la
+  forma. Round 2 de review encontró que esto tenía un agujero más grave de lo
+  que esta línea admitía: "se intentó nada y no se verificó nada" pasaba
+  literalmente, con las palabras mágicas puestas y negando explícitamente
+  haber hecho algo. Ya se cierra ese caso concreto (el guard rechaza la
+  negación vacía: "intentó/verificó" seguido de "nada"/"ninguna"), pero sigue
+  siendo léxico — alguien puede rodear esa frase exacta con otra construcción
+  y seguir sin decir nada real. Mismo trade-off de fondo que
+  `check-spec-fields.sh` acepta para `> Implementado por:`, con un listón más
+  alto: el guard fuerza la forma y bloquea la negación más obvia, la revisión
+  humana (o del `reviewer`) sigue juzgando el contenido.

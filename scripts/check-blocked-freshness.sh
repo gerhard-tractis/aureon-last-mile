@@ -88,12 +88,21 @@ for f in $FILES; do
   done < "/tmp/_fresh_missing_$$"
   rm -f "/tmp/_fresh_missing_$$"
 
-  # Fases con `> Bloqueo:` presente: comprobar caducidad.
+  # Fases con `> Bloqueo:` presente: comprobar caducidad. Concatena bloques
+  # multi-línea igual que check-blocked-evidence.sh — la fecha puede vivir en
+  # una línea de continuación (el ejemplo canónico de CLAUDE.md la pone en la
+  # tercera), y leer sólo la primera línea la perdía.
   awk -v file="$f" '
     function flush() { if (pend && bloq) print bloqlineno "\t" bloqline }
-    /^#{2,4} .*\[blocked\]`?[ \t]*$/ { flush(); pend=1; bloq=0; next }
-    /^#{2,4} /                       { flush(); pend=0; next }
-    /^> Bloqueo:/                    { if (pend && !bloq) { bloq=1; bloqline=$0; bloqlineno=NR } }
+    /^#{2,4} .*\[blocked\]`?[ \t]*$/ { flush(); pend=1; bloq=0; capturing=0; next }
+    /^#{2,4} /                       { flush(); pend=0; capturing=0; next }
+    /^> Bloqueo:/ {
+      if (pend && !bloq) { bloq=1; bloqline=$0; bloqlineno=NR; capturing=1 }
+      else { capturing=0 }
+      next
+    }
+    capturing && /^>/ { bloqline = bloqline " " $0; next }
+    { capturing=0 }
     END { flush() }
   ' "$f" > "/tmp/_fresh_present_$$" 2>/dev/null || true
 
