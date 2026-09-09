@@ -467,6 +467,24 @@ contra datos reales)
       sobre sí misma) — prueba que el guard realmente distingue las dos
       cosas y no que casualmente no encontró nada.
 
+**Validado contra el corpus real (review ronda 2), no supuesto — corrido, no
+estimado:** contra las 104 fases con token de `docs/specs/`, produce 49
+avisos repartidos en 30 fases — 0 a 4 líneas por invocación, un volumen que
+se lee de un vistazo, no ruido.
+
+**Caveat conocido, aceptado, no arreglado — verificado con la corrida real,
+no asumido de oído:** tres fases se avisan sobre **otra fase de sí mismas**
+—`spec-79` fase 4h (menciona su propia fase 4), `spec-85` fase 1 (menciona
+su propia fase 2), `spec-87` fase 1 (menciona su propia fase 2)—.
+`scanUndeclaredReferences` excluye la autorreferencia exacta (mismo spec,
+misma fase que la que se está escaneando), pero deliberadamente **no**
+excluye que una fase cite a OTRA fase de su propio spec: si esa cita
+describe una dependencia de orden real (como en estos tres casos), el aviso
+es correcto — es exactamente la señal que la red heurística existe para dar,
+sólo que resulta que el spec citado y el spec citante son el mismo. No es
+ruido a eliminar; es la razón por la que la exclusión de autorreferencia se
+limita al par exacto (spec, fase) y no a "toda mención del propio spec".
+
 ### Fase 5 — Reconciliación en servidor: la garantía real del Hueco 1 `[in_progress]`
 
 **Añadida en ronda 2 de review.** Ver "La garantía real: reconciliación en
