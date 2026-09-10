@@ -6,9 +6,11 @@ import { createSSRClient } from '@/lib/supabase/server';
 import { PUT } from './route';
 
 /**
- * spec-83 fase 2, review round 2 — the three tests the reviewer asked for
- * by name: 401 without a session, a cutoff that actually clears, and a
- * merge that does not destroy the rest of sla_config.
+ * spec-83 fase 2. Round 2 asked for three tests by name (401, a cutoff that
+ * actually clears, a merge that does not destroy the rest of sla_config)
+ * plus format rejection and the omitted-key case — 5, not 3. Round 3 added
+ * the 403 gate and a route-level (not just form-schema-level) rejection of
+ * a garbage `operating_hours` time.
  */
 
 function sessionWithRole(role: string | undefined) {
@@ -84,11 +86,39 @@ describe('PUT /api/pickup-points/[id]', () => {
     expect(res.status).toBe(401);
   });
 
+  it('403s a role that is neither admin nor operations_manager', async () => {
+    // Round 3 nit: the gate exists (`userRole !== 'admin' && userRole !==
+    // 'operations_manager'`) and works, but nothing asserted it.
+    const client = buildClient({ role: 'pickup_crew' });
+    vi.mocked(createSSRClient).mockResolvedValue(client as never);
+
+    const res = await PUT(makeRequest({ name: 'x' }), makeParams('pp1'));
+
+    expect(res.status).toBe(403);
+    expect(client.updateSpy).not.toHaveBeenCalled();
+  });
+
   it('400s a malformed cutoff instead of persisting it literally', async () => {
     const client = buildClient({});
     vi.mocked(createSSRClient).mockResolvedValue(client as never);
 
     const res = await PUT(makeRequest({ sla_config: { pickup_cutoff_time: 'banana' } }), makeParams('pp1'));
+
+    expect(res.status).toBe(400);
+    expect(client.updateSpy).not.toHaveBeenCalled();
+  });
+
+  it('400s a garbage operating_hours time at the route, not just at the form schema', async () => {
+    // Round 3 nit: the route DOES reject this (pickupPointApiSchemas.ts's
+    // shared regex), but until now only the FORM schema's own unit tests
+    // demonstrated it — nothing exercised the route directly.
+    const client = buildClient({});
+    vi.mocked(createSSRClient).mockResolvedValue(client as never);
+
+    const res = await PUT(
+      makeRequest({ pickup_locations: [{ operating_hours: { start: 'banana' } }] }),
+      makeParams('pp1'),
+    );
 
     expect(res.status).toBe(400);
     expect(client.updateSpy).not.toHaveBeenCalled();

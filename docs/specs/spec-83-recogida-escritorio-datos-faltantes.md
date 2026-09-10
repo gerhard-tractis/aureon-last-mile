@@ -233,7 +233,13 @@ alternativa.
       cargue fila por fila desde el admin ya construido, o (b) un
       backfill/seed de QA si se quiere ver la columna en verde/ámbar antes
       de eso. Ninguna opción es inventar el dato — sigue el mismo criterio
-      que spec-54 ya sentó para esta pantalla.
+      que spec-54 ya sentó para esta pantalla. **Nota de review round 3:**
+      si se opta por (b), ese seed debe escribir `HH:MM` estricto, no
+      `HH:MM:SS`. El formulario ya tolera `HH:MM:SS` al cargar (normaliza
+      con `.slice(0, 5)`, fix de la propia ronda 3), así que un seed con
+      segundos ya no deja el punto irreeditable — pero seguir dependiendo
+      de esa normalización en vez de escribir el formato limpio desde el
+      origen es acumular una capa de tolerancia que no hace falta.
 - [x] Columna de ventana con semáforo, sin tocar `border-l-*`.
 
 **Archivos:** `apps/frontend/src/components/pickup/ManifestTable.tsx` (columna
@@ -300,9 +306,12 @@ poblado de `operating_hours`/`pickup_cutoff_time`.
   arregla: si la query en pausa deja `pendingRows` vacío, la tabla entera se
   ve vacía, columna de ventana incluida — declarado, no corregido aquí.
 - **Gap cerrado tras review round 2:** ya existen tests para la ruta PUT
-  (`[id]/route.test.ts`, 4 tests: 401, 400 por formato inválido, y los dos
-  casos de merge/clear de `sla_config` descritos abajo). Ver el resto de
-  esta sección para el detalle de qué encontró la ronda 2.
+  (`[id]/route.test.ts`, **5 tests**, no 4 como decía una versión anterior
+  de esta nota: 401, 400 por formato inválido, `sla_config` omitido queda
+  intacto, y los dos casos de merge/clear descritos abajo. Ronda 3 añadió
+  dos más: 403 y 400 por hora basura en `operating_hours` a nivel de ruta —
+  7 en total hoy). Ver el resto de esta sección para el detalle de qué
+  encontró cada ronda.
 
 **Review round 2 (2026-09-10) — 3 bloqueantes, 2 menores de datos y 4
 menores de documentación, todos cerrados:**
@@ -361,6 +370,62 @@ intacto, 9/10 mutantes) y encontró B1-B3 más los menores listados arriba,
 todos cerrados en esta ronda con TDD (RED confirmado antes de cada fix). La
 fase sigue `[in_progress]` — evidencia formal de review/QA la añade quien
 corresponda tras verificarla, no quien implementa.
+
+**Review round 3 (2026-09-10) — mergeable, un fix de código y tres notas.**
+
+Confirmó, con evidencia propia y no repetida de la ronda 2: el mutante
+equivalente de B1 lo es de verdad (mutación + razonamiento de tipos + fuerza
+bruta sobre 5832 combinaciones, cero diferencias); aplicar `nonBlank` en la
+etiqueta también era necesario (quitarlo de ahí sólo muere); el merge de
+`sla_config` **aborta** en vez de machacar si la lectura previa falla
+(`update` llamado 0 veces); y cierra un vector no pedido — una clave no
+declarada dentro de `sla_config` la descarta zod y el merge restaura la
+existente, así que un cliente no puede escribir claves arbitrarias por esa
+ruta. 11/12 mutantes muertos, incluido el que sobrevivió en ronda 2.
+
+**Fix de código — normalización de `HH:MM:SS` al cargar el formulario.**
+Un punto poblado con `HH:MM:SS` (el cast natural de una columna `TIME`)
+quedaba **irreeditable**: el schema estricto rechazaba el valor sin tocar en
+CADA submit, incluso uno que sólo cambiaba el nombre — sin salida salvo
+reescribir los tres campos a mano. No se perdía nada (el envío entero se
+rechaza, no se aplica parcial), pero el admin quedaba bloqueado. Corregido
+con `toHHMM()` (`.slice(0, 5)`) en los tres `defaultValues` de
+`PickupPointForm.tsx` — normaliza al cargar, nunca al guardar (el schema de
+escritura sigue exigiendo `HH:MM` estricto). Test nuevo, RED confirmado
+antes del fix. Consecuencia para el punto pendiente de poblado (más
+arriba): si el backfill/seed escribe `HH:MM:SS`, ahora sí es editable desde
+este formulario — pero **el seed debería escribir `HH:MM` estricto de
+todos modos**, para no depender de esta normalización en ningún punto de la
+cadena.
+
+**Notas al spec, no al código:**
+
+1. **Carrera entre administradores, ensanchada por B2.** Sin bloqueo
+   optimista: A abre la ficha a las 10:00 con cutoff `12:30`; B lo cambia a
+   `12:00`; A guarda sólo el nombre a las 10:10 → como en edición **siempre**
+   se reenvía `sla_config`, viaja el `12:30` rancio de A y revierte el
+   cambio de B sin aviso. Si A había vaciado el campo, viaja `null` y
+   **borra** lo que B acababa de poner — esto último es nuevo en esta fase:
+   antes de B2 el blanco no se enviaba, así que no pisaba nada. Es el
+   patrón de todo este formulario (ninguno de sus campos tiene control de
+   concurrencia), y arreglarlo pide bloqueo optimista (ETag/`updated_at`
+   comparado en el PUT) — otra fase, no ésta.
+2. **`pickup_locations` sigue siendo overwrite ciego, ahora asimétrico con
+   `sla_config`.** La misma ruta trata las dos columnas JSONB con criterios
+   opuestos: `sla_config` mergea, `pickup_locations` reemplaza el array
+   entero con lo que el formulario construye — y la ventana vive
+   precisamente en `pickup_locations[0]`. Un punto de retiro con más de una
+   ubicación (el esquema es un array por algo) pierde toda ubicación desde
+   la segunda en adelante en el primer guardado desde este formulario, que
+   sólo edita `[0]`. No se ha visto ese caso en los datos hoy, pero el
+   formulario no lo impide ni lo advierte.
+3. **Nits:** el gate 403 de la ruta PUT funcionaba pero no tenía test
+   afirmándolo — añadido. Ninguna prueba de ruta ejercitaba una hora basura
+   dentro de `operating_hours` (sólo los tests del esquema del formulario lo
+   demostraban) — añadido un test de ruta para `pickup_locations[0]
+   .operating_hours.start = 'banana'`. Y esta misma sección decía "4 tests"
+   donde ya había 5 — corregido, con el conteo actualizado a 7 tras esta
+   ronda.
 
 ### Fase 3 — Ocupación `[parked]`
 

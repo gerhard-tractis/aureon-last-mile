@@ -24,6 +24,15 @@ export const PickupPointForm = ({ mode, pointId }: PickupPointFormProps) => {
   const existingPoint = mode === 'edit' ? points?.find((p) => p.id === pointId) : null;
   const existingLoc = existingPoint?.pickup_locations?.[0];
 
+  // Review round 3: a point populated directly via SQL/backfill/QA seed is
+  // far more likely to carry "HH:MM:SS" (a TIME column's own text cast)
+  // than the "HH:MM" this form always writes. Loading that raw value into
+  // the strict HH:MM schema made the point permanently un-savable — even a
+  // submit that only meant to change the name got rejected on these three
+  // untouched fields. `.slice(0, 5)` on "HH:MM:SS" is "HH:MM"; on an
+  // already-clean "HH:MM" (or '') it is a no-op.
+  const toHHMM = (t?: string | null) => t?.slice(0, 5) ?? '';
+
   const { register, handleSubmit, formState: { errors } } = useForm<PickupPointFormValues>({
     resolver: zodResolver(pickupPointSchema),
     defaultValues: {
@@ -36,9 +45,9 @@ export const PickupPointForm = ({ mode, pointId }: PickupPointFormProps) => {
       location_comuna: existingLoc?.comuna ?? '',
       location_contact_name: existingLoc?.contact_name ?? '',
       location_contact_phone: existingLoc?.contact_phone ?? '',
-      location_window_start: existingLoc?.operating_hours?.start ?? '',
-      location_window_end: existingLoc?.operating_hours?.end ?? '',
-      sla_pickup_cutoff_time: existingPoint?.sla_config?.pickup_cutoff_time ?? '',
+      location_window_start: toHHMM(existingLoc?.operating_hours?.start),
+      location_window_end: toHHMM(existingLoc?.operating_hours?.end),
+      sla_pickup_cutoff_time: toHHMM(existingPoint?.sla_config?.pickup_cutoff_time),
     },
   });
 

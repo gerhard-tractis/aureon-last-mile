@@ -165,6 +165,44 @@ describe('PickupPointForm', () => {
         const [{ data }] = updateMutate.mock.calls[0];
         expect(data.sla_config).toEqual({ pickup_cutoff_time: '12:30' });
       });
+
+      it('normalizes a seconds-bearing time (a TIME column\'s natural text cast) so the point stays editable', async () => {
+        // Review round 3: a point populated by SQL/backfill in "HH:MM:SS"
+        // shape (Postgres's own cast of a TIME column) was, before this,
+        // permanently un-savable from this form: the strict HH:MM schema
+        // rejected the untouched defaultValue on EVERY submit, even one
+        // that only meant to change the name. Nothing was destroyed (the
+        // whole submit is rejected, not partially applied), but the admin
+        // had no way forward except manually retyping three fields they
+        // never meant to touch.
+        mockPoints = [
+          {
+            id: 'pp1',
+            name: 'Bodega Uno',
+            code: 'BU-1',
+            tenant_client_id: null,
+            is_active: true,
+            pickup_locations: [{ operating_hours: { start: '09:00:00', end: '13:00:00' } }],
+            sla_config: { pickup_cutoff_time: '12:30:00' },
+          },
+        ];
+        updateMutate.mockClear();
+        const user = userEvent.setup();
+        render(<PickupPointForm mode="edit" pointId="pp1" />);
+
+        expect(screen.getByLabelText('Apertura')).toHaveValue('09:00');
+        expect(screen.getByLabelText('Cierre')).toHaveValue('13:00');
+        expect(screen.getByLabelText(/Cierre de retiros/i)).toHaveValue('12:30');
+
+        await user.type(screen.getByLabelText(/Nombre \(opcional\)/i), ' Renombrada');
+        await user.click(screen.getByRole('button', { name: /guardar/i }));
+
+        expect(screen.queryByText(/formato/i)).toBeNull();
+        expect(updateMutate).toHaveBeenCalledTimes(1);
+        const [{ data }] = updateMutate.mock.calls[0];
+        expect(data.sla_config).toEqual({ pickup_cutoff_time: '12:30' });
+        expect(data.pickup_locations).toEqual([{ operating_hours: { start: '09:00', end: '13:00' } }]);
+      });
     });
   });
 });
