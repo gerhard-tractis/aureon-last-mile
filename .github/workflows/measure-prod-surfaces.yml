@@ -1,0 +1,247 @@
+name: Measure production config surfaces
+
+# spec-93 fase 1 — el inventario medido de divergencia QA <-> produccion.
+#
+# POR QUE UN WORKFLOW Y NO UN COMANDO EN LA MAQUINA DE NADIE
+# -----------------------------------------------------------
+# Produccion es un proyecto Supabase gestionado (no la VPS que hospeda QA):
+# no hay SSH, no hay `docker inspect`. Las unicas dos vias de lectura son la
+# Management API y una sesion psql por el pooler, y las credenciales de ambas
+# viven como secretos del pipeline. El propio spec-93 fija el punto de diseno:
+# "el check corre desde un workflow, no desde la maquina de nadie".
+#
+# La forma la copia de prod-readonly-query.yml (spec-87 fase 4): mismo
+# checkout, mismo resolve del pooler IPv4, mismo `psql -c` en modo transaccion
+# (6543), mismo usuario `postgres.<ref>`. Lo que cambia es QUE se pregunta:
+# alli eran preguntas de datos, aqui son preguntas de CONFIGURACION.
+#
+# SOLO LECTURA, Y POR ESO SIN `environment: production`
+# ------------------------------------------------------
+# Cada paso es un SELECT sobre un catalogo (pg_extension, pg_roles, cron.job,
+# storage.buckets, pg_policies) o un GET de la Management API. Ninguno escribe.
+# Igual que prod-readonly-query.yml, eso es lo que justifica que no cuelgue del
+# gate de aprobacion humana que si tienen los jobs que mutan produccion. El dia
+# que aqui se anada un UPDATE o un DDL, esa decision hay que rehacerla.
+#
+# QUE SE IMPRIME Y QUE NO
+# ------------------------
+# Nunca se vuelca el cuerpo entero de `/config/auth`: esa respuesta lleva la
+# password SMTP y los secretos de los proveedores externos. Se filtra con una
+# LISTA BLANCA de prefijos (hook_, external_, jwt_exp, disable_signup, ...) y
+# ENCIMA una lista negra que tira cualquier llave cuyo nombre huela a secreto.
+# Las dos capas, no una: la lista blanca sola dejaria pasar
+# `external_google_secret`, y la negra sola dejaria pasar campos que no vienen
+# al caso. PGPASSWORD viaja como variable de entorno hacia psql, nunca
+# interpolada en una cadena que luego se hace eco.
+#
+# Los GUCs se leen con `SHOW`/`current_setting` y de pg_db_role_setting, pero
+# el VALOR de cualquier ajuste `*jwt_secret*` se sustituye por un marcador: lo
+# que este inventario compara es si el ajuste EXISTE, no cuanto vale.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    name: Read production config surfaces
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repo
+        # scripts/resolve-supabase-pooler-host.sh vive en este repo. Sin
+        # checkout el paso que lo invoca muere con exit 127 (ver #750).
+        uses: actions/checkout@v4
+
+      - name: Install postgresql-client
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -yqq postgresql-client
+
+      - name: Resolve Supabase pooler host (IPv4 — ver cabecera)
+        id: resolve-pooler
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          HTTP_STATUS=$(curl -sS -o project.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            "https://api.supabase.com/v1/projects/${{ secrets.SUPABASE_PROJECT_REF }}")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "::error::Management API returned HTTP ${HTTP_STATUS} while resolving the project region"
+            rm -f project.json
+            exit 1
+          fi
+          POOLER_HOST=$(bash "$GITHUB_WORKSPACE/scripts/resolve-supabase-pooler-host.sh" < project.json)
+          rm -f project.json
+          echo "pooler_host=${POOLER_HOST}" >> "$GITHUB_OUTPUT"
+
+      # ---------------------------------------------------------------
+      # SUPERFICIE 1 — Auth (GoTrue): hooks, proveedores, expiracion JWT
+      # ---------------------------------------------------------------
+      - name: 'Surface: auth (GoTrue) config'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          HTTP_STATUS=$(curl -sS -o auth.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/config/auth")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "::error::/config/auth returned HTTP ${HTTP_STATUS}"
+            rm -f auth.json
+            exit 1
+          fi
+          # Lista blanca de prefijos, y ENCIMA lista negra por si un campo de
+          # la lista blanca resulta ser un secreto (external_*_secret).
+          echo '### auth (GoTrue)' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          jq -S 'to_entries
+                 | map(select(.key | test("^(hook_|external_|jwt_exp|disable_signup|mailer_autoconfirm|security_|sessions_|mfa_|refresh_token_)")))
+                 | map(select(.key | test("secret|password|client_id|_token$"; "i") | not))
+                 | from_entries' auth.json | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          rm -f auth.json
+
+      # ---------------------------------------------------------------
+      # SUPERFICIE 2 — PostgREST: esquemas expuestos, max-rows
+      # ---------------------------------------------------------------
+      - name: 'Surface: PostgREST config'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          HTTP_STATUS=$(curl -sS -o rest.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/config/postgrest")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "::error::/config/postgrest returned HTTP ${HTTP_STATUS}"
+            rm -f rest.json
+            exit 1
+          fi
+          echo '### PostgREST' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          jq -S 'to_entries | map(select(.key | test("secret|password|jwt"; "i") | not)) | from_entries' rest.json \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          rm -f rest.json
+
+      # ---------------------------------------------------------------
+      # SUPERFICIE 3 — Edge functions desplegadas
+      # ---------------------------------------------------------------
+      - name: 'Surface: deployed edge functions'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          HTTP_STATUS=$(curl -sS -o fns.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/functions")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "::error::/functions returned HTTP ${HTTP_STATUS}"
+            rm -f fns.json
+            exit 1
+          fi
+          echo '### Edge functions' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          # slug/estado/verify_jwt. Los VALORES de los secretos de cada
+          # funcion no los expone este endpoint y no se piden en otro.
+          jq -S 'map({slug, status, verify_jwt, version}) | sort_by(.slug)' fns.json \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          rm -f fns.json
+
+      # ---------------------------------------------------------------
+      # SUPERFICIE 4 — Postgres: extensiones
+      # ---------------------------------------------------------------
+      - name: 'Surface: installed extensions'
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
+        run: |
+          set -euo pipefail
+          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
+            -At -c "SELECT extname || ' ' || extversion FROM pg_extension ORDER BY 1;" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # ---------------------------------------------------------------
+      # SUPERFICIE 5 — Postgres: roles y pertenencias
+      # ---------------------------------------------------------------
+      - name: 'Surface: roles and memberships'
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
+        run: |
+          set -euo pipefail
+          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
+            -At -c "
+              SELECT r.rolname || ' | super=' || r.rolsuper
+                     || ' | login=' || r.rolcanlogin
+                     || ' | memberof=' || coalesce((
+                          SELECT string_agg(g.rolname, ',' ORDER BY g.rolname)
+                            FROM pg_auth_members m
+                            JOIN pg_roles g ON g.oid = m.roleid
+                           WHERE m.member = r.oid), '-')
+                FROM pg_roles r
+               WHERE r.rolname NOT LIKE 'pg\_%'
+               ORDER BY 1;" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # ---------------------------------------------------------------
+      # SUPERFICIE 6 — Postgres: GUCs de base/rol, cron.job
+      # ---------------------------------------------------------------
+      - name: 'Surface: database GUCs and cron jobs'
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
+        run: |
+          set -euo pipefail
+          echo '--- GUCs (pg_db_role_setting) ---' | tee -a "$GITHUB_STEP_SUMMARY"
+          # regexp_replace: se compara si el ajuste EXISTE, no su valor.
+          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
+            -At -c "
+              SELECT coalesce(d.datname, '<cluster>') || ' :: '
+                     || regexp_replace(unnest(s.setconfig), '(secret|password)=.*', '\1=<redacted>')
+                FROM pg_db_role_setting s
+                LEFT JOIN pg_database d ON d.oid = s.setdatabase
+               ORDER BY 1;" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '--- cron.job ---' | tee -a "$GITHUB_STEP_SUMMARY"
+          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
+            -At -c "
+              SELECT jobid || ' | ' || jobname || ' | ' || username
+                     || ' | ' || schedule || ' | active=' || active
+                FROM cron.job ORDER BY jobid;" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # ---------------------------------------------------------------
+      # SUPERFICIE 7 — Storage: buckets y sus politicas
+      # ---------------------------------------------------------------
+      - name: 'Surface: storage buckets and policies'
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
+        run: |
+          set -euo pipefail
+          echo '--- storage.buckets ---' | tee -a "$GITHUB_STEP_SUMMARY"
+          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
+            -At -c "
+              SELECT id || ' | public=' || public
+                     || ' | limit=' || coalesce(file_size_limit::text, '-')
+                     || ' | mime=' || coalesce(array_to_string(allowed_mime_types, ','), '-')
+                FROM storage.buckets ORDER BY id;" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '--- storage policies ---' | tee -a "$GITHUB_STEP_SUMMARY"
+          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
+            -At -c "
+              SELECT tablename || ' | ' || policyname || ' | ' || cmd
+                     || ' | roles=' || array_to_string(roles, ',')
+                FROM pg_policies WHERE schemaname = 'storage'
+               ORDER BY tablename, policyname;" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
