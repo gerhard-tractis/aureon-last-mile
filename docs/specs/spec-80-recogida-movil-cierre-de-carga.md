@@ -1055,6 +1055,22 @@ El mock dice «expo-camera», que es la app Expo dormida (`apps/mobile`, ver `ls
 
 ### Fase 5 — `5i` carga cerrada `[in_progress]`
 
+> **Decisión del usuario (2026-09-09) sobre «Ver resumen de la carga».** El
+> mock dibuja ese texto pero no dice a dónde lleva, y no existe ninguna
+> pantalla de resumen de carga en el código. El PR #726 lo entregó como
+> `<span>` no interactivo — literal del mock — en vez de inventar una ruta.
+>
+> **Respuesta textual: «podría quererlo sí, pero por ahora anótalo como un
+> nice to have, no se evalúa siquiera antes de terminar todos los specs
+> abiertos».**
+>
+> **Consecuencia: nada que hacer, y nada que abrir.** No es una fase, no es un
+> `[ ]`, y no bloquea el cierre de nada. Si algún día se evalúa, el punto de
+> partida es que **el `<span>` actual es correcto**: un control que parece
+> llevar a algún sitio y no lleva es peor que un texto, y así lo midió el
+> review del #726.
+
+
 **Archivos:** `app/app/pickup/complete/[loadId]/page.tsx` (estado post-cierre), o ruta hermana
 
 Resumen del mock: Verificados / Faltantes / Ajenos a la carga / Respaldo «N fotos · N firmas». **Vuelve a `5c`** (`/app/pickup/route/active`), no a `/app/pickup` como hoy, y ofrece «Sigue en PR-…, N cargas pendientes».
@@ -1216,3 +1232,51 @@ Releído cada spec downstream contra lo que **realmente** se mergeó en esta fas
   ayuda con la subida al bucket en sí). **Quien copie este patrón en un spec futuro
   hereda esta misma decisión** — si la evidencia necesita ser literalmente inmutable
   (no sólo auditada), ese spec necesita un RPC, no este patrón.
+
+### Fase 6 — cablear `5g`/`5h` a `ManifestPhotoStrip` (que «Las fotos también» sea verdad) `[pending]`
+
+**Por qué existe esta fase y no un párrafo suelto (2026-09-09).** Esto llevaba
+tres PRs viviendo como «pendiente con dueño» en prosa, fuera de todo checklist
+— o sea, sin fase, sin token, y por tanto **invisible para el hook que reparte
+trabajo**. Nadie iba a tropezar con ello nunca. Se le preguntó al usuario y
+delegó: «haz lo que creas que debas hacer». Le doy número.
+
+**El problema, en una frase: `5f` promete en pantalla «Todo queda en el
+teléfono y se sube al recuperar señal. **Las fotos también.**» y eso es falso
+hoy en el código que corre.**
+
+Lo que sí es verdad: la infraestructura existe y está mergeada
+(`enqueueManifestPhoto`, `lib/offline/photos.ts`, spec-81 fase 5 — blob a
+IndexedDB, subida diferida con reintento, renumerado ante colisión, huérfano
+imposible). Lo que falta es **que alguien la llame**: `ManifestPhotoStrip.tsx`
+sigue usando `useUploadManifestDocument` directo, la ruta online, sin salida
+sin señal.
+
+Y `5g`/`5h` (fase 4, mergeada en #713) entregan la captura **sin cablear** a
+propósito: `onUsePhoto` devuelve el `File` al llamante para que la decisión de
+subir-o-encolar la tomara quien uniera las dos piezas. Esta fase es esa unión.
+
+**Es exactamente la clase de fallo que esta sesión pasó el día cazando:** una
+pantalla que promete al operario algo que el código no hace. Aquí es peor que
+en otros casos, porque lo que se pierde es la evidencia fotográfica del
+traspaso de custodia — el respaldo de una eventual indemnización.
+
+- [ ] `ManifestPhotoStrip` llama a `enqueueManifestPhoto`, **no** a
+      `useUploadManifestDocument`.
+- [ ] La captura entra por `5g`/`5h` (`onUsePhoto` entrega un `File`, que **es**
+      un `Blob`: encaja sin reconversión).
+- [ ] `externalLoadId` se pasa al encolar — sin él, el chip de sync (spec-81
+      fase 4) no puede decirle al operario **qué carga** abrir cuando una foto
+      queda muerta.
+- [ ] Test que ejercite el camino sin señal de punta a punta: capturar →
+      encolar → drenar, sin que la foto se pierda.
+- [ ] Sólo cuando lo anterior esté: verificar que la leyenda de `5f` es verdad,
+      y **si por lo que sea no se cablea, cambiar la leyenda** — la pantalla no
+      puede seguir prometiéndolo.
+
+**Archivos:** `apps/frontend/src/components/pickup/ManifestPhotoStrip.tsx` (+ test),
+`apps/frontend/src/app/app/pickup/complete/[loadId]/page.tsx` (montaje de `5g`/`5h`).
+
+**Depende de:** ninguna — spec-81 fase 5 (`enqueueManifestPhoto`) y spec-80
+fase 4 (`5g`/`5h`) están **mergeadas**. Se puede tomar hoy.
+

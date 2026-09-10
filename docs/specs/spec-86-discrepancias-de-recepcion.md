@@ -421,6 +421,30 @@ registro del faltante.
 
 ### Fase 2a — Resolver: el bulto aparece `[in_progress]`
 
+> **Decisión del usuario (2026-09-09) sobre el callejón del `lost`.** Se le
+> planteó el caso medido: un bulto declarado `lost` —lo que dispara la
+> indemnización— que después aparece y se escanea. Hoy el paquete avanza a
+> `en_bodega`, la discrepancia sigue `lost`, y **nadie puede cerrarla nunca**
+> (`resolve_discrepancy` rechaza con `23505` toda transición fuera de `open`).
+>
+> **Respuesta textual: «si aparece, armaré una pestaña de gestión de
+> discrepancias o excepciones, eso es otro spec y no lo abarcaremos en esta
+> sesión, sólo necesitamos la tabla de datos por el momento».**
+>
+> **Consecuencia para esta fase: ninguna. No se construye nada.** El trigger
+> resuelve sólo las `open` y eso queda como está. Lo que se necesita hoy es que
+> **el dato quede registrado**, y queda: el `reception_scans` del bulto que
+> apareció existe, con su `scanned_at` y su `scanned_by`, y la discrepancia
+> conserva su `resolution`/`resolved_at`/`resolved_by_user_id` de la
+> declaración de pérdida. La futura pestaña tendrá con qué reconstruir el caso
+> — no hay pérdida de información, sólo ausencia de interfaz.
+>
+> **Lo que NO se debe hacer mientras tanto:** relajar el `23505` de
+> `resolve_discrepancy` «de paso» en otra fase. Ese guard es lo que hace que
+> una discrepancia cerrada sea evidencia; quitarlo sin la pestaña detrás
+> convierte un hueco de interfaz en una pérdida de trazabilidad.
+
+
 **Archivos:** migración (`trg_reception_scan_advance_package_status`, `CREATE OR REPLACE` sobre la última definición, `packages/database/supabase/migrations/20260812000002_spec52_package_state_engine.sql`), test pgTAP en `packages/database/supabase/tests/`
 
 El bulto aparece, se escanea en recepción, el paquete avanza a `en_bodega`

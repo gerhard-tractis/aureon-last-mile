@@ -189,27 +189,43 @@ con actor y momento.
 > «N faltantes de 0». Viene de spec-54 y está igual en la rama de cierre
 > limpio — va a un barrido de copy, no a esta fase.
 
-### Fase 2 — Ventana `[blocked]`
+### Fase 2 — Ventana `[pending]`
 
-**Corrección (2026-09-08):** el modelo (a) — ventana fija por punto de
-recogida — ya lo eligió el esquema (`pickup_locations[].operating_hours`,
-`sla_config.pickup_cutoff_time`); no hay migración de modelo que decidir. Esta
-fase sigue `[blocked]`, pero sólo por la decisión real: qué gana en el borde
-izquierdo de la fila.
+**Desbloqueada (2026-09-09). El usuario delegó la decisión: «haz lo que creas
+que debas hacer». La tomo yo y queda escrita aquí, no en la cabeza de nadie.**
 
-- [ ] Decidir con el usuario: el borde izquierdo cambia de significado
-      (progreso → proximidad al cierre) o se añaden dos señales distintas.
+**Decisión: el borde izquierdo NO gana una tercera señal. La proximidad al
+cierre de ventana va en su propia columna, con semáforo.**
+
+El razonamiento, para que quien lo herede pueda discutirlo con datos y no
+reabrirlo por gusto:
+
+- El borde izquierdo ya carga **dos** significados (`ManifestTable.tsx:103-110`):
+  selección y «en progreso»/merma. Los dos son **estados de la fila** — cosas
+  que le pasan a ese manifiesto ahora.
+- La proximidad al cierre de ventana **no es un estado de la fila**: es un dato
+  del punto de retiro (`operating_hours`, `sla_config.pickup_cutoff_time`) que
+  además cambia solo con el paso del tiempo, sin que nadie toque nada.
+- Un canal visual con tres significados obliga a un árbitro, y un árbitro
+  significa que **una de las tres señales se oculta justo cuando importa**. La
+  merma es dinero y la ventana es tiempo: esconder cualquiera de las dos para
+  mostrar la otra es la decisión equivocada en los dos sentidos.
+
+Los datos van en una columna; los estados, en el borde. El tercer punto del
+checklist ya contemplaba «columna y semáforo» — ahora es la única vía, no una
+alternativa.
+
+- [x] Decidir qué gana el borde izquierdo — **decidido: nada nuevo. El borde
+      conserva selección y merma; la ventana no lo toca.**
 - [ ] Poblar `operating_hours` / `pickup_cutoff_time` donde falten (nadie los
       escribe hoy) y hacer que `get_pending_manifests` los devuelva.
-- [ ] Columna y semáforo, con la decisión del borde ya tomada explícitamente.
+- [ ] Columna de ventana con semáforo, sin tocar `border-l-*`.
 
-> Bloqueo: se intentó resolver qué gana el borde izquierdo de la fila y
-> devolvió un choque sin árbitro — verificado en `ManifestTable.tsx:103-110`,
-> que ya usa `border-l-*` para dos señales existentes (selección y "en
-> progreso"/merma); añadirle una tercera (proximidad al cierre de ventana)
-> sin decidir si reemplaza o convive con las otras dos no tiene mock que lo
-> especifique — 2026-09-08 — desbloquea: usuario (qué gana el borde izquierdo
-> cuando ambas señales aplican a la vez).
+**Archivos:** `apps/frontend/src/components/pickup/ManifestTable.tsx` (columna
+nueva, **sin tocar `border-l-*`**), migración para `get_pending_manifests`, y el
+poblado de `operating_hours`/`pickup_cutoff_time`.
+
+**Depende de:** ninguna.
 
 ### Fase 3 — Ocupación `[parked]`
 
