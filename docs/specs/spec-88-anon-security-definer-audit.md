@@ -939,7 +939,27 @@ el que `invoke()` usa de verdad, puede imprimir y salir.
 
 Cada uno de estos cuatro arreglos se mutation-testeó de uno en uno.
 
-### Fase 4 — Check automático de ACL huérfana `[in_progress]`
+### Fase 4 — Check automático de ACL huérfana `[done]`
+
+> Implementado por: `implementer` — rama `feat/spec-88-fase-4-check-acl-huerfana`, SHA `994db7a`, PR #723 (mergeado como `a2eee84`).
+> Review: `reviewer` adversarial, **siete rondas**. Las tres que cambiaron el resultado: (1) el check cubría **una sola** de las formas reales de `GRANT ... TO anon` — el rol entrecomillado (`TO "anon"`, que es **lo que emite `supabase db diff`** y que este repo ya contiene en `20250130181641:23`), `GRANT ALL ON FUNCTION` y `GRANT ... ON ALL FUNCTIONS IN SCHEMA ... TO anon` pasaban en verde; (2) la degradación con `--base` que yo mismo pedí abrió un agujero **peor que el problema**, porque `isPublicOpenAt` devuelve `true` cuando no hay eventos y eso es indistinguible de «la función no existía en base» — con `ci.yml:67` invocando siempre con `--base`, ésa era la única ruta que la regla 5 ejercitaba de verdad; (3) el predicado que lo arreglaba medía **existencia** en vez de **violación**, así que un `SECURITY INVOKER` → `SECURITY DEFINER` en un fichero `M` seguía degradando.
+> QA: PR #723 merged, CI verde en ambos jobs. `check-migration-safety-acl.test.sh` 63/63; las 8 suites juntas **131 aserciones, 0 fallos**, todas cableadas en `ci.yml:70-91`. Verificado además contra el **corpus real**: tocando los 43 ficheros que hoy dan `::error::`, sale exit 0 con 68 avisos — ningún PR inocente cae.
+> Downstream: la fase 5 y la fase 6 heredan el check. La degradación de la regla 5 con `--base` es decisión mía y queda escrita abajo.
+
+**La decisión que tomé y por qué casi sale cara.** Pedí que la regla 5 degradara con `--base` —preexistente avisa, nueva falla— porque 35 ficheros del corpus la violan hoy y sin degradación cualquier PR que edite una de esas migraciones fallaría CI en duro por algo que no introdujo: el escenario literal de «el check se desactiva solo a la semana». El razonamiento sigue siendo correcto. **Lo que no especifiqué fue la condición que lo hace seguro**, y sin ella la degradación se tragaba cualquier violación nueva en un fichero editado.
+
+El predicado correcto, que costó dos rondas encontrar, es **«que ya fuera una violación»**, no «que ya existiera». La regla 1 lo hacía bien desde el principio: `newViolationsSinceBase` compara **violaciones**, no existencia de sentencias. La analogía estaba invocada en el spec pero mal leída.
+
+**Y falla cerrado, verificado a propósito:** cuando `git show base:<path>` falla, `readFileAtBase` devuelve `null` y el check **rechaza**. La ronda 5, en esa misma situación, degradaba.
+
+**Lo que esta fase deja medido y vale fuera de ella:**
+
+1. **Ocho cifras o razones falsas escritas junto a conclusiones correctas**, a lo largo de siete rondas. Las más caras: «los rechazos siguen siendo los mismos 3» cuando son **56 de la regla 5 + 12 de la regla 1**, y «el salto 56→68 lo causan las formas nuevas» cuando correr el barrido con el código de la ronda anterior da **los mismos 68, byte a byte**. La cifra falsa no era cosmética: hacía parecer el riesgo de desactivación **diez veces menor** de lo que era. **Cada cifra viene de un comando que se ejecuta, y el comando queda escrito al lado.**
+2. **Los 56 rechazos del corpus son hallazgos legítimos.** Los candidatos a falso positivo resultaron ser el patrón `GRANT ... TO authenticated; REVOKE ALL ... FROM anon;` **sin `FROM PUBLIC`** — la «ACL que miente»: `anon` hereda de `PUBLIC` y sigue abierto.
+3. **Un mutante declarado «no observable» sí lo era.** El argumento —que el contenido de un fichero añadido está también en la línea temporal viva— falla en la dirección que importa: los eventos que abren una violación son **GRANTs**, y un GRANT no colapsa el caso, **lo crea**.
+
+**Deuda declarada, con su dirección de fallo:** `ALTER DEFAULT PRIVILEGES ... TO anon` pasa con exit 0 y sin diagnóstico — **falla abierto**, 0 ocurrencias en el corpus, y modelarlo requiere un tercer eje temporal. `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public, extensions TO anon` (lista de esquemas) y `GRANT ... ON FUNCTION a(), b() TO anon` (lista de funciones, sólo se captura la primera) también **fallan abierto**. Un `DROP FUNCTION` dentro de `/* ... */` y un `DROP` bare posterior a un `CREATE` correcto **fallan cerrado**. La rama `R` de `functionExistedAtBase` es correcta pero no la cubre ningún test.
+
 
 **Archivos:** (actualizado tras la implementación — el plan original citaba
 `check-migration-safety-rule1-match.mjs`, que resultó no ser donde encajó
