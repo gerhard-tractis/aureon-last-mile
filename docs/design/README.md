@@ -44,6 +44,13 @@ confirma: «Recogida · escritorio (5a) y móvil de cuadrilla (5b–5i)».
 No se copia `support.js`: es el runtime generado que renderiza el documento, no contenido de
 diseño.
 
+## Feedback hacia el diseño
+
+`mock-feedback-recogida.md` recoge lo contrario de este directorio: lo que la
+implementación aprendió y el mock todavía no sabe — capacidades construidas que
+`5a`–`5i` no dibujan, pantallas que el mock pide y están aplazadas con su razón,
+y ambigüedades del propio mock que sólo se pueden resolver en diseño.
+
 ## Cómo se actualiza
 
 El proyecto remoto es la fuente de verdad; esto es una copia. Cuando el diseño cambie, hay que
