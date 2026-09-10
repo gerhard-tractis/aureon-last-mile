@@ -252,6 +252,19 @@ export default function ScanningPage() {
       </div>
     );
   }
+  // M1, revisión de fase 2 — un fallo de lectura de IndexedDB (modo
+  // privado, upgrade bloqueado por otra pestaña, cuota agotada) no es
+  // "todavía cargando": antes de esto quedaba indistinguible de `unknown`
+  // para siempre y esta pantalla se congelaba en el spinner de arriba, sin
+  // texto, sin botón, sin salida.
+  if (offline.error) {
+    return (
+      <div className="p-6 max-w-md mx-auto space-y-4 text-center">
+        <p className="text-text">No pudimos leer los datos guardados en este dispositivo.</p>
+        <Button onClick={offline.retry}>Reintentar</Button>
+      </div>
+    );
+  }
   if (offline.blocked) {
     return (
       <ManifestNotDownloadedNotice

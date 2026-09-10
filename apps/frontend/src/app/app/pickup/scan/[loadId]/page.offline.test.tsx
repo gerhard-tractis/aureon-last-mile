@@ -118,6 +118,27 @@ describe('ScanningPage offline (spec-82 fase 2)', () => {
     expect(screen.queryByText(/no está descargada/i)).toBeNull();
   });
 
+  // M1, revisión de fase 2 — antes de este fix, un fallo de IndexedDB
+  // (modo privado, upgrade bloqueado, cuota agotada) era indistinguible de
+  // "todavía cargando": la pantalla se congelaba en un spinner sin texto,
+  // sin botón, sin salida.
+  it('shows a retry, not an endless spinner, when the local read errors (M1)', () => {
+    mockUseSyncQueue.mockReturnValue(offlineSync());
+    const retry = vi.fn();
+    mockOfflineScanSource.mockReturnValue({
+      unknown: false,
+      blocked: false,
+      error: true,
+      retry,
+      snapshot: null,
+    });
+    render(<ScanningPage />);
+    expect(screen.queryByTestId('scanner-input')).toBeNull();
+    const retryButton = screen.getByRole('button', { name: /reintentar/i });
+    retryButton.click();
+    expect(retry).toHaveBeenCalled();
+  });
+
   it('blocks entry and never touches the network when the carga was never downloaded', () => {
     mockUseSyncQueue.mockReturnValue(offlineSync());
     mockOfflineScanSource.mockReturnValue({ unknown: false, blocked: true, snapshot: null });
