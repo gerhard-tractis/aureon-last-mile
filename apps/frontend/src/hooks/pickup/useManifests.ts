@@ -41,6 +41,13 @@ export interface CompletedManifest {
   /** spec-83 fase 1 — count of this manifest's open-or-resolved 'missing'
    * discrepancies (spec-85). 0 on a clean close. */
   missing_count: number;
+  /** spec-80 fase 2b (ronda 2) — `manifests.signature_operator`. NULL means
+   *  `trg_route_receptions_status_sync` completed this manifest WITHOUT
+   *  ever reaching Firma (the H1 rescue, spec-80 fase 1) — every OTHER row
+   *  here has a real value, since `close_manifest`'s guard 4
+   *  (`OPERATOR_SIGNATURE_REQUIRED`) cannot reach its own `UPDATE` without
+   *  one. See `needsRescueFromCompleted`, `pickupMobileHelpers.ts`. */
+  signature_operator: string | null;
 }
 
 export interface InTransitManifest {
@@ -82,6 +89,35 @@ export function useCompletedManifests(operatorId: string | null) {
     queryFn: async () => {
       const supabase = createSPAClient();
       const { data, error } = await callRpc<CompletedManifest[]>(supabase, 'get_completed_manifests');
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!operatorId,
+    ...PICKUP_QUERY_OPTIONS,
+  });
+}
+
+/**
+ * spec-80 fase 2b (ronda 3) — the mobile rescue banner's real data source.
+ * NOT the same query as `useCompletedManifests` (operator-wide, unbounded —
+ * correct for desktop's Completados tab): `get_signature_rescue_manifests`
+ * is scoped server-side to THIS user (driver or crew, ever) within the last
+ * 30 days, because `signature_operator` has only ever been written by
+ * `close_manifest` (20260913000002) — unbounded, this surfaced the
+ * operator's entire unsigned history, months of it, burying the one closure
+ * that actually needs today's attention (ronda 3 review — measured against
+ * a local pgTAP fixture, not production QA data: 40 synthetic six-month-old
+ * closures, chosen to show the shape of the problem, not a real count).
+ */
+export function useSignatureRescueManifests(operatorId: string | null) {
+  return useQuery({
+    queryKey: ['pickup', 'manifests', 'signature-rescue', operatorId],
+    queryFn: async () => {
+      const supabase = createSPAClient();
+      const { data, error } = await callRpc<CompletedManifest[]>(
+        supabase,
+        'get_signature_rescue_manifests',
+      );
       if (error) throw error;
       return data ?? [];
     },

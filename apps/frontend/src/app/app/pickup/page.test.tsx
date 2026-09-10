@@ -52,10 +52,18 @@ const mockInTransit = [
 const mockUsePendingManifests = vi.fn();
 const mockUseCompletedManifests = vi.fn();
 const mockUseInTransitManifests = vi.fn();
+// spec-80 fase 2b (ronda 3) — the rescue banner's real, SEPARATE data
+// source (get_signature_rescue_manifests, scoped to this user + 30 days),
+// not useCompletedManifests (operator-wide, unbounded — desktop's history
+// tab). Defaults to an empty, resolved state so every pre-existing test in
+// this file (none of which cares about the rescue banner) is unaffected.
+const mockUseSignatureRescueManifests = vi.fn();
+const mockRefetchRescue = vi.fn();
 vi.mock('@/hooks/pickup/useManifests', () => ({
   usePendingManifests: (...args: unknown[]) => mockUsePendingManifests(...args),
   useCompletedManifests: (...args: unknown[]) => mockUseCompletedManifests(...args),
   useInTransitManifests: (...args: unknown[]) => mockUseInTransitManifests(...args),
+  useSignatureRescueManifests: (...args: unknown[]) => mockUseSignatureRescueManifests(...args),
 }));
 
 // spec-61 Task 5: this page now reads `role` (3j vs the crew screen, and
@@ -202,6 +210,14 @@ describe('PickupPage', () => {
     mockUseCompletedManifests.mockReturnValue({ data: mockCompleted, isLoading: false });
     mockUseInTransitManifests.mockReturnValue({ data: mockInTransit, isLoading: false });
     mockUseRouteManifests.mockReturnValue({ data: [], isLoading: false });
+    mockRefetchRescue.mockClear();
+    mockUseSignatureRescueManifests.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+      fetchStatus: 'idle',
+      refetch: mockRefetchRescue,
+    });
   });
 
   describe('Header', () => {
@@ -721,6 +737,163 @@ describe('PickupPage', () => {
         expect(screen.getByText(/marca los manifiestos de la tabla/i)).toBeInTheDocument(),
       );
       expect(screen.queryAllByTestId('draft-manifest')).toHaveLength(0);
+    });
+  });
+
+  /**
+   * spec-80 fase 2b (ronda 2) — M3 from the review: three mutants survived
+   * against this file because nothing here exercised the rescue wiring at
+   * the `app` layer (destination, and the loading/unknown/error passthrough)
+   * — every prior test for this fase lived in lib/components only. The
+   * scenario is deliberately the one B1 proved is the REAL one: no active
+   * route (trg_route_receptions_status_sync already flipped it to
+   * 'received'), rescue-shaped rows coming from useCompletedManifests
+   * (operator-wide), rendered on mobile in the no-route branch.
+   */
+  describe('spec-80 fase 2b (ronda 2) — el destino real de la entrada de rescate', () => {
+    const originalMatchMedia = window.matchMedia;
+    afterEach(() => {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    });
+    function mockBelowLg(isBelowLg: boolean) {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: vi.fn().mockImplementation((query: string) => ({
+          matches: query.includes('1023px') ? isBelowLg : false,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        })),
+      });
+    }
+
+    const rescueRow = {
+      id: 'c-rescue',
+      external_load_id: 'CARGA-RESCUE',
+      retailer_name: 'Falabella',
+      total_orders: 4,
+      total_packages: 8,
+      completed_at: new Date().toISOString(),
+      pickup_point: 'Bodega Norte',
+      signature_operator: null,
+    };
+
+    beforeEach(() => {
+      mockBelowLg(true);
+      mockUseOperatorId.mockReturnValue({
+        operatorId: 'op-1',
+        role: 'pickup_crew',
+        permissions: [],
+        userId: 'user-me',
+      });
+      // No active route — B1's real scenario. get_my_active_pickup_route
+      // does not return a route once trg_route_receptions_status_sync has
+      // flipped it to 'received'.
+      mockActiveRoute = null;
+    });
+
+    it('navigates to review/[loadId], NOT scan/[loadId], on tap', async () => {
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
+        data: [rescueRow],
+        isPending: false,
+        isError: false,
+        fetchStatus: 'idle',
+      });
+      render(<PickupPage />);
+      await userEvent.click(screen.getByText('FALTA FIRMA').closest('button')!);
+      expect(mockPush).toHaveBeenCalledWith('/app/pickup/review/CARGA-RESCUE');
+      expect(mockPush).not.toHaveBeenCalledWith('/app/pickup/scan/CARGA-RESCUE');
+    });
+
+    it('shows the network-pause notice, not the rescue list, while genuinely paused with no signal', () => {
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
+        data: [rescueRow],
+        isPending: true,
+        isError: false,
+        fetchStatus: 'paused',
+      });
+      render(<PickupPage />);
+      expect(screen.getByText(/no pudimos comprobar/i)).toBeInTheDocument();
+      expect(screen.queryByText('FALTA FIRMA')).toBeNull();
+    });
+
+    it('does not show the connection warning during an ordinary initial load', () => {
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
+        data: undefined,
+        isPending: true,
+        isError: false,
+        fetchStatus: 'fetching',
+      });
+      render(<PickupPage />);
+      expect(screen.queryByText(/no pudimos comprobar/i)).toBeNull();
+    });
+
+    it('shows a distinct error notice once retries are exhausted, not "known, nothing to rescue"', () => {
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
+        data: undefined,
+        isPending: false,
+        isError: true,
+        fetchStatus: 'idle',
+      });
+      render(<PickupPage />);
+      expect(screen.getByText(/no pudimos cargar/i)).toBeInTheDocument();
+      expect(screen.queryByText('FALTA FIRMA')).toBeNull();
+    });
+
+    it('shows nothing extra once resolved with no rescue-shaped manifest', () => {
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
+        data: [{ ...rescueRow, signature_operator: 'M. Rojas' }],
+        isPending: false,
+        isError: false,
+        fetchStatus: 'idle',
+      });
+      render(<PickupPage />);
+      expect(screen.queryByText('FALTA FIRMA')).toBeNull();
+      expect(screen.queryByText(/no pudimos/i)).toBeNull();
+    });
+
+    // A3 (ronda 3) — the retry button must actually call refetch() on the
+    // scoped rescue query, not on some other one.
+    it('wires "Reintentar" to refetch the rescue query, once retries are exhausted', async () => {
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
+        data: undefined,
+        isPending: false,
+        isError: true,
+        fetchStatus: 'idle',
+      });
+      render(<PickupPage />);
+      await userEvent.click(screen.getByRole('button', { name: /reintentar/i }));
+      expect(mockRefetchRescue).toHaveBeenCalledTimes(1);
+    });
+
+    // A2 (ronda 3) — DECIDED: the rescue banner shows even with an active
+    // route open. A rescue from a PREVIOUS route does not stop mattering
+    // just because today has a new one.
+    it('shows the rescue banner even while a different route is active (A2)', () => {
+      mockActiveRoute = { id: 'route-today', code: 'PR-2026-0099', started_at: new Date().toISOString(), crew: [] };
+      mockUseRouteManifests.mockReturnValue({ data: [], isLoading: false });
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
+        data: [rescueRow],
+        isPending: false,
+        isError: false,
+        fetchStatus: 'idle',
+      });
+      render(<PickupPage />);
+      expect(screen.getByText('FALTA FIRMA')).toBeInTheDocument();
     });
   });
 });

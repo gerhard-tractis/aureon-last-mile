@@ -101,7 +101,7 @@ export function useRouteManifests(routeId: string | null, operatorId: string | n
       const { data: manifests, error } = await supabase
         .from('manifests')
         .select(
-          'id, external_load_id, retailer_name, pickup_location, total_orders, total_packages, status, completed_at',
+          'id, external_load_id, retailer_name, pickup_location, total_orders, total_packages, status, completed_at, signature_operator',
         )
         .eq('operator_id', operatorId!)
         .eq('pickup_route_id', routeId!)
@@ -182,6 +182,16 @@ export function useRouteManifests(routeId: string | null, operatorId: string | n
           status: m.status as ManifestStatus | undefined,
           completed_at: m.completed_at ?? null,
           discrepancy_count: discrepancyCountByManifest.get(m.id) ?? 0,
+          // spec-80 fase 2b — `?? null` here would collapse a real DB
+          // `null` and a query that never returned the column into the
+          // same value, which is fine (both mean "no signature on file")
+          // EXCEPT this hook always selects the column above, so the only
+          // way it is missing is a malformed row — treat that the same as
+          // "no signature" rather than crash. `needsSignatureRescue`
+          // (pickupMobileHelpers.ts) still requires strict `null` from
+          // callers that build a RouteManifestRow another way (e.g. tests)
+          // where the field really was never fetched at all.
+          signature_operator: m.signature_operator ?? null,
         };
       });
     },

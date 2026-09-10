@@ -12,6 +12,7 @@ import {
   usePendingManifests,
   useCompletedManifests,
   useInTransitManifests,
+  useSignatureRescueManifests,
 } from '@/hooks/pickup/useManifests';
 import { clientBreakdown, completedToday, pendingTotals } from '@/hooks/pickup/pickupSummary';
 import { useActivePickupRoute } from '@/hooks/pickup/useActivePickupRoute';
@@ -29,7 +30,7 @@ import {
   attachManifestsToRoute,
   partialAttachMessage,
 } from '@/lib/pickup/attachManifestsToRoute';
-import { matchesSearchTerm, pendingToRows, totalsToRows } from '@/lib/pickup/pickupPageHelpers';
+import { matchesSearchTerm, pendingToRows, totalsToRows, manifestsAvailability, rescueRowsFromCompleted } from '@/lib/pickup/pickupPageHelpers';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { toast } from 'sonner';
 
@@ -92,27 +93,22 @@ function PickupPageContent() {
   };
 
   const { data: pending } = usePendingManifests(operatorId);
-  // item 8 — mobile (3h) has no "en tránsito" tab and never reads this
-  // data, so it's skipped entirely on a phone instead of fetched and
-  // discarded. useCompletedManifests stays unconditional: mobile's header
-  // needs closures.length even without the desktop's completed tab/table.
+  // item 8 — mobile (3h) has no "en tránsito" tab, so it's skipped on a
+  // phone. useCompletedManifests stays unconditional for closures.length.
   const { data: inTransit } = useInTransitManifests(operatorId, !isBelowLg);
   const { data: completed } = useCompletedManifests(operatorId);
 
-  // spec-61 Task 5 — `isError` is read, not just `data`. After React Query
-  // exhausts its retries a FAILED lookup leaves `data` undefined, which is
-  // indistinguishable from "no route": this screen then told a leader who
-  // HAS an open route that they do not, and left "Iniciar ruta" enabled on
-  // both the mobile and the desktop path. Task 4 made the same fix on
-  // route/active/page.tsx.
-  const {
-    data: activeRoute,
-    isError: activeRouteUnknown,
-    refetch: refetchActiveRoute,
-  } = useActivePickupRoute(operatorId);
+  // spec-61 Task 5 — `isError` is read: a FAILED lookup leaves `data`
+  // undefined, indistinguishable from "no route".
+  const { data: activeRoute, isError: activeRouteUnknown, refetch: refetchActiveRoute } = useActivePickupRoute(operatorId);
   const { data: activeManifests = [] } = useRouteManifests(activeRoute?.id ?? null, operatorId);
   const startMut = useStartPickupRoute(operatorId);
   const addMut = useAddManifestToRoute(operatorId);
+
+  // spec-80 fase 2b (ronda 3) — scoped, NOT useCompletedManifests.
+  const { data: rescueData, isPending: rescuePending, isError: rescueError, fetchStatus: rescueFetchStatus, refetch: refetchRescue } = useSignatureRescueManifests(operatorId);
+  const rescueManifests = useMemo(() => rescueRowsFromCompleted(rescueData ?? []), [rescueData]);
+  const rescueAvailability = manifestsAvailability({ isPending: rescuePending, isError: rescueError, fetchStatus: rescueFetchStatus });
 
   const pendingRows: ManifestRow[] = useMemo(() => pendingToRows(pending ?? []), [pending]);
   const inTransitRows: ManifestRow[] = useMemo(() => totalsToRows(inTransit ?? []), [inTransit]);
@@ -168,6 +164,8 @@ function PickupPageContent() {
     await openPendingManifest(createSPAClient(), operatorId!, loadId);
     router.push(`/app/pickup/scan/${encodeURIComponent(loadId)}`);
   };
+
+  const goToReview = (loadId: string) => router.push(`/app/pickup/review/${encodeURIComponent(loadId)}`);
 
   /**
    * Creates the route, then attaches the ticked manifests to it.
@@ -232,6 +230,10 @@ function PickupPageContent() {
           onToggleSelect={toggle}
           selectedManifests={selectedManifests}
           onOpenRouteManifest={(loadId) => { void handleRouteManifestOpen(loadId); }}
+          rescueManifests={rescueManifests}
+          rescueAvailability={rescueAvailability}
+          onOpenRescueManifest={goToReview}
+          onRetryRescue={() => { void refetchRescue(); }}
           operatorId={operatorId}
           role={role}
           currentUserId={userId}

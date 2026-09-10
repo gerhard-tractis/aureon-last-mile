@@ -2,7 +2,12 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
-import { usePendingManifests, useCompletedManifests, useInTransitManifests } from './useManifests';
+import {
+  usePendingManifests,
+  useCompletedManifests,
+  useInTransitManifests,
+  useSignatureRescueManifests,
+} from './useManifests';
 
 const mockRpc = vi.fn();
 
@@ -69,6 +74,33 @@ describe('useCompletedManifests', () => {
     expect(result.current.data).toEqual(mockData);
     // callRpc always forwards the args slot; these RPCs take none.
     expect(mockRpc).toHaveBeenCalledWith('get_completed_manifests', undefined);
+  });
+});
+
+// spec-80 fase 2b (ronda 3) — a DIFFERENT RPC from useCompletedManifests,
+// scoped to this user + 30 days server-side. This hook must call the
+// scoped RPC, not reuse get_completed_manifests.
+describe('useSignatureRescueManifests', () => {
+  it('does not fetch when operatorId is null', () => {
+    mockRpc.mockClear();
+    renderHook(() => useSignatureRescueManifests(null), { wrapper: createWrapper() });
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it('calls get_signature_rescue_manifests, not get_completed_manifests', async () => {
+    mockRpc.mockClear();
+    const mockData = [
+      { id: 'r1', external_load_id: 'CARGA-RESCUE', retailer_name: 'Falabella', total_orders: 4, total_packages: 8, completed_at: '2026-09-10T00:00:00Z', signature_operator: null },
+    ];
+    mockRpc.mockResolvedValue({ data: mockData, error: null });
+
+    const { result } = renderHook(() => useSignatureRescueManifests('op-123'), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual(mockData);
+    expect(mockRpc).toHaveBeenCalledWith('get_signature_rescue_manifests', undefined);
   });
 });
 
