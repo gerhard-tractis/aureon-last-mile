@@ -1404,5 +1404,254 @@ SQL
 assert_exit 0 "B5 (round 6): REVOKE ALL ON ROUTINE (singular, PG11+ synonym) FROM PUBLIC closes it correctly" b5-revoke-on-routine-closes-correctly
 
 echo ""
+echo "-- round 7 (PR #723 review): M1 — functionExistedAtBase measured EXISTENCE, not VIOLATION --"
+
+# ── M1 (round 7): a function that existed at base as SECURITY INVOKER was
+# never a rule-5 violation — INVOKER runs with the CALLER's own privileges,
+# so anon being able to call it is not a privilege escalation. A PR that
+# edits that SAME migration (status M) to flip it to SECURITY DEFINER
+# INTRODUCES the exposure — `functionExistedAtBase` must not read this as
+# "already existed" and degrade it. Same shape as B1 (round 6): existence
+# alone is not enough, it must have been a VIOLATION already.
+GIT_FIXTURE_M1="$TMP/gitrepo-m1-invoker-to-definer-flip"
+mkdir -p "$GIT_FIXTURE_M1/migrations"
+(
+  cd "$GIT_FIXTURE_M1"
+  git init -q
+  git config user.email test@example.com
+  git config user.name test
+  cat > migrations/0000000001_flipper.sql <<'SQL'
+CREATE OR REPLACE FUNCTION public.flipper(p_id uuid) RETURNS void
+LANGUAGE plpgsql SECURITY INVOKER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+  git add -A
+  git commit -q -m base
+  cat > migrations/0000000001_flipper.sql <<'SQL'
+CREATE OR REPLACE FUNCTION public.flipper(p_id uuid) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+  git add -A
+  git commit -q -m "PR flips flipper from INVOKER to DEFINER — this introduces the exposure"
+)
+BASE_SHA_M1=$(cd "$GIT_FIXTURE_M1" && git rev-parse HEAD~1)
+output_m1=$(cd "$GIT_FIXTURE_M1" && bash "$SCRIPT" --base "$BASE_SHA_M1" migrations 2>&1)
+actual_m1=$?
+if [ "$actual_m1" -eq 1 ] && printf '%s' "$output_m1" | grep -q "::error::.*flipper"; then
+  pass=$((pass + 1))
+  echo "  ok   M1 (round 7): flipping SECURITY INVOKER -> DEFINER in a modified file rejects — it was never a violation at base"
+else
+  fail=$((fail + 1))
+  echo "  FAIL M1 (round 7): the INVOKER->DEFINER flip did not reject — expected exit 1 with ::error:: naming flipper, got exit $actual_m1"
+  printf '%s\n' "$output_m1" | sed 's/^/         /'
+fi
+
+# ── M1 (round 7): identical shape for RETURNS TRIGGER -> non-trigger. A
+# trigger function was out of scope for rule 5 at base (never directly
+# invocable via PostgREST/RPC); a PR that edits it to drop RETURNS TRIGGER
+# (making it an ordinary, directly-callable function) introduces the same
+# kind of new exposure and must reject, not degrade.
+GIT_FIXTURE_M1B="$TMP/gitrepo-m1-trigger-to-nontrigger-flip"
+mkdir -p "$GIT_FIXTURE_M1B/migrations"
+(
+  cd "$GIT_FIXTURE_M1B"
+  git init -q
+  git config user.email test@example.com
+  git config user.name test
+  cat > migrations/0000000001_detrigger.sql <<'SQL'
+CREATE OR REPLACE FUNCTION public.detrigger()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $function$
+BEGIN
+  RETURN NEW;
+END;
+$function$;
+SQL
+  git add -A
+  git commit -q -m base
+  cat > migrations/0000000001_detrigger.sql <<'SQL'
+CREATE OR REPLACE FUNCTION public.detrigger() RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+  git add -A
+  git commit -q -m "PR drops RETURNS TRIGGER — this introduces the exposure"
+)
+BASE_SHA_M1B=$(cd "$GIT_FIXTURE_M1B" && git rev-parse HEAD~1)
+output_m1b=$(cd "$GIT_FIXTURE_M1B" && bash "$SCRIPT" --base "$BASE_SHA_M1B" migrations 2>&1)
+actual_m1b=$?
+if [ "$actual_m1b" -eq 1 ] && printf '%s' "$output_m1b" | grep -q "::error::.*detrigger"; then
+  pass=$((pass + 1))
+  echo "  ok   M1 (round 7): dropping RETURNS TRIGGER in a modified file rejects — it was never a violation at base"
+else
+  fail=$((fail + 1))
+  echo "  FAIL M1 (round 7): the TRIGGER->non-trigger flip did not reject — expected exit 1 with ::error:: naming detrigger, got exit $actual_m1b"
+  printf '%s\n' "$output_m1b" | sed 's/^/         /'
+fi
+
+# ── M2 (round 7): a GENUINE git rename (status R, not the A+D that a
+# substantially-rewritten file lands as — see the B1 rename fixture above,
+# documented honestly as landing A+D). Padding content kept identical so
+# git's similarity heuristic detects the rename; only INVOKER->DEFINER
+# changes. `functionExistedAtBase` must read the OLD content via
+# `oldPathAtBase` (`git show base:<oldPath>`), not `filePath` (the NEW
+# path, which never existed under that name at base) — closes the
+# untested R-branch the review flagged (changing `oldPathAtBase` to
+# `filePath` survived all 61 prior tests).
+GIT_FIXTURE_M2="$TMP/gitrepo-m2-genuine-rename-invoker-to-definer"
+mkdir -p "$GIT_FIXTURE_M2/migrations"
+(
+  cd "$GIT_FIXTURE_M2"
+  git init -q
+  git config user.email test@example.com
+  git config user.name test
+  cat > migrations/0000000001_old_name.sql <<'SQL'
+-- padding line 1
+-- padding line 2
+-- padding line 3
+-- padding line 4
+-- padding line 5
+-- padding line 6
+-- padding line 7
+-- padding line 8
+-- padding line 9
+-- padding line 10
+CREATE OR REPLACE FUNCTION public.flipper2(p_id uuid) RETURNS void
+LANGUAGE plpgsql SECURITY INVOKER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+  git add -A
+  git commit -q -m base
+  git mv migrations/0000000001_old_name.sql migrations/0000000001_new_name.sql
+  cat > migrations/0000000001_new_name.sql <<'SQL'
+-- padding line 1
+-- padding line 2
+-- padding line 3
+-- padding line 4
+-- padding line 5
+-- padding line 6
+-- padding line 7
+-- padding line 8
+-- padding line 9
+-- padding line 10
+CREATE OR REPLACE FUNCTION public.flipper2(p_id uuid) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+  git add -A
+  git commit -q -m "rename the file and flip INVOKER -> DEFINER"
+)
+BASE_SHA_M2=$(cd "$GIT_FIXTURE_M2" && git rev-parse HEAD~1)
+status_m2=$(cd "$GIT_FIXTURE_M2" && git diff --name-status --diff-filter=AMR "$BASE_SHA_M2" -- migrations | cut -c1)
+output_m2=$(cd "$GIT_FIXTURE_M2" && bash "$SCRIPT" --base "$BASE_SHA_M2" migrations 2>&1)
+actual_m2=$?
+if [ "$status_m2" = "R" ] && [ "$actual_m2" -eq 1 ] && printf '%s' "$output_m2" | grep -q "::error::.*flipper2"; then
+  pass=$((pass + 1))
+  echo "  ok   M2 (round 7): a genuine rename (status R) with an INVOKER->DEFINER flip still rejects"
+else
+  fail=$((fail + 1))
+  echo "  FAIL M2 (round 7): expected status=R and exit=1 with ::error:: naming flipper2 — got status=$status_m2 exit=$actual_m2"
+  printf '%s\n' "$output_m2" | sed 's/^/         /'
+fi
+
+# ── M2 negative (round 7): the counterpart that actually exercises
+# `oldPathAtBase` — the reject-case above passes even with the
+# `oldPathAtBase -> filePath` mutant, because `git show base:<NEW path>`
+# fails regardless (the new path never existed at base) and a failed
+# lookup already means "reject". This one is a GENUINE rename where the
+# function was ALREADY SECURITY DEFINER and ALREADY open at base — no ACL
+# change at all, just the rename — and must DEGRADE (warn, exit 0). Under
+# the mutant, `git show base:<new path>` fails -> functionExistedAtBase
+# wrongly returns false -> wrongly REJECTS a genuinely pre-existing
+# violation whose only "change" was being renamed.
+GIT_FIXTURE_M2B="$TMP/gitrepo-m2-genuine-rename-already-open"
+mkdir -p "$GIT_FIXTURE_M2B/migrations"
+(
+  cd "$GIT_FIXTURE_M2B"
+  git init -q
+  git config user.email test@example.com
+  git config user.name test
+  cat > migrations/0000000001_old_name2.sql <<'SQL'
+-- padding line 1
+-- padding line 2
+-- padding line 3
+-- padding line 4
+-- padding line 5
+-- padding line 6
+-- padding line 7
+-- padding line 8
+-- padding line 9
+-- padding line 10
+CREATE OR REPLACE FUNCTION public.already_open_renamed(p_id uuid) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+  git add -A
+  git commit -q -m base
+  git mv migrations/0000000001_old_name2.sql migrations/0000000001_new_name2.sql
+  cat > migrations/0000000001_new_name2.sql <<'SQL'
+-- padding line 1
+-- padding line 2
+-- padding line 3
+-- padding line 4
+-- padding line 5
+-- padding line 6
+-- padding line 7
+-- padding line 8
+-- padding line 9
+-- padding line 11 (only this comment changed, ACL untouched)
+CREATE OR REPLACE FUNCTION public.already_open_renamed(p_id uuid) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+  git add -A
+  git commit -q -m "rename only, no ACL change — was already open at base"
+)
+BASE_SHA_M2B=$(cd "$GIT_FIXTURE_M2B" && git rev-parse HEAD~1)
+status_m2b=$(cd "$GIT_FIXTURE_M2B" && git diff --name-status --diff-filter=AMR "$BASE_SHA_M2B" -- migrations | cut -c1)
+output_m2b=$(cd "$GIT_FIXTURE_M2B" && bash "$SCRIPT" --base "$BASE_SHA_M2B" migrations 2>&1)
+actual_m2b=$?
+if [ "$status_m2b" = "R" ] && [ "$actual_m2b" -eq 0 ] && printf '%s' "$output_m2b" | grep -q "::warning::.*already_open_renamed.*already present"; then
+  pass=$((pass + 1))
+  echo "  ok   M2 negative (round 7): a genuine rename with no ACL change degrades (already open at base) — exercises oldPathAtBase for real"
+else
+  fail=$((fail + 1))
+  echo "  FAIL M2 negative (round 7): expected status=R and exit=0 with a degradation warning — got status=$status_m2b exit=$actual_m2b"
+  printf '%s\n' "$output_m2b" | sed 's/^/         /'
+fi
+
+echo ""
 echo "check-migration-safety.sh (rules 4/5): $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

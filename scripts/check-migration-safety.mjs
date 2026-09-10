@@ -101,9 +101,10 @@ function checkFile(filePath, revokeIndex, timeline, fileIdx) {
   // --base scoping can diff against base by statement identity, not by the
   // generic reject-reason string every UPDATE-shaped violation shares.
   const blockingViolations = findRule1Violations(rawSql).filter((v) => !v.destinationCreatedHere);
-  // Rule 5 (spec-88 fase 4): its own reject list, separate from rule 1's —
-  // it has no base-diff pre-existing-violation downgrade (a migration that
-  // newly enters the diff with this shape is never "pre-existing" for it).
+  // Rule 5 (spec-88 fase 4): its own reject list, separate from rule 1's.
+  // m3 (round 7): this DOES have a base-diff pre-existing-violation
+  // downgrade since round 5/6 (B10/B1 below) — the downgrade decision
+  // itself lives in main()'s loop over `result.aclRejections`, not here.
   // `fileIdx` is this file's position in the SAME corpus order `timeline`
   // was built from (review round 3) — the cumulative ACL state as of this
   // file must not be affected by migrations that come chronologically
@@ -233,13 +234,17 @@ function main(argv) {
       // see functionExistedAtBase's doc (check-migration-safety-git.mjs)
       // for why isPublicOpenAt/isAnonOpenDirectly alone are not enough.
       const status = fileStatus.get(f);
+      // m7 (round 7): functionExistedAtBase runs a `git show` subprocess —
+      // ordered LAST so the cheap in-memory checks (baseTimeline lookups,
+      // no subprocess) short-circuit it whenever they already decide the
+      // answer is false. Same semantics either way — pure ordering.
       const preexisting =
         base &&
         (status === 'M' || status === 'R') &&
         baseTimeline &&
-        functionExistedAtBase(base, f, fileOldPath.get(f), violation.name, violation.signature) &&
         (isPublicOpenAt(baseTimeline, violation.name, violation.signature, fileIdxOf(f)) ||
-          isAnonOpenDirectly(baseTimeline, violation.name, violation.signature, fileIdxOf(f)));
+          isAnonOpenDirectly(baseTimeline, violation.name, violation.signature, fileIdxOf(f))) &&
+        functionExistedAtBase(base, f, fileOldPath.get(f), violation.name, violation.signature);
       if (preexisting) {
         console.log(
           `::warning::${f} — ${violation.message} (already present before this PR at ${base}; not blocking, but worth fixing while the file is being touched)`

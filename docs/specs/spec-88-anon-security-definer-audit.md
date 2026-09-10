@@ -1692,6 +1692,21 @@ Extiende `scripts/check-migration-safety.sh` (spec-87 fase 5, en construcción e
 > `newViolationsSinceBase` usa por identidad de sentencia para la regla
 > 1). `preexisting` ahora exige `functionExistedAtBase(...) &&
 > (isPublicOpenAt(...) || isAnonOpenDirectly(...))` — ambas, no cualquiera.
+> **Corrección (ronda 7, M1): "existiera" era la palabra equivocada, y el
+> error es tanto de quien especificó la regla como de quien la
+> implementó.** El predicado correcto —y el que la regla 1 usa de
+> verdad, porque `newViolationsSinceBase` compara VIOLACIONES, no
+> existencia de sentencias— es que la función **ya fuera una
+> violación** de la regla 5 a `base`: existir como `SECURITY INVOKER`
+> (no hay escalada — INVOKER corre con los privilegios del llamante) o
+> como `RETURNS TRIGGER` (no invocable directamente vía PostgREST/RPC)
+> no bastaba, y el predicado original lo trataba como si bastara. Un PR
+> que edita esa misma migración para volverla `SECURITY DEFINER` (o
+> quitarle `RETURNS TRIGGER`) **introduce** la exposición, y el
+> predicado de "existía" lo degradaba a warning. Cerrado añadiendo
+> `&& fn.isSecurityDefiner && !fn.returnsTrigger` al `.some(...)` de
+> `functionExistedAtBase` — ver el detalle completo en el bloque de
+> ronda 7 más abajo.
 >
 > TDD: 1 test rojo primero — función nueva con `GRANT TO anon` añadida
 > editando un fichero `M` existente debe rechazar bajo `--base`;
@@ -1784,6 +1799,105 @@ Extiende `scripts/check-migration-safety.sh` (spec-87 fase 5, en construcción e
 > `check-migration-safety-git.mjs` 197.
 >
 > PR: #723, **sin auto-merge**. Review: pendiente sobre esta ronda 6.
+> QA: pendiente. Downstream: ninguno declarado en la cabecera del spec —
+> sin cambios.
+
+> **Ronda 7 (review adversarial, PR #723) — "no mergeable", por un
+> hallazgo Medio y su gemelo menor. Lo que el review reprodujo y se
+> sostiene, primero:** cifras de mutación exactas (57/2 al forzar
+> `functionExistedAtBase` a `true`); la degradación aguanta a escala
+> real (211 migraciones, los 43 ficheros que hoy dan error, `--base` →
+> `exit 0`, 0 errores, 68 warnings — ningún PR inocente cae); falla
+> CERRADO cuando `git show base:<path>` falla (dirección correcta,
+> igual que la regla 1); las dos retractaciones de ronda 6 (56+12=68,
+> conjunto idéntico byte a byte entre rondas) verificadas de nuevo; la
+> combinación `GRANT ALL PRIVILEGES ON ALL ROUTINES IN SCHEMA public TO
+> "anon";` rechaza; y la honestidad sobre el rename A+D es real.
+>
+> **M1 [Medio] — el predicado medía EXISTENCIA, no VIOLACIÓN, y por eso
+> tragaba el flip `INVOKER → DEFINER` (y `TRIGGER → no-trigger`).**
+> `functionExistedAtBase` preguntaba «¿existía esta función?», no
+> «¿era ya una violación de la regla 5?». Una función `SECURITY
+> INVOKER` en `base` nunca fue una violación — INVOKER corre con los
+> privilegios de quien llama, no hay escalada. Un PR que edita esa
+> misma migración (`M`) para ponerle `SECURITY DEFINER` introduce la
+> exposición, y el predicado de "existía" la leía como preexistente.
+> Idéntico con `RETURNS TRIGGER → no-trigger`. **Es tan mío como del
+> reviewer**: la especificación de ronda 6 decía «que el `CREATE`
+> violador existiera en `base`» — la analogía con la regla 1 estaba
+> incompleta, porque `newViolationsSinceBase` compara VIOLACIONES, no
+> existencia de sentencias.
+>
+> Arreglo: `&& fn.isSecurityDefiner && !fn.returnsTrigger` añadido al
+> `.some(...)` de `functionExistedAtBase`. TDD: 2 tests rojos primero
+> (INVOKER→DEFINER, TRIGGER→no-trigger), ambos confirmados en rojo por
+> la razón correcta (`::warning::` con "already present", `exit=0`,
+> cuando debía ser `::error::`/`exit=1`) antes de tocar el `.some(...)`.
+> Mutation — 2 mutantes, uno a uno, restaurados entre cada uno: quitar
+> `fn.isSecurityDefiner` → mata exactamente el test INVOKER→DEFINER;
+> quitar `!fn.returnsTrigger` → mata exactamente el test
+> TRIGGER→no-trigger.
+>
+> **m3 [Menor, no cosmético] — comentario falso en el propio fichero
+> que este commit edita.** `check-migration-safety.mjs` decía que la
+> regla 5 "has no base-diff pre-existing-violation downgrade" — falso
+> desde ronda 5, contradicho por el código 130 líneas más abajo que
+> este mismo commit modifica. Corregido: el comentario ahora dice dónde
+> vive la decisión de downgrade (el bucle de `main()` sobre
+> `result.aclRejections`), no que no exista.
+>
+> **M2 [deuda con dirección, cerrada — salió barato] — la rama `R` de
+> `functionExistedAtBase` no tenía test propio.** Cambiar `oldPathAtBase`
+> por `filePath` sobrevivía los 61 tests existentes porque el único
+> fixture `R` esperaba **rechazo**, y con la ruta nueva (que nunca
+> existió a `base` bajo ese nombre) `git show` falla igual y produce el
+> mismo veredicto por la razón equivocada. Cerrado con dos fixtures de
+> rename GENUINO (relleno idéntico para que la heurística de similitud
+> de git lo detecte como `R`, verificado con `git status --short` antes
+> de escribir el test): uno que reproduce el flip INVOKER→DEFINER con
+> rename (rechaza — coincide con el mutante por casualidad, declarado);
+> otro donde la función YA era `DEFINER` y abierta antes del rename, sin
+> tocar el ACL (degrada — éste es el que de verdad depende de
+> `oldPathAtBase`). Mutation: `oldPathAtBase` → `filePath` mata
+> exactamente el segundo fixture (`exit=0` esperado, `exit=1` con el
+> mutante — rechaza de más una violación genuinamente preexistente).
+>
+> **m7 [nit, aplicado] — orden del `&&` reordenado.**
+> `functionExistedAtBase` hace un `git show` por violación; ahora se
+> evalúa AL FINAL de la cadena `&&`, después de los predicados en
+> memoria (`isPublicOpenAt`/`isAnonOpenDirectly` contra `baseTimeline`,
+> ya construido, sin subproceso) — cortocircuita el subproceso cuando
+> los predicados baratos ya deciden que no es preexistente. Misma
+> semántica, verificado con la suite completa en verde antes y después
+> del reordenamiento.
+>
+> **Deuda declarada — no arreglada esta ronda, con su dirección de
+> fallo correcta (la lección de B5, ronda 6):**
+> - **m5.** Dos formas legales fallan ABIERTO (0 ocurrencias en el
+>   corpus real, verificado): `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA
+>   public, extensions TO anon;` (lista de esquemas — el patrón
+>   `SCHEMA\s+"?public"?\s+TO` no la contempla) y
+>   `GRANT EXECUTE ON FUNCTION public.a(), public.b() TO anon;` (sólo se
+>   captura la primera función de una lista separada por comas).
+>   Simétricamente, un `REVOKE` multi-función sólo cierra la primera →
+>   falso rechazo (dirección segura) para el resto. Mismo patrón que
+>   B4/B5 de ronda 6, pero no arreglado aquí — declarado con su forma
+>   exacta para que la próxima ronda no tenga que re-descubrirlo.
+> - **m6 (nit).** El parser sólo quita comentarios `--`; un
+>   `CREATE ... SECURITY DEFINER` dentro de `/* ... */` genera
+>   `::error::` (falla CERRADO — dirección segura). 0 de los ficheros
+>   del corpus con `/*` lo dispara hoy.
+>
+> **Regresión final**: 8 suites de `check-migration-safety*`, **131
+> aserciones, 0 fallos** (13, 11, 10, 10, 10, 8, 6, y 63 —antes 59— de
+> `check-migration-safety-acl.test.sh`). `node --check` limpio en los
+> cinco `.mjs` de la superficie ACL. Límite de 300 líneas respetado:
+> `check-migration-safety.mjs` 299 (al límite, verificado, no excedido),
+> `check-migration-safety-acl.mjs` 263, `check-migration-safety-acl-parse.mjs`
+> 284, `check-migration-safety-acl-rule4.mjs` 71,
+> `check-migration-safety-git.mjs` 200.
+>
+> PR: #723, **sin auto-merge**. Review: pendiente sobre esta ronda 7.
 > QA: pendiente. Downstream: ninguno declarado en la cabecera del spec —
 > sin cambios.
 

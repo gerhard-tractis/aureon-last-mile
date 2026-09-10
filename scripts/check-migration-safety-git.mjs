@@ -116,6 +116,31 @@ export function readFileAtBase(baseSha, filePath, oldPathAtBase) {
 }
 
 /**
+ * B1 (review round 6, CRITICAL): whether the violating `CREATE FUNCTION
+ * public.name(signature)` was ALREADY A VIOLATION at `baseSha` — i.e.
+ * whether there is a "before" this exact violation could genuinely be
+ * pre-existing at. Round 6's original wording ("existed at base") was
+ * itself incomplete (m1, round 7): a function that existed at base but was
+ * `SECURITY INVOKER`, or `RETURNS TRIGGER`, was never a rule-5 violation in
+ * the first place — a PR that edits that same migration to flip it to
+ * `SECURITY DEFINER` (or drop `RETURNS TRIGGER`) INTRODUCES the exposure,
+ * and must reject, not degrade. `isPublicOpenAt`/`isAnonOpenDirectly` alone
+ * are not enough either: they default to "open"/"closed" when a key has NO
+ * events at all (Postgres's own default grant — see
+ * check-migration-safety-acl.mjs), which is exactly the state of a
+ * function that never existed in `baseTimeline` in the first place. `ci.yml`
+ * invokes this checker with `--base` on every PR, so this was not an edge
+ * case — it was the only path rule 5 actually took in CI.
+ */
+export function functionExistedAtBase(baseSha, filePath, oldPathAtBase, name, signature) {
+  const content = readFileAtBase(baseSha, filePath, oldPathAtBase);
+  if (content === null) return false; // file itself did not exist at base
+  return findCreateFunctionSignatures(content).some(
+    (fn) => fn.name === name && fn.signature === signature && fn.isSecurityDefiner && !fn.returnsTrigger
+  );
+}
+
+/**
  * B10 (review round 5): the full `buildAclTimeline` corpus AS OF `baseSha`
  * — split out of check-migration-safety.mjs's `main()` (review round 5) to
  * keep that file under the repo's 300-line limit, same reason this file
@@ -129,28 +154,6 @@ export function readFileAtBase(baseSha, filePath, oldPathAtBase) {
  * `null` override — they did not exist at base, so nothing they contain
  * should count as having applied before this PR.
  */
-/**
- * B1 (review round 6, CRITICAL): whether the violating `CREATE FUNCTION
- * public.name(signature)` already existed AT `baseSha` — i.e. whether
- * there is a "before" this violation could genuinely be pre-existing at.
- * `isPublicOpenAt`/`isAnonOpenDirectly` alone are not enough: they default
- * to "open" when a key has NO events at all (Postgres's own default grant
- * — see check-migration-safety-acl.mjs), which is exactly the state of a
- * function that never existed in `baseTimeline` in the first place. A
- * brand-new function added by editing an existing (M-status) file reads,
- * under that lone test, as "open at base" — false: it wasn't there to be
- * open OR closed. `ci.yml` invokes this checker with `--base` on every
- * PR, so this was not an edge case — it was the only path rule 5 actually
- * took in CI, and it silently passed until the file's OWN new CREATE
- * happened to also carry its own closing REVOKE (round 5's "genuinely
- * introduced" fixture only ever exercised that lucky half).
- */
-export function functionExistedAtBase(baseSha, filePath, oldPathAtBase, name, signature) {
-  const content = readFileAtBase(baseSha, filePath, oldPathAtBase);
-  if (content === null) return false; // file itself did not exist at base
-  return findCreateFunctionSignatures(content).some((fn) => fn.name === name && fn.signature === signature);
-}
-
 export function buildBaseAclTimeline(baseSha, files, fileStatus, fileOldPath, corpusFiles, fileIdxOf) {
   const overrides = new Map();
   for (const f of files) {
