@@ -137,7 +137,22 @@ jobs:
             echo "worker=$(matches '^apps/worker/')"
             echo "agents=$(matches '^apps/agents/')"
             echo "solver=$(matches '^sidecar/or-tools/')"
-            echo "frontend=$(matches '^apps/frontend/')"
+            # Deliberately generous, not minimal: a false negative here means
+            # production silently keeps serving a stale bundle, which is worse
+            # than the wasted-deploy-quota problem this filter exists to fix.
+            # Covers apps/frontend itself, the workspace root files that pin
+            # every package's dependency versions (package.json/
+            # package-lock.json — a bump to a frontend dependency shows up
+            # only here, not under apps/frontend/), turbo.json (the build
+            # pipeline definition frontend's `turbo run build` follows), and
+            # the parts of packages/database that apps/frontend actually
+            # imports at build time (its package.json, tsconfig.json, and
+            # src/ — vitest.config.ts, seed-qa/, and supabase/ are excluded
+            # because nothing under apps/frontend imports them; supabase/
+            # changes are already covered by the database/edge_functions
+            # filters above). apps/frontend/vercel.json is already covered by
+            # the apps/frontend/ prefix.
+            echo "frontend=$(matches '^apps/frontend/|^package\.json$|^package-lock\.json$|^turbo\.json$|^packages/database/(package\.json$|tsconfig\.json$|src/)')"
           } >> "$GITHUB_OUTPUT"
 
   # ─── 1. Database Migrations ──────────────────────────────────────────────────
@@ -302,8 +317,22 @@ jobs:
 
   # ─── 3. Frontend (Vercel) ────────────────────────────────────────────────────
   # This job is the ONLY thing that should deploy the frontend to production.
-  # It runs on every green push to main and is ordered after migrations, so app
-  # code never reaches users ahead of the schema it depends on.
+  # It is path-filtered on `needs.changes.outputs.frontend` (Vercel's free plan
+  # caps at 100 deploys/day, and every push to main used to spend one even for
+  # docs-only or backend-only commits) and, when it does run, is ordered after
+  # migrations, so app code never reaches users ahead of the schema it depends
+  # on. See the `frontend=` filter in the `changes` job above for exactly what
+  # counts as frontend-affecting — it is deliberately generous, because a false
+  # negative here means production silently serves a stale bundle.
+  #
+  # KNOWN GAP: this filter only looks at the diff of the commit being
+  # deployed. If a Vercel deploy fails or gets rolled back and the next
+  # frontend-affecting change lands days later, that's fine — but if the next
+  # several commits touch nothing under the frontend filter, production stays
+  # on the old bundle with no automatic catch-up (unlike deploy-supabase, which
+  # runs unconditionally on every approved run). Not addressed in this change;
+  # a `force_frontend` workflow_dispatch input mirroring `force_db` above would
+  # close it if it's ever needed.
   #
   # REQUIRED: Vercel's Git integration must have production auto-deploy DISABLED
   # for `main` (Vercel → Project → Settings → Git → Ignored Build Step, or
@@ -320,7 +349,7 @@ jobs:
     if: |
       always() && !failure() && !cancelled() &&
       needs.approve-production.result == 'success' &&
-      needs.changes.result == 'success'
+      needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
