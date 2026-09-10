@@ -53,6 +53,9 @@ export function pendingToRows(rows: PendingManifest[]): ManifestRow[] {
     orderCount: m.order_count ?? 0,
     packageCount: m.package_count ?? 0,
     verifiedCount: m.verified_count,
+    pickupWindowStart: m.pickup_window_start,
+    pickupWindowEnd: m.pickup_window_end,
+    pickupCutoffTime: m.pickup_cutoff_time,
   }));
 }
 
