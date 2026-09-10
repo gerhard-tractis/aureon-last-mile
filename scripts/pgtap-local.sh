@@ -6,12 +6,27 @@
 # scripts/pgtap-local.test.sh, does run in CI, against a throwaway
 # container — see .github/workflows/ci.yml.)
 #
-#   ./scripts/pgtap-local.sh up              rebuild the container from scratch
-#   ./scripts/pgtap-local.sh sync            copy migrations+tests into it
-#   ./scripts/pgtap-local.sh apply           apply any not-yet-applied migrations
-#   ./scripts/pgtap-local.sh run <test...>   run test files by basename
-#   ./scripts/pgtap-local.sh psql            interactive shell
-#   ./scripts/pgtap-local.sh down            remove the container
+#   ./scripts/pgtap-local.sh up                    rebuild the container from scratch
+#   ./scripts/pgtap-local.sh sync                  copy migrations+tests into it
+#   ./scripts/pgtap-local.sh apply                 apply any not-yet-applied migrations
+#   ./scripts/pgtap-local.sh apply --force <ver>   re-apply one already-applied migration
+#   ./scripts/pgtap-local.sh run <test...>         run test files by basename
+#   ./scripts/pgtap-local.sh psql                  interactive shell
+#   ./scripts/pgtap-local.sh down                  remove the container
+#
+# MUTATION-TESTING A MIGRATION (read before trusting a green result): the
+# content-hash guard below stops `apply` re-skipping a mutant silently, but
+# that alone doesn't prove the mutant reached the database — a hand-rolled
+# `docker exec -i <c> psql -f /path/...` from Git-Bash without
+# MSYS_NO_PATHCONV=1 resolves to a bogus `C:/Program Files/Git/...` path and
+# fails with stderr most one-liners throw away, so the mutant never lands
+# and the test "passes" for the same wrong reason (two agents hit both
+# shapes for real on 2026-09-10). Use `apply --force <version>` (below),
+# never a hand-rolled psql -f, then VERIFY THE LIVE OBJECT, not the apply
+# command's exit code:
+#   ./scripts/pgtap-local.sh psql -tAc \
+#     "select md5(prosrc) from pg_proc where proname = 'the_function_you_mutated'"
+# Confirm that hash is NOT the pre-mutation one before trusting any red/green.
 set -uo pipefail
 
 # Overridable so CI (and this wrapper's own self-test) can point at a
@@ -101,28 +116,52 @@ case "${1:-}" in
     echo "synced $(dex bash -c 'ls /supabase/migrations/*.sql | wc -l' | tr -d '\r') migrations, $(dex bash -c 'ls /supabase/tests/*.sql | wc -l' | tr -d '\r') tests into $C"
     ;;
   apply)
+    shift
+    force_version=""
+    if [ "${1:-}" = "--force" ]; then
+      shift
+      force_version="${1:-}"
+      if [ -z "$force_version" ]; then
+        echo "apply --force requires a version argument (the numeric prefix of a migration file)" >&2
+        exit 1
+      fi
+      shift
+    fi
     # Ledger-based, mirroring the Supabase CLI and infra/supabase-qa/apply-migrations.sh.
     # Re-running every migration on each invocation is NOT idempotent: an early
     # migration recreates an object a later one dropped, and the database drifts
     # (observed: hub_receptions resurrected, 12 spurious failures). Apply each
     # version exactly once and record it.
+    #
+    # Round: this used to skip purely on VERSION being present in the ledger,
+    # never looking at the file's content — a migration mutated for SQL
+    # mutation testing, if its version was already applied, was silently
+    # skipped: the mutant never reached the database and the test suite
+    # "passed" against the unmutated original (measured: mutating an
+    # already-applied migration and re-running sync+apply reported
+    # "applied=0 skipped=203", and the pgTAP test that should have caught
+    # the mutant stayed green). content_sha256 closes that: a changed file
+    # under an already-applied version is now a loud WARNING, not a silent
+    # skip, and --force is the explicit, auditable way to push a mutant
+    # through instead of a hand-rolled `docker exec ... psql -f` (which has
+    # its own silent-failure mode — see the file header comment).
     psq -q -c "CREATE SCHEMA IF NOT EXISTS supabase_migrations;
                CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (
-                 version text PRIMARY KEY, name text, statements text[]);" >/dev/null
-    dex bash -c '
-      applied=0; skipped=0; fail=0
-      for f in $(ls /supabase/migrations/*.sql | sort); do
-        base=$(basename "$f"); ver="${base%%_*}"
-        n=$(psql -U postgres -d postgres -tAc "select count(*) from supabase_migrations.schema_migrations where version = '"'"'$ver'"'"'")
-        if [ "$n" != "0" ]; then skipped=$((skipped+1)); continue; fi
-        if psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q -f "$f" >/tmp/o.log 2>&1; then
-          psql -U postgres -d postgres -q -c "insert into supabase_migrations.schema_migrations(version,name) values ('"'"'$ver'"'"','"'"'$base'"'"') on conflict do nothing"
-          applied=$((applied+1))
-        else
-          fail=$((fail+1)); echo "FAIL $base"; grep -m1 "ERROR:" /tmp/o.log | sed "s/^/     /"
-        fi
-      done
-      echo "migrations: applied=$applied skipped=$skipped failed=$fail"'
+                 version text PRIMARY KEY, name text, statements text[]);
+               ALTER TABLE supabase_migrations.schema_migrations
+                 ADD COLUMN IF NOT EXISTS content_sha256 text;" >/dev/null
+    if [ -n "$force_version" ]; then
+      # Loud, upfront failure if the version doesn't resolve to a real file —
+      # the exact silent-failure shape a hand-rolled `psql -f <bad-path>`
+      # (stderr to /dev/null) has, that this flag exists to replace.
+      found=$(dex bash -c "ls /supabase/migrations/ 2>/dev/null | grep -c \"^${force_version}_\"" | tr -d '\r')
+      if [ "${found:-0}" = "0" ]; then
+        echo "apply --force: version '$force_version' matches no file in /supabase/migrations (sync first?)" >&2
+        exit 1
+      fi
+    fi
+    ( cd "$ROOT" && docker cp scripts/pgtap-local-apply-inner.sh "$C:/supabase/apply-inner.sh" >/dev/null )
+    dex env FORCE_VERSION="$force_version" bash /supabase/apply-inner.sh
     ;;
   run)
     shift

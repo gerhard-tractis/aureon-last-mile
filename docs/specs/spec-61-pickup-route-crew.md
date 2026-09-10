@@ -376,7 +376,9 @@ longer open a route. Task 2's last step ships the QA leader in the same commit f
 that reason.
 
 Before starting: `./scripts/pgtap-local.sh up` (once), then `./scripts/pgtap-local.sh sync`
-and `./scripts/pgtap-local.sh apply`. Expect `migrations: applied=N skipped=M failed=0`.
+and `./scripts/pgtap-local.sh apply`. Expect `migrations: applied=N skipped=M changed=0 failed=0`
+(a nonzero `changed=` means a migration's content drifted from what's recorded for its already-applied
+version — see the mutation-testing note at the top of `pgtap-local.sh`).
 
 ### Task 1.1: `pickup_leader` on the `user_role` enum, alone in its own migration
 

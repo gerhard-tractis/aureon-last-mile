@@ -180,7 +180,7 @@ jobs:
       # fixtures — a fresh, throwaway container, never the shared local-dev
       # spec52-pg (that one is reused across worktrees on a developer's
       # machine and is not available here anyway).
-      - name: Test the pgtap-local wrapper — TAP parsing (own throwaway container)
+      - name: Test the pgtap-local wrapper — TAP parsing + apply (own throwaway container)
         run: |
           set -uo pipefail
           CT=pgtap-selftest-ci
@@ -213,6 +213,10 @@ jobs:
           docker exec "$CT" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c "CREATE EXTENSION pgtap;"
           rc=0
           PGTAP_LOCAL_CONTAINER="$CT" bash ./scripts/pgtap-local.test.sh || rc=$?
+          # `apply`'s own content-hash guard (mutation-testing false-green,
+          # see pgtap-local.sh's header comment) — same container, no extra
+          # postgres bring-up cost.
+          PGTAP_LOCAL_CONTAINER="$CT" bash ./scripts/pgtap-local-apply.test.sh || rc=$?
           docker rm -f "$CT" >/dev/null 2>&1 || true
           exit "$rc"
 
