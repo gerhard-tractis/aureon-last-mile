@@ -93,11 +93,19 @@ interface RouteManifestListProps {
    * sólo una comodidad local. Ver "Colisión con COMPLETADA" en el spec.
    */
   onDownload?: (manifestId: string, externalLoadId: string) => void;
-  /** `manifest.id` cuya descarga está en curso — deshabilita SÓLO ese chip,
+  /**
+   * `manifest.id` de cada descarga en curso — deshabilita SÓLO esas filas,
    * no toda la lista (mismo patrón por-fila que `isRemoving`, que sí es
    * global porque sólo puede haber una remoción en curso a la vez; aquí dos
-   * descargas distintas pueden solaparse). */
-  downloadingId?: string | null;
+   * descargas distintas pueden solaparse).
+   *
+   * Menor, revisión de fase 2 (ronda 4) — antes era un `string | null`
+   * derivado de `useMutation().isPending`/`variables`, que sólo puede
+   * describir UNA descarga en curso: lanzar una segunda mientras la primera
+   * seguía volando pisaba ese id y reactivaba el chip equivocado. Un `Set`
+   * sostiene tantas descargas concurrentes como filas existan.
+   */
+  downloadingIds?: Set<string>;
 }
 
 /**
@@ -112,7 +120,7 @@ export function RouteManifestList({
   isRemoving = false,
   downloadedIds,
   onDownload,
-  downloadingId = null,
+  downloadingIds,
 }: RouteManifestListProps) {
   if (manifests.length === 0) {
     return (
@@ -206,7 +214,7 @@ export function RouteManifestList({
                 <button
                   type="button"
                   aria-label={`Descargar ${m.external_load_id}`}
-                  disabled={downloadingId === m.id}
+                  disabled={downloadingIds?.has(m.id) ?? false}
                   onClick={() => onDownload!(m.id, m.external_load_id)}
                   className="flex-none rounded-md border border-status-warning-border bg-status-warning-bg px-2.5 py-2 font-mono text-[11px] font-semibold text-status-warning-text disabled:opacity-50 disabled:pointer-events-none"
                 >

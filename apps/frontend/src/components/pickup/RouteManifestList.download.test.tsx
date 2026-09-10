@@ -115,14 +115,14 @@ describe('RouteManifestList — chip DESCARGAR', () => {
     expect(onManifestClick).not.toHaveBeenCalled();
   });
 
-  it('disables the DESCARGAR button while downloadingId matches this manifest', () => {
+  it('disables the DESCARGAR button while downloadingIds contains this manifest', () => {
     render(
       <RouteManifestList
         manifests={[baseManifest({ id: 'uuid-1' })]}
         onManifestClick={() => {}}
         downloadedIds={new Set()}
         onDownload={() => {}}
-        downloadingId="uuid-1"
+        downloadingIds={new Set(['uuid-1'])}
       />,
     );
     expect(screen.getByRole('button', { name: /descargar/i })).toBeDisabled();
@@ -135,10 +135,32 @@ describe('RouteManifestList — chip DESCARGAR', () => {
         onManifestClick={() => {}}
         downloadedIds={new Set()}
         onDownload={() => {}}
-        downloadingId="uuid-other"
+        downloadingIds={new Set(['uuid-other'])}
       />,
     );
     expect(screen.getByRole('button', { name: /descargar/i })).not.toBeDisabled();
+  });
+
+  // Menor, revisión de fase 2 (ronda 4) — con un único `useMutation`
+  // compartido, `downloadingId` (un solo id derivado de `isPending` +
+  // `variables`) no podía representar dos descargas simultáneas: lanzar B
+  // mientras A seguía volando pisaba el id de A y reactivaba su chip. Un
+  // `Set` por fila sostiene tantas descargas en curso como filas existan.
+  it('keeps BOTH chips disabled when two different manifests are downloading at once', () => {
+    render(
+      <RouteManifestList
+        manifests={[
+          baseManifest({ id: 'uuid-a', external_load_id: 'CARGA-A' }),
+          baseManifest({ id: 'uuid-b', external_load_id: 'CARGA-B' }),
+        ]}
+        onManifestClick={() => {}}
+        downloadedIds={new Set()}
+        onDownload={() => {}}
+        downloadingIds={new Set(['uuid-a', 'uuid-b'])}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /descargar carga-a/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /descargar carga-b/i })).toBeDisabled();
   });
 
   // Menor, revisión de fase 2 — la ausencia del chip significaba a la vez

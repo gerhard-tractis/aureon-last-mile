@@ -4,9 +4,9 @@
  * (regla de 300 líneas; ese archivo ya está en 437) — mismos mocks base,
  * mismo patrón.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import React from 'react';
 
 vi.mock('next/navigation', () => ({
@@ -40,6 +40,16 @@ const INCOMPLETE_MANIFEST = {
   id: 'm1',
   external_load_id: 'LOAD-1',
   retailer_name: 'A',
+  pickup_location: null,
+  total_orders: 1,
+  total_packages: 2,
+  verified_count: 1,
+};
+
+const INCOMPLETE_MANIFEST_2 = {
+  id: 'm2',
+  external_load_id: 'LOAD-2',
+  retailer_name: 'B',
   pickup_location: null,
   total_orders: 1,
   total_packages: 2,
@@ -179,5 +189,66 @@ describe('ActiveRoutePage — DESCARGAR wiring', () => {
 
     expect(downloadedIdsMock).toHaveBeenCalledWith('op-1');
     expect(useDownloadManifestArgsMock).toHaveBeenCalledWith('op-1');
+  });
+
+  // B2, ronda 4 de review del PR #727 — mutar `downloadingId={downloadMut.isPending
+  // ? ... : null}` en `page.tsx` sobrevivía porque este archivo, con el mock
+  // de `useDownloadManifest` siempre devolviendo `isPending: false`, nunca
+  // ejerció esa derivación. El chip debe deshabilitarse a partir del estado
+  // que la PÁGINA controla (no del mock del hook) mientras la descarga real
+  // está en curso, y NO tocar el chip de una carga distinta.
+  describe('chip disabled while its own download is in flight (B2 — page wiring, not just the component)', () => {
+    it('disables only the tapped chip while it downloads, and re-enables it once settled', async () => {
+      downloadedIdsMock.mockReturnValue({ data: new Set<string>() });
+      routeManifestsMock.mockReturnValue({
+        data: [INCOMPLETE_MANIFEST, INCOMPLETE_MANIFEST_2],
+        isLoading: false,
+      });
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: 'Ver los 2 manifiestos' }));
+
+      fireEvent.click(screen.getByRole('button', { name: /descargar load-1/i }));
+
+      expect(screen.getByRole('button', { name: /descargar load-1/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /descargar load-2/i })).not.toBeDisabled();
+
+      const [, handlers] = downloadMutate.mock.calls[0] as [
+        string,
+        { onSettled?: () => void },
+      ];
+      expect(typeof handlers.onSettled).toBe('function');
+      act(() => {
+        handlers.onSettled!();
+      });
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /descargar load-1/i })).not.toBeDisabled(),
+      );
+    });
+  });
+
+  // M1, decisión del usuario, ronda 4 de review del PR #727 — sin señal,
+  // `networkMode: 'online'` deja la mutación PAUSADA indefinidamente
+  // (`isPending: true` para siempre, sin `onError` ni `onSuccess`, chip
+  // deshabilitado sin salida). DESCARGAR se niega de entrada con un
+  // mensaje, en vez de colgarse invisible.
+  describe('DESCARGAR without network signal (M1)', () => {
+    afterEach(() => {
+      onlineManager.setOnline(true);
+    });
+
+    it('refuses up front with a Spanish message instead of pausing the mutation', async () => {
+      downloadedIdsMock.mockReturnValue({ data: new Set<string>() });
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: 'Ver el manifiesto' }));
+
+      onlineManager.setOnline(false);
+      fireEvent.click(screen.getByRole('button', { name: /descargar load-1/i }));
+
+      expect(downloadMutate).not.toHaveBeenCalled();
+      expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/sin conexión/i));
+    });
   });
 });
