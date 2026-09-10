@@ -217,15 +217,77 @@ alternativa.
 
 - [x] Decidir qué gana el borde izquierdo — **decidido: nada nuevo. El borde
       conserva selección y merma; la ventana no lo toca.**
-- [ ] Poblar `operating_hours` / `pickup_cutoff_time` donde falten (nadie los
+- [x] Poblar `operating_hours` / `pickup_cutoff_time` donde falten (nadie los
       escribe hoy) y hacer que `get_pending_manifests` los devuelva.
-- [ ] Columna de ventana con semáforo, sin tocar `border-l-*`.
+- [x] Columna de ventana con semáforo, sin tocar `border-l-*`.
 
 **Archivos:** `apps/frontend/src/components/pickup/ManifestTable.tsx` (columna
 nueva, **sin tocar `border-l-*`**), migración para `get_pending_manifests`, y el
 poblado de `operating_hours`/`pickup_cutoff_time`.
 
 **Depende de:** ninguna.
+
+**Implementación (2026-09-10, pendiente de review/QA — la fase queda
+`[in_progress]`, no se cierra aquí):**
+
+- **Lógica pura** — `apps/frontend/src/lib/pickup/pickupWindowStatus.ts`:
+  `getPickupWindowStatus` (tres estados: `sin_datos`/`dentro_de_plazo`/
+  `cerca_del_cierre`; `sin_datos` es el default cuando no hay ventana ni
+  cutoff, nunca `dentro_de_plazo`) y `formatPickupWindowLabel`. El cutoff
+  (`sla_config.pickup_cutoff_time`) gana sobre el fin de ventana cuando
+  ambos existen, por ser el límite operador-wide más estricto. Umbral de
+  "cerca del cierre": 60 minutos — decisión visual mía, el spec la delegó
+  explícitamente.
+- **Lectura** — migración `20261003000001`, plantilla
+  `20260820000006_spec61_pending_manifests_exclude_routed.sql` (confirmada
+  como la más reciente vía `git grep` el 2026-09-10). `get_pending_manifests`
+  añade `pickup_window_start/end` y `pickup_cutoff_time`, derivados de
+  `pickup_points.pickup_locations->0->'operating_hours'` y
+  `pickup_points.sla_config->>'pickup_cutoff_time'`. Sin cambios de ACL — la
+  función nunca tuvo GRANT explícito y no está en el alcance del audit de
+  spec-88.
+- **Escritura** — hoy nadie podía poblar estos campos aunque el esquema los
+  tiene desde marzo. `PickupPointForm.tsx` gana tres campos (Apertura,
+  Cierre, Cierre de retiros), extraídos a `PickupPointLocationFields.tsx` +
+  `pickupPointFormSchema.ts` compartido para no exceder 300 líneas. Las dos
+  rutas API (`/api/pickup-points`, `/api/pickup-points/[id]`) validan y
+  persisten `sla_config` y `pickup_locations[].operating_hours`.
+- **Columna** — `ManifestTable.tsx` gana una octava columna (`GRID` de 7 a 8
+  celdas) con punto de semáforo + etiqueta. `border-l-*` no se tocó — sigue
+  siendo únicamente selección/merma, verificado con un test dedicado.
+- **Tests:** 14 en `pickupWindowStatus.test.ts` (unit, mutation-tested — ver
+  abajo), 9 en `pickupPageHelpers.test.ts` (+2 nuevos), 14 en
+  `ManifestTable.test.tsx` (+5 nuevos), 6 en `PickupPointForm.test.tsx` (+3
+  nuevos), pgTAP `spec83_fase2_pending_manifests_pickup_window.test.sql`
+  (4/4 `ok`, verificado con `psql` crudo, no con el resumen de
+  `pgtap-local.sh`) + `spec61_pending_excludes_routed.sql` actualizado y
+  re-verificado sin fallos.
+- **Mutation testing manual sobre `pickupWindowStatus.ts`, 5 mutantes:**
+  1. `sin_datos → dentro_de_plazo` en el guard de ausencia — muere (4 tests).
+  2. `<=` → `<` en el umbral de 60 min — **sobrevivió** a la suite original
+     (sin caso exactamente en el borde); cerrado con un test a los 60 min
+     exactos y otro a 59:01; ahora muere.
+  3. Invertido el orden de precedencia cutoff/window-end en el `??` — muere.
+  4. Regex de hora debilitada a `/(\d+):(\d+)/` — **sobrevivió** (ningún caso
+     cubría una hora fuera de rango); cerrado con un test para `'25:00'`;
+     ahora muere.
+  5. `&&` → `||` en `formatPickupWindowLabel` (ventana a medio llenar) —
+     **sobrevivió**; cerrado con un test de ventana con sólo el inicio;
+     ahora muere.
+
+  2 de 5 sobrevivieron a la primera pasada. Se cerraron con un test nuevo
+  cada uno, no se descartaron.
+- **Trampa de TanStack Query v5 (`networkMode:'online'` pausando sin red):**
+  no se introdujo una instancia nueva de `pending ?? []` — la única que
+  existe (`page.tsx:117`) es preexistente a esta fase, no se tocó. `sin_datos`
+  se calcula por fila a partir de campos ausentes/`null`, no de la ausencia
+  de la query completa, así que no hereda ese problema, pero tampoco lo
+  arregla: si la query en pausa deja `pendingRows` vacío, la tabla entera se
+  ve vacía, columna de ventana incluida — declarado, no corregido aquí.
+- **Gap declarado, no corregido:** no existen tests para las rutas API de
+  `pickup-points` (ni antes de esta fase ni ahora) — se cubre indirectamente
+  vía `PickupPointForm.test.tsx`, que ejercita el payload exacto que la ruta
+  espera, pero no la ruta misma (auth, zod, persistencia).
 
 ### Fase 3 — Ocupación `[parked]`
 
