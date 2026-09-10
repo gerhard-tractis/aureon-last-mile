@@ -114,15 +114,18 @@ export function SyncChip({ operatorId = null }: { operatorId?: string | null }) 
             {detail.status === 'ok' &&
               detail.entries.map((entry) => {
                 const blocksClose = deadEntryBlocksManifestClose(entry.type);
-                // Ronda 3 de review del PR #725 (M mayor) — `manifestId` es
-                // un UUID (`manifests.id`), no algo que el operario
-                // reconozca ni pueda teclear en ningún sitio.
+                // Ronda 4 de review del PR #725 (decisión del usuario) —
+                // `manifestId` es un UUID (`manifests.id`) que no aparece
+                // en NINGUNA pantalla que el operario vea. Sin
                 // `externalLoadId` (el segmento de `/pickup/complete/
-                // [loadId]`) es lo único navegable — pero es opcional
-                // (ningún llamador de `pickup_scan`/`manifest_photo` lo
-                // pasa todavía), así que la instrucción de navegación sólo
-                // se da cuando existe de verdad.
-                const loadLabel = entry.externalLoadId ?? entry.manifestId;
+                // [loadId]`), el encabezado NUNCA cae al UUID — eso le
+                // diría al operario que busque un identificador que no
+                // existe en ningún sitio, peor que no darle ninguno. Sigue
+                // siendo alcanzable: los `dead` son justo las entradas que
+                // nunca drenan, así que un `close_manifest`/`manifest_photo`
+                // encolado por una versión de la app anterior a este campo
+                // llega aquí sin él.
+                const loadLabel = entry.externalLoadId ?? 'sin identificar';
                 return (
                   <div
                     key={entry.id}
@@ -139,11 +142,16 @@ export function SyncChip({ operatorId = null }: { operatorId?: string | null }) 
                         deshacer esto (`retryDead`, ya cableado al botón
                         "REQUIERE AYUDA" de la pantalla de esa carga). Mandar
                         a soporte por algo que se arregla con un toque nombra
-                        al actor equivocado. */}
+                        al actor equivocado. La instrucción de navegación,
+                        igual que el encabezado, nunca ofrece el UUID como
+                        objeto: sin `externalLoadId` (encolada por una
+                        versión anterior de la app, sin este campo) dice qué
+                        puede hacer el operario sin fingir que ese
+                        identificador existe en alguna pantalla. */}
                     <p className="text-text-secondary">
                       {entry.externalLoadId
                         ? `Abre la carga ${entry.externalLoadId} y toca “REQUIERE AYUDA” para reintentar.`
-                        : 'Ábrela desde Recogida y toca “REQUIERE AYUDA” para reintentar.'}
+                        : 'Carga sin identificar — encolada por una versión anterior de la app. Ábrela desde Recogida (la carga con algo bloqueado) y toca “REQUIERE AYUDA” para reintentar.'}
                     </p>
                   </div>
                 );

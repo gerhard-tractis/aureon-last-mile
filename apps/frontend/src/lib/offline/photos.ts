@@ -192,6 +192,7 @@ export async function enqueueManifestPhoto(
     operatorId: input.operatorId,
     userId: input.userId,
     manifestId: input.manifestId,
+    externalLoadId: input.externalLoadId,
     type: 'manifest_photo',
     payload,
     blob: input.blob,

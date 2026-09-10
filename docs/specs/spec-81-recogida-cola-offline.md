@@ -1264,13 +1264,43 @@ Redacción del handoff: «se guardan en el dispositivo y se envían solos…». 
       (el segmento de `/app/pickup/complete/[loadId]`), no por la clave
       primaria. **Corregido:** `PickupQueueEntry`/`EnqueueInput` ganan
       `externalLoadId?: string`; `complete/[loadId]/page.tsx` lo pasa al
-      encolar `close_manifest` (`loadId`, ya resuelto de la URL). El chip
-      usa `entry.externalLoadId` cuando existe (encabezado y la
-      instrucción de navegación); sin él — ningún llamador de
-      `pickup_scan`/`manifest_photo` lo pasa todavía, sin escritor de
-      producción para ninguno de los dos — cae a una instrucción genérica
-      ("Ábrela desde Recogida…") en vez de fingir una navegación que no
-      puede cumplir.
+      encolar `close_manifest` (`loadId`, ya resuelto de la URL).
+
+      **Ronda 4 de review del PR #725 (2026-09-09).** El texto de arriba
+      decía "ningún llamador de `pickup_scan`/`manifest_photo` lo pasa
+      todavía" como si fuera hipotético — corregido, con la comprobación
+      que lo sostiene: `enqueueManifestPhoto` (`lib/offline/photos.ts:191`)
+      **también gana `externalLoadId?: string`** (mismo campo,
+      `EnqueueManifestPhotoInput`), así que el encolado de fotos ya no se
+      queda atrás del de `close_manifest` cuando alguien lo conecte a una
+      UI. **Verificado explícitamente, no asumido:** un grep de
+      `enqueueManifestPhoto(` sobre `apps/frontend/src` fuera de
+      `photos.test.ts`, y `git log --follow` sobre
+      `ManifestPhotoStrip.tsx` (último commit: `2f80d83`, PR #706,
+      spec-80 fase 3) — **cero llamadores de producción**. La pantalla de
+      captura sigue en `useUploadManifestDocument` (online-only), sin
+      ninguna ruta offline conectada; el propio `ManifestCameraSheet.tsx`
+      dice explícitamente que "cableado a
+      `ManifestPhotoStrip`/`useUploadManifestDocument` queda fuera de
+      alcance" de spec-80 fase 4. Conectar esa UI a `enqueueManifestPhoto`
+      sigue siendo el ítem `- [ ]` ya declarado en spec-80 fase 4 (M3, "debe
+      llamar a `enqueueManifestPhoto`, no a `useUploadManifestDocument`") —
+      no es un cambio de una línea ("`loadId` como prop"), es reemplazar el
+      camino de subida completo de esa pantalla, y sigue fuera del alcance
+      de esta fase.
+
+      **Decisión del usuario sobre el fallback del chip cuando falta
+      `externalLoadId`, independiente de si `manifest_photo` está o no
+      conectado hoy:** un `close_manifest`/`manifest_photo` `dead` encolado
+      por una versión de la app anterior a este campo (los `dead` son
+      justo las entradas que nunca drenan, así que sobreviven una
+      actualización) sigue siendo alcanzable. `SyncChip` **nunca** cae al
+      UUID (`entry.manifestId`) ni en el encabezado ni en la instrucción —
+      ese identificador no aparece en ninguna pantalla que el operario vea,
+      y ofrecerlo es peor que no ofrecer ninguno. Encabezado: "Carga sin
+      identificar". Instrucción: explica que la carga se encoló con una
+      versión anterior de la app y a dónde ir (Recogida, la carga con algo
+      bloqueado) — nunca inventa un identificador navegable que no existe.
 
 ### Fase 5 — Fotos `[in_progress]`
 

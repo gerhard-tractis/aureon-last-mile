@@ -157,10 +157,16 @@ describe('SyncChip', () => {
       mockState.blockedCount = 1;
       mockDetail.status = 'ok';
       mockDetail.entries = [
-        { id: 1, manifestId: 'manifest-77', type: 'pickup_scan', lastError: 'MANIFEST_NOT_CLOSABLE' },
+        {
+          id: 1,
+          manifestId: 'manifest-77',
+          externalLoadId: 'CARGA-001',
+          type: 'pickup_scan',
+          lastError: 'MANIFEST_NOT_CLOSABLE',
+        },
       ];
       render(<SyncChip />);
-      expect(screen.getAllByText(/manifest-77/).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/CARGA-001/).length).toBeGreaterThan(0);
       expect(screen.getByText(/MANIFEST_NOT_CLOSABLE/)).toBeInTheDocument();
     });
 
@@ -281,6 +287,31 @@ describe('SyncChip', () => {
       render(<SyncChip />);
       expect(screen.queryByText(/abre la carga manifest-77/i)).not.toBeInTheDocument();
       expect(screen.getByText(/ábrela desde recogida.*requiere ayuda/is)).toBeInTheDocument();
+    });
+
+    // Ronda 4 de review del PR #725 (decisión del usuario) — sin
+    // `externalLoadId`, el encabezado "Carga X" NO puede caer al UUID
+    // interno (`manifestId`). Ese identificador no aparece en NINGUNA
+    // pantalla que el operario vea — imprimirlo es peor que no imprimir
+    // ninguno: le dice que busque algo que no va a encontrar. Alcanzable
+    // hoy, no hipotético: los `dead` son justo las entradas que nunca
+    // drenan, así que un conductor que actualice la PWA con un
+    // `close_manifest` ya muerto en IndexedDB (encolado por una versión
+    // anterior, sin este campo) cae exactamente aquí.
+    it('never prints the internal UUID as the load header when externalLoadId is missing', () => {
+      mockState.blockedCount = 1;
+      mockDetail.status = 'ok';
+      mockDetail.entries = [
+        {
+          id: 1,
+          manifestId: '3f2a9c8e-4b1d-4a1e-9c3a-abcdef123456',
+          type: 'pickup_scan',
+          lastError: 'MANIFEST_NOT_CLOSABLE',
+        },
+      ];
+      render(<SyncChip />);
+      expect(screen.queryByText(/3f2a9c8e/)).not.toBeInTheDocument();
+      expect(screen.getAllByText(/sin identificar/i).length).toBeGreaterThan(0);
     });
 
     // B1, ronda 2 de review del PR #725 (bloqueante) — el resto de
