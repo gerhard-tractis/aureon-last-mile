@@ -97,22 +97,30 @@ fi
 # If it ever returns non-zero, errexit fires here exactly as it does in
 # main(), the ERR trap below reports it, and the suite stops.
 set -eE
-# fd 3 is a copy of the real stderr, taken BEFORE invoke() redirects anything.
+# fd 3 is a copy of the real stderr, taken BEFORE invoke() redirects
+# anything, and it is LOAD-BEARING. Deleting it reintroduces a red run with
+# no reason in it — the exact failure on_err() exists to abolish.
 #
-# It is belt-and-braces, and the honest note is that it fixes no bug MEASURED
-# here. The worry was that the ERR trap runs while the failing command's
-# redirection is still in effect, so the trap's own message would land in
-# $TMP/invoke.out and the EXIT trap would delete it — a red run with no
-# reason, which is exactly what on_err() exists to abolish. Measured on bash
-# 5.2.21 (the VPS and the GitHub runner) and 5.2.37: forcing a real abort
-# prints the SAME visible output with `>&3` and without it. The trap is not
-# subject to that redirection.
+# There are two ways a function under `set -e` can fail, and only one of
+# them keeps the caller's redirection alive when the ERR trap runs:
 #
-# Kept anyway, because it costs one line and the interaction between ERR
-# traps and redirection is subtle enough to be worth stating outright rather
-# than depending on. What is load-bearing below is that an abort is reported
-# AT ALL, with its exit code and whatever the function managed to write —
-# ronda 2 reported neither, and the self-check pins that, not the fd.
+#   FORM A  the function ends with an explicit `return 1`. The redirection
+#           is already torn down; the trap prints to the real stderr.
+#   FORM B  a command INSIDE the function fails and errexit trips there.
+#           The trap runs with the redirection STILL IN EFFECT.
+#
+# Measured on bash 5.2.21 (the VPS and the GitHub runner) and 5.2.37:
+#
+#   FORM A  no fd 3 -> visible=[TRAP: aborted]      fd 3 -> visible=[TRAP: aborted]
+#   FORM B  no fd 3 -> visible=[]                   fd 3 -> visible=[TRAP: aborted]
+#                      ^ the message went into $TMP/invoke.out, which the
+#                        EXIT trap then deleted: red, and mute.
+#
+# This comment previously claimed the opposite and called the line
+# decorative. That claim came from a probe that used FORM A — the one shape
+# that cannot reproduce the bug — and it nearly got a correct guard deleted
+# as dead weight. The self-check below therefore fails in FORM B on purpose,
+# and it is built out of THIS file's own harness, not a copy of it.
 exec 3>&2
 trap 'harness_abort $?' ERR
 
@@ -389,56 +397,41 @@ echo
 echo "the harness itself"
 
 # ── The net has to be audible, or a red run says nothing ───────────────────
-# When record_deploy_marker aborted, the ERR trap used to run while the
-# failing command's redirection was still in effect, so its message went to
-# $TMP/invoke.out and the EXIT trap deleted it. The suite printed
-# "record_deploy_marker()" and then nothing: red, with no reason anywhere.
-# That is #718's failure mode rebuilt inside the test that exists to prove
-# it cannot happen. This runs the same structure in a child shell with a
-# function that always aborts, and requires the reason to reach stderr.
-cat > "$TMP/selfcheck.sh" <<'SELFCHECK'
-TMP="$1"
-trap 'rm -rf "$TMP/sc"' EXIT
-mkdir -p "$TMP/sc"
-record_deploy_marker() { echo "some output first"; return 1; }
-set -eE
-exec 3>&2
-trap 'harness_abort $?' ERR
-harness_abort() {
-  {
-    echo "  FAIL record_deploy_marker aborted the deploy (exit $1)"
-    cat "$TMP/sc/out" 2>/dev/null | sed "s/^/  | /"
-  } >&3
-  exit 1
-}
-# Same shape as the real invoke(): the failing call sits inside a function
-# with its redirection live when the trap fires. Flatten this and the bug
-# stops reproducing, and the mutant that removes >&3 walks through.
-invoke() { record_deploy_marker > "$TMP/sc/out" 2>&1; }
-invoke
-echo "REACHED THE END - the net did not fire"
-SELFCHECK
-sc_out="$(bash "$TMP/selfcheck.sh" "$TMP" 2>&1 || true)"
-check_contains "an abort is reported, not swallowed by the redirection" \
+# This used to run a hand-written REPLICA of the harness inside a heredoc.
+# That made it untestable in the way that matters: `grep -c` found TWO
+# harness_abort definitions, and a mutant that gutted the REAL one left the
+# replica untouched, so the self-check stayed green while the thing it
+# claims to protect was gone. The child is now generated from THIS file:
+# the same `exec 3>&2` and the same harness_abort, extracted verbatim.
+real_fd3="$(grep '^exec 3>&2$' "$0")"
+real_abort="$(awk '/^harness_abort\(\) \{/{f=1} f{print} f&&/^\}/{exit}' "$0")"
+check_eq "the harness is defined once, so the self-check cannot test a copy" \
+  "1" "$(grep -c '^harness_abort() {' "$0")"
+
+{
+  echo 'TMP="$1"'
+  echo 'mkdir -p "$TMP"'
+  echo "$real_fd3"
+  echo "$real_abort"
+  echo "trap '\'harness_abort \$?\' ERR"
+  # FORM B: a command fails INSIDE the function. A `return 1` here would
+  # tear the redirection down first and prove nothing.
+  echo 'record_deploy_marker() { echo "some output first"; rm /nonexistent/nope 2>/dev/null; }'
+  echo 'invoke() { record_deploy_marker > "$TMP/invoke.out" 2> "$TMP/invoke.err"; invoke_rc=$?; }'
+  echo 'set -eE'
+  echo 'invoke'
+  echo 'echo "REACHED THE END - the net did not fire"'
+} > "$TMP/selfcheck.sh"
+sc_out="$(bash "$TMP/selfcheck.sh" "$TMP/scdir" 2>&1 || true)"
+check_contains "an abort is reported, not swallowed by invoke() redirection" \
   "aborted the deploy" "$sc_out"
-check_contains "and the reason survives the EXIT trap that deletes TMP" \
+check_contains "and the reason reaches the reader with the output that preceded it" \
   "some output first" "$sc_out"
 case "$sc_out" in
   *"REACHED THE END"*) net_verdict=leaked ;;
   *) net_verdict=stopped ;;
 esac
 check_eq "an abort stops the suite instead of passing through" "stopped" "$net_verdict"
-
-# The block above runs a REPLICA of the harness, so it proves the pattern
-# works — not that THIS file still uses it. A mutant that dropped `>&3` from
-# the real reporter left the replica untouched and survived the whole suite.
-# These two read the running file itself.
-# No assert pins `>&3` itself. Removing it from either the real reporter or
-# the replica changes nothing observable on bash 5.2 (measured both ways),
-# so a test for it would pin a mechanism that does not act — and a mutant
-# that deletes it SURVIVES this suite, correctly. What is asserted above is
-# the behaviour that does matter: an abort is reported, with context, and
-# stops the run.
 
 echo
 echo "the failure message the operator reads (deploy.yml)"
@@ -450,14 +443,29 @@ echo "the failure message the operator reads (deploy.yml)"
 # EVERY app rather than trust a diff. The operator reads the LAST ::error::,
 # so the accurate one has to be the only one printed on this path.
 YML="$HERE/../../.github/workflows/deploy.yml"
+# NOT a skip. The chmod skips above are real environments (Git Bash, root);
+# a checkout without .github/workflows/deploy.yml is not one. When the file
+# was merely missing, six asserts vanished and the suite still exited 0 —
+# which is how three mutants looked "killed" while nothing had run.
 if [ ! -f "$YML" ]; then
-  skip_case "deploy.yml message cases — workflow file not found from $HERE"
+  fail=$((fail + 1))
+  echo "  FAIL deploy.yml not found at $YML — this suite asserts against it;"
+  echo "       a checkout missing it is broken, not an environment to skip."
 else
   yml="$(cat "$YML")"
   check_contains "the script and the workflow agree on the escalation code" \
     'QA_DEPLOY_RC:-}" = "78"' "$yml"
   check_contains "the sync step records the exit code for the failure step" \
-    'QA_DEPLOY_RC=$rc' "$yml"
+    'echo "$rc" > "$RUNNER_TEMP/qa-deploy-rc"' "$yml"
+  check_contains "and the failure step reads it back from that file" \
+    'cat "$RUNNER_TEMP/qa-deploy-rc"' "$yml"
+  # Capturing the exit code cost `set -e` on that step once, leaving the `cd`
+  # unguarded — a failed cd would have run the deploy against whatever tree
+  # the runner happened to be in. `|| rc=$?` is a condition context, so the
+  # two are not in tension.
+  sync_step="$(sed -n '/name: Sync QA environment/,/name: Report failure/p' "$YML")"
+  check_contains "the sync step keeps errexit, so its cd stays guarded" \
+    "set -euo pipefail" "$sync_step"
   check_contains "the marker path says QA is in sync, not drifted" \
     "::error::QA is in sync" "$yml"
   check_contains "and points at a file permission rather than a QA drift" \

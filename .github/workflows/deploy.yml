@@ -532,15 +532,23 @@ jobs:
 
       - name: Sync QA environment
         run: |
-          set -uo pipefail
+          # `set -e` stays: dropping it to capture the exit code below left
+          # the `cd` unguarded, which is how a failed cd runs the deploy
+          # against the wrong tree. `|| rc=$?` is a condition context, so it
+          # captures without errexit killing the step first.
+          set -euo pipefail
           cd "$HOME/qa-deploy-src"
           # Capture the code instead of letting it kill the step directly, so
           # the failure step below can tell WHICH failure this was. 78 means
           # "QA is in sync, the deploy marker is not" — see deploy-qa.sh's
           # QA_EXIT_MARKER_STREAK and the failure step's branch.
+          #
+          # Written to a file rather than $GITHUB_ENV: this step exits
+          # non-zero right after, and a plain file needs no assumption about
+          # whether the env file is still processed for a failed step.
           rc=0
           bash infra/supabase-qa/deploy-qa.sh || rc=$?
-          echo "QA_DEPLOY_RC=$rc" >> "$GITHUB_ENV"
+          echo "$rc" > "$RUNNER_TEMP/qa-deploy-rc"
           exit "$rc"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -558,6 +566,7 @@ jobs:
           # every one of those runs rebuilt EVERY app precisely so that a
           # missing marker could never skip one. The operator reads the LAST
           # ::error::, so the accurate one has to be the only one printed.
+          QA_DEPLOY_RC="$(cat "$RUNNER_TEMP/qa-deploy-rc" 2>/dev/null || true)"
           if [ "${QA_DEPLOY_RC:-}" = "78" ]; then
             echo "::error::QA is in sync — but the deploy marker has been unwritable for several runs and is now failing the deploy on purpose."
             echo "QA itself is fine: migrations, seed and every app restart succeeded, and each degraded"

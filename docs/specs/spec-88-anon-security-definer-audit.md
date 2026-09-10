@@ -816,6 +816,15 @@ verdes que no probaban nada. Van al spec porque el patrón se repite, no el bug.
    vacío chocaba con `log()`, que escribe en stdout con todo derecho. De ahí
    los *probes* separados por fichero y por directorio, y que un caso que no
    puede morder se **salte declarándolo** en vez de pasar.
+4. **El arnés de mutación con la estructura de directorios plana.** Los
+   ficheros copiados a un solo directorio hacían que
+   `$HERE/../../.github/workflows/deploy.yml` no resolviera, así que el bloque
+   que asserta contra el workflow **se saltaba** y la suite salía **0** con
+   seis asserts desaparecidos. Tres mutantes salieron «muertos» sin que nada
+   los tocara. Doble arreglo: el árbol de mutación replica el del repo, y un
+   `deploy.yml` ausente es ahora **fallo duro**, no skip — los skips de
+   `chmod` son entornos legítimos, un checkout sin su workflow no lo es.
+
 3. **`QA_EXIT_MARKER_STREAK` sin definir en el test.** `extract()` sólo saca
    funciones, así que la variable no existía; `exit "$QA_EXIT_MARKER_STREAK"`
    tropezaba con `set -u` y salía **1**, y el assert que decía «esperado 1»
@@ -833,29 +842,25 @@ verdes que no probaban nada. Van al spec porque el patrón se repite, no el bug.
 Dos cosas que el propio arreglo introdujo, y que son la misma clase que el
 incidente que lo motivó:
 
-- **La red del arnés no informaba lo suficiente — pero NO mataba en silencio.**
-  La hipótesis era que el trap ERR corre dentro de la redirección del comando
-  que falla, así que su mensaje caería en `$TMP/invoke.out` y el trap EXIT lo
-  borraría. **Medido, y no reproduce**: forzando un abort real, la salida
-  visible es **idéntica** con `>&3` y sin él, en bash 5.2.21 (el VPS y el
-  runner de GitHub) y 5.2.37. El trap no hereda esa redirección. Y sobre el
-  artefacto de ronda 2 ya mergeado, el mutante del `rm` desnudo se caza con
-  una línea `FAIL` bien visible, no en silencio.
+- **La red del arnés mataba en silencio, y el `exec 3>&2` es el arreglo.**
+  Bajo `set -e` una función puede fallar de dos formas, y sólo una mantiene
+  viva la redirección del llamante cuando corre el trap ERR:
 
-  Lo que **sí** faltaba era contenido: ronda 2 imprimía un mensaje fijo, sin
-  el código de salida ni lo que la función había alcanzado a escribir. Eso es
-  lo que se arregla y lo que fija el self-check. El `fd 3` se queda como
-  cinturón y tirantes —cuesta una línea y la interacción entre traps ERR y
-  redirecciones es lo bastante sutil como para dejarla explícita— pero está
-  **anotado como inerte**, y un mutante que lo quite **sobrevive a propósito**:
-  pinchar un mecanismo que no actúa es pinchar ruido.
-- **La escalada a rojo imprimía un diagnóstico falso.** `exit 1` caía en el
-  paso genérico de `deploy.yml`, que dice *«QA is now drifted from main»* —
-  mentira: QA está sincronizado, sólo falló la nota, y las corridas degradadas
-  previas **reconstruyeron todo** precisamente para no saltarse nada. Ahora la
-  escalada sale con **78** y `deploy.yml` imprime la razón verdadera. El rojo
-  sigue bloqueando producción vía spec-57, a conciencia; lo que no puede
-  quedarse es mandar a alguien a buscar una deriva inexistente.
+  | | sin `fd 3` | con `fd 3` |
+  |---|---|---|
+  | **A** — la función hace `return 1` | se ve el mensaje | se ve el mensaje |
+  | **B** — falla un comando **dentro** | **nada** | se ve el mensaje |
+
+  En la forma B el mensaje se va a `$TMP/invoke.out` y el trap EXIT lo borra:
+  rojo y mudo, que es exactamente lo que `on_err()` existe para abolir.
+  Medido en bash 5.2.15, 5.2.21 (el VPS y el runner) y 5.2.37.
+
+  **Y yo declaré esa línea decorativa y la quité, midiéndola con la forma A**
+  — la única que no puede reproducir el fallo. Sobre el artefacto de #732 ya
+  mergeado, el mutante del `rm` desnudo da `>> rc=1` y nada más. El guard
+  vuelve, el self-check falla ahora **en forma B**, y se genera a partir del
+  propio fichero: antes ejecutaba una **réplica** dentro de un heredoc, así
+  que mutar el `harness_abort` de verdad era invisible para él.
 
 Nit de la misma ronda: el barrido de temporales vive ahora **dentro de
 `write_atomic()`**, así que cubre también el temporal del contador
@@ -863,13 +868,26 @@ Nit de la misma ronda: el barrido de temporales vive ahora **dentro de
 no casaba — un byte huérfano para siempre tras un SIGKILL.
 
 Deuda anotada, no pagada: `deploy-qa.sh` está en **898 líneas** y la regla del
-repo son 300. Ya estaba en 813 antes de este incidente, y las tres rondas han
-sumado 85 — casi todo comentario que explica por qué cada guarda existe, que
-es justo lo que evitó reintroducir el bug de #718 dos veces. Partirlo en un
-fichero que `deploy-qa.sh` haga `source` metería **exactamente la clase de
-fallo que este spec lleva tres rondas cazando**: un fichero más que tiene que
-existir, con el dueño correcto, en el VPS. No se hace en caliente; merece su
-propia tarea, con el arnés de tests ya montado como red.
+repo son 300. Ya estaba en 813 antes de este incidente; las rondas han sumado
+85, casi todo comentario que explica por qué existe cada guarda — que es justo
+lo que evitó reintroducir el bug de #718 dos veces.
+
+**La razón que escribí para no partirlo era falsa y la corrijo**, porque un
+motivo equivocado en el spec se convierte en el precedente que bloquea la
+partición para siempre. Dije que un fichero hermano sería «la clase de fallo
+que este spec lleva tres rondas cazando». **No lo es.** El job clona el repo
+en `$HOME/qa-deploy-src` al commit probado y ejecuta desde ahí, así que un
+hermano llega por el mismo `git reset --hard`, con el mismo dueño, en cada
+corrida. El marcador y el directorio de #718 se crearon **a mano y fuera de
+control de versiones** — nada que ver. Y `deploy-qa.sh` **ya depende de tres
+hermanos** en ese árbol: `apply-migrations.sh` (`:268`), `create-qa-users.sh`
+(`:320`) y el `docker-compose.yml` de al lado (`:415`, `:442`). El riesgo ya
+está tomado tres veces y nunca ha sido el modo de fallo.
+
+El motivo real para aplazarlo es más simple: son 85 líneas de forensia de tres
+incidentes, añadidas en caliente, y no hay ninguna razón para reestructurar el
+script de deploy durante el seguimiento de un corte. Merece su propia tarea —
+y ahora se puede hacer con red, que antes no había.
 
 ### Fase 4 — Check automático de ACL huérfana `[pending]`
 
