@@ -396,6 +396,9 @@ jobs:
       - name: Test the QA<->prod parity comparator
         run: node ./scripts/qa-prod-parity-compare.test.mjs
 
+      - name: Test the QA<->prod parity coverage floor
+        run: node ./scripts/qa-prod-parity-coverage.test.mjs
+
       - name: Lint
         run: npx turbo run lint
 

@@ -44,16 +44,41 @@ name: QA <-> production config parity
 # THE ARTIFACT CAN BE MISSING, AND THAT MUST BREAK THE BUILD, NOT PASS IT
 # ---------------------------------------------------------------------------
 # job A's runner has been offline before in this pipeline (see deploy.yml's
-# QA job comments). If it never starts, GitHub leaves it queued and this
-# workflow simply never completes — visible as a stuck run, not a false
-# green. If it starts and fails (or is cancelled) partway, `if: always()` on
-# job B lets it run anyway, and `continue-on-error: true` on the artifact
-# download means a missing artifact does NOT abort job B before the
-# comparator gets to say why. The comparator itself
-# (scripts/qa-prod-parity-compare.mjs) refuses to treat a missing or empty
-# QA measurement as "no divergences" — it exits 3 with an explicit "could
-# not measure" message. See that script's tests for the mutation coverage:
-# an absent artifact must produce red, never green.
+# QA job comments). Two distinct failure shapes, handled differently:
+#
+#   (a) job A STARTS and then fails, is cancelled, or is itself terminated by
+#       GitHub for sitting queued too long. In every one of these cases job A
+#       reaches a terminal state (failure/cancelled), and `if: always()` on
+#       job B (below) is what makes GitHub Actions run job B anyway instead
+#       of skipping it — this is documented `always()` behavior: it runs
+#       regardless of whether upstream `needs:` jobs succeeded, failed, or
+#       were cancelled, and is only itself skipped if the WHOLE WORKFLOW RUN
+#       is cancelled (a human cancelling the run), not just one job in it.
+#       `continue-on-error: true` on the artifact-download step then means a
+#       missing artifact does NOT abort job B before the comparator gets to
+#       say why — it reaches the comparator, which refuses to treat a
+#       missing/empty QA measurement as "no divergences" (exit 3, explicit
+#       "could not measure" message — see that script's mutation tests).
+#
+#   (b) job A never starts at all — no runner ever picks it up. This is the
+#       one case NOT empirically verified against a live run in this
+#       implementation session (doing so would mean deliberately taking the
+#       VPS runner offline against a real dispatch, which this session has
+#       neither the access nor the standing to do without deploying).
+#       Reasoned, not measured: GitHub's own limit on how long a job may sit
+#       queued before being force-failed would still land job A in a
+#       terminal state and trigger case (a) above — but that is a citation
+#       from memory of GitHub's documented behavior, not something this PR
+#       confirmed against this actual workflow. Worst case if that reasoning
+#       is wrong: the run stays queued indefinitely, which is a stuck run,
+#       visible in the Actions tab and by the daily `schedule` never
+#       producing a result — NOT a false green. The non-negotiable this
+#       phase exists to guarantee ("absent measurement never reads as no
+#       divergence") still holds either way; what's unverified is only
+#       whether the failure surfaces within the same run or requires someone
+#       to notice a scheduled run stopped completing. Recommend the
+#       orchestrator confirm case (b) against a real dispatch once this is
+#       merged (e.g. briefly stop the VPS runner before dispatching).
 on:
   workflow_dispatch:
   schedule:

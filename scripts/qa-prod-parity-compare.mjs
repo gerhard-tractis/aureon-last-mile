@@ -52,17 +52,30 @@
  * divergence found". See qa-prod-parity-compare.test.mjs for the mutation
  * tests that pin this down.
  *
+ * THE SECOND GUARD: A COVERAGE FLOOR — review round 1, Bloqueante 2
+ * -----------------------------------------------------------------
+ * "Missing file" isn't the only way to measure nothing. A file that exists,
+ * is non-empty, and STILL produces zero usable facts (a one-byte file, a
+ * file full of comments) used to pass with `matched: 0` — indistinguishable
+ * from a real, clean comparison. EXPECTED_SURFACES names every surface this
+ * guardrail is supposed to see facts about (minus whatever the baseline
+ * explicitly excludes); if either side produced zero facts for a
+ * non-excluded expected surface, that is ALSO "could not measure", not "no
+ * divergence" — same exit code 3 as a missing file, for the same reason.
+ *
  * EXIT CODES
  *   0  every divergence found is declared in the baseline (or there are none)
  *   1  an undeclared divergence exists
  *   2  usage error (bad CLI args) or a malformed baseline
- *   3  a measurement file is missing or empty — parity could not be checked
+ *   3  a measurement file is missing/empty, OR produced zero facts for an
+ *      expected, non-excluded surface — parity could not be checked
  */
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { parseBaseline, KEY_SEP } from './qa-prod-parity-baseline.mjs';
+import { EXPECTED_SURFACES, checkCoverage, summarizeExclusions } from './qa-prod-parity-coverage.mjs';
 
-export { parseBaseline };
+export { parseBaseline, EXPECTED_SURFACES, checkCoverage, summarizeExclusions };
 
 const ABSENT = '<absent>';
 
@@ -99,10 +112,10 @@ function structuredEntries(flatMap) {
 export function compareSurfaces(qaMap, prodMap, baseline) {
   const bySurfaceKey = new Map();
   for (const entry of structuredEntries(qaMap)) {
-    bySurfaceKey.set(entry.surface + entry.key, { surface: entry.surface, key: entry.key });
+    bySurfaceKey.set(entry.surface + KEY_SEP + entry.key, { surface: entry.surface, key: entry.key });
   }
   for (const entry of structuredEntries(prodMap)) {
-    bySurfaceKey.set(entry.surface + entry.key, { surface: entry.surface, key: entry.key });
+    bySurfaceKey.set(entry.surface + KEY_SEP + entry.key, { surface: entry.surface, key: entry.key });
   }
 
   const matched = [];
@@ -158,7 +171,7 @@ function readMeasurementFileOrFail(pathLabel, filePath) {
   return { ok: true, content: readFileSync(filePath, 'utf8') };
 }
 
-export function runCompare({ qaPath, prodPath, baselinePath }) {
+export function runCompare({ qaPath, prodPath, baselinePath, expectedSurfaces = EXPECTED_SURFACES }) {
   const qaRead = readMeasurementFileOrFail('QA', qaPath);
   const prodRead = readMeasurementFileOrFail('production', prodPath);
 
@@ -181,9 +194,28 @@ export function runCompare({ qaPath, prodPath, baselinePath }) {
 
   const qaMap = parseMeasurementFile(qaRead.content);
   const prodMap = parseMeasurementFile(prodRead.content);
+
+  const gaps = checkCoverage(qaMap, prodMap, baseline, expectedSurfaces);
+  if (gaps.length > 0) {
+    const gapList = gaps.map((g) => `${g.surface} (${g.side})`).join(', ');
+    return {
+      exitCode: 3,
+      message:
+        `could not measure QA/production parity — these expected surfaces produced ZERO facts: ${gapList}. ` +
+        'A file that exists but measured nothing is the same failure as a missing file — it is not "no divergence found".',
+    };
+  }
+
   const result = compareSurfaces(qaMap, prodMap, baseline);
+  const exclusions = summarizeExclusions(qaMap, prodMap, baseline);
 
   const lines = [];
+  if (exclusions.length > 0) {
+    lines.push(`excluded surfaces (declared in baseline, never compared):`);
+    for (const e of exclusions) {
+      lines.push(`  - ${e.id}: silenced ${e.qaCount} QA fact(s), ${e.prodCount} production fact(s) — ${e.reason}`);
+    }
+  }
   lines.push(`matched: ${result.matched.length}`);
   lines.push(`accepted divergences (declared in baseline): ${result.acceptedDivergences.length}`);
   for (const d of result.acceptedDivergences) {

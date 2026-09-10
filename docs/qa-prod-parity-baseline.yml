@@ -30,20 +30,25 @@
 # NUNCA de quien construyó este guardarraíl (fase 4) — este fichero sólo
 # aplica lo que la fase 3 ya decidió.
 
+# NOTA sobre las particiones diarias de realtime.messages_* (fila 12 del
+# inventario de fase 1): NO están aquí como excluded_surfaces. Cada fila que
+# el comparador ve tiene surface="realtime_publication" — igual que todas las
+# demás filas de esa superficie — así que una exclusión a nivel de superficie
+# no podría filtrar SÓLO las particiones sin apagar realtime_publication
+# entera. El filtro real vive en el SQL de scripts/measure-qa-surfaces.sh y
+# scripts/measure-prod-surfaces.sh (WHERE NOT (schemaname = 'realtime' AND
+# tablename LIKE 'messages\_%')), a los dos lados. Una entrada aquí habría
+# sido decorativa — no silencia nada porque nunca hay nada que filtrar
+# (review round 1, Menores).
 excluded_surfaces:
   # La fase 1 lo midió explícitamente: producción es el gateway gestionado de
-  # Supabase, no Kong. No hay ningún "kong.yml" de producción con el que
-  # comparar las rutas de QA — la fila entera es no-comparable, no ausente.
+  # Supabase, no Kong. No hay ningún endpoint de producción con el que
+  # comparar las rutas — la fila entera es no-comparable, no ausente. QA SÍ
+  # mide sus rutas de Kong (measure-qa-surfaces.sh) precisamente para que
+  # esta exclusión silencie hechos reales en vez de ser decorativa — el
+  # reporte del comparador dice cuántos.
   - id: kong_routes
-    reason: "producción es el gateway gestionado de Supabase, no Kong — no existe un kong.yml de producción con el que comparar (spec-93 fase 1, fila 11)"
-
-  # measure-prod-surfaces.yml ya filtra estas particiones al leer producción
-  # (WHERE NOT (schemaname = 'realtime' AND tablename LIKE 'messages\_%')). El
-  # lado de QA tiene que aplicar el mismo filtro al medir — declararlo aquí
-  # además documenta la razón y evita que alguien la reintroduzca sin saber
-  # por qué se excluye.
-  - id: realtime_messages_partitions
-    reason: "particiones diarias de realtime.messages — el nombre lleva la fecha y cambia cada día; compararlas seria ruido puro, no señal de divergencia real"
+    reason: "producción es el gateway gestionado de Supabase, no Kong — no existe un endpoint de producción con el que comparar (spec-93 fase 1, fila 11)"
 
 accepted_divergences:
   # Las cinco filas de abajo son las medidas el 2026-09-10 y listadas en el

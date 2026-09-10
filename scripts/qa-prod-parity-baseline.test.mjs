@@ -63,6 +63,57 @@ accepted_divergences:
   assert.equal(entry.uncoveredChangeClass, 'a change to MFA enrollment policy');
 });
 
+// review round 1, Bloqueante 4: `uncovered_change_class` was implemented as
+// required but had no test pinning it down — the reviewer mutated the
+// required-fields list to drop it and zero tests caught it. This is that test.
+test('parseBaseline rejects an accepted_divergences entry missing uncovered_change_class', () => {
+  assert.throws(
+    () =>
+      parseBaseline(`
+accepted_divergences:
+  - surface: auth
+    key: disable_signup
+    qa: "true"
+    production: "false"
+    reason: "declared on purpose"
+`),
+    /uncovered_change_class/i
+  );
+});
+
+// review round 1, Menores: single-quoted values used to survive as the
+// literal string "'true'" (quotes included) and silently never match.
+test('parseBaseline strips single quotes the same way it strips double quotes', () => {
+  const baseline = parseBaseline(`
+excluded_surfaces:
+  - id: kong_routes
+    reason: 'single-quoted reason'
+accepted_divergences:
+  - surface: auth
+    key: disable_signup
+    qa: 'true'
+    production: 'false'
+    reason: 'single-quoted reason'
+    uncovered_change_class: 'single-quoted class'
+`);
+  assert.equal(baseline.excludedSurfaces.get('kong_routes').reason, 'single-quoted reason');
+  const entry = baseline.accepted.get('auth::disable_signup');
+  assert.equal(entry.qa, 'true');
+  assert.equal(entry.production, 'false');
+});
+
+// review round 1, Bloqueante 2: the comparator has to report every
+// exclusion's reason, not just silently skip the surface — that requires
+// the reason to survive parsing, not just the id.
+test('parseBaseline keeps the reason alongside each excluded surface, not just its id', () => {
+  const baseline = parseBaseline(`
+excluded_surfaces:
+  - id: kong_routes
+    reason: "prod is the managed gateway, not Kong"
+`);
+  assert.equal(baseline.excludedSurfaces.get('kong_routes').reason, 'prod is the managed gateway, not Kong');
+});
+
 console.log('');
 console.log(`  ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

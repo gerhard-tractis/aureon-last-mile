@@ -29,10 +29,19 @@ function parseSimpleYaml(text) {
   let currentTopKey = null;
   let currentItem = null;
 
+  // Strips a matching pair of double OR single quotes. Values in this file
+  // are written double-quoted by convention, but a hand-edited single-quoted
+  // value (`qa: 'true'`) used to survive as the literal 4-character string
+  // `'true'` and silently never match anything — a trap in a file people
+  // edit by hand (review round 1, Menores).
   const stripQuotes = (v) => {
     const trimmed = v.trim();
-    if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
-      return trimmed.slice(1, -1);
+    if (trimmed.length >= 2) {
+      const first = trimmed[0];
+      const last = trimmed[trimmed.length - 1];
+      if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+        return trimmed.slice(1, -1);
+      }
     }
     return trimmed;
   };
@@ -74,14 +83,19 @@ function parseSimpleYaml(text) {
 export const KEY_SEP = '::';
 
 /**
- * Returns { excludedSurfaces: Set<string>, accepted: Map<"surface::key", {...}> }.
+ * Returns { excludedSurfaces: Map<string, {id, reason}>, accepted: Map<"surface::key", {...}> }.
  * Throws on any entry missing a required field — an unreadable or
  * under-specified baseline must not silently behave like an empty one.
+ *
+ * excludedSurfaces carries the reason (not just a Set of ids) because the
+ * comparator has to REPORT every exclusion and how many facts it silenced,
+ * every run — an exclusion nobody can see in the output is indistinguishable
+ * from one that silently does nothing (review round 1, Bloqueante 2).
  */
 export function parseBaseline(yamlText) {
   const raw = yamlText.trim() === '' ? {} : parseSimpleYaml(yamlText);
 
-  const excludedSurfaces = new Set();
+  const excludedSurfaces = new Map();
   for (const entry of raw.excluded_surfaces || []) {
     if (!entry || !entry.id) {
       throw new Error('excluded_surfaces entry is missing "id"');
@@ -89,7 +103,7 @@ export function parseBaseline(yamlText) {
     if (!entry.reason || String(entry.reason).trim() === '') {
       throw new Error(`excluded_surfaces entry "${entry.id}" is missing a reason`);
     }
-    excludedSurfaces.add(entry.id);
+    excludedSurfaces.set(entry.id, { id: entry.id, reason: String(entry.reason) });
   }
 
   const accepted = new Map();
