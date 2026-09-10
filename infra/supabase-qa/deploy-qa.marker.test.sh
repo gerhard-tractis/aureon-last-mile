@@ -28,7 +28,8 @@
 #   1. A deploy whose every real step passed must not die because a note
 #      could not be saved.
 #   2. Degrading must go in the SAFE direction. A run that cannot record the
-#      marker leaves the next run with NO baseline, which rebuilds every app.
+#      marker falls back to whatever marker an earlier run left — or, if
+#      there never was one, to no baseline at all, which rebuilds every app.
 #      The first cut of this fell back to the checkout's HEAD instead, which
 #      re-created the exact stale-baseline bug ronda 6 exists to remove — see
 #      read_qa_prev_sha()'s comment and deploy-qa.drift.test.sh.
@@ -73,7 +74,6 @@ extract() { sed -n "/^$1() {/,/^}/p" "$HERE/deploy-qa.sh"; }
 # shellcheck disable=SC1091
 . "$TMP/fns.sh"
 
-QA_DEGRADED_MAX=3
 # Read from the script rather than retyped, so the test cannot drift from it
 # — and so it is DEFINED at all. extract() pulls functions only, so this was
 # unset on the first pass: `exit "$QA_EXIT_MARKER_STREAK"` then tripped
@@ -82,6 +82,15 @@ QA_DEGRADED_MAX=3
 QA_EXIT_MARKER_STREAK="$(grep '^QA_EXIT_MARKER_STREAK=' "$HERE/deploy-qa.sh" | head -1 | cut -d= -f2)"
 if [ -z "$QA_EXIT_MARKER_STREAK" ]; then
   echo "  FAIL could not read QA_EXIT_MARKER_STREAK from deploy-qa.sh"; exit 1
+fi
+
+# Same reasoning: hardcoding 3 here left the script's own default free to
+# drift away from what this suite actually exercises (measured — mutating
+# the script's `:-3` to `:-99` left every assert below unchanged, since none
+# of them read the script's default).
+QA_DEGRADED_MAX="$(grep '^QA_DEGRADED_MAX="\${QA_DEGRADED_MAX:-' "$HERE/deploy-qa.sh" | head -1 | sed 's/.*:-\([0-9]*\)}".*/\1/')"
+if [ -z "$QA_DEGRADED_MAX" ]; then
+  echo "  FAIL could not read QA_DEGRADED_MAX's default from deploy-qa.sh"; exit 1
 fi
 
 # ── Run the function the way main() does, or the net catches nothing ────────
@@ -259,9 +268,21 @@ else
   check_eq "keeps the ::warning:: off block-buffered stdout" "clean" "$stdout_verdict"
   check_contains "points at file ownership, the cause both times this bit" \
     "owned by the wrong user" "$invoke_out"
-  check_contains "promises a full rebuild, not an inherited baseline" \
-    "rebuilds every app" "$invoke_out"
-  check_eq "leaves no stray temp file behind when the write is impossible" "" "$(ls -A "$TMP/rodir")"
+  # NOT "rebuilds every app" unconditionally — that was true only when no
+  # marker had ever existed. A run whose WRITE fails leaves any PRIOR marker
+  # on disk untouched (write_atomic only ever fails before the rename), so
+  # the next run's read_qa_prev_sha() still finds it and diffs from it —
+  # a full rebuild happens only when there was never a marker to fall back
+  # to. See the persistence case below, which is the scenario that made the
+  # old wording false.
+  check_contains "promises the last recorded marker as the fallback, not the checkout's HEAD" \
+    "falls back to the last recorded marker" "$invoke_out"
+  # deploy.yml promises the log "names the marker path, its owner and the
+  # exact chown" — tie this to the actual ls -ld output rather than just the
+  # surrounding prose, or deleting that line survives every other assert here.
+  rodir_listing="$(ls -ld "$TMP/rodir" 2>&1 || true)"
+  check_contains "prints the marker directory's actual permissions/owner (ls -ld), not just a path" \
+    "$rodir_listing" "$invoke_out"
   check_contains "admits it cannot escalate when the counter is unwritable too" \
     "cannot escalate" "$invoke_out"
   # The failure path must not spray tool errors of its own into the log.
@@ -278,6 +299,44 @@ else
   check_eq "keeps tool noise out of the degraded-run log" "quiet" "$sweep_verdict"
   QA_DEGRADED_FILE="$rodir_saved_counter"
 fi
+
+# ── A write failure does not erase a marker an EARLIER run recorded ────────
+# The message above promises the next run falls back to the last recorded
+# marker rather than having no baseline at all. That is only true if a write
+# failure leaves a PRIOR marker on disk untouched — provable without chmod
+# (not enforced on every OS this suite runs on) by blocking write_atomic's
+# own temp path with a directory: `mv -f tmp path` never runs, so `path`
+# cannot have been touched by this failed attempt.
+mkdir -p "$TMP/persist"
+QA_SYNCED_SHA="$SHA_A" DEPLOY_SHA="$SHA_A" invoke "$TMP/persist/marker"
+check_eq "a marker written by an earlier successful run is there to begin with" \
+  "$SHA_A" "$(cat "$TMP/persist/marker")"
+mkdir -p "$TMP/persist/marker.tmp.$$"
+QA_SYNCED_SHA="$SHA_B" DEPLOY_SHA="$SHA_B" invoke "$TMP/persist/marker"
+check_contains "this later run's write is reported as failed" \
+  "could not write the deploy marker" "$invoke_out"
+check_eq "and the earlier marker survives — the next run reads THAT, not no baseline" \
+  "$SHA_A" "$(cat "$TMP/persist/marker")"
+# This is the wording assert that matters, and it must not live only in the
+# chmod-555 block above — that block is SKIPPED on any OS/user where
+# directory permissions are not enforced (Git Bash, root), which would leave
+# a false claim in the operator-facing message uncaught on exactly those
+# hosts. This scenario needs no chmod at all.
+check_contains "promises the last recorded marker as the fallback, not the checkout's HEAD" \
+  "falls back to the last recorded marker" "$invoke_out"
+# Same reasoning as the wording assert above: the ls -ld check also lived
+# only in the chmod-555 block, which skips on any host that does not enforce
+# directory permissions. This scenario fails the write for a different
+# reason but still runs the same ls -ld lines, so it is a portable place to
+# pin deploy.yml's promise that the log "names the marker path, its owner
+# and the exact chown."
+# The marker FILE itself, not just its directory — the scenario this test
+# builds leaves an existing, readable marker behind, so `ls -ld` on the
+# marker path succeeds and prints something real, not "No such file".
+persist_marker_listing="$(ls -ld "$TMP/persist/marker" 2>&1 || true)"
+check_contains "prints the marker file's actual permissions/owner (ls -ld)" \
+  "$persist_marker_listing" "$invoke_out"
+rmdir "$TMP/persist/marker.tmp.$$"
 
 # ── The marker path is a directory ──────────────────────────────────────────
 # `mv -f file dir` moves the file INSIDE dir and exits 0. Without the guard
@@ -403,7 +462,15 @@ echo "the harness itself"
 # replica untouched, so the self-check stayed green while the thing it
 # claims to protect was gone. The child is now generated from THIS file:
 # the same `exec 3>&2` and the same harness_abort, extracted verbatim.
-real_fd3="$(grep '^exec 3>&2$' "$0")"
+# `|| true`: errexit is still live here (only the ERR trap was removed
+# above, not `set -eE` from line 99) — grep exits 1 on no match, and an
+# unguarded assignment would kill the suite before this block's own asserts
+# run. Measured: deleting `exec 3>&2` from this file made grep find nothing,
+# and the whole suite died with zero FAILs printed — mute in exactly the
+# shape this file exists to abolish.
+real_fd3="$(grep '^exec 3>&2$' "$0" || true)"
+check_eq "the harness still dups the real stderr before invoke() redirects" \
+  "exec 3>&2" "$real_fd3"
 real_abort="$(awk '/^harness_abort\(\) \{/{f=1} f{print} f&&/^\}/{exit}' "$0")"
 check_eq "the harness is defined once, so the self-check cannot test a copy" \
   "1" "$(grep -c '^harness_abort() {' "$0")"
@@ -413,7 +480,16 @@ check_eq "the harness is defined once, so the self-check cannot test a copy" \
   echo 'mkdir -p "$TMP"'
   echo "$real_fd3"
   echo "$real_abort"
-  echo "trap '\'harness_abort \$?\' ERR"
+  # NOT `echo "trap '\'harness_abort \$?\' ERR"` — inside a double-quoted
+  # echo, `\'` is not an escape, so that emitted the literal 6 characters
+  # `'\'` followed by `harness_abort $?\'`, which bash then tokenizes as
+  # `trap \harness_abort "0'" ERR`: an invalid signal spec ("0'") that
+  # trap rejects, alongside a valid one ("ERR") that DOES get installed —
+  # but bound to the bare word `harness_abort`, with no `$?` argument.
+  # Measured: the child's trap fires with $1 empty, not the real exit
+  # status. Single-quote the whole trap command instead; `\$?` is a real
+  # escape inside double quotes, so this leaves `harness_abort $?` intact.
+  echo "trap 'harness_abort \$?' ERR"
   # FORM B: a command fails INSIDE the function. A `return 1` here would
   # tear the redirection down first and prove nothing.
   echo 'record_deploy_marker() { echo "some output first"; rm /nonexistent/nope 2>/dev/null; }'
@@ -425,6 +501,13 @@ check_eq "the harness is defined once, so the self-check cannot test a copy" \
 sc_out="$(bash "$TMP/selfcheck.sh" "$TMP/scdir" 2>&1 || true)"
 check_contains "an abort is reported, not swallowed by invoke() redirection" \
   "aborted the deploy" "$sc_out"
+# `rm /nonexistent/nope` exits 1; harness_abort's $1 must be THAT status, not
+# empty. A mutant dropping `$?` from the trap's action (`trap 'harness_abort $?' ERR`
+# -> `trap 'harness_abort' ERR`) survived every other assert here — $1 is
+# simply unset inside harness_abort, `$1` in its own message expands to
+# empty, and "aborted the deploy (exit )" still contains "aborted the deploy".
+check_contains "and reports the exit status that actually tripped errexit" \
+  "aborted the deploy (exit 1)" "$sc_out"
 check_contains "and the reason reaches the reader with the output that preceded it" \
   "some output first" "$sc_out"
 case "$sc_out" in
