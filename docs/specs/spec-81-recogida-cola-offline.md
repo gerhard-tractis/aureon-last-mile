@@ -1302,7 +1302,31 @@ Redacción del handoff: «se guardan en el dispositivo y se envían solos…». 
       versión anterior de la app y a dónde ir (Recogida, la carga con algo
       bloqueado) — nunca inventa un identificador navegable que no existe.
 
-### Fase 5 — Fotos `[in_progress]`
+### Fase 5 — Fotos `[done]`
+
+> Implementado por: implementer — rama `feat/spec-81-fase-5-fotos-offline`, SHA `265ff9c` (PR #712, mergeado como `271884b`).
+> Review: reviewer — **cinco rondas**. Los tres que cambiaron el resultado: una SELECT de verificación fallida por red **borraba el objeto que respaldaba una fila viva**; `uploaded_by` viajaba en el payload y chocaba con `auth.uid()` en la RLS cuando otro conductor drenaba; y una colisión de `sheet_number` mataba el manifiesto entero sin salida.
+> QA: PR #712 merged 2026-09-09T19:05Z, CI verde. **`e2e-qa` no ejercita la cola offline** (necesita un dispositivo sin red); el límite de `fake-indexeddb` con `Blob` real queda declarado como ítem de hardware.
+> Downstream: revisado spec-80 fase 4 — coordinado, ambos párrafos conservados. Revisado spec-80 fase 6 — **la creó este trabajo**: `enqueueManifestPhoto` existe y **no tiene ningún llamador de producción**.
+
+**La decisión de producto que desbloqueó esto, y su razón.** Una colisión de
+número de hoja dejaba la entrada en `dead`, y `manifestHasDeadEntry` bloqueaba
+**también el `close_manifest`** de la carga — sin que ningún código pudiera
+deshacerlo. Se decidió que **una foto es respaldo, no conteo**: su pérdida no
+falsea la cifra que el cliente firma, así que una `manifest_photo` muerta **ya
+no envenena el FIFO del manifiesto**. Y la colisión **renumera en vez de
+morir**, contra el servidor y contra la cola local. **Pero sigue contándose
+como bloqueada** — la regla del módulo es que todo lo que no salió se ve.
+
+**Una corrección de honestidad que quedó escrita:** `uploaded_by` registra
+**quién SUBIÓ, no quién capturó**. En una entrega cross-user son personas
+distintas, y «quién capturó» **no se persiste**. El bullet original afirmaba
+cerrar ese hueco y no lo cierra.
+
+**Hueco heredado:** `fake-indexeddb` **no hace round-trip de un `Blob` real**
+—devuelve `{}` y pierde `.size`—, así que el tope por tamaño está probado
+contra un duck-type. Sólo lo cierra una prueba en dispositivo real.
+
 
 **Depende de:** spec-80 fase 3 (`useUploadManifestDocument`/`ManifestPhotoStrip`, mergeada — es el hueco que esta fase cierra, declarado explícitamente en `complete/[loadId]/page.tsx`)
 

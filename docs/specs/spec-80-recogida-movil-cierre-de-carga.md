@@ -906,7 +906,31 @@ CREATE TABLE public.manifest_documents (
 > hasta que esa conexión se haga, en esta fase o en la que toque después
 > `ManifestPhotoStrip.tsx`.
 
-### Fase 4 — `5g`/`5h` cámara y revisión `[in_progress]`
+### Fase 4 — `5g`/`5h` cámara y revisión `[done]`
+
+> Implementado por: implementer — rama `feat/spec-80-fase-4-camara-revision`, SHA `73c0637` (PR #713, mergeado como `01ba23b`).
+> Review: reviewer — **cuatro rondas**. Los dos que cambiaron el resultado: el obturador disparaba antes de existir el stream y producía un JPEG negro de 1,5 MB (`video.videoWidth || 1080` convertía «sin señal» en un lienzo válido), y `open={false}` apagaba la cámara pero dejaba el overlay `fixed inset-0` con `aria-modal` tapando la PWA entera.
+> QA: PR #713 merged 2026-09-09T19:20Z, CI verde. **`e2e-qa` no cubre esta superficie** (es cámara en dispositivo) — la verificación en hardware sigue abierta, ver abajo.
+> Downstream: revisado spec-81 fase 5 — sin cambios; el conflicto de coordinación se resolvió conservando ambos párrafos. Revisado spec-80 fase 6 — **la creó este trabajo**: `5g`/`5h` se entregan sin cablear a propósito.
+
+**El arreglo que cerró M-A vale como regla, no como parche.** El guard original
+miraba `videoWidth === 0` para detectar una pista muerta, y **un navegador real
+nunca pone eso a cero**: el `<video>` se queda congelado con el último frame.
+Así que el obturador seguía activo y la foto que salía era **plausible** —
+posiblemente de la hoja anterior, guardada como la siguiente. Se sustituyó por
+`isVideoReady(video, track)`, **una sola función usada tanto para habilitar
+como para deshabilitar**, escuchando `ended`/`mute`/`unmute` y
+`visibilitychange`. Ninguna transición puede quedarse coja, ni las que alguien
+añada mañana.
+
+**Queda `awaiting_user_test` — sólo lo cierra una persona con el teléfono:**
+fotografiar una hoja A4 firmada a distancia de brazo y **comparar el visor con
+lo que sale en `5h`** (el `<video>` va con `object-cover`, que **recorta**: las
+guías de esquina pueden mentir sobre lo que entra en el JPEG); bloquear la
+pantalla o abrir otra app y volver, confirmando que el visor se reanuda **y el
+obturador vuelve a estar activo**; revocar el permiso con `5g` abierta; y el
+LED de la cámara tras cerrar.
+
 
 **Archivos:** `components/pickup/ManifestCameraSheet.tsx`, `components/pickup/PhotoReviewSheet.tsx`
 
@@ -1053,7 +1077,30 @@ El mock dice «expo-camera», que es la app Expo dormida (`apps/mobile`, ver `ls
 >   baja), pero la documentación promete menos de lo que el código hace.
 >   Cierre si algún día importa: `?? (tieneExtensión ? null : 'image/jpeg')`.
 
-### Fase 5 — `5i` carga cerrada `[in_progress]`
+### Fase 5 — `5i` carga cerrada `[done]`
+
+> Implementado por: implementer — rama `feat/spec-80-fase-5-carga-cerrada`, SHA `1a1b63d` (PR #726, mergeado como `b4a0137`), más el seguimiento en `feat/spec-80-fase-5-carga-cerrada-seguimiento`, SHA `f0f6159` (PR #728, `6c38d60`).
+> Review: reviewer — **dos rondas más un seguimiento**. El hallazgo que cambió el resultado: **las seis cifras del acta podían sustituirse por constantes con los 23 tests en verde**, e intercambiar «Faltantes» y «Ajenos» también pasaba — los tests buscaban los números sueltos en toda la pantalla, sin anclar a su fila.
+> QA: PRs #726 y #728 merged, CI verde en ambos. **`e2e-qa` no ejercita esta pantalla**; la comprobación contra la base queda abajo.
+> Downstream: revisado spec-81 fase 4 — la reversión del bloque «Guardado en el teléfono» **eliminó una colisión** que existía entre las dos ramas.
+
+**Dos correcciones que importan más que el diff.** El cliente contaba
+`Verificados` por **filas de escaneo** y el servidor por **paquetes distintos**
+(`COUNT(DISTINCT ps.package_id)`); con dos miembros de cuadrilla escaneando el
+mismo bulto sin señal —cosa que nada impide, porque el índice único va por
+`client_operation_id`— la pantalla decía 40 y el servidor registraba 39. **El
+conductor le habría enseñado al cliente una cifra que el servidor contradice.**
+Y el bloque «Guardado en el teléfono» prometía «0 fotos esperan señal» de forma
+**estructural** —nada encola fotos todavía— justo donde el operario querría
+saber si su evidencia fotográfica está a salvo: se **quitó**, no se maquilló.
+
+**Queda `awaiting_user_test`:** cerrar una carga con faltantes e inesperados
+reales y **contrastar las cuatro filas de `5i` contra `psql`** sobre el
+manifiesto; y pulsar «Volver a mis recogidas» **en menos de 10 segundos**, para
+ver si la carga recién cerrada reaparece como «Siguiente manifiesto ·
+Verificar» (pasados 10 s el síntoma se cura solo por `staleTime`, así que hay
+que ir rápido a propósito).
+
 
 > **Decisión del usuario (2026-09-09) sobre «Ver resumen de la carga».** El
 > mock dibuja ese texto pero no dice a dónde lleva, y no existe ninguna
