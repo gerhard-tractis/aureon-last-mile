@@ -325,10 +325,16 @@ tomada al tocar "DESCARGAR"; si el manifiesto cambia en el servidor después
 hasta que alguien vuelva a tocar "DESCARGAR" con señal. Es la misma
 honestidad que ya tiene `5d` para el trabajo pendiente: mejor una carga
 descargada visiblemente vieja que ninguna carga descargable. Cerrar el
-manifiesto (`close_manifest`, ya en la cola de spec-81) no borra la fila —
-no hay señal de que limpiar el caché ayude más que dejarlo, y purgarlo son
-bytes, no un IndexedDB que se llena solo (ver `checkStorageQuota` en
-`lib/db.ts`, que ya barre lo viejo).
+manifiesto (`close_manifest`, ya en la cola de spec-81) no borra la fila.
+
+**Corrección (revisión de fase 2, menor):** este párrafo decía que
+`checkStorageQuota` (`lib/db.ts`) "ya barre lo viejo" de `manifest_cache`.
+Es falso — verificado en el código: `checkStorageQuota` sólo llama a
+`clearOldSynced`, que sólo toca `scan_queue`. **Nada purga jamás una fila
+de `manifest_cache`** hoy. No hay señal de que limpiar el caché ayude más
+que dejarlo — son bytes, no filas que crezcan sin límite (una por carga
+alguna vez descargada) — así que se acepta como gap conocido, no como
+"ya cubierto por otra cosa".
 
 **Estado de "descargando" nunca se persiste.** La descarga es una mutación
 de React Query (`useDownloadManifest`), no una fila con `status:

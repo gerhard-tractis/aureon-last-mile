@@ -164,7 +164,10 @@ export default function ActiveRoutePage() {
   const handleDownload = (_manifestId: string, externalLoadId: string) => {
     downloadMut.mutate(externalLoadId, {
       onSuccess: () => toast.success(`${externalLoadId} descargada para trabajar sin red`),
-      onError: (err) => toast.error(err.message),
+      // Menor, revisión de fase 2 — no repetir el mensaje crudo de
+      // PostgREST (códigos, nombres de columna/constraint) al operario;
+      // no le ayuda a decidir nada y expone detalles internos.
+      onError: () => toast.error(`No se pudo descargar ${externalLoadId}. Inténtalo de nuevo.`),
     });
   };
   const downloadingManifestId = downloadMut.isPending

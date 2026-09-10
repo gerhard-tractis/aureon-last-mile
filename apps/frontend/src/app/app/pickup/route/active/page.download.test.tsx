@@ -78,7 +78,8 @@ vi.mock('@/hooks/pickup/useManifestDownload', () => ({
   },
 }));
 
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+const toastError = vi.fn();
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: (...args: unknown[]) => toastError(...args) } }));
 
 import Page from './page';
 
@@ -141,6 +142,29 @@ describe('ActiveRoutePage — DESCARGAR wiring', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ver el manifiesto' }));
     fireEvent.click(screen.getByRole('button', { name: /descargar load-1/i }));
     expect(downloadMutate).toHaveBeenCalledWith('LOAD-1', expect.anything());
+  });
+
+  // Menor, revisión de fase 2 — un fallo de descarga no debe enseñarle al
+  // operario el mensaje crudo de PostgREST (códigos, nombres de columna,
+  // detalles internos). handleDownload pasa su propio onError a
+  // downloadMutate.mutate; lo invocamos aquí directamente para probarlo
+  // sin tener que fingir un rechazo real de Supabase.
+  it('shows a friendly message, not the raw error, when the download fails', async () => {
+    downloadedIdsMock.mockReturnValue({ data: new Set<string>() });
+    wrap(<Page />);
+    await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Ver el manifiesto' }));
+    fireEvent.click(screen.getByRole('button', { name: /descargar load-1/i }));
+
+    const [, handlers] = downloadMutate.mock.calls[0] as [
+      string,
+      { onError: (err: Error) => void },
+    ];
+    handlers.onError(new Error('duplicate key value violates unique constraint "pk_manifests"'));
+
+    expect(toastError).toHaveBeenCalledWith(
+      expect.not.stringMatching(/constraint|violates|pk_manifests/i),
+    );
   });
 
   // M4, revisión de fase 2 — el seam real: `page.tsx` tiene que pasar el
