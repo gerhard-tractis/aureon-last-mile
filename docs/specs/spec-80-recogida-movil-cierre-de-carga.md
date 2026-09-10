@@ -625,7 +625,7 @@ ManifestsAvailabilityNotice.tsx` + test (nuevo, estado loading/unknown/error/kno
 en `splitLoads`), `apps/frontend/src/lib/pickup/pickupPageHelpers.ts` + test
 (`manifestsAvailability`, `rescueRowsFromCompleted`), `apps/frontend/src/app/app/pickup/page.tsx` +
 test (wiring: `onOpenRescueManifest` → `review/[loadId]`, `rescueManifests`, `rescueAvailability`),
-migración `packages/database/supabase/migrations/20261002000001_spec80_fase2b_completed_manifests_signature.sql`
+migración `packages/database/supabase/migrations/20261004000001_spec80_fase2b_completed_manifests_signature.sql`
 + test pgTAP (`get_completed_manifests` gana `signature_operator`).
 
 > El PR #682 (spec-82 fase 1) ya mergeó (`2026-09-08T17:16:39Z`) — la única dependencia que
@@ -729,7 +729,7 @@ render).
 > como defensa en profundidad barata — ver el doc-comment del archivo) a `PickupMobileView.tsx`,
 > en la rama sin-ruta, visible tanto a un líder sin ruta (3j) como a un picker (no-route), porque
 > `get_completed_manifests` (ahora con `signature_operator` añadido, migración
-> `20261002000001_spec80_fase2b_completed_manifests_signature.sql`, `CREATE OR REPLACE` sobre la
+> `20261004000001_spec80_fase2b_completed_manifests_signature.sql`, `CREATE OR REPLACE` sobre la
 > última definición vigente — `20260917000002`, spec-83) es de ámbito operador y no depende de qué
 > ruta esté abierta. `rescueRowsFromCompleted` (`pickupPageHelpers.ts`) filtra y mapea esas filas a
 > la forma `RouteManifestRow` que `PickupMobileCompactRow`/`RescueManifestsSection` ya sabían
@@ -774,7 +774,7 @@ render).
 > producto fuera del alcance de esta fase.
 >
 > Archivos nuevos/tocados en esta ronda, además de los ya listados arriba:
-> `packages/database/supabase/migrations/20261002000001_spec80_fase2b_completed_manifests_signature.sql`,
+> `packages/database/supabase/migrations/20261004000001_spec80_fase2b_completed_manifests_signature.sql`,
 > `packages/database/supabase/tests/spec80_fase2b_completed_manifests_signature.test.sql`,
 > `apps/frontend/src/hooks/pickup/useManifests.ts` (`CompletedManifest.signature_operator`),
 > `apps/frontend/src/components/pickup/RescueManifestsSection.tsx` + test (nuevo, extraído de la
@@ -815,7 +815,7 @@ render).
 > 2. **Ventana de 30 días** sobre `completed_at`, cinturón adicional: aunque la pertenencia ya
 >    acote, el histórico legado no debe reaparecer nunca.
 >
-> Nuevo RPC `get_signature_rescue_manifests()` (migración `20261003000001`, plantilla: el patrón
+> Nuevo RPC `get_signature_rescue_manifests()` (migración `20261005000001`, plantilla: el patrón
 > "driver OR crew" de `get_my_active_pickup_route`, `20260820000005`, el único RPC existente que ya
 > resuelve "¿está este usuario en esta ruta?"), nuevo hook `useSignatureRescueManifests` — **no**
 > reutiliza `useCompletedManifests`. `rescueRowsFromCompleted` se mantiene igual (mapeo puro,
@@ -846,7 +846,7 @@ render).
 > comprueban que el `refetch` correcto se invoca.
 >
 > **Menores:**
-> - La migración `20261002000001` (ronda 2) había perdido, al reescribir sobre la plantilla de
+> - La migración `20261004000001` (ronda 2) había perdido, al reescribir sobre la plantilla de
 >   spec-83, tres comentarios que esa plantilla marcaba como necesarios para que nadie los borre
 >   por "redundantes": el aviso de "defense in depth, not load-bearing" sobre `d.operator_id`, el
 >   de "redundante por `discrepancy_source_matches_operation`", y la justificación de
@@ -865,9 +865,9 @@ render).
 >   stderr se descarta) quedan fuera de esta fase — el orquestador los despacha aparte.
 >
 > **Archivos nuevos/tocados en esta ronda:**
-> `packages/database/supabase/migrations/20261003000001_spec80_fase2b_signature_rescue_manifests.sql`
+> `packages/database/supabase/migrations/20261005000001_spec80_fase2b_signature_rescue_manifests.sql`
 > (nuevo RPC), `packages/database/supabase/tests/spec80_fase2b_signature_rescue_manifests.test.sql`
-> (nuevo, 6/6), `packages/database/supabase/migrations/20261002000001_...` (comentarios restaurados,
+> (nuevo, 6/6), `packages/database/supabase/migrations/20261004000001_...` (comentarios restaurados,
 > mismo SQL), `apps/frontend/src/hooks/pickup/useManifests.ts`+test (`useSignatureRescueManifests`),
 > `apps/frontend/src/app/app/pickup/page.tsx`+test (fuente de datos nueva, `onRetryRescue`, sección
 > visible con ruta activa), `apps/frontend/src/components/pickup/PickupMobileView.tsx`+test
@@ -912,7 +912,7 @@ render).
 >   objeción que hacer.
 > - **`useManifests.ts:100`** decía «measured in QA: 40 six-month-old closures» — no fue QA, fue
 >   un fixture sintético en el contenedor pgTAP local. Corregido ahí y en el comentario equivalente
->   de la migración `20261003000001` (comentarios de cabecera del script, fuera del cuerpo `$$` —
+>   de la migración `20261005000001` (comentarios de cabecera del script, fuera del cuerpo `$$` —
 >   no tocan `prosrc`).
 > - **Riesgo futuro declarado, no resuelto:** si una fase futura añade "quitar a un picker de la
 >   cuadrilla a mitad de ruta" como un `removed_at` manual (distinto del automático que
@@ -920,19 +920,19 @@ render).
 >   seguiría dándole el rescate — `c.deleted_at IS NULL` sólo cubre el borrado suave de la fila.
 >   Una línea de comentario en la migración deja la trampa escrita para quien construya esa fase.
 >
-> **Norma aplicada, no retroactiva:** la ronda 3 editó `20261002000001` (comentarios dentro del
+> **Norma aplicada, no retroactiva:** la ronda 3 editó `20261004000001` (comentarios dentro del
 > cuerpo `$$`, cambiando `prosrc`) para reponer comentarios perdidos — inocuo porque esa migración
 > nunca se aplicó fuera de este contenedor local (no mergeada), pero mientras el bug del harness
 > (`apply` salta por nombre de migración, no por contenido — #740) siga sin mergear, cualquier
 > entorno que YA la hubiera aplicado se saltaría el cambio sin verlo. Confirmado como norma para
 > este PR en adelante: lo que toca una migración **ya mergeada/aplicada en algún entorno** va en
-> una migración nueva, nunca editando la existente. `20261002000001` y `20261003000001` siguen
+> una migración nueva, nunca editando la existente. `20261004000001` y `20261005000001` siguen
 > siendo ediciones directas legítimas en esta ronda porque ninguna de las dos ha mergeado a `main`
 > todavía — no se deshace lo ya hecho, sólo se declara la regla para lo que sigue.
 >
 > **Archivos tocados en esta ronda:** `packages/database/supabase/tests/spec80_fase2b_signature_
 > rescue_manifests.test.sql` (fixture M9/R9 corregido), `packages/database/supabase/migrations/
-> 20261003000001_...` (comentario de riesgo futuro + wording "measured in QA" corregido, ambos
+> 20261005000001_...` (comentario de riesgo futuro + wording "measured in QA" corregido, ambos
 > ediciones directas — la migración no ha mergeado), `apps/frontend/src/hooks/pickup/useManifests.ts`
 > (wording corregido), `apps/frontend/src/components/pickup/PickupMobileActiveRoute.tsx`+test
 > (reposicionado; test nuevo que pinea `CERRADAS`).
