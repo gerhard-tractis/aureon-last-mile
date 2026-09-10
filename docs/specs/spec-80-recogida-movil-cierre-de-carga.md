@@ -2,7 +2,7 @@
 
 > **Related:** [spec-81](spec-81-recogida-cola-offline.md) (la cola que cumple el «SIN RED» que estas pantallas prometen), [spec-82](spec-82-recogida-movil-asignacion-y-ruta.md) (`5b`/`5c`, lo que precede a este cierre), [spec-83](spec-83-recogida-escritorio-datos-faltantes.md) (escritorio `5a`), [spec-54](spec-54-ui-rebrand.md) (rebranding; su fase 4.4 cubrió sólo el escritorio de Recogida), [spec-47](spec-47-pickup-route-and-consolidated-reception.md) (**introdujo la regresión que este spec cierra**), [spec-19](spec-19-pickup-visual-polish.md) (dueño actual de la pantalla de Firma), [spec-55](spec-55-carton-expansion.md) (bultos generados que cuentan como verificables)
 
-**Status:** in progress
+**Status:** awaiting_user_test — las nueve fases `[done]`; queda la verificación de cámara en dispositivo real, que es de una persona
 **Verify:** unit, sql, e2e-qa
 **Downstream:** spec-81-recogida-cola-offline.md, spec-82-recogida-movil-asignacion-y-ruta.md, spec-83-recogida-escritorio-datos-faltantes.md, spec-84-movil-conductor-home-y-prueba-de-entrega.md, spec-86-discrepancias-de-recepcion.md
 
@@ -1607,7 +1607,17 @@ Releído cada spec downstream contra lo que **realmente** se mergeó en esta fas
   hereda esta misma decisión** — si la evidencia necesita ser literalmente inmutable
   (no sólo auditada), ese spec necesita un RPC, no este patrón.
 
-### Fase 6 — cablear `5g`/`5h` a `ManifestPhotoStrip` (que «Las fotos también» sea verdad) `[in_progress]`
+### Fase 6 — cablear `5g`/`5h` a `ManifestPhotoStrip` (que «Las fotos también» sea verdad) `[done]`
+
+> Implementado por: `implementer` — rama `feat/spec-80-fase-6-cablear-fotos`, SHA `bc2e93c`, PR #736 (mergeado como `f83d9fd`); más el seguimiento en `fix/spec-80-fase-6-seguimiento`, SHA `1a52876`, PR #743.
+> Review: `reviewer` adversarial, **cuatro rondas en #736 y dos en #743**. Las que cambiaron el resultado: la tira leía una query pausada por `networkMode:'online'` como si el servidor hubiera dicho «cero» (`data: undefined` + `= []`), y la pantalla de cierre afirmaba «Respaldo: 0 fotos» sobre fotos vivas en IndexedDB. En #743, el mutante que pasa `loadId` donde va `manifestId` **sobrevivía 30/30** porque el test mockeaba el hook sin mirar nunca sus argumentos.
+> QA: PRs #736 y #743 merged, CI verde en ambos. **`e2e-qa` no cubre esta superficie** — es cámara en dispositivo; la verificación en hardware sigue abierta y es de una persona.
+> Downstream: revisado spec-81 y spec-82 — sin cambios. La decisión de producto nueva (servidor desconocido ⇒ la fila no afirma un número) queda escrita arriba, no en comentarios de código.
+
+**Por qué existió esta fase, que es la lección:** se afirmó que las fotos «también» estaban cableadas y que faltaba «un prop de distancia». Era falso — `enqueueManifestPhoto` tenía **cero llamadores en producción**, verificado con `git log --follow` y grep. Y la fase 5 (#726) había declarado como deuda en el spec que el contador de fotos sería «estructuralmente 0» **porque no había llamador**; esta fase le puso el llamador y **nadie revisó la premisa**. Por eso el seguimiento de #743 se arregló en vez de declararse: una deuda escrita que nadie revisa es cómo nace la fase siguiente.
+
+**Hueco abierto y declarado, que vale para las dos fases:** ningún test del repo comprueba la **premisa sobre TanStack Query** — que con `networkMode:'online'` una query pausada o en error dé de verdad `data: undefined`. Los tests se lo dan a mano. Si ese comportamiento por defecto cambiara, seguirían todos en verde y la pantalla volvería a decir «0 fotos».
+
 
 **Por qué existe esta fase y no un párrafo suelto (2026-09-09).** Esto llevaba
 tres PRs viviendo como «pendiente con dueño» en prosa, fuera de todo checklist
