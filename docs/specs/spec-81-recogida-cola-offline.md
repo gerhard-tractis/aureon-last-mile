@@ -1138,7 +1138,54 @@ review):**
 > en la propia fase 1 de spec-82). Revisado también spec-80 (fase 2, en
 > paralelo) — coordinado explícitamente en el PR para no compartir archivos.
 
-### Fase 4 — Chip de sync `[in_progress]`
+### Fase 4 — Chip de sync `[done]`
+
+> Implementado por: implementer — rama `feat/spec-81-fase-4-chip-de-sync`, SHA `8522284` (PR #725, mergeado como `95c8e0a`).
+> Review: reviewer — **cuatro rondas**. Los dos que cambiaron el resultado: el panel afirmaba que el resto de `blockedCount` era espera cross-user que «se libera sola» —falso en el caso más común— y, al arreglarlo, **reapareció el mismo bug invertido**: `deadManifestIds` incluía las fotos mientras `manifestHasDeadEntry` las excluye, así que cuatro escaneos sanos se pintaban como atascados.
+> QA: PR #725 merged 2026-09-10T01:20Z, CI verde. **`e2e-qa` no ejercita la cola offline** (necesita un dispositivo sin red); ver abajo lo que queda para hardware.
+> Downstream: revisado spec-80 fase 5 — el rebase conservó su extracción de `useCloseManifest` y pasó `externalLoadId` como parámetro del hook, sin código huérfano. Revisado spec-80 fase 6 — **sigue siendo su requisito**: hasta que esa fase cablee `enqueueManifestPhoto`, ninguna foto llega a esta cola.
+
+**La lección de este módulo, otra vez, y ahora con nombre.** El bug de la ronda
+3 fue **la costura entre dos funciones que deciden lo mismo con criterios
+distintos** — exactamente el patrón que ya costó cuatro rondas en la fase 2
+(los dos bucles ocupados, 197 consultas/s y 90 pasadas/s). El arreglo no fue
+filtrar: fue **usar `deadEntryBlocksManifestClose` como fuente única en los dos
+lados**, una definición y dos llamantes. Verificado en seis escenarios —foto
+muerta, cierre muerto, ambos, solape cross-user, mezcla y `sending`— con **suma
+exacta en todos y el clamp sin disparar en ninguno**.
+
+**Y el clamp ocultaba la señal.** El `Math.max(..., 0)` que evitaba un «+-N»
+negativo convertía un descuadre **determinista y permanente** (5 contra 1) en
+un cero silencioso, y su test lo describía como «carrera». Es la versión
+interna del cero convincente que esta sesión persiguió toda la jornada: **un
+guard cosmético encima de una contradicción**. Queda redocumentado como lo que
+protege de verdad.
+
+**Dos decisiones de producto que quedaron escritas:**
+1. **El chip nunca imprime un identificador que el operario no pueda
+   encontrar.** `manifests.id` es un UUID que no aparece en ninguna pantalla;
+   cuando falta `externalLoadId` —entradas encoladas por una versión anterior,
+   que sobreviven a la actualización de la PWA— dice «Carga sin identificar»,
+   explica por qué, y da el único criterio honesto disponible: la carga que
+   tiene algo bloqueado. **Un id falso es peor que ninguno.**
+2. **La instrucción nombra al actor correcto.** Decía «contacta a soporte»
+   cuando el propio operario puede resolverlo tocando «REQUIERE AYUDA» en la
+   pantalla de esa carga. La regla del módulo es que un bloqueo pintado diga
+   **quién** lo desbloquea; decía el nombre equivocado.
+
+**Corrección de un dato que circuló por tres manos.** Se afirmó que cablear
+`ManifestPhotoStrip` era «un prop de distancia». El implementer lo verificó
+antes de tocar nada —`git log --follow` y grep— y **`enqueueManifestPhoto` no
+tiene ningún llamador de producción**. No era un prop: es **spec-80 fase 6**.
+El campo queda listo en la firma **sin fingir que está enchufado**.
+
+**Queda `awaiting_user_test` — sólo lo cierra una persona con el teléfono:**
+provocar un `dead` real (cerrar sin señal con un manifiesto no cerrable),
+confirmar que el panel nombra la carga con su código y no con un UUID, y que
+«REQUIERE AYUDA» la revive; y comprobar que una entrada encolada **antes** de
+esta versión, tras actualizar la PWA, cae en la rama «sin identificar» y que el
+texto le basta para encontrarla.
+
 
 **Archivos:** `components/SyncChip.tsx` (el `ConnectionStatusBanner.tsx` de
 este campo no existe desde 2026-08-16, `0fb4184` — ver el ítem 1 abajo),
@@ -1302,7 +1349,31 @@ Redacción del handoff: «se guardan en el dispositivo y se envían solos…». 
       versión anterior de la app y a dónde ir (Recogida, la carga con algo
       bloqueado) — nunca inventa un identificador navegable que no existe.
 
-### Fase 5 — Fotos `[in_progress]`
+### Fase 5 — Fotos `[done]`
+
+> Implementado por: implementer — rama `feat/spec-81-fase-5-fotos-offline`, SHA `265ff9c` (PR #712, mergeado como `271884b`).
+> Review: reviewer — **cinco rondas**. Los tres que cambiaron el resultado: una SELECT de verificación fallida por red **borraba el objeto que respaldaba una fila viva**; `uploaded_by` viajaba en el payload y chocaba con `auth.uid()` en la RLS cuando otro conductor drenaba; y una colisión de `sheet_number` mataba el manifiesto entero sin salida.
+> QA: PR #712 merged 2026-09-09T19:05Z, CI verde. **`e2e-qa` no ejercita la cola offline** (necesita un dispositivo sin red); el límite de `fake-indexeddb` con `Blob` real queda declarado como ítem de hardware.
+> Downstream: revisado spec-80 fase 4 — coordinado, ambos párrafos conservados. Revisado spec-80 fase 6 — **la creó este trabajo**: `enqueueManifestPhoto` existe y **no tiene ningún llamador de producción**.
+
+**La decisión de producto que desbloqueó esto, y su razón.** Una colisión de
+número de hoja dejaba la entrada en `dead`, y `manifestHasDeadEntry` bloqueaba
+**también el `close_manifest`** de la carga — sin que ningún código pudiera
+deshacerlo. Se decidió que **una foto es respaldo, no conteo**: su pérdida no
+falsea la cifra que el cliente firma, así que una `manifest_photo` muerta **ya
+no envenena el FIFO del manifiesto**. Y la colisión **renumera en vez de
+morir**, contra el servidor y contra la cola local. **Pero sigue contándose
+como bloqueada** — la regla del módulo es que todo lo que no salió se ve.
+
+**Una corrección de honestidad que quedó escrita:** `uploaded_by` registra
+**quién SUBIÓ, no quién capturó**. En una entrega cross-user son personas
+distintas, y «quién capturó» **no se persiste**. El bullet original afirmaba
+cerrar ese hueco y no lo cierra.
+
+**Hueco heredado:** `fake-indexeddb` **no hace round-trip de un `Blob` real**
+—devuelve `{}` y pierde `.size`—, así que el tope por tamaño está probado
+contra un duck-type. Sólo lo cierra una prueba en dispositivo real.
+
 
 **Depende de:** spec-80 fase 3 (`useUploadManifestDocument`/`ManifestPhotoStrip`, mergeada — es el hueco que esta fase cierra, declarado explícitamente en `complete/[loadId]/page.tsx`)
 
