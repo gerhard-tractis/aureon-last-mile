@@ -38,6 +38,24 @@ describe('getPickupWindowStatus', () => {
     expect(status).toBe('cerca_del_cierre');
   });
 
+  it('is "cerca_del_cierre" at exactly the closing threshold (boundary is inclusive)', () => {
+    const now = new Date('2026-09-10T12:00:00');
+    const status = getPickupWindowStatus(
+      { pickupWindowStart: '09:00', pickupWindowEnd: '13:00', pickupCutoffTime: null },
+      now,
+    );
+    expect(status).toBe('cerca_del_cierre');
+  });
+
+  it('is "dentro_de_plazo" one minute above the closing threshold', () => {
+    const now = new Date('2026-09-10T11:58:59');
+    const status = getPickupWindowStatus(
+      { pickupWindowStart: '09:00', pickupWindowEnd: '13:00', pickupCutoffTime: null },
+      now,
+    );
+    expect(status).toBe('dentro_de_plazo');
+  });
+
   it('is "cerca_del_cierre" once the close time has already passed', () => {
     const now = new Date('2026-09-10T13:05:00');
     const status = getPickupWindowStatus(
@@ -66,6 +84,15 @@ describe('getPickupWindowStatus', () => {
     );
     expect(status).toBe('sin_datos');
   });
+
+  it('is "sin_datos" on an out-of-range hour rather than accepting garbage input', () => {
+    const now = new Date('2026-09-10T09:30:00');
+    const status = getPickupWindowStatus(
+      { pickupWindowStart: '09:00', pickupWindowEnd: '25:00', pickupCutoffTime: null },
+      now,
+    );
+    expect(status).toBe('sin_datos');
+  });
 });
 
 describe('formatPickupWindowLabel', () => {
@@ -79,6 +106,12 @@ describe('formatPickupWindowLabel', () => {
     expect(
       formatPickupWindowLabel({ pickupWindowStart: null, pickupWindowEnd: null, pickupCutoffTime: '18:00' }),
     ).toBe('Cierra 18:00');
+  });
+
+  it('shows "Sin datos" for a half-filled window (start with no end), not a broken range', () => {
+    expect(
+      formatPickupWindowLabel({ pickupWindowStart: '09:00', pickupWindowEnd: null, pickupCutoffTime: null }),
+    ).toBe('Sin datos');
   });
 
   it('shows "Sin datos" when nothing is configured', () => {
