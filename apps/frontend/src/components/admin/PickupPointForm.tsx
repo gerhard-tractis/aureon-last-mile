@@ -2,28 +2,12 @@
 
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { usePickupPointStore } from '@/lib/stores/pickupPointStore';
 import { useClients } from '@/hooks/useClients';
 import { usePickupPoints, useCreatePickupPoint, useUpdatePickupPoint } from '@/hooks/usePickupPoints';
-
-// All fields optional — operators want to save partial records and fill in
-// the rest later. Backend (API + DB) accepts nulls/empty strings and stores
-// pickup_locations as an empty array when no location data is provided.
-const pickupPointSchema = z.object({
-  name: z.string().optional(),
-  code: z.string().optional(),
-  tenant_client_id: z.string().optional(),
-  is_active: z.boolean(),
-  location_name: z.string().optional(),
-  location_address: z.string().optional(),
-  location_comuna: z.string().optional(),
-  location_contact_name: z.string().optional(),
-  location_contact_phone: z.string().optional(),
-});
-
-type PickupPointFormValues = z.infer<typeof pickupPointSchema>;
+import { pickupPointSchema, type PickupPointFormValues } from './pickupPointFormSchema';
+import { PickupPointLocationFields } from './PickupPointLocationFields';
 
 interface PickupPointFormProps {
   mode: 'create' | 'edit';
@@ -40,6 +24,15 @@ export const PickupPointForm = ({ mode, pointId }: PickupPointFormProps) => {
   const existingPoint = mode === 'edit' ? points?.find((p) => p.id === pointId) : null;
   const existingLoc = existingPoint?.pickup_locations?.[0];
 
+  // Review round 3: a point populated directly via SQL/backfill/QA seed is
+  // far more likely to carry "HH:MM:SS" (a TIME column's own text cast)
+  // than the "HH:MM" this form always writes. Loading that raw value into
+  // the strict HH:MM schema made the point permanently un-savable — even a
+  // submit that only meant to change the name got rejected on these three
+  // untouched fields. `.slice(0, 5)` on "HH:MM:SS" is "HH:MM"; on an
+  // already-clean "HH:MM" (or '') it is a no-op.
+  const toHHMM = (t?: string | null) => t?.slice(0, 5) ?? '';
+
   const { register, handleSubmit, formState: { errors } } = useForm<PickupPointFormValues>({
     resolver: zodResolver(pickupPointSchema),
     defaultValues: {
@@ -52,6 +45,9 @@ export const PickupPointForm = ({ mode, pointId }: PickupPointFormProps) => {
       location_comuna: existingLoc?.comuna ?? '',
       location_contact_name: existingLoc?.contact_name ?? '',
       location_contact_phone: existingLoc?.contact_phone ?? '',
+      location_window_start: toHHMM(existingLoc?.operating_hours?.start),
+      location_window_end: toHHMM(existingLoc?.operating_hours?.end),
+      sla_pickup_cutoff_time: toHHMM(existingPoint?.sla_config?.pickup_cutoff_time),
     },
   });
 
@@ -62,13 +58,39 @@ export const PickupPointForm = ({ mode, pointId }: PickupPointFormProps) => {
     // Build a sparse location object: include only fields the user filled in.
     // If nothing is filled, send an empty pickup_locations array so the row
     // can still be saved (the column is JSONB NOT NULL DEFAULT '[]'::jsonb).
-    const loc: Record<string, string> = {};
+    // spec-83 fase 2: the window is part of the location object (schema:
+    // pickup_locations[].operating_hours); the cutoff is a separate,
+    // operator-facing field (sla_config.pickup_cutoff_time), not per-location.
+    // Both are folded in ONLY when filled — an empty {} would be
+    // indistinguishable from "not configured" on read, but sending it here
+    // makes intent explicit rather than accidental.
+    const loc: Record<string, unknown> = {};
     if (values.location_name) loc.name = values.location_name;
     if (values.location_address) loc.address = values.location_address;
     if (values.location_comuna) loc.comuna = values.location_comuna;
     if (values.location_contact_name) loc.contact_name = values.location_contact_name;
     if (values.location_contact_phone) loc.contact_phone = values.location_contact_phone;
+    if (values.location_window_start || values.location_window_end) {
+      loc.operating_hours = {
+        ...(values.location_window_start && { start: values.location_window_start }),
+        ...(values.location_window_end && { end: values.location_window_end }),
+      };
+    }
     const pickup_locations = Object.keys(loc).length > 0 ? [loc] : [];
+
+    // spec-83 fase 2, review round 2 (B2): in CREATE mode there is no row
+    // yet, so an untouched/blank field can just be omitted (`undefined`).
+    // In EDIT mode that same `undefined` is what let the PUT route SKIP the
+    // update entirely (`if (validation.data.sla_config !== undefined)`) —
+    // blanking the field in the UI and saving did nothing, forever. Editing
+    // always resends the full current state, so blank there unambiguously
+    // means "clear it": send an explicit `null`, never omit the key.
+    const sla_config =
+      mode === 'edit'
+        ? { pickup_cutoff_time: values.sla_pickup_cutoff_time || null }
+        : values.sla_pickup_cutoff_time
+          ? { pickup_cutoff_time: values.sla_pickup_cutoff_time }
+          : undefined;
 
     // Convert empty strings to undefined so the API treats them as "not
     // provided" rather than "blank value to save". The API in turn writes
@@ -83,6 +105,7 @@ export const PickupPointForm = ({ mode, pointId }: PickupPointFormProps) => {
           code: blank(values.code),
           tenant_client_id: blank(values.tenant_client_id),
           pickup_locations,
+          sla_config,
         },
         { onSuccess: () => setCreateFormOpen(false) },
       );
@@ -95,6 +118,7 @@ export const PickupPointForm = ({ mode, pointId }: PickupPointFormProps) => {
             code: blank(values.code),
             tenant_client_id: blank(values.tenant_client_id),
             pickup_locations,
+            sla_config,
             is_active: values.is_active,
           },
         },
@@ -169,66 +193,7 @@ export const PickupPointForm = ({ mode, pointId }: PickupPointFormProps) => {
             </div>
           )}
 
-          <div className="border border-border rounded-md p-4 space-y-3">
-            <h3 className="text-sm font-semibold">Ubicación</h3>
-
-            <div>
-              <label htmlFor="loc-name" className="block text-xs font-medium mb-1">Nombre de ubicación</label>
-              <input
-                id="loc-name"
-                type="text"
-                {...register('location_name')}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm"
-                disabled={isPending}
-              />
-              {errors.location_name && <p className="text-xs text-destructive mt-1">{errors.location_name.message}</p>}
-            </div>
-
-            <div>
-              <label htmlFor="loc-address" className="block text-xs font-medium mb-1">Dirección</label>
-              <input
-                id="loc-address"
-                type="text"
-                {...register('location_address')}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm"
-                disabled={isPending}
-              />
-              {errors.location_address && <p className="text-xs text-destructive mt-1">{errors.location_address.message}</p>}
-            </div>
-
-            <div>
-              <label htmlFor="loc-comuna" className="block text-xs font-medium mb-1">Comuna</label>
-              <input
-                id="loc-comuna"
-                type="text"
-                {...register('location_comuna')}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm"
-                disabled={isPending}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="loc-contact" className="block text-xs font-medium mb-1">Contacto</label>
-              <input
-                id="loc-contact"
-                type="text"
-                {...register('location_contact_name')}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm"
-                disabled={isPending}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="loc-phone" className="block text-xs font-medium mb-1">Teléfono</label>
-              <input
-                id="loc-phone"
-                type="text"
-                {...register('location_contact_phone')}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm"
-                disabled={isPending}
-              />
-            </div>
-          </div>
+          <PickupPointLocationFields register={register} errors={errors} isPending={isPending} />
 
           <div className="flex gap-3 pt-4">
             <button

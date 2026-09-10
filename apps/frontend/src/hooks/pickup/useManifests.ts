@@ -17,6 +17,14 @@ export interface PendingManifest {
   /** spec-53 — set once a label print job has been dispatched for this manifest. */
   labels_printed_at: string | null;
   labels_printed_by_name: string | null;
+  /** spec-83 fase 2 — from pickup_points.pickup_locations[0].operating_hours.
+   * NULL until someone fills it in on the pickup point's admin form — as of
+   * this phase, that is every pickup point in the system. */
+  pickup_window_start: string | null;
+  pickup_window_end: string | null;
+  /** spec-83 fase 2 — pickup_points.sla_config.pickup_cutoff_time. Stricter
+   * than the point's own window when both are set. */
+  pickup_cutoff_time: string | null;
 }
 
 export interface CompletedManifest {

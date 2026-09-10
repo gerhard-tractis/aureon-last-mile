@@ -189,7 +189,7 @@ con actor y momento.
 > «N faltantes de 0». Viene de spec-54 y está igual en la rama de cierre
 > limpio — va a un barrido de copy, no a esta fase.
 
-### Fase 2 — Ventana `[pending]`
+### Fase 2 — Ventana `[in_progress]`
 
 **Desbloqueada (2026-09-09). El usuario delegó la decisión: «haz lo que creas
 que debas hacer». La tomo yo y queda escrita aquí, no en la cabeza de nadie.**
@@ -219,13 +219,213 @@ alternativa.
       conserva selección y merma; la ventana no lo toca.**
 - [ ] Poblar `operating_hours` / `pickup_cutoff_time` donde falten (nadie los
       escribe hoy) y hacer que `get_pending_manifests` los devuelva.
-- [ ] Columna de ventana con semáforo, sin tocar `border-l-*`.
+      **Corrección tras review round 2 (2026-09-10): esta casilla estaba
+      marcada `[x]` sin haberse hecho.** Lo que existe es el camino de
+      escritura (formulario admin + rutas API) y la lectura en
+      `get_pending_manifests` — la propia migración lo dice: "no data is
+      written here". Hoy sigue sin haber ni un solo punto de retiro con
+      `operating_hours`/`pickup_cutoff_time` configurado, en QA ni en
+      prod. Consecuencia real tras el merge: la columna VENTANA sale gris
+      (`sin_datos`) en TODAS las filas hasta que un humano abra el
+      formulario punto por punto. Falta, y queda fuera de esta fase por ser
+      trabajo operativo, no de código: (a) que alguien con el dato real
+      (horario real del punto, hora de cierre de retiros del operador) lo
+      cargue fila por fila desde el admin ya construido, o (b) un
+      backfill/seed de QA si se quiere ver la columna en verde/ámbar antes
+      de eso. Ninguna opción es inventar el dato — sigue el mismo criterio
+      que spec-54 ya sentó para esta pantalla. **Nota de review round 3:**
+      si se opta por (b), ese seed debe escribir `HH:MM` estricto, no
+      `HH:MM:SS`. El formulario ya tolera `HH:MM:SS` al cargar (normaliza
+      con `.slice(0, 5)`, fix de la propia ronda 3), así que un seed con
+      segundos ya no deja el punto irreeditable — pero seguir dependiendo
+      de esa normalización en vez de escribir el formato limpio desde el
+      origen es acumular una capa de tolerancia que no hace falta.
+- [x] Columna de ventana con semáforo, sin tocar `border-l-*`.
 
 **Archivos:** `apps/frontend/src/components/pickup/ManifestTable.tsx` (columna
 nueva, **sin tocar `border-l-*`**), migración para `get_pending_manifests`, y el
 poblado de `operating_hours`/`pickup_cutoff_time`.
 
 **Depende de:** ninguna.
+
+**Implementación (2026-09-10, pendiente de review/QA — la fase queda
+`[in_progress]`, no se cierra aquí):**
+
+- **Lógica pura** — `apps/frontend/src/lib/pickup/pickupWindowStatus.ts`:
+  `getPickupWindowStatus` (tres estados: `sin_datos`/`dentro_de_plazo`/
+  `cerca_del_cierre`; `sin_datos` es el default cuando no hay ventana ni
+  cutoff, nunca `dentro_de_plazo`) y `formatPickupWindowLabel`. El cutoff
+  (`sla_config.pickup_cutoff_time`) gana sobre el fin de ventana cuando
+  ambos existen, por ser el límite operador-wide más estricto. Umbral de
+  "cerca del cierre": 60 minutos — decisión visual mía, el spec la delegó
+  explícitamente.
+- **Lectura** — migración `20261003000001`, plantilla
+  `20260820000006_spec61_pending_manifests_exclude_routed.sql` (confirmada
+  como la más reciente vía `git grep` el 2026-09-10). `get_pending_manifests`
+  añade `pickup_window_start/end` y `pickup_cutoff_time`, derivados de
+  `pickup_points.pickup_locations->0->'operating_hours'` y
+  `pickup_points.sla_config->>'pickup_cutoff_time'`. Sin cambios de ACL — la
+  función nunca tuvo GRANT explícito y no está en el alcance del audit de
+  spec-88.
+- **Escritura** — hoy nadie podía poblar estos campos aunque el esquema los
+  tiene desde marzo. `PickupPointForm.tsx` gana tres campos (Apertura,
+  Cierre, Cierre de retiros), extraídos a `PickupPointLocationFields.tsx` +
+  `pickupPointFormSchema.ts` compartido para no exceder 300 líneas. Las dos
+  rutas API (`/api/pickup-points`, `/api/pickup-points/[id]`) validan y
+  persisten `sla_config` y `pickup_locations[].operating_hours`.
+- **Columna** — `ManifestTable.tsx` gana una octava columna (`GRID` de 7 a 8
+  celdas) con punto de semáforo + etiqueta. `border-l-*` no se tocó — sigue
+  siendo únicamente selección/merma, verificado con un test dedicado.
+- **Tests:** 14 en `pickupWindowStatus.test.ts` (unit, mutation-tested — ver
+  abajo), 9 en `pickupPageHelpers.test.ts` (+2 nuevos), 14 en
+  `ManifestTable.test.tsx` (+5 nuevos), 6 en `PickupPointForm.test.tsx` (+3
+  nuevos), pgTAP `spec83_fase2_pending_manifests_pickup_window.test.sql`
+  (4/4 `ok`, verificado con `psql` crudo, no con el resumen de
+  `pgtap-local.sh`) + `spec61_pending_excludes_routed.sql` actualizado y
+  re-verificado sin fallos.
+- **Mutation testing manual sobre `pickupWindowStatus.ts`, 5 mutantes:**
+  1. `sin_datos → dentro_de_plazo` en el guard de ausencia — muere (4 tests).
+  2. `<=` → `<` en el umbral de 60 min — **sobrevivió** a la suite original
+     (sin caso exactamente en el borde); cerrado con un test a los 60 min
+     exactos y otro a 59:01; ahora muere.
+  3. Invertido el orden de precedencia cutoff/window-end en el `??` — muere.
+  4. Regex de hora debilitada a `/(\d+):(\d+)/` — **sobrevivió** (ningún caso
+     cubría una hora fuera de rango); cerrado con un test para `'25:00'`;
+     ahora muere.
+  5. `&&` → `||` en `formatPickupWindowLabel` (ventana a medio llenar) —
+     **sobrevivió**; cerrado con un test de ventana con sólo el inicio;
+     ahora muere.
+
+  2 de 5 sobrevivieron a la primera pasada. Se cerraron con un test nuevo
+  cada uno, no se descartaron.
+- **Trampa de TanStack Query v5 (`networkMode:'online'` pausando sin red):**
+  no se introdujo una instancia nueva de `pending ?? []` — la única que
+  existe (`page.tsx:117`) es preexistente a esta fase, no se tocó. `sin_datos`
+  se calcula por fila a partir de campos ausentes/`null`, no de la ausencia
+  de la query completa, así que no hereda ese problema, pero tampoco lo
+  arregla: si la query en pausa deja `pendingRows` vacío, la tabla entera se
+  ve vacía, columna de ventana incluida — declarado, no corregido aquí.
+- **Gap cerrado tras review round 2:** ya existen tests para la ruta PUT
+  (`[id]/route.test.ts`, **5 tests**, no 4 como decía una versión anterior
+  de esta nota: 401, 400 por formato inválido, `sla_config` omitido queda
+  intacto, y los dos casos de merge/clear descritos abajo. Ronda 3 añadió
+  dos más: 403 y 400 por hora basura en `operating_hours` a nivel de ruta —
+  7 en total hoy). Ver el resto de esta sección para el detalle de qué
+  encontró cada ronda.
+
+**Review round 2 (2026-09-10) — 3 bloqueantes, 2 menores de datos y 4
+menores de documentación, todos cerrados:**
+
+1. **B1 — `??` con cadena vacía (mutante superviviente confirmado).**
+   `pickupCutoffTime ?? pickupWindowEnd` no cae al `windowEnd` cuando el
+   cutoff es `''` (string vacío no es `null`/`undefined`). Un formulario
+   nuevo con el campo en blanco —el caso más probable en producción durante
+   semanas— dejaba una ventana bien poblada en `sin_datos` con la etiqueta
+   mostrando el rango real al lado: el semáforo contradiciendo el texto.
+   Corregido con `nonBlank()` (trata `''`/espacios como ausente) aplicado en
+   `resolveCloseTime` **y** en `formatPickupWindowLabel`. Tests nuevos:
+   cutoff vacío, cutoff sólo-espacios, y el mismo par para la etiqueta.
+2. **B2 — el PUT no podía borrar un cutoff.** `values.cutoff ? {...} :
+   undefined` en modo edición producía una clave omitida, y la ruta salta
+   toda clave `undefined` — vaciar el campo y guardar no hacía nada, para
+   siempre. Corregido: en modo `edit` el formulario **siempre** envía
+   `sla_config`, con `pickup_cutoff_time: valor || null` — nunca omite la
+   clave. `null` es ahora un valor de escritura válido y distinto de
+   "omitido" en el esquema de la ruta.
+3. **B3 — el PUT machacaba `sla_config` entero.** Un `UPDATE` que sólo
+   cambiaba el nombre borraba silenciosamente `max_delivery_hours` y
+   cualquier otra clave que el formulario no muestra. Corregido: la ruta
+   ahora lee el `sla_config` actual antes de actualizar y hace
+   `{...actual, ...enviado}` — sólo las claves enviadas se tocan.
+4. **Validación de formato en las tres capas.** No existía ninguna. Regex
+   compartida (`TIME_HH_MM_REGEX`, `apps/frontend/src/lib/pickup/timeFormat.ts`)
+   usada en `pickupPointFormSchema.ts` (formulario) y en
+   `pickupPointApiSchemas.ts`, nuevo, compartido entre las dos rutas API —
+   cierra B1 de paso (un cutoff con formato inválido ya no puede ni
+   guardarse) y evita literales tipo "Cierra banana" en la interfaz.
+5. **`HH:MM:SS` cae en `sin_datos`.** El *camino de escritura* exige
+   `HH:MM` estricto (rechaza segundos, para forzar un formato limpio al
+   entrar), pero la *lectura pura* (`parseTimeToday`) ahora tolera un
+   `:SS` final — un dato poblado directamente por SQL (backfill futuro,
+   seed de QA) es más probable en esa forma que en la que este formulario
+   siempre guarda.
+6. **Menores de documentación, todos corregidos en el propio código/migración:**
+   la nota de ACL de la migración tenía la conclusión correcta con la
+   premisa falsa (afirmaba "no default privileges"; medido: sí existen y el
+   `DROP`+`CREATE` los re-concede a `anon`; la seguridad real viene de
+   `SECURITY INVOKER` + RLS, y un llamador anónimo mide
+   `ERROR: permission denied for table manifests`, no un resultado vacío) —
+   corregida. Zona horaria local sin normalizar: anotada en
+   `parseTimeToday`. Ventana ya cerrada (23:00 contra un cierre de 13:00) no
+   tiene un cuarto estado — es decisión de producto, declarada en
+   `getPickupWindowStatus`, no resuelta aquí. `MIN(name)`/`MIN(start)`
+   agregados por separado cuando una carga tiene órdenes en dos puntos:
+   documentado en la migración con el mitigante real (`MIN(end)`/
+   `MIN(cutoff)` son siempre los más estrictos — nunca sobrestima el tiempo
+   disponible, sólo puede mostrar el texto del punto equivocado).
+
+Rama `feat/spec-83-fase-2-ventana`, PR #738. Ronda 1 aprobó lo esencial
+(lógica pura, migración, `spec61_pending_excludes_routed`, borde izquierdo
+intacto, 9/10 mutantes) y encontró B1-B3 más los menores listados arriba,
+todos cerrados en esta ronda con TDD (RED confirmado antes de cada fix). La
+fase sigue `[in_progress]` — evidencia formal de review/QA la añade quien
+corresponda tras verificarla, no quien implementa.
+
+**Review round 3 (2026-09-10) — mergeable, un fix de código y tres notas.**
+
+Confirmó, con evidencia propia y no repetida de la ronda 2: el mutante
+equivalente de B1 lo es de verdad (mutación + razonamiento de tipos + fuerza
+bruta sobre 5832 combinaciones, cero diferencias); aplicar `nonBlank` en la
+etiqueta también era necesario (quitarlo de ahí sólo muere); el merge de
+`sla_config` **aborta** en vez de machacar si la lectura previa falla
+(`update` llamado 0 veces); y cierra un vector no pedido — una clave no
+declarada dentro de `sla_config` la descarta zod y el merge restaura la
+existente, así que un cliente no puede escribir claves arbitrarias por esa
+ruta. 11/12 mutantes muertos, incluido el que sobrevivió en ronda 2.
+
+**Fix de código — normalización de `HH:MM:SS` al cargar el formulario.**
+Un punto poblado con `HH:MM:SS` (el cast natural de una columna `TIME`)
+quedaba **irreeditable**: el schema estricto rechazaba el valor sin tocar en
+CADA submit, incluso uno que sólo cambiaba el nombre — sin salida salvo
+reescribir los tres campos a mano. No se perdía nada (el envío entero se
+rechaza, no se aplica parcial), pero el admin quedaba bloqueado. Corregido
+con `toHHMM()` (`.slice(0, 5)`) en los tres `defaultValues` de
+`PickupPointForm.tsx` — normaliza al cargar, nunca al guardar (el schema de
+escritura sigue exigiendo `HH:MM` estricto). Test nuevo, RED confirmado
+antes del fix. Consecuencia para el punto pendiente de poblado (más
+arriba): si el backfill/seed escribe `HH:MM:SS`, ahora sí es editable desde
+este formulario — pero **el seed debería escribir `HH:MM` estricto de
+todos modos**, para no depender de esta normalización en ningún punto de la
+cadena.
+
+**Notas al spec, no al código:**
+
+1. **Carrera entre administradores, ensanchada por B2.** Sin bloqueo
+   optimista: A abre la ficha a las 10:00 con cutoff `12:30`; B lo cambia a
+   `12:00`; A guarda sólo el nombre a las 10:10 → como en edición **siempre**
+   se reenvía `sla_config`, viaja el `12:30` rancio de A y revierte el
+   cambio de B sin aviso. Si A había vaciado el campo, viaja `null` y
+   **borra** lo que B acababa de poner — esto último es nuevo en esta fase:
+   antes de B2 el blanco no se enviaba, así que no pisaba nada. Es el
+   patrón de todo este formulario (ninguno de sus campos tiene control de
+   concurrencia), y arreglarlo pide bloqueo optimista (ETag/`updated_at`
+   comparado en el PUT) — otra fase, no ésta.
+2. **`pickup_locations` sigue siendo overwrite ciego, ahora asimétrico con
+   `sla_config`.** La misma ruta trata las dos columnas JSONB con criterios
+   opuestos: `sla_config` mergea, `pickup_locations` reemplaza el array
+   entero con lo que el formulario construye — y la ventana vive
+   precisamente en `pickup_locations[0]`. Un punto de retiro con más de una
+   ubicación (el esquema es un array por algo) pierde toda ubicación desde
+   la segunda en adelante en el primer guardado desde este formulario, que
+   sólo edita `[0]`. No se ha visto ese caso en los datos hoy, pero el
+   formulario no lo impide ni lo advierte.
+3. **Nits:** el gate 403 de la ruta PUT funcionaba pero no tenía test
+   afirmándolo — añadido. Ninguna prueba de ruta ejercitaba una hora basura
+   dentro de `operating_hours` (sólo los tests del esquema del formulario lo
+   demostraban) — añadido un test de ruta para `pickup_locations[0]
+   .operating_hours.start = 'banana'`. Y esta misma sección decía "4 tests"
+   donde ya había 5 — corregido, con el conteo actualizado a 7 tras esta
+   ronda.
 
 ### Fase 3 — Ocupación `[parked]`
 

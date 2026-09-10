@@ -1,23 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSSRClient } from '@/lib/supabase/server';
 import { z } from 'zod';
+import { pickupLocationSchema, slaConfigSchema } from './pickupPointApiSchemas';
 
 // RF-2: Zod schemas. All fields optional — operators may save partial
 // records and fill in the rest later. DB constraints were relaxed in
 // 20260428000005.
-const pickupLocationSchema = z.object({
-  name: z.string().optional(),
-  address: z.string().optional(),
-  comuna: z.string().optional(),
-  contact_name: z.string().optional(),
-  contact_phone: z.string().optional(),
-});
-
 const createPickupPointSchema = z.object({
   name: z.string().optional(),
   code: z.string().optional(),
   tenant_client_id: z.string().uuid('Invalid client ID').optional(),
   pickup_locations: z.array(pickupLocationSchema).optional(),
+  sla_config: slaConfigSchema.optional(),
 });
 
 export async function GET() {
@@ -102,7 +96,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { name, code, tenant_client_id, pickup_locations } = validation.data;
+    const { name, code, tenant_client_id, pickup_locations, sla_config } = validation.data;
     const operatorId = session.user.app_metadata?.claims?.operator_id;
 
     // Trim to a non-empty string or undefined — empty/whitespace-only values
@@ -144,6 +138,7 @@ export async function POST(request: NextRequest) {
       tenant_client_id: tenant_client_id ?? null,
       intake_method: 'manual',
       pickup_locations: pickup_locations ?? [],
+      sla_config: sla_config ?? {},
       is_active: true,
     };
     const { data: point, error } = await supabase
