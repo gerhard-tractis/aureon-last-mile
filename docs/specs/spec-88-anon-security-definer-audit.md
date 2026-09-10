@@ -723,7 +723,14 @@ Extiende `scripts/check-migration-safety.sh` (spec-87 fase 5, en construcción e
 > así (ya se corrigieron 34→39 y 13→10). Confirmado en QA con el mismo número.
 > El desglose: 60 `SECURITY DEFINER` en `public`, 18 de trigger, 42 invocables,
 > **16 ejecutables por `anon`**. El 37 que también circuló incluye triggers y
-> overloads de PostGIS.
+> overloads de PostGIS; su autor lo re-midió y lo corrigió a **17**.
+>
+> **Dos mediciones independientes, 16 y 17, y no las reconcilié yo.** Difieren
+> probablemente en los overloads de PostGIS o en cómo cuentan las sobrecargas
+> históricas. **Escribo las dos en vez de elegir una:** cualquiera sirve para
+> decidir (es higiene, no incidente), y fijar un número que no he verificado
+> sería repetir exactamente el error que este bloque corrige. Quien implemente
+> la fase 5 **mide otra vez y deja el comando escrito**.
 >
 > **Ninguna dependía de la RLS que `SECURITY DEFINER` desactiva.** Las 14 que
 > tocan datos filtran por `operator_id` **explícitamente**, y todas hacen
