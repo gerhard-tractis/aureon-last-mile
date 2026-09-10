@@ -106,7 +106,7 @@ camión, al mismo tiempo, con el modelo corregido:
 | 09:00–11:00, camión parado en el andén | En punto de retiro, con chip «cerrada 09:00» | En punto de retiro |
 | 11:00–13:00, en la carretera | Camino a bodega | Camino a bodega |
 
-`reopen_pickup_route` (`20260812000005:255-256`) llega al mismo estado por el
+`reopen_pickup_route` (`20260812000005:255-262`) llega al mismo estado por el
 otro lado: devuelve la ruta a `in_progress` y limpia `reception_status`, pero
 no revierte `manifests.status`. Con cubos que miran ubicación, esa carga vuelve
 sola a «En punto de retiro», que es donde está.
@@ -121,8 +121,8 @@ pestaña signifique un lugar y no un trámite.
 lo modela como estado terminal (`pickupMobileHelpers.ts:45,49`).
 
 **Sí tiene un productor, y está en QA.** El generador de escenarios
-(`packages/database/seed-qa/scenarios/pickup.ts:38-41`) inserta cuatro
-manifiestos, uno por valor de `reception_status_enum`, y el cuarto es
+(`packages/database/seed-qa/scenarios/pickup.ts:38-43`) inserta cuatro
+manifiestos, uno por valor de `reception_status_enum`, y el cuarto (`:42`) es
 `QA-LOAD-004`: `status='cancelled'` **con** `reception_status='awaiting_reception'`.
 Una versión anterior de este spec afirmó que no lo escribía nadie; el grep se
 había hecho sobre `packages/database/supabase/migrations/` y `apps/`, no sobre
@@ -135,7 +135,7 @@ y los cuatro predicados la excluyen. Las razones, en orden:
 
 1. `QA-LOAD-004` es cobertura sintética de enum, no un estado operativo: existe
    para que el seed toque los tres valores de `reception_status_enum`, y sus
-   compañeras (`:38-40`) tampoco tienen filas en `orders`. No representa a una
+   compañeras (`:39-41`) tampoco tienen filas en `orders`. No representa a una
    carga que alguien vaya a buscar en pantalla.
 2. `remove_manifest_from_route` termina con `status = 'pending'`, así que el
    botón de la fase 3, sobre una carga cancelada, la **des-cancelaría** en
@@ -189,15 +189,35 @@ Cada una se re-templa desde su última definición — la regla de `CLAUDE.md`:
 | `get_in_transit_manifests` | `20260813000001` | `reception_status IN ('awaiting_reception','reception_in_progress')` |
 | `get_completed_manifests` | `20261004000001` | `reception_status='received' OR (status='completed' AND pickup_route_id IS NULL AND reception_status IS NULL)` |
 
-Las cuatro añaden `status <> 'cancelled'`. Sobreviven las columnas de spec-53
-(etiquetas), spec-83 fase 1 (`missing_count`) y spec-80 fase 2b
-(`signature_operator`) — se re-templan, no se reescriben desde cero.
+Las cuatro añaden `status <> 'cancelled'`, **pero no en el mismo sitio**. En
+las tres que parten de `manifests` va en el `WHERE`. En `get_pending_manifests`
+va **dentro de la subconsulta `NOT IN`**, junto a `completed` /
+`reception_status` / `pickup_route_id` — nunca en el `WHERE` sobre el `LEFT
+JOIN` a `manifests`: ahí `m.status <> 'cancelled'` evalúa a NULL cuando no hay
+fila de manifiesto, NULL no es true, y la cláusula **borraría de Pendientes
+toda carga que aún no tiene fila en `manifests`**, que es exactamente el
+conjunto que ese `LEFT JOIN` existe para preservar. (`(m.status IS NULL OR
+m.status <> 'cancelled')` también sirve; la subconsulta es más limpia.)
+
+Sobreviven las columnas de spec-53 (etiquetas), spec-83 fase 1
+(`missing_count`) y spec-80 fase 2b (`signature_operator`) — se re-templan, no
+se reescriben desde cero.
 
 ### `get_routed_manifests`
 
 `LANGUAGE sql STABLE SECURITY INVOKER`, misma forma que sus hermanas, acotada
-por `public.get_operator_id()` y `deleted_at IS NULL`. Devuelve lo que ellas,
-más:
+por `public.get_operator_id()` y `deleted_at IS NULL`. Predicado literal, para
+que no haya que ir a buscarlo a la tabla del modelo:
+
+```sql
+WHERE m.operator_id = public.get_operator_id()
+  AND m.deleted_at IS NULL
+  AND m.pickup_route_id IS NOT NULL
+  AND m.reception_status IS NULL
+  AND m.status <> 'cancelled'
+```
+
+Devuelve lo que sus hermanas, más:
 
 - `route_code`, `route_started_at`, `driver_name`, `route_status` — vía
   **`LEFT JOIN public.pickup_routes pr ON pr.id = m.pickup_route_id AND
@@ -212,7 +232,13 @@ más:
   `LEFT JOIN` la fila sobrevive y `route_status` sale NULL, que es justo la
   señal que la fase 3 necesita (guarda 2 del RPC de quitar, no la 3).
 - `closed_at` — `completed_at` cuando `status='completed'`, para el chip
-  «cerrada HH:MM».
+  «cerrada HH:MM» **y para «Cierres de hoy»** (ver abajo).
+- `missing_count` — la misma subconsulta que spec-83 fase 1 puso en
+  `get_completed_manifests` (`COUNT(DISTINCT d.package_id)` sobre
+  `discrepancies` con `kind='missing'`, `operation_type='pickup'`, no
+  soft-borradas, `status <> 'resolved'`). No es simetría decorativa: es lo que
+  impide que el re-templado apague la única superficie donde esa cifra se
+  pinta. Ver «Cierres de hoy» más abajo.
 - `verified_count` — la **guarda 7** de `remove_manifest_from_route` rechaza
   cualquier manifiesto con un escaneo `verified`. Se cuenta con
   `scan_result='verified' AND package_id IS NOT NULL AND deleted_at IS NULL`:
@@ -247,26 +273,61 @@ Tres cosas que el implementer descubriría si no estuvieran escritas:
   `20261003000001` documenta que NULL significa «sin datos», nunca «sin
   plazo». **No rellenarlos con un `COALESCE`.**
 
+### «Cierres de hoy» no puede quedarse colgando del cubo 4
+
+`get_completed_manifests` tiene **dos** consumidores, no uno: la pestaña
+(`page.tsx:99`) y `closures` (`page.tsx:118` → `completedToday`), que alimenta
+el StatTile «Completados hoy» (`PickupDesktopView.tsx:125`) y
+`TodayClosuresPanel`. Y `missing_count` se renderiza **únicamente** ahí
+(`TodayClosuresPanel.tsx:45,48,78`) — en ningún otro sitio de la app.
+
+Re-templar esa RPC sobre `reception_status` la saca justo de las cargas
+cerradas en el andén, y el resultado no es un desfase, es una pérdida:
+
+- **D1 09:00** — la cuadrilla cierra CARGA-A en el andén con 3 faltantes.
+  `completed_at = D1 09:00`, ruta `in_progress`, `rs NULL` → cubo 2, fuera de
+  `get_completed_manifests`. El panel no la muestra ese día.
+- **D2** — la recepción del hub cierra, `rs='received'`, y ahora sí entra en la
+  RPC. Pero `20260812000006:188` usa `COALESCE(completed_at, NOW())`: **no
+  pisa** el `completed_at` de D1, y `completedToday` compara contra hoy
+  (`pickupSummary.ts:51-57`). Tampoco la muestra ese día.
+- **Resultado: ese cierre no aparece nunca, y sus 3 faltantes tampoco.**
+
+La tesis de este spec —los cubos miran el lugar— vale para las **pestañas**.
+`closures` no es una pestaña: es un contador de trámites, y un trámite ocurre
+cuando se cierra la carga, esté donde esté el camión.
+
+**Decisión: `closures` se construye desde las dos fuentes** — las filas de
+`get_routed_manifests` con `closed_at` de hoy, más las del cubo 4 con
+`completed_at` de hoy. Por eso `get_routed_manifests` devuelve `closed_at` y
+`missing_count`. Se conserva el significado que «Completados hoy» tiene hoy;
+no se cambia en silencio bajo la misma etiqueta.
+
 ### La verificación
 
-Dos aserciones, y la segunda es la que importa:
+**Asignación, no sólo partición.** «Cada fila aparece exactamente una vez» pasa
+en verde con la fila en la RPC equivocada: la carga cerrada con
+`reception_status='awaiting_reception'` aparecía exactamente una vez —en
+`get_completed_manifests`— mientras la tabla decía «Camino a bodega». La
+aserción es:
 
-1. **Partición** — para toda fila viva de `manifests` del operador, la unión de
-   las cuatro RPC la contiene exactamente una vez.
-2. **Asignación** — cada fila viva aparece en la RPC que **su predicado
-   nombra**, y en ninguna otra, con los cuatro predicados de la tabla escritos
-   literalmente en el test.
+> cada carga viva del operador aparece en la RPC que **su predicado nombra**, y
+> en ninguna otra, con los cuatro predicados de la tabla escritos literalmente
+> en el test.
 
-Sin la segunda, la primera pasa en verde con la pantalla mintiendo: la carga
-cerrada con `reception_status='awaiting_reception'` aparece exactamente una vez
-—en `get_completed_manifests`— mientras la tabla dice que va en «Camino a
-bodega». Es el mismo defecto que ya tuvo la versión anterior de esta sección:
-un test que no puede fallar.
+(«Exactamente una vez» es un corolario de eso, no una comprobación aparte.)
 
-Sobre el conjunto real de la tabla, no sobre cuatro filas elegidas, con el
-fixture ampliado a lo que el hallazgo enseñó: carga cerrada en el andén con
-ruta `in_progress`, la misma tras salir el camión, carga con todas sus órdenes
-soft-deleted, carga `cancelled`, ruta soft-deleted.
+**«Carga viva» son dos poblaciones, no una**, y ésta es la parte que se escapó
+en la ronda anterior: toda fila viva de `manifests`, **y** todo
+`external_load_id` con órdenes vivas que todavía **no** tiene fila en
+`manifests`. La segunda es la mitad del contrato de `get_pending_manifests` que
+el `LEFT JOIN` existe para preservar; acotar el test a `manifests` la deja
+ciega justo donde el `status <> 'cancelled'` mal colocado haría daño.
+
+Fixture, sobre el conjunto real de la tabla y no sobre cuatro filas elegidas:
+carga cerrada en el andén con ruta `in_progress`, la misma tras salir el
+camión, carga con órdenes vivas y sin fila de manifiesto, carga con todas sus
+órdenes soft-deleted, carga `cancelled`, ruta soft-deleted.
 `scripts/pgtap-local.sh` — los tests SQL no corren en CI, y el contenedor es
 compartido entre worktrees.
 
@@ -274,7 +335,7 @@ compartido entre worktrees.
 
 **Depende de:** spec-94 fase 1
 
-**Archivos:** `apps/frontend/src/hooks/pickup/useRoutedManifests.ts`, `apps/frontend/src/hooks/pickup/usePickupManifestTabs.ts`, `apps/frontend/src/hooks/pickup/useManifests.ts`, `apps/frontend/src/components/pickup/RoutedManifestTable.tsx`, `apps/frontend/src/components/pickup/PickupDesktopView.tsx`, `apps/frontend/src/app/app/pickup/page.tsx`, `apps/frontend/src/lib/pickup/pickupPageHelpers.ts`, `apps/frontend/src/components/pickup/PickupManifestTabs.tsx`, `apps/frontend/src/components/pickup/PickupManifestTabs.test.tsx`
+**Archivos:** `apps/frontend/src/hooks/pickup/useRoutedManifests.ts`, `apps/frontend/src/hooks/pickup/usePickupManifestTabs.ts`, `apps/frontend/src/hooks/pickup/useManifests.ts`, `apps/frontend/src/components/pickup/RoutedManifestTable.tsx`, `apps/frontend/src/components/pickup/PickupDesktopView.tsx`, `apps/frontend/src/app/app/pickup/page.tsx`, `apps/frontend/src/lib/pickup/pickupPageHelpers.ts`, `apps/frontend/src/hooks/pickup/pickupSummary.ts`, `apps/frontend/src/components/pickup/TodayClosuresPanel.tsx`, `apps/frontend/src/components/pickup/PickupManifestTabs.tsx`, `apps/frontend/src/components/pickup/PickupManifestTabs.test.tsx`
 
 - `useRoutedManifests.ts` — hook nuevo. `PICKUP_QUERY_OPTIONS` está declarado
   **sin `export`** (`useManifests.ts:67`), así que hay que exportarlo — por eso
@@ -305,6 +366,11 @@ compartido entre worktrees.
   lista de clientes pasa a salir de la unión de los cuatro conjuntos, y
   `matchesSearchTerm` (`pickupPageHelpers.ts`) gana código de ruta y nombre de
   líder para que el buscador signifique algo en la pestaña nueva.
+- **«Cierres de hoy» pasa a leer dos fuentes**, como decide la fase 1:
+  `completedToday` (`pickupSummary.ts:51-57`) se aplica a las filas del cubo 4
+  por `completed_at` y a las de `get_routed_manifests` por `closed_at`, y
+  `TodayClosuresPanel` acepta las dos. Sin esto, un cierre en el andén con
+  faltantes no se pinta ningún día — el detalle está en la fase 1.
 - Móvil sin cambios: sigue con sus tres secciones. Es la pantalla de inicio de
   turno de la cuadrilla, no una superficie de supervisión.
 - **Limpieza en alcance:** `PickupManifestTabs.tsx` está muerto — sólo lo
