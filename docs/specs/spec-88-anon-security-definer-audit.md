@@ -708,6 +708,78 @@ Extiende `scripts/check-migration-safety.sh` (spec-87 fase 5, en construcción e
 
 ### Fase 5 — Defensa en profundidad del resto `[pending]`
 
+> **Auditoría ejecutada (2026-09-09). Resultado: 0 de 16 explotables. Es
+> higiene — pero con dos minas que hay que desactivar ANTES de escribir la
+> migración de esta fase.**
+>
+> Cada una de las 16 se ejecutó **como `anon`**, en `BEGIN`/`ROLLBACK`, contra
+> un contenedor propio desde `origin/main` (nunca `spec52-pg`, que es
+> compartido; cero ejecución contra producción). Y también **como
+> `authenticated` de otro operador**, con UUIDs reales de un fixture. Las 16
+> fallan en las dos direcciones.
+>
+> **El alcance real es 16, no 32.** El «32» salió de un check estático y se
+> repitió sin verificar — es la **cuarta** cifra de este spec que se propaga
+> así (ya se corrigieron 34→39 y 13→10). Confirmado en QA con el mismo número.
+> El desglose: 60 `SECURITY DEFINER` en `public`, 18 de trigger, 42 invocables,
+> **16 ejecutables por `anon`**. El 37 que también circuló incluye triggers y
+> overloads de PostGIS.
+>
+> **Ninguna dependía de la RLS que `SECURITY DEFINER` desactiva.** Las 14 que
+> tocan datos filtran por `operator_id` **explícitamente**, y todas hacen
+> `get_operator_id()` → `RAISE 42501` **antes** de leer nada. Ninguna tiene
+> bloque `EXCEPTION WHEN`, así que «murió con RAISE» significa «no persistió
+> nada», medido y no supuesto.
+>
+> **MINA 1 — revocar `get_operator_id()` de `authenticated` tumba producción
+> entera.** **61 políticas RLS sobre 38 tablas** la invocan en su
+> `USING`/`WITH CHECK`. Medido: tras el `REVOKE`, un `SELECT` cualquiera de la
+> aplicación da `permission denied for function get_operator_id` — no devuelve
+> cero filas, **falla**. La fase 1 sí revocó `FROM authenticated` en cinco
+> funciones; aplicar ese mismo reflejo aquí es un incidente.
+> **Regla: sobre `get_operator_id()` y `get_current_user_role()`, revocar sólo
+> `PUBLIC` y `anon`. JAMÁS `authenticated`.**
+> (Para `anon` no hay riesgo simétrico: no tiene `SELECT` de tabla, así que la
+> política nunca llega a invocar la función.)
+>
+> **MINA 2 — `get_operator_id()` es la única de las 16 SIN `SET search_path`.**
+> No es explotable hoy (`anon` y `authenticated` no tienen `CREATE` sobre
+> `public`, medido, y el cuerpo cualifica `public.users`/`auth.uid()`). Pero es
+> **el guard de 10 de las 16 y de las 61 políticas**. Si una migración futura
+> concede `CREATE` en `public`, o un esquema de extensión precede a `public`,
+> esto pasa de higiene a bypass de autenticación en un paso.
+> **Es la corrección de una línea con mejor relación coste/riesgo del informe.**
+>
+> **Lo que esta fase compra, dicho con precisión:** que el ACL deje de depender
+> del cuerpo. Hoy las 14 están **a una línea** de una fuga cross-tenant
+> completa — borrar el `IF v_operator IS NULL THEN RAISE` en un
+> `CREATE OR REPLACE` (justo lo que pasa al usar la definición *original* en
+> vez de la última) reabre `delete_minted_carton` a un llamante anónimo con
+> sólo el UUID del bulto.
+>
+> **Dos guards que no hacen lo que dicen, dos líneas cada uno:**
+> - `get_enabled_modules_for_operator(NULL)` **esquiva su propio `RAISE`**:
+>   `NULL IS DISTINCT FROM NULL` es `FALSE`. Devuelve `{}` en vez de
+>   `access denied`. No filtra nada, pero es el patrón que alguien copiará mal.
+> - `get_manifest_label_data` devuelve `0 rows` cross-tenant en vez de `42501`
+>   — un `0 rows` no distingue «bloqueado» de «no hay datos», que es la trampa
+>   que este spec ya documentó con `map_comuna_alias`.
+>
+> **Para la fase 4 (el check automático):** debe añadir
+> `has_schema_privilege(rol, nspname, 'USAGE')` y excluir
+> `prorettype = 'trigger'::regtype`. Sin lo primero da falsos positivos
+> (`authenticative.is_user_authenticated` tiene ACL abierto y muere con
+> `permission denied for schema`); sin lo segundo cuenta los 18 triggers, que
+> mueren con `trigger functions can only be called as triggers`. **Y su test
+> necesita control positivo**: en la auditoría, 6 de 16 sondas «morían» también
+> para el dueño legítimo hasta rehacerlas — no probaban nada.
+>
+> **Los 16 tienen consumidores exclusivamente bajo
+> `apps/frontend/src/app/app/**`** (área autenticada tras el middleware);
+> ninguno llama sin sesión. Verificado por grep, no asumido — así que el
+> `REVOKE` no rompe ningún camino vivo.
+
+
 **Archivos:** migración nueva en `packages/database/supabase/migrations/`, test pgTAP en `packages/database/supabase/tests/`
 
 Las 17 funciones con guard efectivo pero sin `REVOKE` nunca aplicado (`add_manifest_to_route`, `cancel_pickup_route`, `close_pickup_route`, `complete_route_reception`, `delete_minted_carton`, `disable_module_for_operator`, `enable_module_for_operator`, `expand_carton`, `get_current_user_role`, `get_enabled_modules_for_operator`, `get_manifest_label_data`, `get_module_audit_for_operator`, `get_operator_id`, `get_route_reception_snapshot`, `list_operators_with_module_state`, `mark_manifest_labels_printed`, `remove_manifest_from_route`). Sin riesgo activo — cada una falla limpio ante `anon` hoy — pero dejar el ACL real coherente con la intención de cada función es higiene que cierra la clase de "hoy no hay guard porque alguien lo olvidó" antes de que ocurra, no después. Baja prioridad, sin fecha — se puede tomar en cualquier momento sin coordinar con nada más de este spec.
