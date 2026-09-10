@@ -164,33 +164,57 @@ export interface CachedManifestRow {
   downloadedAt: string;
 }
 
+/**
+ * Cadenas de índice por versión, exportadas — ronda 3 de revisión de
+ * spec-82 fase 2. `db.schema-upgrade.test.ts` construye un estado "sólo
+ * hasta la versión 2" para poblarlo antes de abrir la clase real en
+ * versión 3; sin exportar esto, ese archivo tendría que copiar estas
+ * cadenas a mano, y una copia puede divergir de aquí en silencio (pasó:
+ * un `.upgrade()` que BORRA filas en vez de tablas pasaba verde contra una
+ * fotocopia). Importando las mismas constantes, no hay nada que
+ * sincronizar — sólo hay una definición.
+ */
+export const SCAN_QUEUE_V1_STORES =
+  '++id, manifest_id, operator_id, synced, [manifest_id+synced], scanned_at';
+export const PICKUP_QUEUE_V2_STORES =
+  '++id, clientOperationId, operatorId, manifestId, status';
+export const MANIFEST_CACHE_V3_STORES =
+  '++id, operatorId, externalLoadId, [operatorId+externalLoadId]';
+
 export class AureonOfflineDB extends Dexie {
   scan_queue!: EntityTable<ScanQueue, 'id'>;
   pickup_queue!: EntityTable<PickupQueueEntry, 'id'>;
   manifest_cache!: EntityTable<CachedManifestRow, 'id'>;
 
-  constructor() {
-    super('aureon_offline');
+  /**
+   * `name` con valor por defecto — ronda 3 de revisión de spec-82 fase 2 —
+   * para que `db.schema-upgrade.test.ts` pueda instanciar esta clase REAL
+   * bajo un nombre de base aislado, en vez de mantener una fotocopia local
+   * de los `stores({...})` que podía divergir de este archivo en silencio
+   * (y de hecho lo hizo: un upgrade que BORRA filas en vez de tablas pasaba
+   * verde contra la fotocopia). Todo llamador de producción sigue
+   * obteniendo `'aureon_offline'` sin cambiar una línea.
+   */
+  constructor(name: string = 'aureon_offline') {
+    super(name);
 
     // Define schema version 1
     this.version(1).stores({
-      scan_queue:
-        '++id, manifest_id, operator_id, synced, [manifest_id+synced], scanned_at',
+      scan_queue: SCAN_QUEUE_V1_STORES,
     });
 
     // spec-81 fase 1 — cola offline de Recogida. No se toca el índice de
     // `scan_queue`: los índices se congelan en la versión donde se
     // publicaron (ver spec-81, ronda 1, B7).
     this.version(2).stores({
-      pickup_queue: '++id, clientOperationId, operatorId, manifestId, status',
+      pickup_queue: PICKUP_QUEUE_V2_STORES,
     });
 
     // spec-82 fase 2 — caché de lectura offline por manifiesto. Igual
     // congelamiento de índices que arriba: si una fase futura necesita otro
     // índice, va en una versión nueva, no editando ésta.
     this.version(3).stores({
-      manifest_cache:
-        '++id, operatorId, externalLoadId, [operatorId+externalLoadId]',
+      manifest_cache: MANIFEST_CACHE_V3_STORES,
     });
   }
 }

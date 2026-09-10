@@ -1,70 +1,58 @@
 /**
- * spec-82 fase 2, revisión (menor) — "escribe el test del upgrade con
- * datos v2 poblados. El revisor lo escribió para verificarlo y lo borró;
- * debería quedar en el repo."
+ * spec-82 fase 2, revisión (bloqueante, ronda 3) — "escribe el test del
+ * upgrade con datos v2 poblados", y que sea contra `db.ts` de verdad, no
+ * contra una fotocopia.
  *
- * `db.pickup-queue.test.ts` sólo prueba que el esquema DECLARA las tablas
- * (`toBeDefined()`), lo que pasaría igual con un upgrade que borrara todas
- * las filas. Este archivo prueba lo que de verdad importa: una base v2 con
- * datos reales sobrevive intacta al `version(3)` que sumó `manifest_cache`
- * (spec-82 fase 2) — Dexie declara un DELTA de esquema por versión, así
- * que las tablas no nombradas en `version(3).stores({...})` deben
- * conservarse tal cual.
+ * Ronda 2 de este mismo hallazgo declaraba dos clases Dexie locales que
+ * copiaban a mano los `stores({...})` de `db.ts` — nunca importaba
+ * `AureonOfflineDB`. Medido: un `.upgrade()` en `version(3)` que BORRA LAS
+ * FILAS de `pickup_queue`/`scan_queue` (en vez de las tablas) pasaba verde
+ * contra esa fotocopia, porque la fotocopia no tenía upgrade que ejecutar.
+ * Es exactamente el escenario que este test existe para prevenir: cada
+ * escaneo y cada cierre sin subir, de cada dispositivo que actualice la
+ * PWA, borrado en silencio.
  *
- * Nombre de base único (no `aureon_offline`) para no interferir con el
- * singleton real que usan el resto de los tests de este mismo proceso.
+ * Arreglo: `AureonOfflineDB` ahora acepta un `name` opcional (default
+ * `'aureon_offline'`, sin cambiar nada para producción). La fase "abrir en
+ * v3" de este test usa la clase REAL — cualquier mutación en su
+ * `version(3)` (tabla borrada, `.upgrade()` destructivo) se ejecuta de
+ * verdad aquí. La fase "sembrar v2" sigue necesitando una clase aparte
+ * (Dexie no permite "detener" una clase en una versión anterior a la que
+ * declara), pero usa las MISMAS constantes de índice exportadas por
+ * `db.ts` (`SCAN_QUEUE_V1_STORES`/`PICKUP_QUEUE_V2_STORES`) — no hay nada
+ * que copiar a mano ni que pueda divergir en silencio.
  */
 import { describe, it, expect } from 'vitest';
 import Dexie, { type EntityTable } from 'dexie';
-import type { ScanQueue, PickupQueueEntry } from './db';
+import {
+  AureonOfflineDB,
+  SCAN_QUEUE_V1_STORES,
+  PICKUP_QUEUE_V2_STORES,
+  type ScanQueue,
+  type PickupQueueEntry,
+} from './db';
 
 const TEST_DB_NAME = 'aureon_offline_schema_upgrade_test';
 
+/** Sólo para sembrar el estado "antes" — ver el docstring de arriba sobre
+ * por qué esta parte, y sólo esta parte, no puede evitar declarar sus
+ * propias versiones. Las cadenas de índice vienen de `db.ts`, no de aquí. */
 class V2Only extends Dexie {
   scan_queue!: EntityTable<ScanQueue, 'id'>;
   pickup_queue!: EntityTable<PickupQueueEntry, 'id'>;
 
-  constructor() {
-    super(TEST_DB_NAME);
-    // Mismas definiciones que db.ts versiones 1 y 2, palabra por palabra —
-    // si alguna vez divergen, este test deja de ser representativo, así
-    // que cualquier cambio a esos `stores({...})` en db.ts tiene que
-    // reflejarse aquí también.
-    this.version(1).stores({
-      scan_queue:
-        '++id, manifest_id, operator_id, synced, [manifest_id+synced], scanned_at',
-    });
-    this.version(2).stores({
-      pickup_queue: '++id, clientOperationId, operatorId, manifestId, status',
-    });
-  }
-}
-
-class V3WithManifestCache extends Dexie {
-  scan_queue!: EntityTable<ScanQueue, 'id'>;
-  pickup_queue!: EntityTable<PickupQueueEntry, 'id'>;
-
-  constructor() {
-    super(TEST_DB_NAME);
-    this.version(1).stores({
-      scan_queue:
-        '++id, manifest_id, operator_id, synced, [manifest_id+synced], scanned_at',
-    });
-    this.version(2).stores({
-      pickup_queue: '++id, clientOperationId, operatorId, manifestId, status',
-    });
-    this.version(3).stores({
-      manifest_cache:
-        '++id, operatorId, externalLoadId, [operatorId+externalLoadId]',
-    });
+  constructor(name: string) {
+    super(name);
+    this.version(1).stores({ scan_queue: SCAN_QUEUE_V1_STORES });
+    this.version(2).stores({ pickup_queue: PICKUP_QUEUE_V2_STORES });
   }
 }
 
 describe('schema upgrade v2 -> v3 (manifest_cache, spec-82 fase 2)', () => {
-  it('preserves populated scan_queue and pickup_queue rows, payload intact', async () => {
+  it('preserves populated scan_queue and pickup_queue rows, payload intact, opening the REAL AureonOfflineDB', async () => {
     await Dexie.delete(TEST_DB_NAME);
 
-    const v2 = new V2Only();
+    const v2 = new V2Only(TEST_DB_NAME);
     await v2.scan_queue.add({
       manifest_id: 'manifest-1',
       order_id: 'order-1',
@@ -93,7 +81,9 @@ describe('schema upgrade v2 -> v3 (manifest_cache, spec-82 fase 2)', () => {
     expect(v2.verno).toBe(2);
     v2.close();
 
-    const v3 = new V3WithManifestCache();
+    // La pieza real: la clase de PRODUCCIÓN, mismo código que usa
+    // `lib/db.ts` en runtime — no una reconstrucción.
+    const v3 = new AureonOfflineDB(TEST_DB_NAME);
     await v3.open();
 
     expect(v3.verno).toBe(3);
