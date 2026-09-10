@@ -24,18 +24,33 @@
 -- still LEFT JOINed per order then reduced with MIN() — same aggregation
 -- shape the function already used for pp.name. A load with orders split
 -- across two different pickup points was already non-deterministic on
--- `pickup_point` before this migration; this does not make that worse.
+-- `pickup_point` before this migration (could show either point's name);
+-- this migration adds the same non-determinism to the window/cutoff
+-- columns, for the same reason. Review round 2 mitigant, worth stating
+-- explicitly rather than leaving implicit: MIN(end) and MIN(cutoff) are
+-- always the STRICTER of the two points' values (the earlier close time),
+-- so this can only ever make the semaphore MORE cautious than reality, never
+-- less — it cannot show `dentro_de_plazo` when the load is actually past a
+-- real close time. It also cannot show a real close time that's later than
+-- the true window as `sin_datos`: MIN() over non-NULL values only produces
+-- NULL when every candidate is NULL. The failure mode this leaves on the
+-- table is showing the WRONG point's window text next to the right
+-- semaphore color, not an unsafe color.
 --
--- ACL: this function has never had an explicit GRANT (verified with
--- `git grep -n get_pending_manifests packages/database/supabase/migrations/*.sql
--- | grep -i grant` on 2026-09-10 — no hits) and was not flagged by spec-88's
--- anon-SECURITY-DEFINER audit. It is SECURITY INVOKER, so PostgREST executes
--- it as the calling role and RLS on the underlying tables (orders,
--- manifests, pickup_points, pickup_scans) is what actually gates access —
--- an anonymous caller gets an empty result, not another operator's data.
--- The DROP+CREATE OR REPLACE pattern here is identical to what
--- 20260820000006 already did with the same starting ACL state, so this is
--- not a new exposure — no REVOKE/GRANT statements are added.
+-- ACL (round-2 correction — the original text here had the right
+-- conclusion on a wrong premise). This function has never had an explicit
+-- GRANT (verified with `git grep -n get_pending_manifests
+-- packages/database/supabase/migrations/*.sql | grep -i grant` on
+-- 2026-09-10 — no hits), but that does NOT mean no default privileges apply:
+-- Supabase's `pg_default_acl` grants `anon=X` on newly created functions,
+-- and DROP+CREATE (this migration's own pattern) re-triggers that default,
+-- re-granting `anon=X` — measured directly against a live instance, not
+-- assumed. What actually closes this off is SECURITY INVOKER + RLS: an
+-- anonymous PostgREST call executes as `anon`, and `anon` has no SELECT
+-- grant on `manifests`/`orders`/`pickup_points` at all, so the call fails
+-- outright — measured: `ERROR: permission denied for table manifests`, not
+-- an empty result set as an earlier version of this comment claimed. Same
+-- safety conclusion (no exposure), corrected mechanism.
 -- =============================================================================
 
 BEGIN;

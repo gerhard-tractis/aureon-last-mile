@@ -217,8 +217,23 @@ alternativa.
 
 - [x] Decidir qué gana el borde izquierdo — **decidido: nada nuevo. El borde
       conserva selección y merma; la ventana no lo toca.**
-- [x] Poblar `operating_hours` / `pickup_cutoff_time` donde falten (nadie los
+- [ ] Poblar `operating_hours` / `pickup_cutoff_time` donde falten (nadie los
       escribe hoy) y hacer que `get_pending_manifests` los devuelva.
+      **Corrección tras review round 2 (2026-09-10): esta casilla estaba
+      marcada `[x]` sin haberse hecho.** Lo que existe es el camino de
+      escritura (formulario admin + rutas API) y la lectura en
+      `get_pending_manifests` — la propia migración lo dice: "no data is
+      written here". Hoy sigue sin haber ni un solo punto de retiro con
+      `operating_hours`/`pickup_cutoff_time` configurado, en QA ni en
+      prod. Consecuencia real tras el merge: la columna VENTANA sale gris
+      (`sin_datos`) en TODAS las filas hasta que un humano abra el
+      formulario punto por punto. Falta, y queda fuera de esta fase por ser
+      trabajo operativo, no de código: (a) que alguien con el dato real
+      (horario real del punto, hora de cierre de retiros del operador) lo
+      cargue fila por fila desde el admin ya construido, o (b) un
+      backfill/seed de QA si se quiere ver la columna en verde/ámbar antes
+      de eso. Ninguna opción es inventar el dato — sigue el mismo criterio
+      que spec-54 ya sentó para esta pantalla.
 - [x] Columna de ventana con semáforo, sin tocar `border-l-*`.
 
 **Archivos:** `apps/frontend/src/components/pickup/ManifestTable.tsx` (columna
@@ -284,10 +299,68 @@ poblado de `operating_hours`/`pickup_cutoff_time`.
   de la query completa, así que no hereda ese problema, pero tampoco lo
   arregla: si la query en pausa deja `pendingRows` vacío, la tabla entera se
   ve vacía, columna de ventana incluida — declarado, no corregido aquí.
-- **Gap declarado, no corregido:** no existen tests para las rutas API de
-  `pickup-points` (ni antes de esta fase ni ahora) — se cubre indirectamente
-  vía `PickupPointForm.test.tsx`, que ejercita el payload exacto que la ruta
-  espera, pero no la ruta misma (auth, zod, persistencia).
+- **Gap cerrado tras review round 2:** ya existen tests para la ruta PUT
+  (`[id]/route.test.ts`, 4 tests: 401, 400 por formato inválido, y los dos
+  casos de merge/clear de `sla_config` descritos abajo). Ver el resto de
+  esta sección para el detalle de qué encontró la ronda 2.
+
+**Review round 2 (2026-09-10) — 3 bloqueantes, 2 menores de datos y 4
+menores de documentación, todos cerrados:**
+
+1. **B1 — `??` con cadena vacía (mutante superviviente confirmado).**
+   `pickupCutoffTime ?? pickupWindowEnd` no cae al `windowEnd` cuando el
+   cutoff es `''` (string vacío no es `null`/`undefined`). Un formulario
+   nuevo con el campo en blanco —el caso más probable en producción durante
+   semanas— dejaba una ventana bien poblada en `sin_datos` con la etiqueta
+   mostrando el rango real al lado: el semáforo contradiciendo el texto.
+   Corregido con `nonBlank()` (trata `''`/espacios como ausente) aplicado en
+   `resolveCloseTime` **y** en `formatPickupWindowLabel`. Tests nuevos:
+   cutoff vacío, cutoff sólo-espacios, y el mismo par para la etiqueta.
+2. **B2 — el PUT no podía borrar un cutoff.** `values.cutoff ? {...} :
+   undefined` en modo edición producía una clave omitida, y la ruta salta
+   toda clave `undefined` — vaciar el campo y guardar no hacía nada, para
+   siempre. Corregido: en modo `edit` el formulario **siempre** envía
+   `sla_config`, con `pickup_cutoff_time: valor || null` — nunca omite la
+   clave. `null` es ahora un valor de escritura válido y distinto de
+   "omitido" en el esquema de la ruta.
+3. **B3 — el PUT machacaba `sla_config` entero.** Un `UPDATE` que sólo
+   cambiaba el nombre borraba silenciosamente `max_delivery_hours` y
+   cualquier otra clave que el formulario no muestra. Corregido: la ruta
+   ahora lee el `sla_config` actual antes de actualizar y hace
+   `{...actual, ...enviado}` — sólo las claves enviadas se tocan.
+4. **Validación de formato en las tres capas.** No existía ninguna. Regex
+   compartida (`TIME_HH_MM_REGEX`, `apps/frontend/src/lib/pickup/timeFormat.ts`)
+   usada en `pickupPointFormSchema.ts` (formulario) y en
+   `pickupPointApiSchemas.ts`, nuevo, compartido entre las dos rutas API —
+   cierra B1 de paso (un cutoff con formato inválido ya no puede ni
+   guardarse) y evita literales tipo "Cierra banana" en la interfaz.
+5. **`HH:MM:SS` cae en `sin_datos`.** El *camino de escritura* exige
+   `HH:MM` estricto (rechaza segundos, para forzar un formato limpio al
+   entrar), pero la *lectura pura* (`parseTimeToday`) ahora tolera un
+   `:SS` final — un dato poblado directamente por SQL (backfill futuro,
+   seed de QA) es más probable en esa forma que en la que este formulario
+   siempre guarda.
+6. **Menores de documentación, todos corregidos en el propio código/migración:**
+   la nota de ACL de la migración tenía la conclusión correcta con la
+   premisa falsa (afirmaba "no default privileges"; medido: sí existen y el
+   `DROP`+`CREATE` los re-concede a `anon`; la seguridad real viene de
+   `SECURITY INVOKER` + RLS, y un llamador anónimo mide
+   `ERROR: permission denied for table manifests`, no un resultado vacío) —
+   corregida. Zona horaria local sin normalizar: anotada en
+   `parseTimeToday`. Ventana ya cerrada (23:00 contra un cierre de 13:00) no
+   tiene un cuarto estado — es decisión de producto, declarada en
+   `getPickupWindowStatus`, no resuelta aquí. `MIN(name)`/`MIN(start)`
+   agregados por separado cuando una carga tiene órdenes en dos puntos:
+   documentado en la migración con el mitigante real (`MIN(end)`/
+   `MIN(cutoff)` son siempre los más estrictos — nunca sobrestima el tiempo
+   disponible, sólo puede mostrar el texto del punto equivocado).
+
+Rama `feat/spec-83-fase-2-ventana`, PR #738. Ronda 1 aprobó lo esencial
+(lógica pura, migración, `spec61_pending_excludes_routed`, borde izquierdo
+intacto, 9/10 mutantes) y encontró B1-B3 más los menores listados arriba,
+todos cerrados en esta ronda con TDD (RED confirmado antes de cada fix). La
+fase sigue `[in_progress]` — evidencia formal de review/QA la añade quien
+corresponda tras verificarla, no quien implementa.
 
 ### Fase 3 — Ocupación `[parked]`
 
