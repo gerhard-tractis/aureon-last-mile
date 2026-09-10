@@ -177,6 +177,26 @@ describe('ScanningPage', () => {
     expect(wrapper?.className).toContain('sm:p-6');
   });
 
+  // Hotfix móvil 2026-09-10 — este wrapper es hijo directo de
+  // `<main className="flex min-h-0 flex-1 flex-col">` (AppLayout). En un
+  // contenedor flex, un item con márgenes AUTO en el eje transversal
+  // (`mx-auto`) deja de estirarse y pasa a medir su tamaño intrínseco,
+  // que `max-w-2xl` fija en 672px. En un teléfono de 375px eso maquetaba
+  // la pantalla entera a 672px: el contenido se salía y aparecía scroll
+  // horizontal. `w-full` devuelve el ancho al 100% del contenedor y
+  // `max-w-2xl` vuelve a ser sólo un techo en escritorio.
+  //
+  // Se comprueba la clase, no la geometría: jsdom no calcula layout, así
+  // que la única forma honesta de fijar este contrato en un test unitario
+  // es sobre la clase que lo produce. La medición real se hizo en un
+  // navegador (375px → 672px antes, 375px después).
+  it('la envoltura de la página ocupa el ancho disponible, no su tamaño intrínseco', () => {
+    const { container } = render(<ScanningPage />);
+    const wrapper = container.firstElementChild;
+    expect(wrapper?.className).toContain('max-w-2xl');
+    expect(wrapper?.className).toContain('w-full');
+  });
+
   describe('spec-53 print labels button', () => {
     it('is absent when the PACKAGE_LABELS module is disabled', () => {
       mockUseModuleEnabled.mockReturnValue(false);
