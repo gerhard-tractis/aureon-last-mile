@@ -24,6 +24,15 @@ import { ModuleKey } from '@/lib/modules/registry';
 import { useOfflineScanSource } from '@/hooks/pickup/useOfflineScanSource';
 import { ManifestNotDownloadedNotice } from '@/components/pickup/ManifestNotDownloadedNotice';
 
+/** DD/MM HH:MM, a mano — ver el comentario donde se usa: Intl/toLocaleString
+ * varía el padding de día/mes entre entornos de ICU, y esto sólo necesita
+ * ser legible, no localizado. */
+function formatDownloadedAt(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export default function ScanningPage() {
   const params = useParams();
   const router = useRouter();
@@ -362,6 +371,21 @@ export default function ScanningPage() {
               No se puede confirmar cuántos bultos ya se verificaron mientras
               no haya red. Lo que ves abajo puede no reflejar el progreso real.
             </p>
+            {/* Menor, revisión de fase 2 — `downloadedAt` se escribía y
+                nunca se leía: una carga descargada ayer con bultos
+                corregidos hoy se mostraba como si fuera actual, sin marca
+                de tiempo ni aviso. Esto no resuelve la desactualización
+                (sigue sin invalidación automática, ver el spec) pero al
+                menos dice DE CUÁNDO son los datos. */}
+            {/* Formateado a mano (no Intl/toLocaleString) — el padding de
+                día/mes de Intl varía entre entornos/versiones de ICU
+                (Node local vs. CI), y esto sólo necesita ser legible, no
+                localizado. */}
+            {offline.snapshot && (
+              <p className="text-xs text-text-muted">
+                Descargado el {formatDownloadedAt(offline.snapshot.downloadedAt)}
+              </p>
+            )}
           </div>
         )}
 

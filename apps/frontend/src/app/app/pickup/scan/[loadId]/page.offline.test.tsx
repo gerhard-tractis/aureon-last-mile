@@ -244,6 +244,34 @@ describe('ScanningPage offline (spec-82 fase 2)', () => {
     ).toBeInTheDocument();
   });
 
+  // Menor, revisión de fase 2 — `downloadedAt` se escribía y nunca se leía:
+  // una carga descargada ayer con bultos cambiados hoy se mostraba como si
+  // fuera actual, sin marca de tiempo ni aviso. Mostrarla no resuelve la
+  // desactualización (eso sigue siendo "sin invalidación automática", ver
+  // el spec) pero al menos el operario sabe DE CUÁNDO son los datos.
+  it('shows when the snapshot was downloaded', () => {
+    mockUseSyncQueue.mockReturnValue(offlineSync());
+    mockOfflineScanSource.mockReturnValue({
+      unknown: false,
+      blocked: false,
+      snapshot: {
+        operatorId: 'op-1',
+        externalLoadId: 'CARGA-99817',
+        manifestId: 'manifest-1',
+        totalPackages: 25,
+        pickupRouteId: 'route-1',
+        retailerName: 'Ripley',
+        pickupLocation: 'Parque Arauco',
+        orders: [],
+        downloadedAt: '2026-09-08T14:30:00.000Z',
+      },
+    });
+
+    render(<ScanningPage />);
+
+    expect(screen.getByText(/descargad[oa].*08\/09|08\/09.*descargad[oa]/i)).toBeInTheDocument();
+  });
+
   // spec-82 fase 2, revisión M6 — un fallo de red ANTERIOR (mientras había
   // señal) deja `ordersError` pegado en la caché de React Query; al perder
   // señal después, con un snapshot válido, ese error viejo no puede seguir
