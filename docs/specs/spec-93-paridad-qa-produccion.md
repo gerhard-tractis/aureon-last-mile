@@ -167,24 +167,29 @@ step summary.
 
 Medido el 2026-09-10.
 
-| # | Superficie | QA (medido) | Producción | ¿Lo ejercita algo? |
+| # | Superficie | QA (medido) | Producción (medido) | ¿Lo ejercita algo? |
 |---|---|---|---|---|
-| 1 | Hook `custom_access_token_hook` | `GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED=true`, `..._URI=pg-functions://postgres/public/custom_access_token_hook` | _pendiente del dispatch_ | **Sí** — `spec52-…spec.ts:97-99` exige `operator_id`/`role`/`permissions` en la **raíz** del JWT (fase 2, matiz 1) |
-| 2 | Expiración del JWT | `GOTRUE_JWT_EXP=3600` | _pendiente_ | No |
-| 3 | Proveedores de auth | `EXTERNAL_EMAIL_ENABLED=true`, `PHONE=false`, `ANONYMOUS_USERS=false`, `DISABLE_SIGNUP=true` | _pendiente_ | Parcial — el login por email sí; que teléfono y anónimo estén **apagados**, nadie lo comprueba |
-| 4 | Extensiones instaladas | `pg_cron 1.6.4`, `pg_net 0.20.3`, `pg_stat_statements 1.11`, `pgcrypto 1.3`, `plpgsql 1.0`, `postgis 3.3.7`, `supabase_vault 0.3.1`, `uuid-ossp 1.1` | _pendiente_ | Indirecto — `postgis` lo usan 9 migraciones; `pg_net` **ninguna** |
-| 5 | `pgtap` | **NO instalada.** Disponible (`1.3.3`) pero ausente de `pg_extension` | _pendiente_ | **No, y peor:** ver «El hallazgo 1» |
-| 6 | `pg_graphql` | **NO instalada.** Disponible (`1.5.11`) pero ausente — aunque el esquema `graphql_public` existe y PostgREST lo expone | _pendiente_ | No |
-| 7 | Roles y pertenencias | 16 roles; `authenticator` ∈ {anon, authenticated, service_role}; `supabase_storage_admin` ∈ {authenticator} | _pendiente_ | Indirecto — cada consulta del e2e pasa por RLS bajo `anon`/`authenticated` |
-| 8 | GUCs de base | `app.settings.jwt_secret`, `app.settings.jwt_exp` sobre `postgres` | _pendiente_ | No |
-| 9 | `cron.job` | 2 jobs, ambos como `postgres`: `nightly-metrics` (`0 2 * * *`), `dashboard_monthly_rollup` (`30 2 * * *`) | _pendiente_ | **No** — el e2e no espera a las 02:00 |
-| 10 | PostgREST | `DB_SCHEMAS=public,graphql_public`, `MAX_ROWS=1000`, `ANON_ROLE=anon`, `EXTRA_SEARCH_PATH=public` | _pendiente_ | Parcial — los datos del e2e no rozan `max-rows`, así que una diferencia ahí nunca se vería |
+| 1 | Hook `custom_access_token_hook` | `ENABLED=true`, `URI=pg-functions://postgres/public/custom_access_token_hook` | `hook_custom_access_token_enabled: true`, mismo URI | **Sí** — `spec52-…spec.ts:97-99` exige `operator_id`/`role`/`permissions` en la **raíz** del JWT (fase 2, matiz 1) |
+| 2 | Expiración del JWT | `GOTRUE_JWT_EXP=3600` | `jwt_exp: 3600` | No — pero **converge** |
+| 3 | Proveedores de auth | `EXTERNAL_EMAIL=true`, `PHONE=false`, `ANONYMOUS=false` | `external_email_enabled: true`, `phone: false`, `anonymous: false` | Parcial — el login por email sí; que teléfono y anónimo estén apagados, nadie lo comprueba |
+| 3b | **`disable_signup`** | `true` — registro cerrado | **`false`** — registro **abierto** | **No** — ⚠️ divergencia |
+| 3c | **`mailer_autoconfirm`** | `true` — auto-confirma | **`false`** — exige confirmar por email | **No** — ⚠️ divergencia |
+| 3d | **MFA TOTP** | no declarada → default de GoTrue | `mfa_totp_enroll_enabled: true`, `mfa_totp_verify_enabled: true` | **No** — ⚠️ divergencia |
+| 3e | **Rotación de refresh tokens** | no declarada → default | `refresh_token_rotation_enabled: true`, `security_refresh_token_reuse_interval: 10` | **No** — ⚠️ divergencia |
+| 4 | Extensiones instaladas | `pg_cron`, `pg_net`, `pg_stat_statements`, `pgcrypto`, `plpgsql`, `postgis 3.3.7`, `supabase_vault`, `uuid-ossp` | ⛔ **sin medir** — ver «El bloqueo» | Indirecto — `postgis` lo usan 9 migraciones; `pg_net` **ninguna** |
+| 5 | `pgtap` | **NO instalada** (disponible 1.3.3) | ⛔ sin medir | **No, y peor:** ver «El hallazgo 1» |
+| 6 | `pg_graphql` | **NO instalada** (disponible 1.5.11), aunque `graphql_public` existe y PostgREST lo expone | ⛔ sin medir | No |
+| 7 | Roles y pertenencias | 16 roles; `authenticator` ∈ {anon, authenticated, service_role} | ⛔ sin medir | Indirecto — cada consulta del e2e pasa por RLS |
+| 8 | GUCs de base | `app.settings.jwt_secret`, `app.settings.jwt_exp` | ⛔ sin medir | No |
+| 9 | `cron.job` | 2 jobs, ambos `postgres`: `nightly-metrics`, `dashboard_monthly_rollup` | ⛔ sin medir | **No** — el e2e no espera a las 02:00 |
+| 10 | PostgREST — esquemas y `max-rows` | `DB_SCHEMAS=public,graphql_public`, `MAX_ROWS=1000` | `db_schema: public,graphql_public`, `max_rows: 1000` | Parcial — los datos del e2e no rozan `max-rows` |
+| 10b | **PostgREST — `extra_search_path`** | `public` | **`public, extensions`** | **No** — ⚠️ divergencia |
 | 11 | Rutas de Kong | `/auth/v1/`, `/rest/v1/`, `/storage/v1/`, `/functions/v1/`, `/graphql/v1`, `/realtime/v1/`, `/analytics/v1` | **No comparable** — prod es el gateway gestionado, no Kong | Sólo `/auth/v1/` y `/rest/v1/` |
-| 12 | Publicación `supabase_realtime` | **2 tablas**: `public.orders`, `public.dock_verifications` | _pendiente_ | **No** — ver «El hallazgo 2» |
-| 13 | Buckets de storage | `files` (privado, sin límite), `manifests` (privado, 10 MiB, `image/{jpeg,png,webp,heic,heif}`) | _pendiente_ | **No** — ningún e2e sube un fichero |
-| 14 | Políticas de storage | 8 sobre `storage.objects`: 4 `manifests_*` (`authenticated`) + 4 heredadas `Give users access to own folder …` (`public`) | _pendiente_ | No |
-| 15 | Edge functions desplegadas | `beetrack-webhook`, `dispatchtrack-route-poll`, `main` | _pendiente_ | **No** — ningún e2e invoca `/functions/v1/` |
-| 16 | Variables del runtime de edge | `BEETRACK_WEBHOOK_SECRET`, `JWT_SECRET`, `SUPABASE_{URL,ANON_KEY,SERVICE_ROLE_KEY,DB_URL,PUBLIC_URL,PUBLISHABLE_KEYS,SECRET_KEYS}`, `VERIFY_JWT` | _pendiente_ | No |
+| 12 | Publicación `supabase_realtime` | **2 tablas**: `orders`, `dock_verifications` | ⛔ **sin medir** — es la fila que decide la dirección del hallazgo 2 | **No** — ver «El hallazgo 2» |
+| 13 | Buckets de storage | `files` (privado), `manifests` (privado, 10 MiB, imágenes) | ⛔ sin medir | **No** — ningún e2e sube un fichero |
+| 14 | Políticas de storage | 8 sobre `storage.objects` | ⛔ sin medir | No |
+| 15 | Edge functions desplegadas | `beetrack-webhook`, `dispatchtrack-route-poll`, `main` | `beetrack-webhook` (ACTIVE, `verify_jwt=false`, v30), `dispatchtrack-route-poll` (ACTIVE, `verify_jwt=true`, v12) | **No** — ningún e2e invoca `/functions/v1/`. `main` es el router del runtime autohospedado: **converge** |
+| 16 | Variables del runtime de edge | `BEETRACK_WEBHOOK_SECRET`, `JWT_SECRET`, `SUPABASE_*`, `VERIFY_JWT` | **No comparable** — la Management API no expone los secretos de una function | No |
 
 Comandos de la columna QA, para que cada fila sea reproducible:
 
@@ -221,6 +226,75 @@ ssh root@<VPS> "docker exec supabase-qa-db psql -U postgres -At -c \
 ssh root@<VPS> "docker exec supabase-qa-edge-functions ls /home/deno/functions"
 ssh root@<VPS> "docker inspect supabase-qa-edge-functions --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -E 's/=.*//' | sort"
 ```
+
+#### El bloqueo: cinco superficies de producción siguen sin medir
+
+Las tres superficies que lee la **Management API** (auth, PostgREST, edge
+functions) se midieron sin problema. Las cinco que necesitan **`psql`** —
+extensiones, roles, GUCs/`cron`, realtime, storage — no, y el motivo no es de
+este spec:
+
+```
+psql: error: connection to server at "aws-0-sa-east-1.pooler.supabase.com",
+port 6543 failed: FATAL: (ENOTFOUND) tenant/user postgres.<ref> not found
+```
+
+`scripts/resolve-supabase-pooler-host.sh` **construye** el host a partir de la
+región (`aws-0-${region}.pooler.supabase.com`) en lugar de leerlo. El prefijo
+`aws-0-` no es universal, y para este proyecto es incorrecto.
+
+**Esto no lo arregla spec-93, y no debe arreglarlo por su cuenta.** Ya está
+arreglado en el **PR #753** (`fix/pooler-host-from-api`, de otra sesión), que
+resuelve la conexión desde la Management API en vez de plantillar la región, y
+que toca ese script y los dos workflows de producción. Duplicarlo aquí sería
+resolver el mismo bug dos veces y con conflicto seguro.
+
+Dato que conviene tener escrito: **la vía `psql` contra producción no ha
+funcionado nunca en este repo.** `prod-readonly-query.yml` no se había
+disparado ni una vez, y las tres corridas de
+`prod-backfill-loaded-route-id.yml` (2026-09-10) fallaron todas con este mismo
+error. El workflow existía, se leía como capacidad disponible, y no lo era —
+otra instancia del patrón que este spec persigue, esta vez en la propia
+herramienta de medir.
+
+Cuando #753 mergee: adaptar `measure-prod-surfaces.yml` a la nueva interfaz del
+script y volver a disparar. La fase 1 no se cierra hasta entonces.
+
+#### Lo que la columna de producción ya cambió
+
+**La fila 1 converge, y ahora está medida en los dos lados.** La fase 2 cerró
+la divergencia de auth de verdad: mismo hook, mismo URI, misma expiración.
+
+**Y aparecieron cinco divergencias que nadie buscaba**, todas en superficies
+que el spec sí había nombrado pero que nadie había medido:
+
+| Ajuste | Producción | QA | Qué clase de cambio queda sin cobertura |
+|---|---|---|---|
+| `disable_signup` | `false` — abierto | `true` — cerrado | Todo el flujo de alta: en producción se puede registrar, en QA no existe |
+| `mailer_autoconfirm` | `false` | `true` | La confirmación por email. En QA el usuario nace confirmado |
+| `mfa_totp_*` | `true` | no declarada | Cualquier cosa que toque MFA/AAL |
+| `refresh_token_rotation_enabled` | `true` (reuse 10s) | no declarada | Refresco de sesión y reuso de token |
+| PostgREST `extra_search_path` | `public, extensions` | `public` | Una referencia **sin cualificar** a algo del esquema `extensions` resuelve en producción y falla en QA — o al revés, pasa QA y se comporta distinto en prod |
+
+Las dos primeras se refuerzan entre sí: en producción el registro está
+**abierto y exige confirmar por email**; en QA está **cerrado y auto-confirma**.
+Un cambio en el alta de usuarios llega a producción sin haberse ejecutado
+nunca contra esa forma.
+
+La última es la más silenciosa: `extra_search_path` no rompe nada de golpe,
+cambia **cómo se resuelve un nombre sin cualificar**.
+
+**Ninguna se cierra en la fase 1.** Medir es esta fase; cerrar o aceptar es la
+fase 3, y aceptar sin haber medido el otro lado es justo lo que el spec
+prohíbe.
+
+#### Un hallazgo lateral: `whatsapp-webhook` no está desplegada en ningún sitio
+
+`apps/frontend/supabase/functions/whatsapp-webhook` existe en el repo. Producción
+tiene desplegadas dos functions y QA tres (las mismas dos más `main`, el router
+del runtime autohospedado). **`whatsapp-webhook` no está en ninguno de los dos.**
+No es una divergencia QA↔prod — es código que no corre en ninguna parte, y va
+anotado aquí para que quien lo lea no asuma que está vivo.
 
 #### Tres hallazgos que no necesitaban la columna de producción
 
