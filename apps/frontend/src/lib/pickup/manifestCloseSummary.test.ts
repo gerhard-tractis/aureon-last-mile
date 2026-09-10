@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { pendingLoadsLabel, summarizePendingRouteManifests } from './manifestCloseSummary';
+import {
+  pendingLoadsLabel,
+  summarizePendingRouteManifests,
+  backupPhotosLabel,
+} from './manifestCloseSummary';
 
 describe('pendingLoadsLabel', () => {
   it('uses singular noun and verb for exactly 1', () => {
@@ -76,5 +80,39 @@ describe('summarizePendingRouteManifests', () => {
 
     expect(result.pendingCount).toBe(0);
     expect(result.nextManifestLabel).toBeNull();
+  });
+});
+
+/**
+ * Seguimiento de spec-80 fase 6 (PR #736) — `ManifestClosedSummary` recibía
+ * `photosCount: number`, que no puede expresar "no lo sé". Cuando
+ * `useManifestDocuments` queda en pausa (`networkMode:'online'`, sin señal
+ * o con un error transitorio al montar) `documents` es `undefined`, y
+ * `complete/[loadId]/page.tsx` lo convertía en 0 con un `= []` — la MISMA
+ * mentira que la ronda 4 ya corrigió en `ManifestPhotoStrip` (su propio
+ * "manifest-photo-count"), sólo que en el otro lector del mismo dato.
+ *
+ * `serverPhotosCount: number | null` — `null` es "no se sabe" (servidor
+ * ilegible), nunca 0. `queuedPhotosCount` en cambio SIEMPRE se conoce: sale
+ * de IndexedDB, no de la red (`queuedManifestPhotoCount`,
+ * `lib/offline/photos.ts`) — por eso no puede colapsar al mismo `null` que
+ * el servidor. Con servidor ilegible y algo en cola, la pantalla no puede
+ * decir menos de lo que le consta.
+ */
+describe('backupPhotosLabel', () => {
+  it('sums server-confirmed and queued-unconfirmed when the server count is known', () => {
+    expect(backupPhotosLabel(3, 2)).toBe('5 fotos');
+  });
+
+  it('is honest with zero photos', () => {
+    expect(backupPhotosLabel(0, 0)).toBe('0 fotos');
+  });
+
+  it('renders a dash — not "0 fotos" — when the server count is unknown and nothing is queued', () => {
+    expect(backupPhotosLabel(null, 0)).toBe('—');
+  });
+
+  it('still says what it knows when the server is unreadable but the queue is not empty', () => {
+    expect(backupPhotosLabel(null, 2)).toBe('2 en cola (resto desconocido)');
   });
 });

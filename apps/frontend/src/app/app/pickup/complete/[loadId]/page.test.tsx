@@ -544,6 +544,40 @@ describe('CompletionPage', () => {
     ).toBeInTheDocument();
   });
 
+  // Seguimiento de spec-80 fase 6 (PR #736) — este page.tsx pasaba
+  // `documents.length` a `ManifestClosedSummary` con un `= []` en la
+  // desestructuración: el MISMO `undefined` que la ronda 4 ya corrigió en
+  // `ManifestPhotoStrip` (`manifest-photo-count`) seguía convirtiéndose en
+  // "0 fotos" aquí — en la pantalla de carga cerrada, con hojas ya
+  // confirmadas por el servidor. `useManifestDocuments` queda en pausa
+  // (`networkMode:'online'`) devolviendo `data: undefined` en el mismo
+  // escenario que la ronda 4 documentó: un 500/RLS transitorio al montar.
+  it('does not turn an unreadable server photo count into "0 fotos" — shows the dash instead', async () => {
+    mockUseManifestDocuments.mockReturnValue({ data: undefined });
+    mockUseQueuedManifestPhotoCount.mockReturnValue(0);
+
+    await completeAndSubmit();
+
+    await screen.findByText('Carga cerrada');
+    expect(
+      within(screen.getByTestId('summary-row-backup')).getByText('— · 1 firmas')
+    ).toBeInTheDocument();
+  });
+
+  it('still shows the queued count when the server is unreadable, instead of a bare dash', async () => {
+    mockUseManifestDocuments.mockReturnValue({ data: undefined });
+    mockUseQueuedManifestPhotoCount.mockReturnValue(2);
+
+    await completeAndSubmit();
+
+    await screen.findByText('Carga cerrada');
+    expect(
+      within(screen.getByTestId('summary-row-backup')).getByText(
+        '2 en cola (resto desconocido) · 1 firmas'
+      )
+    ).toBeInTheDocument();
+  });
+
   it('maps MANIFEST_NOT_CLOSABLE to a Spanish message', async () => {
     mockRpc.mockResolvedValueOnce({
       data: null,
