@@ -339,9 +339,11 @@ que hacer».
 Los dos hallazgos van en **un solo implementer, no dos en paralelo**: ambos
 tocan `deploy-qa.sh` y el guard de solapamiento los rechazaría con razón.
 
-### Fase 4 — Guardarraíl determinista `[pending]`
+### Fase 4 — Guardarraíl determinista `[in_progress]`
 
-**Archivos:** `.github/workflows/deploy.yml`, `scripts/` (el comparador nuevo)
+**Depende de:** ninguna — el mecanismo se construye contra la lista de superficies de la fase 1, que ya está cerrada; qué filas acaban aceptadas es contenido del fichero de línea base, no del comparador.
+
+**Archivos:** `.github/workflows/qa-prod-parity.yml` (nuevo), `scripts/` (el comparador nuevo y sus tests), `docs/qa-environment.md`
 
 Que esto no pueda volver a descubrirse por accidente en un review.
 
@@ -353,6 +355,50 @@ entornos y rompe el build.
 Punto de diseño que el orquestador tiene que resolver: producción es sólo
 lectura y sus credenciales viven como secretos del pipeline — así que el
 check corre **desde un workflow**, no desde la máquina de nadie.
+
+#### Resuelto (2026-09-10): dos jobs y un artifact, no uno
+
+El punto de diseño escondía una pregunta que el spec no había hecho: **ningún
+runner puede leer los dos entornos.**
+
+- QA vive en la VPS y se lee con `docker inspect` / `docker exec`. Sólo lo
+  alcanza un runner `[self-hosted, vps]` — los que ya usan `deploy-qa` y
+  `deploy-worker` (`deploy.yml:578`, `:437`).
+- Producción es Supabase gestionado y se lee con la Management API y `psql`
+  por el pooler. Eso lo hace cualquier `ubuntu-latest` con los secretos, que
+  es lo que hace `measure-prod-surfaces.yml`.
+
+Se podría meter todo en el runner de la VPS —tiene salida a internet y los
+secretos del repo le llegan igual— y sería un job en vez de dos. **Se rechaza
+a propósito:** eso pondría `SUPABASE_DB_PASSWORD` de producción sobre la VPS
+de QA, que es una máquina bastante menos aislada que un runner efímero de
+GitHub. Hoy la separación es limpia y conviene conservarla — `deploy-qa` corre
+con secretos de QA en la VPS, y `verify-prod-migrations` corre con secretos de
+producción en `ubuntu-latest`. Ningún job tiene hoy los dos, y este tampoco
+debería ser el primero.
+
+Así que: **un job `[self-hosted, vps]` mide QA y sube el resultado como
+artifact; un job `ubuntu-latest` mide producción, se baja el artifact y
+compara.** Cada mitad ve sólo las credenciales que le tocan.
+
+**El runner de la VPS puede estar caído, y eso no puede leerse como verde.**
+Ya ha pasado en este pipeline. Un job que no corre porque su runner está
+offline se queda en `queued` y el comparador de después no debe interpretar la
+ausencia del artifact como «no hay divergencias» — tiene que romper. Es el
+mismo error que este spec persigue, sólo que en la infraestructura del propio
+guardarraíl.
+
+#### La divergencia aceptada se declara en un fichero, no en el código
+
+El comparador no puede exigir igualdad: la fase 3 acepta divergencias a
+propósito, y una aceptada y escrita es un riesgo gestionado. Así que la
+comparación es contra un **fichero de línea base** que lista cada divergencia
+aceptada con su motivo y con qué clase de cambio queda sin cobertura. El check
+falla cuando aparece una divergencia que **no está en el fichero** — no cuando
+los dos entornos difieren.
+
+Eso es también lo que conecta con la fase 5: cada entrada de ese fichero es
+una clase de cambio que no puede auto-aprobarse en spec-92.
 
 ### Fase 5 — Realimentar spec-92 `[pending]`
 
