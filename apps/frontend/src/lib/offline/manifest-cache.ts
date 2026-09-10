@@ -15,8 +15,14 @@ import type { AureonOfflineDB, CachedManifestOrder } from '../db';
 /** Store mínimo que este módulo necesita — mismo patrón que
  * `PickupQueueStore` en `lib/offline/queue-claims.ts`: tipar contra la
  * forma real de Dexie, no contra un `AureonOfflineDB` completo, para que
- * los tests puedan pasar el `db` real sin más ceremonia. */
-export type ManifestCacheStore = Pick<AureonOfflineDB, 'manifest_cache'>;
+ * los tests puedan pasar el `db` real sin más ceremonia.
+ *
+ * `transaction` incluido a partir de M5 (revisión de fase 2) —
+ * `saveManifestSnapshot` necesita `db.transaction(...)` para que su
+ * lectura-luego-escritura sea atómica; sin él, dos descargas concurrentes
+ * del mismo `(operatorId, externalLoadId)` pueden leer "no existe todavía"
+ * antes de que cualquiera escriba y terminar duplicando la fila. */
+export type ManifestCacheStore = Pick<AureonOfflineDB, 'manifest_cache' | 'transaction'>;
 
 export interface ManifestCacheSnapshot {
   operatorId: string;
@@ -37,23 +43,32 @@ export interface ManifestCacheRecord extends ManifestCacheSnapshot {
  * Guarda un snapshot, sobrescribiendo el anterior para el mismo
  * `(operatorId, externalLoadId)` en vez de acumular copias — una
  * re-descarga reemplaza, no duplica (ver el test de este comportamiento).
+ *
+ * M5, revisión de fase 2 — lectura-luego-escritura envuelta en una
+ * transacción `'rw'` de Dexie: sin ella, dos llamadas concurrentes para el
+ * mismo `(operatorId, externalLoadId)` (descargar A y B a la vez, o dos
+ * pestañas) pueden leer "no existe todavía" ANTES de que cualquiera
+ * escriba, y las dos terminan agregando — dejando dos filas donde
+ * `getManifestSnapshot`/`.first()` sirve para siempre la más antigua.
  */
 export async function saveManifestSnapshot(
   db: ManifestCacheStore,
   snapshot: ManifestCacheSnapshot,
 ): Promise<void> {
-  const existing = await db.manifest_cache
-    .where('[operatorId+externalLoadId]')
-    .equals([snapshot.operatorId, snapshot.externalLoadId])
-    .first();
-
   const record = { ...snapshot, downloadedAt: new Date().toISOString() };
 
-  if (existing?.id !== undefined) {
-    await db.manifest_cache.update(existing.id, record);
-  } else {
-    await db.manifest_cache.add(record);
-  }
+  await db.transaction('rw', db.manifest_cache, async () => {
+    const existing = await db.manifest_cache
+      .where('[operatorId+externalLoadId]')
+      .equals([snapshot.operatorId, snapshot.externalLoadId])
+      .first();
+
+    if (existing?.id !== undefined) {
+      await db.manifest_cache.update(existing.id, record);
+    } else {
+      await db.manifest_cache.add(record);
+    }
+  });
 }
 
 /**

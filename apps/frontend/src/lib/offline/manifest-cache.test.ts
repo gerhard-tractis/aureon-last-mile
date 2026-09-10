@@ -93,6 +93,28 @@ describe('manifest-cache (offline read store)', () => {
       expect(rows[0].retailerName).toBe('Ripley (nuevo)');
     });
 
+    // M5, revisión de fase 2 — "un registro por (operatorId,
+    // externalLoadId) — nunca dos" era una afirmación del docstring, no
+    // algo probado. Sin una transacción, dos `saveManifestSnapshot`
+    // concurrentes (descargar A y B a la vez, o dos pestañas) pueden leer
+    // "no existe todavía" ANTES de que cualquiera de las dos escriba, y las
+    // dos terminan agregando — `.first()` queda devolviendo la más
+    // antigua para siempre, y una re-descarga posterior de A actualiza esa
+    // fila vieja mientras la nueva sigue ahí sin tocar.
+    it('never leaves two rows for the same (operatorId, externalLoadId) even when two downloads race (M5)', async () => {
+      await Promise.all([
+        saveManifestSnapshot(db, makeSnapshot({ retailerName: 'Carrera A' })),
+        saveManifestSnapshot(db, makeSnapshot({ retailerName: 'Carrera B' })),
+      ]);
+
+      const rows = await db.manifest_cache
+        .where('[operatorId+externalLoadId]')
+        .equals([OPERATOR_A, 'CARGA-99817'])
+        .toArray();
+
+      expect(rows).toHaveLength(1);
+    });
+
     it('returns undefined for a carga never downloaded', async () => {
       const found = await getManifestSnapshot(db, OPERATOR_A, 'CARGA-NUNCA');
       expect(found).toBeUndefined();
