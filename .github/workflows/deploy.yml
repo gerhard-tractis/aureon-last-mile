@@ -36,6 +36,10 @@ on:
         description: 'Apply pending Supabase migrations even if this commit touched none'
         type: boolean
         default: false
+      force_frontend:
+        description: 'Deploy the frontend to Vercel even if this commit touched none of the frontend filter'
+        type: boolean
+        default: false
 
 # All deploy jobs run sequentially within their dependency chain — a failed
 # migration never reaches app deploys. Jobs are gated on path filters so a
@@ -110,6 +114,7 @@ jobs:
         id: filter
         env:
           FORCE_DB: ${{ inputs.force_db }}
+          FORCE_FRONTEND: ${{ inputs.force_frontend }}
         run: |
           set -euo pipefail
           # main is squash-merge only, so HEAD^ is the previous main tip.
@@ -131,13 +136,49 @@ jobs:
             DB=true
           fi
 
+          # Deliberately generous, not minimal: a false negative here means
+          # production silently keeps serving a stale bundle, which is worse
+          # than the wasted-deploy-quota problem this filter exists to fix.
+          # Covers apps/frontend itself, the workspace root files that pin
+          # every package's dependency versions (package.json/
+          # package-lock.json — a bump to a frontend dependency shows up only
+          # here, not under apps/frontend/), turbo.json (the build pipeline
+          # definition frontend's `turbo run build` follows), and the parts of
+          # packages/database that apps/frontend actually imports at build
+          # time (its package.json, tsconfig.json, and src/ — where the
+          # generated Supabase types apps/frontend consumes live, via
+          # `transpilePackages` in apps/frontend/next.config.ts). Excluded:
+          # vitest.config.ts and seed-qa/ (test/QA-only, nothing under
+          # apps/frontend touches them) and supabase/ — migrations, pgTAP
+          # tests, Deno edge functions (not bundled into the Next.js build),
+          # config.toml and docs. None of that reaches the frontend bundle;
+          # the one part of that tree the frontend DOES depend on is the
+          # generated types, and those live in src/database.types.ts, already
+          # covered by the src/ term above. apps/frontend/vercel.json is
+          # already covered by the apps/frontend/ prefix.
+          FRONTEND_PATTERN='^apps/frontend/|^package\.json$|^package-lock\.json$|^turbo\.json$|^packages/database/(package\.json$|tsconfig\.json$|src/)'
+          FRONTEND=$(matches "$FRONTEND_PATTERN")
+          # force_frontend mirrors force_db above, for the same reason: on a
+          # workflow_dispatch, BASE is only the dispatched commit's parent, so
+          # this filter sees a one-commit diff. If a Vercel deploy failed (or
+          # was skipped by this very filter) and every commit since then is
+          # docs/backend-only, no dispatch can recover the frontend without
+          # this override — the only alternatives would be a dummy commit
+          # touching apps/frontend/, or running `vercel --prod` by hand
+          # outside the pipeline, which is exactly what workflow_dispatch
+          # exists to make unnecessary (see the force_db comment above).
+          if [ "${FORCE_FRONTEND}" = "true" ]; then
+            echo "force_frontend: overriding frontend filter (was ${FRONTEND})"
+            FRONTEND=true
+          fi
+
           {
             echo "database=${DB}"
             echo "edge_functions=$(matches '^packages/database/supabase/functions/')"
             echo "worker=$(matches '^apps/worker/')"
             echo "agents=$(matches '^apps/agents/')"
             echo "solver=$(matches '^sidecar/or-tools/')"
-            echo "frontend=$(matches '^apps/frontend/')"
+            echo "frontend=${FRONTEND}"
           } >> "$GITHUB_OUTPUT"
 
   # ─── 1. Database Migrations ──────────────────────────────────────────────────
@@ -302,8 +343,46 @@ jobs:
 
   # ─── 3. Frontend (Vercel) ────────────────────────────────────────────────────
   # This job is the ONLY thing that should deploy the frontend to production.
-  # It runs on every green push to main and is ordered after migrations, so app
-  # code never reaches users ahead of the schema it depends on.
+  # It is path-filtered on `needs.changes.outputs.frontend` (Vercel's free plan
+  # caps at 100 deploys/day, and every push to main used to spend one even for
+  # docs-only or backend-only commits) and, when it does run, is ordered after
+  # migrations, so app code never reaches users ahead of the schema it depends
+  # on. See the `frontend=` filter in the `changes` job above for exactly what
+  # counts as frontend-affecting — it is deliberately generous, because a false
+  # negative here means production silently serves a stale bundle.
+  #
+  # SAME OUTPUT ALSO FEEDS QA: `needs.changes.outputs.frontend` is also passed
+  # as `CHANGED_FRONTEND` to deploy-qa below, where it decides whether QA
+  # rebuilds and restarts `aureon-frontend-qa`. Widening this filter (e.g. to
+  # include root package-lock.json) means a dependency bump with no
+  # apps/frontend/ diff now rebuilds QA's frontend too, not just production's.
+  # Intentional — QA drifting from what production is about to run would be
+  # worse — but it changes QA's rebuild frequency, not just production's deploy
+  # count, so it's worth knowing if QA's sync time creeps up.
+  #
+  # KNOWN GAP, PARTIALLY CLOSED: this filter only looks at the diff of the
+  # commit being deployed. If a Vercel deploy fails or is skipped and the
+  # commits that follow don't touch anything in the frontend filter, production
+  # stays on the old bundle with no automatic catch-up (unlike deploy-supabase,
+  # which runs unconditionally on every approved run — `db push --include-all`
+  # is a safe no-op, `vercel --prod` on an unrelated commit is not). The
+  # `force_frontend` workflow_dispatch input below is the cheap fix for that:
+  # a human can force a deploy of whatever commit they dispatch from.
+  #
+  # It is NOT the good fix. The good fix is what
+  # infra/supabase-qa/deploy-qa.sh's `widen_changed_flags` already does for
+  # QA: diff what's actually deployed (there, QA's last-synced SHA) against
+  # what's about to ship, and OR that into the filter, so a skipped run can
+  # never be silently forgotten. Production has no equivalent of "the SHA
+  # Vercel actually has" to diff against — that would need querying Vercel's
+  # deployment API for the last production deployment's commit, not just
+  # trusting the workflow's own history. Left undone; `force_frontend` is the
+  # stopgap until someone builds that.
+  #
+  # A build-time env var added only to the "Deploy to Vercel" step below (not
+  # to any file the path filter tracks) would also change the shipped bundle
+  # without tripping this filter — `force_frontend` covers that case too, by
+  # forcing the deploy regardless of what the filter found.
   #
   # REQUIRED: Vercel's Git integration must have production auto-deploy DISABLED
   # for `main` (Vercel → Project → Settings → Git → Ignored Build Step, or
@@ -320,7 +399,7 @@ jobs:
     if: |
       always() && !failure() && !cancelled() &&
       needs.approve-production.result == 'success' &&
-      needs.changes.result == 'success'
+      needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
