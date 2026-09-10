@@ -385,6 +385,17 @@ jobs:
       - name: Test the stale-phase reconciliation orchestration
         run: node ./scripts/reconcile-stale-phases.test.mjs
 
+      # qa-prod-parity-compare.mjs (spec-93 fase 4): the deterministic
+      # guardrail. No network, no credentials — reads two measurement files
+      # and a baseline. Includes the mutation test for the phase's single
+      # most important requirement: an absent QA measurement must produce a
+      # non-zero exit, never a silent pass.
+      - name: Test the QA<->prod parity baseline parser
+        run: node ./scripts/qa-prod-parity-baseline.test.mjs
+
+      - name: Test the QA<->prod parity comparator
+        run: node ./scripts/qa-prod-parity-compare.test.mjs
+
       - name: Lint
         run: npx turbo run lint
 
