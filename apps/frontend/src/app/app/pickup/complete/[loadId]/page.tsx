@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -8,15 +8,18 @@ import { MetricCard } from '@/components/metrics/MetricCard';
 import { ManifestPhotoStrip } from '@/components/pickup/ManifestPhotoStrip';
 import { ClientSignatureSection } from '@/components/pickup/ClientSignatureSection';
 import { OperatorSignatureSection } from '@/components/pickup/OperatorSignatureSection';
+import { ManifestClosedSummary } from '@/components/pickup/ManifestClosedSummary';
 import { usePickupScans } from '@/hooks/pickup/usePickupScans';
 import { useMissingPackages } from '@/hooks/pickup/useDiscrepancies';
-import { classifyCloseManifestError } from '@/lib/pickup/closeManifestErrors';
+import { useManifestDocuments } from '@/hooks/pickup/useManifestDocuments';
+import { useRouteManifests } from '@/hooks/pickup/useRouteManifests';
+import { useManifestCompletionContext } from '@/hooks/pickup/useManifestCompletionContext';
+import { useCloseManifest } from '@/hooks/pickup/useCloseManifest';
+import { dedupeNotFoundScans } from '@/lib/pickup/reviewCloseGate';
+import { summarizePendingRouteManifests } from '@/lib/pickup/manifestCloseSummary';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { useSyncQueue } from '@/hooks/useSyncQueue';
-import { retryBlockedManifest, PICKUP_QUEUE_WAKE_EVENT } from '@/hooks/useOfflineQueue';
-import { createSPAClient } from '@/lib/supabase/client';
-import { db } from '@/lib/db';
-import { enqueue } from '@/lib/offline/queue';
+import { retryBlockedManifest } from '@/hooks/useOfflineQueue';
 import { CheckCircle, XCircle, Target, Shield } from 'lucide-react';
 import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
 import { toast } from 'sonner';
@@ -38,18 +41,27 @@ export default function CompletionPage() {
   const loadId = decodeURIComponent(params.loadId as string);
   const { operatorId, userId } = useOperatorId();
 
-  const [manifestId, setManifestId] = useState<string | null>(null);
-  const [manifestStartedAt, setManifestStartedAt] = useState<string | null>(
-    null
-  );
-  const [operatorName, setOperatorName] = useState('');
+  // 5f/5i state — extracted to `useManifestCompletionContext` (spec-80 fase
+  // 5) to keep this file under the repo's file-size convention; same two
+  // Supabase round trips this page always made, unchanged.
+  const {
+    manifestId,
+    manifestStartedAt,
+    retailerName,
+    routeId,
+    routeExternalId,
+    operatorName,
+  } = useManifestCompletionContext(operatorId, loadId);
   const [operatorSignature, setOperatorSignature] = useState<string | null>(
     null
   );
   const [showClientSig, setShowClientSig] = useState(false);
   const [clientName, setClientName] = useState('');
   const [clientSignature, setClientSignature] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // 5i — set once close_manifest succeeds (online, idempotent-recovered, or
+  // queued offline); replaces the signing form with the closed summary.
+  // `null` means "still signing".
+  const [isClosed, setIsClosed] = useState(false);
 
   // Menor 5, ronda 4 de review del PR #679 — `5f` es la pantalla que hace la
   // promesa "se sube al recuperar señal" (la línea estática de más abajo) y
@@ -73,48 +85,45 @@ export default function CompletionPage() {
     });
   };
 
-  useEffect(() => {
-    if (!operatorId) return;
-    const supabase = createSPAClient();
-    supabase
-      .from('manifests')
-      .select('id, started_at')
-      .eq('operator_id', operatorId)
-      .eq('external_load_id', loadId)
-      .is('deleted_at', null)
-      .single()
-      .then(({ data }) => {
-        if (data) {
-          setManifestId(data.id);
-          setManifestStartedAt(data.started_at);
-        }
-      });
-    // Get user full name for operator signature
-    supabase.auth.getUser().then(({ data }) => {
-      const userId = data.user?.id;
-      if (userId) {
-        supabase
-          .from('users')
-          .select('full_name')
-          .eq('id', userId)
-          .single()
-          .then(({ data: userData }) => {
-            setOperatorName(userData?.full_name ?? data.user?.email ?? '');
-          });
-      }
-    });
-  }, [operatorId, loadId]);
-
   const { data: scans = [] } = usePickupScans(manifestId, operatorId);
   const { data: missingPackages = [] } = useMissingPackages(
     operatorId,
     loadId,
     manifestId
   );
+  // 5i — same document count ManifestPhotoStrip already renders, read again
+  // here for the "Respaldo" row; react-query dedupes by query key.
+  const { data: documents = [] } = useManifestDocuments(operatorId, manifestId);
+  // 5i — "Sigue en PR-…": the OTHER manifests on this same route, so this
+  // screen can say how many are still pending and which is next.
+  const { data: routeManifests = [] } = useRouteManifests(routeId, operatorId);
 
+  // Ronda 2 de review del PR #726 (B2) — DISTINCT package_id, not a row
+  // count. close_manifest's own out_verified_count uses
+  // `COUNT(DISTINCT ps.package_id)` precisely because the only unique index
+  // on pickup_scans is on client_operation_id, not (manifest_id,
+  // package_id): two crew members on the same manifest, both offline, both
+  // scanning the same barcode, produce two DIFFERENT client_operation_ids
+  // and therefore two 'verified' rows for the same package. A plain row
+  // count would show one more "verified" than the server actually recorded
+  // — on the exact screen that is the client's evidence of what was
+  // handed over. Same rule useRouteManifests.ts already applies
+  // (verifiedByManifest, a Set of package_id per manifest).
   const verifiedCount = useMemo(
-    () => scans.filter((s) => s.scan_result === 'verified').length,
+    () =>
+      new Set(
+        scans.filter((s) => s.scan_result === 'verified').map((s) => s.package_id),
+      ).size,
     [scans]
+  );
+
+  // 5i — same dedupe rule close_manifest applies server-side (H3): distinct
+  // not_found barcodes, not a row count.
+  const unexpectedCount = useMemo(() => dedupeNotFoundScans(scans).length, [scans]);
+
+  const routeSummary = useMemo(
+    () => (manifestId ? summarizePendingRouteManifests(routeManifests, manifestId) : null),
+    [routeManifests, manifestId]
   );
 
   const precision = useMemo(() => {
@@ -134,115 +143,20 @@ export default function CompletionPage() {
 
   const canComplete = !!operatorSignature;
 
-  const handleComplete = async () => {
-    if (!manifestId || !operatorId || !userId || !operatorSignature) return;
-    setIsSubmitting(true);
-
-    try {
-      const supabase = createSPAClient();
-      // H5 (fix round 1): operator_name is NOT sent — close_manifest derives
-      // the signer's name server-side from the JWT actor's public.users row.
-      // A client-supplied name would be worthless as custody-transfer
-      // evidence.
-      const { error } = await supabase.rpc('close_manifest', {
-        p_manifest_id: manifestId,
-        p_signatures: {
-          operator_signature: operatorSignature,
-          client_signature: clientSignature,
-          client_name: clientName || null,
-        },
-      });
-
-      if (error) throw error;
-      toast.success('Manifiesto completado exitosamente');
-      router.push('/app/pickup');
-    } catch (err) {
-      // H2 (fix round 1): close_manifest now has three hard rejections
-      // (cross-tenant, non-closable status, already signed) where the old
-      // raw .update() almost always just succeeded. Swallowing the error
-      // left the operator staring at a re-enabled button with no idea
-      // whether the signature was captured — surface it.
-      // F3 (fix round 2): close_manifest raises in English with a sentinel
-      // prefix (MANIFEST_ALREADY_SIGNED, MANIFEST_NOT_CLOSABLE,
-      // OPERATOR_SIGNATURE_REQUIRED) — map it to Spanish rather than
-      // painting raw Postgres text on an all-Spanish PWA.
-      console.error('Failed to complete manifest:', err);
-
-      // spec-81 fase 2, checklist item 5 — "sin conexión" y "rechazo de
-      // negocio irrecuperable" son ramas distintas, no el mismo mensaje ni
-      // la misma afordancia. Offline: encolar la firma capturada y dejar al
-      // operario seguir — es el caso normal en este muelle, y
-      // `useOfflineQueue` la drenará al volver la señal. Rechazo de
-      // negocio: detenerse, no encolar algo que el servidor puede seguir
-      // rechazando para siempre, y re-habilitar el botón para que el
-      // operario corrija o pida ayuda.
-      const classified = classifyCloseManifestError(err);
-
-      // P0, ronda 3 de review del PR #679 (bloqueante) — `idempotent` (23505
-      // `MANIFEST_ALREADY_SIGNED`) significa que el cierre YA SE APLICÓ: la
-      // respuesta se perdió en el camino (túnel, o el propio
-      // `AbortSignal.timeout` del sender), no que el intento fallara. Sin
-      // esta rama caía al `toast.error` genérico de abajo, dejando al
-      // operario atrapado en esta pantalla para siempre después de un cierre
-      // que sí funcionó — refrescar no ayuda, el `useEffect` recarga el
-      // mismo manifiesto ya firmado. `offlineQueueSender.ts` ya trata este
-      // mismo `kind` como éxito para el drenador de fondo; esto alinea el
-      // camino interactivo con esa misma lectura.
-      if (classified.kind === 'idempotent') {
-        toast.success(classified.message);
-        router.push('/app/pickup');
-        return;
-      }
-
-      if (classified.kind === 'offline') {
-        // M5, ronda 2 de review del PR #679 (mayor): `enqueue` puede lanzar
-        // por su cuenta — el tope de 500 entradas sin confirmar
-        // (`lib/offline/queue.ts`), o cualquier `DOMException` real de
-        // IndexedDB (cuota agotada, modo privado de Safari). Antes, esa
-        // excepción escapaba de este `catch` sin capturar: `setIsSubmitting
-        // (false)` nunca corría, el botón quedaba deshabilitado con
-        // "Completando…" para siempre, sin toast, y la firma se perdía.
-        // "fallo silencioso contra la cuota" se convertía en "fallo
-        // silencioso con la pantalla colgada".
-        try {
-          await enqueue(db, {
-            operatorId,
-            userId,
-            manifestId,
-            type: 'close_manifest',
-            payload: {
-              manifestId,
-              signatures: {
-                operator_signature: operatorSignature,
-                client_signature: clientSignature,
-                client_name: clientName || null,
-              },
-            },
-          });
-          // Nota menor, ronda 6 de review del PR #679 — sin esto, la entrada
-          // recién encolada esperaba al próximo `online` real (o a un timer
-          // de backoff de OTRA entrada) para intentarse por primera vez. El
-          // drenador ya está montado globalmente en `AppLayout`; este evento
-          // es la misma señal que `retryBlockedManifest` ya usa para
-          // despertarlo sin fingir una reconexión que no ocurrió.
-          window.dispatchEvent(new Event(PICKUP_QUEUE_WAKE_EVENT));
-          toast.success(classified.message);
-          router.push('/app/pickup');
-          return;
-        } catch (enqueueErr) {
-          console.error('Failed to enqueue offline close_manifest:', enqueueErr);
-          toast.error(
-            enqueueErr instanceof Error ? enqueueErr.message : 'No se pudo completar el manifiesto',
-          );
-          setIsSubmitting(false);
-          return;
-        }
-      }
-
-      toast.error(classified.message);
-      setIsSubmitting(false);
-    }
-  };
+  // Ronda 2 de review del PR #726 — `handleComplete` (antes ~113 líneas
+  // inline, con los comentarios de seis rondas de review del PR #679)
+  // movido verbatim a `useCloseManifest.ts` para mantener este archivo bajo
+  // el límite de líneas del repo. `onClosed` es lo único que cambia de
+  // significado: antes navegaba a `/app/pickup`, ahora muestra `5i`.
+  const { isSubmitting, handleComplete } = useCloseManifest({
+    manifestId,
+    operatorId,
+    userId,
+    operatorSignature,
+    clientSignature,
+    clientName,
+    onClosed: () => setIsClosed(true),
+  });
 
   if (!manifestId) {
     return (
@@ -258,6 +172,24 @@ export default function CompletionPage() {
         <Skeleton className="h-24 w-full" />
         <Skeleton className="h-40 w-full" />
       </div>
+    );
+  }
+
+  if (isClosed) {
+    return (
+      <ManifestClosedSummary
+        loadId={loadId}
+        retailerName={retailerName}
+        verifiedCount={verifiedCount}
+        missingCount={missingPackages.length}
+        unexpectedCount={unexpectedCount}
+        photosCount={documents.length}
+        signaturesCount={clientSignature ? 2 : 1}
+        routeExternalId={routeExternalId}
+        pendingRouteCount={routeSummary?.pendingCount ?? 0}
+        nextManifestLabel={routeSummary?.nextManifestLabel ?? null}
+        onBackToRoute={() => router.push('/app/pickup/route/active')}
+      />
     );
   }
 

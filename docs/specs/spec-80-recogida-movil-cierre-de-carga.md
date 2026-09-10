@@ -1053,13 +1053,67 @@ El mock dice «expo-camera», que es la app Expo dormida (`apps/mobile`, ver `ls
 >   baja), pero la documentación promete menos de lo que el código hace.
 >   Cierre si algún día importa: `?? (tieneExtensión ? null : 'image/jpeg')`.
 
-### Fase 5 — `5i` carga cerrada `[pending]`
+### Fase 5 — `5i` carga cerrada `[in_progress]`
 
 **Archivos:** `app/app/pickup/complete/[loadId]/page.tsx` (estado post-cierre), o ruta hermana
 
 Resumen del mock: Verificados / Faltantes / Ajenos a la carga / Respaldo «N fotos · N firmas». **Vuelve a `5c`** (`/app/pickup/route/active`), no a `/app/pickup` como hoy, y ofrece «Sigue en PR-…, N cargas pendientes».
 
 El bloque «Guardado en el teléfono — N registros y N fotos esperan señal» es de spec-81; hasta entonces se omite.
+
+> **Ronda 2 de review del PR #726 (2026-09-09) — cuatro correcciones al código, tres notas
+> declaradas para quien construya el resto de esta fase o el bloque de spec-81 arriba
+> descrito.**
+>
+> **B1 (cerrado):** las cuatro filas del acta (`ManifestClosedSummary.tsx`) no tenían ni un
+> test que las anclara a su propia fila — `getByText('39')`/`getByText('3')`/`getByText('1')`
+> son consultas globales; intercambiar los *bindings* de `Faltantes` y `Ajenos a la carga`
+> dejaba 8/8 en verde. Corregido con `data-testid` por fila + `within(row)`, y una aserción de
+> cifras reales añadida también a nivel de página (una de las tres rutas de cierre).
+>
+> **B2 (cerrado):** `verifiedCount` contaba filas de `pickup_scans`, no paquetes distintos —
+> `close_manifest` usa `COUNT(DISTINCT ps.package_id)` a propósito, porque el único índice
+> único de la tabla es sobre `client_operation_id`, no sobre `(manifest_id, package_id)`: dos
+> miembros de la cuadrilla del mismo manifiesto, ambos sin señal, escaneando el mismo bulto,
+> producen dos filas `verified` para el mismo paquete. Corregido a `new Set(...).size`, la
+> misma regla que `useRouteManifests.ts` ya aplicaba.
+>
+> **B3 (cerrado, quitado en vez de defendido):** una primera versión sí construyó el bloque
+> «Guardado en el teléfono» contra la instrucción explícita de arriba, y encima
+> `pickupPhotoCount` era **estructuralmente siempre 0** — `enqueueManifestPhoto` (spec-81 fase
+> 5) no tiene ningún llamador en producción todavía; `ManifestPhotoStrip`/
+> `useManifestDocuments.ts` siguen subiendo directo al bucket. Un cierre offline justo después
+> de fotografiar el papel firmado habría mostrado «0 fotos esperan señal» cuando en realidad
+> esas fotos ya subieron o se perdieron en la ventana que `complete/[loadId]/page.tsx` ya
+> documenta — la pantalla afirmando tranquilidad sobre la evidencia justo donde no la hay.
+> Quitado por completo (componente, página, y el soporte que se había añadido en `lib/db.ts`/
+> `useSyncQueue.ts` para separar registros de fotos). **Nota para quien lo construya de verdad
+> en spec-81:** los contadores que ya existen (`getPendingPickupCount`/`blockedCount`) son por
+> operador/dispositivo, no por carga — coherente con el badge global "REQUIERE AYUDA" de esta
+> misma pantalla, pero **no** coherente con una tarjeta titulada con un `loadId` concreto:
+> cerrar la carga A con 6 escaneos de la carga B todavía en cola mostraría «6 registros esperan
+> señal» bajo «Carga cerrada · CARGA-A», atribuyéndole a la carga equivocada un backlog que no
+> es suyo. Ese bloque necesita un conteo con ámbito de manifiesto, no el mismo que ya usa
+> `sync.blockedCount`.
+>
+> **B4 (cerrado):** «Ver resumen de la carga» era un `<Button variant="outline">` con
+> `onClick` que hacía `scrollIntoView` sobre la propia tarjeta, ya visible y ya en el tope de
+> la pantalla — efecto visible cero, indistinguible de un control vivo que no hace nada al
+> pulsarlo. El mock (`Recogida.dc.html`) dibuja este elemento como un `<span>`, no como un
+> botón, y no define ningún destino. Convertido a un `<span>` no interactivo, literal del mock,
+> sin `onClick` ni rol de botón. Ningún destino real existe hoy en el código para ese texto;
+> si el usuario quiere una pantalla de resumen real detrás, es una decisión de producto nueva,
+> no una que esta fase deba inventar.
+>
+> **Declarado, no resuelto en esta ronda — `5i` y `5c` usan definiciones distintas de
+> "pendiente".** `summarizePendingRouteManifests` (esta fase) filtra por
+> `status !== 'completed'`; `/app/pickup/route/active` (`isManifestComplete`,
+> `lib/pickup/manifestProgress.ts`) filtra por `verified_count >= total_packages`. Una carga
+> ya escaneada pero sin firmar hace que `5i` diga «1 carga pendiente» y, un toque después,
+> `5c` diga «Todo verificado» — dos pantallas consecutivas del mismo flujo contradiciéndose
+> sobre el mismo dato. No se unifica aquí porque tocaría la definición que usa la pantalla
+> activa de ruta (fuera del alcance de esta fase); queda como hallazgo para quien toque
+> cualquiera de las dos definiciones a continuación.
 
 ---
 
