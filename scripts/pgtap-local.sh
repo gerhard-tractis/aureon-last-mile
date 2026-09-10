@@ -14,19 +14,16 @@
 #   ./scripts/pgtap-local.sh psql                  interactive shell
 #   ./scripts/pgtap-local.sh down                  remove the container
 #
-# MUTATION-TESTING A MIGRATION (read before trusting a green result): the
-# content-hash guard below stops `apply` re-skipping a mutant silently, but
-# that alone doesn't prove the mutant reached the database — a hand-rolled
-# `docker exec -i <c> psql -f /path/...` from Git-Bash without
-# MSYS_NO_PATHCONV=1 resolves to a bogus `C:/Program Files/Git/...` path and
-# fails with stderr most one-liners throw away, so the mutant never lands
-# and the test "passes" for the same wrong reason (two agents hit both
-# shapes for real on 2026-09-10). Use `apply --force <version>` (below),
-# never a hand-rolled psql -f, then VERIFY THE LIVE OBJECT, not the apply
-# command's exit code:
-#   ./scripts/pgtap-local.sh psql -tAc \
-#     "select md5(prosrc) from pg_proc where proname = 'the_function_you_mutated'"
-# Confirm that hash is NOT the pre-mutation one before trusting any red/green.
+# MUTATION-TESTING A MIGRATION: read docs/runbooks/pgtap-mutation-testing.md
+# BEFORE trusting a green result — two agents got a perfect false-green on
+# 2026-09-10 by skipping it. Short version: `up` first (not optional — a
+# pre-existing container's backfilled hash only proves today's file matches
+# itself, never what was actually applied in the past), mutate, then
+# `apply --force <version>` (never a hand-rolled `docker exec ... psql -f`
+# — see the runbook for why), then verify the LIVE OBJECT changed (e.g.
+# `psql -tAc "select md5(prosrc) from pg_proc where proname = '...'"` for a
+# function — other object kinds need a different query, see the runbook),
+# before trusting `run`'s red/green.
 set -uo pipefail
 
 # Overridable so CI (and this wrapper's own self-test) can point at a
@@ -133,29 +130,38 @@ case "${1:-}" in
     # (observed: hub_receptions resurrected, 12 spurious failures). Apply each
     # version exactly once and record it.
     #
-    # Round: this used to skip purely on VERSION being present in the ledger,
-    # never looking at the file's content — a migration mutated for SQL
-    # mutation testing, if its version was already applied, was silently
-    # skipped: the mutant never reached the database and the test suite
-    # "passed" against the unmutated original (measured: mutating an
-    # already-applied migration and re-running sync+apply reported
-    # "applied=0 skipped=203", and the pgTAP test that should have caught
-    # the mutant stayed green). content_sha256 closes that: a changed file
-    # under an already-applied version is now a loud WARNING, not a silent
-    # skip, and --force is the explicit, auditable way to push a mutant
-    # through instead of a hand-rolled `docker exec ... psql -f` (which has
-    # its own silent-failure mode — see the file header comment).
+    # content_sha256 (below) is why: this used to skip purely on VERSION
+    # being present in the ledger, letting a migration mutated for SQL
+    # mutation testing reach the database silently unreapplied — see the
+    # header comment and docs/runbooks/pgtap-mutation-testing.md.
     psq -q -c "CREATE SCHEMA IF NOT EXISTS supabase_migrations;
                CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (
                  version text PRIMARY KEY, name text, statements text[]);
                ALTER TABLE supabase_migrations.schema_migrations
                  ADD COLUMN IF NOT EXISTS content_sha256 text;" >/dev/null
+    # Round 2 review (C-4): apply against a container nobody ever `sync`ed
+    # (or where /supabase/migrations is empty) silently prints
+    # "applied=0 skipped=0 ... failed=0" and exits 0 — indistinguishable
+    # from a genuinely clean, fully-applied run. Fail loud instead.
+    migcount=$(dex bash -c 'ls /supabase/migrations/*.sql 2>/dev/null | wc -l' | tr -d '\r')
+    if [ "${migcount:-0}" = "0" ]; then
+      echo "apply: /supabase/migrations has no .sql files in $C — run 'sync' first (an unsynced container otherwise reports a silent, indistinguishable all-zero 'success')" >&2
+      exit 1
+    fi
     if [ -n "$force_version" ]; then
-      # Loud, upfront failure if the version doesn't resolve to a real file —
-      # the exact silent-failure shape a hand-rolled `psql -f <bad-path>`
-      # (stderr to /dev/null) has, that this flag exists to replace.
-      found=$(dex bash -c "ls /supabase/migrations/ 2>/dev/null | grep -c \"^${force_version}_\"" | tr -d '\r')
-      if [ "${found:-0}" = "0" ]; then
+      # Loud, upfront failure if the version doesn't resolve to a real file.
+      # Round 2 review (C-5): the previous check used $force_version as a
+      # GREP PATTERN (`grep -c "^${force_version}_"`), while apply-inner.sh
+      # compares it by exact string equality — a version argument containing
+      # a regex metacharacter (e.g. a literal ".") could pass this pattern
+      # check against a file whose real version isn't equal to the string at
+      # all, then never match inside apply-inner.sh: --force silently does
+      # nothing while this pre-check still says "found" and exits 0. Extract
+      # the real version list and compare with `grep -Fxq` (fixed string,
+      # whole line) instead — never a pattern, never runs $force_version
+      # through a remote shell string either.
+      known_versions=$(dex bash -c "ls /supabase/migrations/*.sql 2>/dev/null | xargs -n1 basename | sed -E 's/_.*\$//'")
+      if ! printf '%s\n' "$known_versions" | grep -Fxq -- "$force_version"; then
         echo "apply --force: version '$force_version' matches no file in /supabase/migrations (sync first?)" >&2
         exit 1
       fi
