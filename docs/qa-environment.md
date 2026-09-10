@@ -168,6 +168,51 @@ after **every green CI run of a push to main**:
 - A failure is surfaced as a `::error::` annotation ("QA is now drifted from main") but
   **never blocks the prod deploy**. To recover, run `infra/supabase-qa/deploy-qa.sh`
   manually on the VPS or just re-run `setup-qa.sh`.
+- **`CREATE EXTENSION IF NOT EXISTS pgtap` also runs on every deploy** (spec-93 fase 3),
+  immediately before the SQL test post-check, so the 20 `packages/database/supabase/tests/
+  *.sql` files that use `plan()`/`finish()` actually run instead of being silently
+  SKIPPED-NO-PGTAP. See `ensure_pgtap()` in `deploy-qa.sh` for why it lives here and not a
+  migration (would install a testing-only extension in **production**) or `setup-qa.sh`
+  (doesn't survive a "DB reset" below).
+
+### Service recreation — what a compose edit actually reaches, and what it doesn't (spec-93 fase 3)
+
+`docker compose restart` reuses a container's already-running config; only `up -d`
+(recreate) reads `docker-compose.yml` again. `deploy-qa.sh` recreates (rather than
+restarts) whichever of `kong`/`rest`/`realtime`/`storage`/`imgproxy`/`meta`/`studio`
+(`RECREATABLE_QA_SERVICES`) had its **own compose block** change since the last
+completed deploy, plus `auth`/`functions` via their own dedicated flags
+(`CHANGED_QA_COMPOSE`/`CHANGED_EDGE_FUNCTIONS`). `db` is never auto-recreated — it is
+stateful (Musan's data) and a block change to it is a deliberate, reviewed operational
+step, not something a green merge should trigger by itself.
+
+Accepted divergences from "every compose edit reaches its container", each measured and
+judged acceptable rather than fixed in this fase:
+
+- **A change to `volumes:`/`networks:` can affect a service without touching that
+  service's own block.** `compose_changed_services()` maps a diff hunk to whichever
+  top-level `  <service>:` range it falls inside; a shared volume or network definition
+  living outside every service's own block is invisible to it. Today's compose file has
+  no YAML anchors/aliases reused across services (verified 2026-09-10), so this gap is
+  latent, not live — but it would not be caught if introduced.
+- **A change to `/home/aureon/.env.qa` on the VPS produces no git diff and recreates
+  nothing.** `compose_changed_services()` only ever looks at `docker-compose.yml` inside
+  the git checkout; an env var edited by hand on the host (outside the repo-tracked
+  template) is invisible to it, the same way it always was for `restart_functions()`/
+  `restart_auth()`.
+- **A brand-new service block added to `docker-compose.yml` is detected but never
+  started.** `compose_changed_services()` would correctly report the new service's name
+  (its range exists in the target file the moment the block lands), but
+  `recreate_changed_qa_services()` only acts on names already in the hardcoded
+  `RECREATABLE_QA_SERVICES` allow-list — nothing here runs a project-wide `docker compose
+  up -d` that would pick up a container that has never existed. A new service needs a
+  manual `docker compose up -d <name>` once, or an addition to
+  `RECREATABLE_QA_SERVICES`.
+- **A repeated `CREATE EXTENSION pgtap` failure (e.g. the QA role lacking the
+  privilege — pgtap is not `trusted` and needs a superuser) degrades silently for up to
+  `QA_PGTAP_DEGRADED_MAX` runs before failing the deploy on purpose** (exit
+  `QA_EXIT_PGTAP_STREAK`, distinct from the deploy-marker's `78`) — same escalation
+  shape as `record_deploy_marker()`'s own degraded-run counter, see `ensure_pgtap()`.
 
 ## DB reset — full clean rebuild
 
@@ -215,6 +260,14 @@ for u in aureon-frontend-qa aureon-agents-qa aureon-worker-qa; do
   sudo -n systemctl restart "$u"
 done
 ```
+
+> **pgtap is gone after this too** — it lived in the wiped data directory, and step 5
+> (migrations) does not reinstall it (deliberately — see `ensure_pgtap()`'s comment for
+> why that extension is NOT in the migration ledger). Every `plan()`/`finish()` test
+> under `packages/database/supabase/tests/` reports SKIPPED-NO-PGTAP until the next
+> `deploy-qa.sh` run re-creates it, or you run
+> `PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -p 5433 -U postgres -d postgres -c
+> 'CREATE EXTENSION IF NOT EXISTS pgtap;'` by hand.
 
 **Verify** (expect `200`, `200`, `120`):
 
