@@ -12,6 +12,7 @@ import {
   usePendingManifests,
   useCompletedManifests,
   useInTransitManifests,
+  useSignatureRescueManifests,
 } from '@/hooks/pickup/useManifests';
 import { clientBreakdown, completedToday, pendingTotals } from '@/hooks/pickup/pickupSummary';
 import { useActivePickupRoute } from '@/hooks/pickup/useActivePickupRoute';
@@ -93,22 +94,21 @@ function PickupPageContent() {
 
   const { data: pending } = usePendingManifests(operatorId);
   // item 8 — mobile (3h) has no "en tránsito" tab, so it's skipped on a
-  // phone. useCompletedManifests stays unconditional — mobile now needs it
-  // for both closures.length and the fase 2b rescue entry below.
+  // phone. useCompletedManifests stays unconditional for closures.length.
   const { data: inTransit } = useInTransitManifests(operatorId, !isBelowLg);
-  const { data: completed, isPending: completedPending, isError: completedError, fetchStatus: completedFetchStatus } = useCompletedManifests(operatorId);
+  const { data: completed } = useCompletedManifests(operatorId);
 
-  // spec-61 Task 5 — `isError` is read, not just `data`: a FAILED lookup
-  // leaves `data` undefined, indistinguishable from "no route". Task 4 made
-  // the same fix on route/active/page.tsx.
+  // spec-61 Task 5 — `isError` is read: a FAILED lookup leaves `data`
+  // undefined, indistinguishable from "no route".
   const { data: activeRoute, isError: activeRouteUnknown, refetch: refetchActiveRoute } = useActivePickupRoute(operatorId);
   const { data: activeManifests = [] } = useRouteManifests(activeRoute?.id ?? null, operatorId);
   const startMut = useStartPickupRoute(operatorId);
   const addMut = useAddManifestToRoute(operatorId);
 
-  // spec-80 fase 2b (ronda 2) — see pickupPageHelpers.ts.
-  const rescueManifests = useMemo(() => rescueRowsFromCompleted(completed ?? []), [completed]);
-  const rescueAvailability = manifestsAvailability({ isPending: completedPending, isError: completedError, fetchStatus: completedFetchStatus });
+  // spec-80 fase 2b (ronda 3) — scoped, NOT useCompletedManifests.
+  const { data: rescueData, isPending: rescuePending, isError: rescueError, fetchStatus: rescueFetchStatus, refetch: refetchRescue } = useSignatureRescueManifests(operatorId);
+  const rescueManifests = useMemo(() => rescueRowsFromCompleted(rescueData ?? []), [rescueData]);
+  const rescueAvailability = manifestsAvailability({ isPending: rescuePending, isError: rescueError, fetchStatus: rescueFetchStatus });
 
   const pendingRows: ManifestRow[] = useMemo(() => pendingToRows(pending ?? []), [pending]);
   const inTransitRows: ManifestRow[] = useMemo(() => totalsToRows(inTransit ?? []), [inTransit]);
@@ -233,6 +233,7 @@ function PickupPageContent() {
           rescueManifests={rescueManifests}
           rescueAvailability={rescueAvailability}
           onOpenRescueManifest={goToReview}
+          onRetryRescue={() => { void refetchRescue(); }}
           operatorId={operatorId}
           role={role}
           currentUserId={userId}

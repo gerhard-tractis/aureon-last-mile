@@ -63,11 +63,13 @@ interface PickupMobileViewProps {
   selectedManifests: ManifestRow[];
   onOpenRouteManifest: (loadId: string) => void;
   /**
-   * spec-80 fase 2b (ronda 2) — manifests `trg_route_receptions_status_sync`
-   * completed WITHOUT a signature, operator-wide (`get_completed_manifests`,
-   * mapped by `rescueRowsFromCompleted`). Rendered in the NO-ROUTE branch
-   * below, not inside `PickupMobileActiveRoute` — see that file's doc
-   * comment for why ronda 1's placement there was unreachable.
+   * spec-80 fase 2b (ronda 3) — manifests `trg_route_receptions_status_sync`
+   * completed WITHOUT a signature, scoped server-side to THIS user (driver
+   * or crew, ever) within 30 days (`get_signature_rescue_manifests`, mapped
+   * by `rescueRowsFromCompleted`). Rendered REGARDLESS of route state (A2,
+   * ronda 3): a rescue from yesterday's route does not stop mattering just
+   * because today has a new one — see the "visible también con ruta activa"
+   * describe block in this file's test for the decision and its test.
    */
   rescueManifests?: RouteManifestRow[];
   /** spec-80 fase 2b (ronda 2) — see `manifestsAvailability`,
@@ -77,6 +79,10 @@ interface PickupMobileViewProps {
   rescueAvailability?: ManifestsAvailability;
   /** Opens a rescue manifest straight at `review/[loadId]` — see page.tsx. */
   onOpenRescueManifest?: (loadId: string) => void;
+  /** spec-80 fase 2b (ronda 3, A3) — wired to `ManifestsAvailabilityNotice`'s
+   *  "Reintentar", which only renders when it receives this. Round 2 left
+   *  the button unreachable by never passing it through. */
+  onRetryRescue?: () => void;
   operatorId: string | null;
   /** The JWT role claim (GlobalContext.tsx:53). Decides 3j vs the crew
    *  screen — a picker promoted to pickup_leader keeps seeing the crew
@@ -114,6 +120,7 @@ export function PickupMobileView({
   rescueManifests = [],
   rescueAvailability = 'known',
   onOpenRescueManifest,
+  onRetryRescue,
   operatorId,
   role,
   currentUserId,
@@ -137,6 +144,10 @@ export function PickupMobileView({
         activeRoute={activeRoute}
         activeManifests={activeManifests}
         onOpenRouteManifest={onOpenRouteManifest}
+        rescueManifests={rescueManifests}
+        rescueAvailability={rescueAvailability}
+        onOpenRescueManifest={onOpenRescueManifest}
+        onRetryRescue={onRetryRescue}
         operatorId={operatorId}
         canCancelRoute={canCancelRoute}
       />
@@ -163,12 +174,11 @@ export function PickupMobileView({
           resolves, rather than fabricating a name. */}
       <PickupMobileHeader driverName={currentUserName ?? null} routeCode={null} />
 
-      {/* spec-80 fase 2b (ronda 2) — the real rescue entry. Reachable here
-          regardless of role (leader/3j or crew/no-route) because
-          `get_completed_manifests` is operator-wide, unlike the route-
-          scoped attempt ronda 1 put inside PickupMobileActiveRoute (see
-          that file's doc comment for why it never could have shown). */}
-      <ManifestsAvailabilityNotice availability={rescueAvailability} />
+      {/* spec-80 fase 2b — the real rescue entry, reachable here regardless
+          of role (leader/3j or crew/no-route) via the scoped RPC (ronda 3).
+          Also rendered inside PickupMobileActiveRoute above (A2, ronda 3) —
+          this is the no-route half of the same decision. */}
+      <ManifestsAvailabilityNotice availability={rescueAvailability} onRetry={onRetryRescue} />
       {rescueAvailability === 'known' && (
         <RescueManifestsSection
           manifests={rescueManifests}

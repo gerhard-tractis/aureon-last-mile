@@ -57,11 +57,34 @@ AS $$
     m.pickup_location as pickup_point,
     m.labels_printed_at,
     u.full_name AS labels_printed_by_name,
+    -- COUNT(DISTINCT d.package_id), not COUNT(*): uniq_open_discrepancy_per_package
+    -- (20260913000001) only blocks two 'open' rows for the same
+    -- (package_id, source_id) — it does NOT block an 'open' row coexisting
+    -- with a 'lost' or already-'resolved' row for that same package on the
+    -- same manifest. spec-83 fase 1's round-2 review first accepted this as
+    -- a documented, rare limitation, then reversed that call: the fix is
+    -- cheaper than the note justifying skipping it, and the failure mode is
+    -- OVERSTATEMENT in a figure that can end up in an indemnity dispute
+    -- (never an undercount). Do not simplify this back to a plain row
+    -- count without re-reading that round's fixture (CARGA-83-4).
     COALESCE((
       SELECT COUNT(DISTINCT d.package_id)
         FROM public.discrepancies d
        WHERE d.manifest_id = m.id
+         -- Defense in depth, not load-bearing on its own: d.manifest_id
+         -- already FKs to a manifests row that the outer WHERE has scoped
+         -- to public.get_operator_id(), so a cross-operator d row could
+         -- only reach here via a manifest that isn't this operator's in the
+         -- first place — which the outer clause already excludes. No
+         -- fixture kills this line alone; it stays for the same reason the
+         -- rest of this repo re-checks tenant scope on every join.
          AND d.operator_id = m.operator_id
+         -- Redundant by discrepancy_source_matches_operation (20260913000001):
+         -- that CHECK forces operation_type='reception' rows to have
+         -- manifest_id IS NULL, so d.manifest_id = m.id above already
+         -- implies operation_type='pickup'. Kept for readability, not as a
+         -- second guard — do not go looking for a fixture that kills this
+         -- clause alone.
          AND d.operation_type = 'pickup'
          AND d.kind = 'missing'
          AND d.deleted_at IS NULL

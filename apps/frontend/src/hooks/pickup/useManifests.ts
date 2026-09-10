@@ -98,6 +98,34 @@ export function useCompletedManifests(operatorId: string | null) {
 }
 
 /**
+ * spec-80 fase 2b (ronda 3) — the mobile rescue banner's real data source.
+ * NOT the same query as `useCompletedManifests` (operator-wide, unbounded —
+ * correct for desktop's Completados tab): `get_signature_rescue_manifests`
+ * is scoped server-side to THIS user (driver or crew, ever) within the last
+ * 30 days, because `signature_operator` has only ever been written by
+ * `close_manifest` (20260913000002) — unbounded, this surfaced the
+ * operator's entire unsigned history, months of it, burying the one closure
+ * that actually needs today's attention (ronda 3 review, measured in QA:
+ * 40 six-month-old closures).
+ */
+export function useSignatureRescueManifests(operatorId: string | null) {
+  return useQuery({
+    queryKey: ['pickup', 'manifests', 'signature-rescue', operatorId],
+    queryFn: async () => {
+      const supabase = createSPAClient();
+      const { data, error } = await callRpc<CompletedManifest[]>(
+        supabase,
+        'get_signature_rescue_manifests',
+      );
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!operatorId,
+    ...PICKUP_QUERY_OPTIONS,
+  });
+}
+
+/**
  * `enabled` (default `true`) — spec-54 3h review fix, item 8. The mobile
  * pickup landing has no "en tránsito" tab (it's a start-of-shift screen —
  * 3h deliberately narrower than 1l's admin-style tabs) and never reads this

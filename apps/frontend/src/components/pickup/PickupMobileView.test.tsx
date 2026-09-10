@@ -779,5 +779,107 @@ describe('PickupMobileView', () => {
       expect(screen.getByText(/no pudimos cargar/i)).toBeInTheDocument();
       expect(screen.queryByText(/revisa tu conexión/i)).toBeNull();
     });
+
+    // A3 (ronda 3 review) — ManifestsAvailabilityNotice only renders a
+    // "Reintentar" button when it RECEIVES onRetry. Round 2 never passed it
+    // through, so the button never rendered and the crew hit a dead end
+    // after retries were exhausted. Exercised end-to-end here, not just at
+    // ManifestsAvailabilityNotice's own unit level — that unit test wires
+    // onRetry directly and so cannot catch a caller that forgets to pass it.
+    it('wires a working "Reintentar" button through to the error notice (A3)', async () => {
+      const onRetryRescue = vi.fn();
+      render(
+        <PickupMobileView
+          {...baseProps()}
+          role="pickup_crew"
+          rescueManifests={[]}
+          rescueAvailability="error"
+          onRetryRescue={onRetryRescue}
+        />,
+      );
+      await userEvent.click(screen.getByRole('button', { name: /reintentar/i }));
+      expect(onRetryRescue).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // spec-80 fase 2b (ronda 3, A2) — DECIDED: the rescue section shows
+  // REGARDLESS of whether the crew currently has an active route. Ronda 2
+  // only proved a rescue cannot coexist with an IN-PROGRESS manifest on the
+  // SAME route (the trigger closes the whole route at once) — it never
+  // followed that a rescue from route A can perfectly well sit unsigned
+  // while the crew is out on a brand-new route B the next day. Hiding it
+  // during route B would make it invisible for the entire work day.
+  describe('spec-80 fase 2b (ronda 3, A2) — visible también con ruta activa', () => {
+    it('shows the rescue section even while an active route is open', () => {
+      render(
+        <PickupMobileView
+          {...baseProps()}
+          activeRoute={activeRoute}
+          activeManifests={activeManifests}
+          rescueManifests={[
+            {
+              id: 'r1',
+              external_load_id: 'CARGA-RESCUE',
+              retailer_name: 'Falabella',
+              pickup_location: 'Bodega Norte',
+              total_orders: 4,
+              total_packages: 8,
+              verified_count: 0,
+              status: 'completed',
+              signature_operator: null,
+            },
+          ]}
+          rescueAvailability="known"
+        />,
+      );
+      expect(screen.getByText('FALTA FIRMA')).toBeInTheDocument();
+    });
+
+    it('opens the rescue manifest via onOpenRescueManifest, not onOpenRouteManifest, while a route is active', async () => {
+      const onOpenRescueManifest = vi.fn();
+      const onOpenRouteManifest = vi.fn();
+      render(
+        <PickupMobileView
+          {...baseProps()}
+          activeRoute={activeRoute}
+          activeManifests={activeManifests}
+          onOpenRouteManifest={onOpenRouteManifest}
+          onOpenRescueManifest={onOpenRescueManifest}
+          rescueManifests={[
+            {
+              id: 'r1',
+              external_load_id: 'CARGA-RESCUE',
+              retailer_name: 'Falabella',
+              pickup_location: 'Bodega Norte',
+              total_orders: 4,
+              total_packages: 8,
+              verified_count: 0,
+              status: 'completed',
+              signature_operator: null,
+            },
+          ]}
+          rescueAvailability="known"
+        />,
+      );
+      await userEvent.click(screen.getByText('FALTA FIRMA').closest('button')!);
+      expect(onOpenRescueManifest).toHaveBeenCalledWith('CARGA-RESCUE');
+      expect(onOpenRouteManifest).not.toHaveBeenCalledWith('CARGA-RESCUE');
+    });
+
+    it('wires "Reintentar" through even while a route is active', async () => {
+      const onRetryRescue = vi.fn();
+      render(
+        <PickupMobileView
+          {...baseProps()}
+          activeRoute={activeRoute}
+          activeManifests={activeManifests}
+          rescueManifests={[]}
+          rescueAvailability="error"
+          onRetryRescue={onRetryRescue}
+        />,
+      );
+      await userEvent.click(screen.getByRole('button', { name: /reintentar/i }));
+      expect(onRetryRescue).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -10,10 +10,13 @@ import { PickupMobileNextLoadCard } from './PickupMobileNextLoadCard';
 import { PickupMobileCompactRow } from './PickupMobileCompactRow';
 import { PickupMobileFooterActions } from './PickupMobileFooterActions';
 import { CancelRouteButton } from './CancelRouteButton';
+import { RescueManifestsSection } from './RescueManifestsSection';
+import { ManifestsAvailabilityNotice } from './ManifestsAvailabilityNotice';
 import { sumExpected } from '@/lib/pickup/manifestProgress';
 import { splitLoads } from '@/lib/pickup/pickupMobileHelpers';
 import type { RouteManifestRow } from './RouteManifestList';
 import type { ActivePickupRoute } from '@/hooks/pickup/useActivePickupRoute';
+import type { ManifestsAvailability } from '@/lib/pickup/pickupPageHelpers';
 
 /**
  * spec-54 mock 3h, active-route body — split out of PickupMobileView.tsx
@@ -24,20 +27,21 @@ import type { ActivePickupRoute } from '@/hooks/pickup/useActivePickupRoute';
  * card, then the remaining/completed loads as compact rows, then footer
  * actions. See PickupMobileView.tsx for what the redesign omits and why.
  *
- * spec-80 fase 2b (ronda 2) — this file no longer renders a "Pendientes de
- * firma" section. Round 1 put one here, keyed off `useRouteManifests` (this
- * route's own manifests); round 2 review proved that data source can never
- * actually contain a rescue case: `trg_route_receptions_status_sync`
- * (20260812000006) flips EVERY manifest on the route to `status:
- * 'completed'` AND the route itself to `status: 'received'` in the SAME
- * statement, and `get_my_active_pickup_route` only returns routes still
- * `in_progress` — so the instant a rescue is born, this component stops
- * being reachable at all. The real, operator-wide rescue entry now lives in
- * `PickupMobileView.tsx`, sourced from `get_completed_manifests` (the same
- * scope desktop's Completados tab uses), which stays reachable whether or
- * not the crew currently has an active route.
+ * spec-80 fase 2b — the "Pendientes de firma" rescue section has moved
+ * twice. Ronda 1 put it here keyed off `useRouteManifests` (this route's
+ * OWN manifests) — unreachable, because `trg_route_receptions_status_sync`
+ * flips the whole route to `status: 'received'` in the same statement that
+ * completes a manifest without a signature. Ronda 2 moved it to
+ * `PickupMobileView.tsx`'s no-route branch only, sourced operator-wide.
+ * Ronda 3 (A2) puts it back HERE TOO, unconditionally: a rescue from
+ * yesterday's route does not stop mattering just because the crew opened a
+ * brand-new route B today — hiding it while route B is open would make it
+ * invisible for the entire work day, reappearing only once B closes too.
+ * Now correctly sourced (via `PickupMobileView`) from
+ * `get_signature_rescue_manifests` (ronda 3 — scoped to this user + 30 days,
+ * NOT the route's own manifests), so this is not the ronda-1 bug again.
  *
- * `splitLoads` still separates a same-shape `rescueLoads` bucket out of
+ * `splitLoads` also separates a same-shape `rescueLoads` bucket out of
  * `completedLoads` here (see `pickupMobileHelpers.ts`) purely so a
  * theoretical future manifest that reached `completed` without a signature
  * while its OWN route stayed `in_progress` would not inflate the CERRADAS
@@ -58,12 +62,21 @@ export function PickupMobileActiveRoute({
   activeRoute,
   activeManifests,
   onOpenRouteManifest,
+  rescueManifests = [],
+  rescueAvailability = 'known',
+  onOpenRescueManifest,
+  onRetryRescue,
   operatorId = null,
   canCancelRoute = false,
 }: {
   activeRoute: ActivePickupRoute;
   activeManifests: RouteManifestRow[];
   onOpenRouteManifest: (loadId: string) => void;
+  /** spec-80 fase 2b (ronda 3, A2) — see this file's doc comment. */
+  rescueManifests?: RouteManifestRow[];
+  rescueAvailability?: ManifestsAvailability;
+  onOpenRescueManifest?: (loadId: string) => void;
+  onRetryRescue?: () => void;
   operatorId?: string | null;
   /** spec-61 Task 5 — true only for the route's own leader. */
   canCancelRoute?: boolean;
@@ -115,6 +128,16 @@ export function PickupMobileActiveRoute({
         driverName={activeRoute.driver?.full_name ?? null}
         crew={activeRoute.crew}
       />
+
+      {/* spec-80 fase 2b (ronda 3, A2) — shown regardless of route state;
+          see this file's doc comment. */}
+      <ManifestsAvailabilityNotice availability={rescueAvailability} onRetry={onRetryRescue} />
+      {rescueAvailability === 'known' && (
+        <RescueManifestsSection
+          manifests={rescueManifests}
+          onOpen={onOpenRescueManifest ?? onOpenRouteManifest}
+        />
+      )}
 
       <div className="grid grid-cols-3 gap-2">
         <StatTile label="CARGAS" value={activeManifests.length} />

@@ -791,6 +791,100 @@ render).
 > `paused`→`unknown` fijo, filtro `!== null` invertido, `pickup_location` a `null`), los 6 mueren;
 > 3 mutantes sobre el cableado de `page.tsx` (los de M3), los 3 mueren.
 
+> **Ronda 3 de review (PR #737, 2026-09-10) — la corrección de la ronda 2 cambió «inalcanzable»
+> por «sin cota», y dos huecos de wiring quedaron sin test.**
+>
+> **A1 — la lista de rescate no tenía cota: ni fecha, ni ruta, ni cuadrilla.**
+> `rescueRowsFromCompleted` filtraba sobre TODO lo que devolvía `get_completed_manifests()` — sin
+> `LIMIT`, sin ventana temporal, operador entero. Medido: 40 manifiestos cerrados hace 6 meses sin
+> firma se pintaban como filas rojas «FALTA FIRMA» en cada apertura del móvil, y no era casualidad:
+> `signature_operator` sólo lo escribe `close_manifest`, que existe desde `20260913000002` — todo
+> lo cerrado antes tiene el campo NULL. Y cada fila era accionable: `close_manifest` sólo comprueba
+> operador, no pertenencia a ruta ni cuadrilla, así que cualquier picker podía firmar una carga
+> ajena de hace meses, registrando discrepancias `missing` que alimentan cifras de indemnización
+> sobre un bulto que nadie puede ya investigar.
+>
+> **Dos cotas, decididas (2026-09-10, orquestador) y aplicadas server-side, en un RPC nuevo, no en
+> `get_completed_manifests`** (esa función sigue operador-ancha a propósito — la usa la pestaña
+> Completados de escritorio, y acotarla le habría cambiado el contrato):
+> 1. **Pertenencia** — sólo manifiestos cuya ruta tuvo a este usuario de `driver_id` o en
+>    `pickup_route_crew`, **alguna vez**, no "todavía activo": `pickup_route_crew.removed_at` se
+>    marca en cuanto la ruta deja de estar `in_progress` (`20260820000002`), así que para cuando
+>    existe un rescate esa columna YA está puesta en cada fila de cuadrilla de esa ruta — exigir
+>    `removed_at IS NULL` no habría encontrado nunca una ruta cerrada.
+> 2. **Ventana de 30 días** sobre `completed_at`, cinturón adicional: aunque la pertenencia ya
+>    acote, el histórico legado no debe reaparecer nunca.
+>
+> Nuevo RPC `get_signature_rescue_manifests()` (migración `20261003000001`, plantilla: el patrón
+> "driver OR crew" de `get_my_active_pickup_route`, `20260820000005`, el único RPC existente que ya
+> resuelve "¿está este usuario en esta ruta?"), nuevo hook `useSignatureRescueManifests` — **no**
+> reutiliza `useCompletedManifests`. `rescueRowsFromCompleted` se mantiene igual (mapeo puro,
+> reutilizable sobre cualquier fuente con esa forma), pero ahora consume esta fuente acotada, no la
+> operador-ancha.
+>
+> **A2 — "resuelto por construcción" cubría sólo la mitad.** Es correcto que el trigger cierra
+> TODOS los manifiestos de una ruta a la vez, así que un rescate nunca convive con un manifiesto
+> `in_progress` de la MISMA ruta — verificado, sigue siendo cierto. Lo que no se seguía: un rescate
+> de la ruta A sí convive con una ruta B activa al día siguiente, y la ronda 2 sólo renderizaba la
+> sección en la rama sin-ruta de `PickupMobileView` — con una ruta B abierta, la carga sin firmar
+> de A quedaba invisible toda la jornada (reaparecía de noche, así que no bloqueaba, pero era un
+> hueco real, y **sin ningún test que fijara la decisión**). **Decidido: se muestra también con
+> ruta activa** — una carga sin firmar de ayer no deja de importar porque hoy haya una ruta nueva.
+> La sección se renderiza ahora tanto en `PickupMobileView.tsx` (rama sin-ruta) como dentro de
+> `PickupMobileActiveRoute.tsx` (rama con-ruta), las dos alimentadas por la MISMA prop
+> `rescueManifests`/`rescueAvailability` desde `page.tsx` — no es el bug de la ronda 1 otra vez
+> porque la fuente de datos ya está correctamente acotada (A1), no es route-scoped.
+>
+> **A3 — el botón «Reintentar» del estado de error no estaba cableado.**
+> `ManifestsAvailabilityNotice` sólo renderiza «Reintentar» si recibe `onRetry`, y ni
+> `PickupMobileView` ni (la ahora también renderizante) `PickupMobileActiveRoute` se lo pasaban —
+> tras agotar reintentos, la cuadrilla veía el mensaje de error sin ninguna acción. El test de la
+> ronda 2 ejercitaba `onRetry` pasándolo directo al componente aislado, sin probar que el llamador
+> real lo propagara — un verde sobre comportamiento inalcanzable. Corregido: `onRetryRescue` nuevo,
+> cableado desde `page.tsx` (`refetch` del hook nuevo) hasta ambas ramas, con tests de extremo a
+> extremo (no sólo a nivel de `ManifestsAvailabilityNotice`) que hacen clic en el botón real y
+> comprueban que el `refetch` correcto se invoca.
+>
+> **Menores:**
+> - La migración `20261002000001` (ronda 2) había perdido, al reescribir sobre la plantilla de
+>   spec-83, tres comentarios que esa plantilla marcaba como necesarios para que nadie los borre
+>   por "redundantes": el aviso de "defense in depth, not load-bearing" sobre `d.operator_id`, el
+>   de "redundante por `discrepancy_source_matches_operation`", y la justificación de
+>   `COUNT(DISTINCT)` (una reversión explícita de una ronda anterior de spec-83). El SQL era
+>   idéntico — sólo se perdió el aviso. Restaurados en el mismo fichero (no mergeado aún, así que se
+>   edita directo, no con otra migración encima).
+> - **Mutante SQL preexistente, declarado y no cerrado**: `WHERE operator_id = ... OR TRUE` en
+>   `get_completed_manifests`/`get_signature_rescue_manifests` no lo mata ningún test pgTAP, porque
+>   los tests corren como `postgres` y `SECURITY INVOKER` + RLS (que sí lo bloquearía con un rol
+>   real) se saltan con ese rol. No es una fuga viva en producción, pero el no-negociable del repo
+>   es `operator_id` en toda consulta con un test que lo fije, y ninguna de las dos funciones lo
+>   tiene. No se cierra aquí — está fuera del alcance de esta ronda.
+> - El bug del harness pgTAP (`apply` salta por nombre de migración, nunca por contenido — un
+>   mutante puede dar falso verde si no se aplica directo contra el contenedor) y su segundo vector
+>   (`docker exec -i psql -f /ruta` sin `MSYS_NO_PATHCONV=1` desde Git Bash falla en silencio si el
+>   stderr se descarta) quedan fuera de esta fase — el orquestador los despacha aparte.
+>
+> **Archivos nuevos/tocados en esta ronda:**
+> `packages/database/supabase/migrations/20261003000001_spec80_fase2b_signature_rescue_manifests.sql`
+> (nuevo RPC), `packages/database/supabase/tests/spec80_fase2b_signature_rescue_manifests.test.sql`
+> (nuevo, 6/6), `packages/database/supabase/migrations/20261002000001_...` (comentarios restaurados,
+> mismo SQL), `apps/frontend/src/hooks/pickup/useManifests.ts`+test (`useSignatureRescueManifests`),
+> `apps/frontend/src/app/app/pickup/page.tsx`+test (fuente de datos nueva, `onRetryRescue`, sección
+> visible con ruta activa), `apps/frontend/src/components/pickup/PickupMobileView.tsx`+test
+> (`onRetryRescue`, pasa las props de rescate también a `PickupMobileActiveRoute`),
+> `apps/frontend/src/components/pickup/PickupMobileActiveRoute.tsx`+test (vuelve a renderizar
+> `RescueManifestsSection`/`ManifestsAvailabilityNotice`, ahora con la fuente correcta).
+>
+> pgTAP: `spec80_fase2b_signature_rescue_manifests.test.sql` 6/6, mutado a mano contra el
+> contenedor (3 mutantes: ventana de 30 días quitada, `OR EXISTS`→`AND EXISTS`,
+> `signature_operator IS NULL`→`(... OR TRUE)` — los 3 mueren). `spec80_fase2b_completed_
+> manifests_signature.test.sql` sigue 4/4 tras restaurar los comentarios (SQL sin cambios).
+> Vitest: 958/958 en `src/lib/pickup src/components/pickup src/app/app/pickup src/hooks/pickup`
+> (101 archivos). `tsc --noEmit` y `eslint` limpios. Mutation-testing de wiring: 2 mutantes (quitar
+> `onRetryRescue` de `page.tsx`, quitar las props de rescate de la llamada a
+> `PickupMobileActiveRoute` dentro de `PickupMobileView.tsx`), ambos matan al menos un test en
+> `page.test.tsx` y/o `PickupMobileView.test.tsx`.
+
 ### Fase 3 — `5f` firma y fotos `[done]`
 
 > **Corrección (2026-09-08) a la nota de abajo sobre la leyenda offline.**

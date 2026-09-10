@@ -52,10 +52,18 @@ const mockInTransit = [
 const mockUsePendingManifests = vi.fn();
 const mockUseCompletedManifests = vi.fn();
 const mockUseInTransitManifests = vi.fn();
+// spec-80 fase 2b (ronda 3) — the rescue banner's real, SEPARATE data
+// source (get_signature_rescue_manifests, scoped to this user + 30 days),
+// not useCompletedManifests (operator-wide, unbounded — desktop's history
+// tab). Defaults to an empty, resolved state so every pre-existing test in
+// this file (none of which cares about the rescue banner) is unaffected.
+const mockUseSignatureRescueManifests = vi.fn();
+const mockRefetchRescue = vi.fn();
 vi.mock('@/hooks/pickup/useManifests', () => ({
   usePendingManifests: (...args: unknown[]) => mockUsePendingManifests(...args),
   useCompletedManifests: (...args: unknown[]) => mockUseCompletedManifests(...args),
   useInTransitManifests: (...args: unknown[]) => mockUseInTransitManifests(...args),
+  useSignatureRescueManifests: (...args: unknown[]) => mockUseSignatureRescueManifests(...args),
 }));
 
 // spec-61 Task 5: this page now reads `role` (3j vs the crew screen, and
@@ -202,6 +210,14 @@ describe('PickupPage', () => {
     mockUseCompletedManifests.mockReturnValue({ data: mockCompleted, isLoading: false });
     mockUseInTransitManifests.mockReturnValue({ data: mockInTransit, isLoading: false });
     mockUseRouteManifests.mockReturnValue({ data: [], isLoading: false });
+    mockRefetchRescue.mockClear();
+    mockUseSignatureRescueManifests.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+      fetchStatus: 'idle',
+      refetch: mockRefetchRescue,
+    });
   });
 
   describe('Header', () => {
@@ -784,7 +800,8 @@ describe('PickupPage', () => {
     });
 
     it('navigates to review/[loadId], NOT scan/[loadId], on tap', async () => {
-      mockUseCompletedManifests.mockReturnValue({
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
         data: [rescueRow],
         isPending: false,
         isError: false,
@@ -797,7 +814,8 @@ describe('PickupPage', () => {
     });
 
     it('shows the network-pause notice, not the rescue list, while genuinely paused with no signal', () => {
-      mockUseCompletedManifests.mockReturnValue({
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
         data: [rescueRow],
         isPending: true,
         isError: false,
@@ -809,7 +827,8 @@ describe('PickupPage', () => {
     });
 
     it('does not show the connection warning during an ordinary initial load', () => {
-      mockUseCompletedManifests.mockReturnValue({
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
         data: undefined,
         isPending: true,
         isError: false,
@@ -820,7 +839,8 @@ describe('PickupPage', () => {
     });
 
     it('shows a distinct error notice once retries are exhausted, not "known, nothing to rescue"', () => {
-      mockUseCompletedManifests.mockReturnValue({
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
         data: undefined,
         isPending: false,
         isError: true,
@@ -832,7 +852,8 @@ describe('PickupPage', () => {
     });
 
     it('shows nothing extra once resolved with no rescue-shaped manifest', () => {
-      mockUseCompletedManifests.mockReturnValue({
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
         data: [{ ...rescueRow, signature_operator: 'M. Rojas' }],
         isPending: false,
         isError: false,
@@ -841,6 +862,38 @@ describe('PickupPage', () => {
       render(<PickupPage />);
       expect(screen.queryByText('FALTA FIRMA')).toBeNull();
       expect(screen.queryByText(/no pudimos/i)).toBeNull();
+    });
+
+    // A3 (ronda 3) — the retry button must actually call refetch() on the
+    // scoped rescue query, not on some other one.
+    it('wires "Reintentar" to refetch the rescue query, once retries are exhausted', async () => {
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
+        data: undefined,
+        isPending: false,
+        isError: true,
+        fetchStatus: 'idle',
+      });
+      render(<PickupPage />);
+      await userEvent.click(screen.getByRole('button', { name: /reintentar/i }));
+      expect(mockRefetchRescue).toHaveBeenCalledTimes(1);
+    });
+
+    // A2 (ronda 3) — DECIDED: the rescue banner shows even with an active
+    // route open. A rescue from a PREVIOUS route does not stop mattering
+    // just because today has a new one.
+    it('shows the rescue banner even while a different route is active (A2)', () => {
+      mockActiveRoute = { id: 'route-today', code: 'PR-2026-0099', started_at: new Date().toISOString(), crew: [] };
+      mockUseRouteManifests.mockReturnValue({ data: [], isLoading: false });
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
+        data: [rescueRow],
+        isPending: false,
+        isError: false,
+        fetchStatus: 'idle',
+      });
+      render(<PickupPage />);
+      expect(screen.getByText('FALTA FIRMA')).toBeInTheDocument();
     });
   });
 });
