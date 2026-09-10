@@ -1268,8 +1268,11 @@ traspaso de custodia — el respaldo de una eventual indemnización.
 - [x] `externalLoadId` se pasa al encolar — sin él, el chip de sync (spec-81
       fase 4) no puede decirle al operario **qué carga** abrir cuando una foto
       queda muerta.
-- [x] Test que ejercite el camino sin señal de punta a punta: capturar →
-      encolar → drenar, sin que la foto se pierda (`photos-capture-flow.test.ts`).
+- [x] Test que ejercite capturar → encolar, más un drenado reconstruido a
+      mano (sin `onManifestDocumentsChanged` real — no es punta a punta),
+      confirmando que la foto no se pierde
+      (`photos-capture-flow.test.ts`; wording corregido ronda 4 de review
+      del PR #736 para decir lo que el test mide, no más).
 - [x] Verificado: con el cableado hecho, la leyenda de `5f` («Las fotos
       también») ya es verdad — no hizo falta cambiarla.
 
