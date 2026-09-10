@@ -60,6 +60,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Check out the repo
+        # `resolve-supabase-pooler-host.sh` lives in this repo, so the workspace
+        # has to exist before the step that runs it. Neither of these two
+        # workflows had a checkout before #750 — they only ever shelled out to
+        # `psql`, so nothing on disk was needed and its absence was invisible.
+        # The first real dry_run after #750 failed with exit 127,
+        # "No such file or directory".
+        uses: actions/checkout@v4
+
       - name: Install postgresql-client
         run: |
           set -euo pipefail
