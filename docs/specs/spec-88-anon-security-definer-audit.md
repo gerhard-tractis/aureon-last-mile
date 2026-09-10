@@ -941,19 +941,21 @@ aquí:**
   `ROLLBACK` limpio, `get_operator_id` sin tocar (confirmado con
   `aclexplode` tras el intento fallido).
 - **B — "anon no tiene SELECT de tabla" era falso, medido.** `anon` tiene
-  `SELECT` explícito sobre 20 tablas de `public` (confirmado:
-  `information_schema.role_table_grants` → 20). Corregido el comentario de
-  la migración y de este spec: revocar `EXECUTE` sobre
-  `get_operator_id`/`get_current_user_role` sí cambia el comportamiento de
-  esas 20 tablas para `anon`/JWT expirado — de "0 rows silencioso" (la
-  política RLS obtenía NULL y filtraba todo) a "42501 permission denied"
-  (la función falla antes de que la política pueda evaluar nada). No es una
-  fuga; es un comportamiento distinto (500 en vez de lista vacía). Ningún
-  camino vivo depende de la respuesta silenciosa — confirmado por el
-  reviewer y no repetido aquí: el lector de `operators` en `apps/frontend`
-  está condicionado a `enabled: !!operatorId`, los escritores de
-  `audit_logs` corren como `service_role`, y no hay uso de la clave anónima
-  en `apps/worker`/`apps/agents`/edge functions.
+  `SELECT` explícito sobre tablas de `public` (confirmado:
+  `information_schema.role_table_grants`). **Corrección de ronda 3: la
+  cifra "20" de esta misma línea también estaba inflada** — ver el bloque
+  de ronda 3 más abajo para el desglose exacto (18 tablas en prod, de las
+  cuales sólo 5 cambian de comportamiento). Revocar `EXECUTE` sobre
+  `get_operator_id`/`get_current_user_role` cambia el comportamiento de esas
+  5 tablas para `anon`/JWT expirado — de "0 rows silencioso" (la política
+  RLS obtenía NULL y filtraba todo) a "42501 permission denied" (la función
+  falla antes de que la política pueda evaluar nada). No es una fuga; es un
+  comportamiento distinto (500 en vez de lista vacía). Ningún camino vivo
+  depende de la respuesta silenciosa — confirmado por el reviewer: el
+  lector de `operators` en `apps/frontend` está condicionado a
+  `enabled: !!operatorId`, los escritores de `audit_logs` corren como
+  `service_role`, y no hay uso de la clave anónima en
+  `apps/worker`/`apps/agents`/edge functions.
 - **C — contrapartida del oráculo de `get_manifest_label_data` documentada,
   no presentada como mejora gratis.** Añadido al comentario de la migración:
   un `authenticated` de A ahora distingue "existe y es de B" (42501) de
@@ -980,6 +982,56 @@ mismo contenedor propio, rebuild limpio desde el archivo de migración real:
 `spec88_assert_operator_access_internal_guard`,
 `cross_tenant_definer_rpcs_test`, `spec45_module_activation_test` — 153
 aserciones/archivos, 0 fallos.
+
+**Ronda 3 de review (PR #733, mergeado — este seguimiento va en PR aparte,
+sin auto-merge) — aprobado, cambió el veredicto de despliegue de "no hoy" a
+"sí" precisamente por el bucle sobre las 16. Tres hallazgos, cerrados aquí:**
+
+- **La cifra de la corrección de ronda 2 seguía inflada — quinto caso de
+  este spec, y esta vez mío.** Medido tabla por tabla, no de nuevo por
+  cantidad de filas de `role_table_grants`: de las tablas con `SELECT` de
+  `anon`, sólo **5** pasan de "0 filas" a "42501" al revocar
+  `get_operator_id`/`get_current_user_role`
+  (`operators`, `audit_logs`, `return_receptions`, `return_reception_scans`,
+  `dashboard_monthly_rollup` — confirmado por sus políticas RLS en
+  `pg_policies.qual` invocando alguna de las dos funciones); 2 más cambian
+  de un error a otro (mensaje distinto, mismo resultado); las **13**
+  restantes no cambian en absoluto porque sus políticas no invocan estas
+  funciones. Y el "20" original tampoco era la cifra de producción: incluye
+  3 vistas de PostGIS y 2 de pgTAP — pgTAP no está instalado en prod, así
+  que ahí son **18**, no 20. Corregido el comentario de la migración y el
+  bullet B de ronda 2 arriba, con las cifras exactas en vez de una única
+  cifra total que sonaba medida pero mezclaba tres cosas distintas.
+- **`COMMENT ON FUNCTION public.get_operator_id` sin `()` — la única línea
+  de la migración sin cualificar la firma.** Con un overload presente, la
+  migración moriría ahí (línea de `COMMENT`), antes de llegar al `DO` block
+  que existe para blindar exactamente ese escenario — falla seguro hoy
+  (no hay overload), pero es la función de la que depende todo lo demás.
+  Arreglado: `COMMENT ON FUNCTION public.get_operator_id()`. Verificado
+  creando un overload real `get_operator_id(uuid)` en el contenedor: la
+  migración corre limpia de principio a fin (`COMMIT`, `NOTICE: ✓ ...
+  complete`) con el overload presente.
+- **El mensaje de error del `FOREACH` arrastraba el paréntesis de MINA 1
+  (61 políticas RLS) a las 16, no sólo a las 2 que lo justifican.** Un fallo
+  real de, por ejemplo, `delete_minted_carton` habría impreso "...61 RLS
+  policies" — manda a mirar políticas RLS ante un problema que no tiene
+  nada que ver con RLS. Arreglado: el mensaje ahora es condicional —
+  `get_operator_id`/`get_current_user_role` citan las 61 políticas
+  explícitamente; las otras 14 dicen sólo "breaks its real caller
+  outright". Mutation-verificado en las dos direcciones: envenenar
+  `delete_minted_carton` da el mensaje genérico (sin RLS); envenenar
+  `get_current_user_role` da el mensaje específico (con las 61 políticas).
+- **Anotado, no cambiado:** el reviewer probó y descartó la sospecha de que
+  quitar `p.proacl IS NULL OR` de las aserciones (ronda 2) las volviera
+  vacuas — los `ALTER DEFAULT PRIVILEGES` de Supabase materializan el ACL
+  completo en toda función nueva, así que `proacl` nunca queda `NULL` en
+  este proyecto. Comentario añadido en el test para que nadie lo revierta
+  "por precaución" sin volver a medirlo.
+
+Regresión tras estas tres correcciones — mismo contenedor propio, rebuild
+limpio desde el archivo de migración real: mismas 8 suites de antes, 153
+aserciones/archivos, 0 fallos. Migración y test siguen bajo 300 líneas
+(297 y 249).
 
 **No cerrado.** Esta fase implementa y trae su propia evidencia de tests
 (arriba), pero no trae `> Implementado por:`/`> Review:`/`> QA:` — eso
