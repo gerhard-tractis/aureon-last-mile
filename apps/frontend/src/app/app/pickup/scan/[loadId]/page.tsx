@@ -381,7 +381,7 @@ export default function ScanningPage() {
             <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">Escaneos recientes</p>
           </div>
           <div className="p-3">
-            <ScanHistoryList scans={scans} />
+            <ScanHistoryList scans={scans} scansUnknown={scansUnknown} />
           </div>
         </div>
 

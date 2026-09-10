@@ -71,4 +71,21 @@ describe('ScanHistoryList', () => {
     render(<ScanHistoryList scans={mockScans} />);
     expect(screen.getByText('YA ESCANEADO')).toBeInTheDocument();
   });
+
+  // M2, ronda 4 de review del PR #727 — sin red, `usePickupScans` (query de
+  // red) queda pausada y `scans` llega `[]` por falta de SEÑAL, no por
+  // falta de trabajo. Antes de esto, un operario que verificó 18 bultos con
+  // señal y reabre esta pantalla sin red leía literalmente "No scans yet" —
+  // la misma clase de cero fabricado que B2 (ronda 3) vino a eliminar dos
+  // capas más arriba, sólo que aquí sobrevivió.
+  it('shows a Spanish "sin conexión" message, not "No scans yet", when scans is empty because of scansUnknown', () => {
+    render(<ScanHistoryList scans={[]} scansUnknown />);
+    expect(screen.queryByText('No scans yet')).not.toBeInTheDocument();
+    expect(screen.getByText(/sin conexión/i)).toBeInTheDocument();
+  });
+
+  it('still shows "No scans yet" when scans is genuinely empty (not scansUnknown)', () => {
+    render(<ScanHistoryList scans={[]} scansUnknown={false} />);
+    expect(screen.getByText('No scans yet')).toBeInTheDocument();
+  });
 });

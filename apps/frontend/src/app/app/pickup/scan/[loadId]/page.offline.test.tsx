@@ -61,7 +61,12 @@ vi.mock('@/components/pickup/ScannerInput', () => ({
   ),
 }));
 vi.mock('@/components/pickup/ScanHistoryList', () => ({
-  ScanHistoryList: () => <div data-testid="scan-history" />,
+  ScanHistoryList: (props: { scans: unknown[]; scansUnknown?: boolean }) => (
+    <div
+      data-testid="scan-history"
+      data-scans-unknown={String(!!props.scansUnknown)}
+    />
+  ),
 }));
 vi.mock('@/components/pickup/ScanResultPopup', () => ({ ScanResultPopup: () => null }));
 vi.mock('@/components/pickup/ScanResultCard', () => ({
@@ -244,6 +249,34 @@ describe('ScanningPage offline (spec-82 fase 2)', () => {
 
     expect(screen.getByTestId('flow-header')).toHaveAttribute('data-scanned', 'null');
     expect(screen.getByTestId('manifest-detail')).toHaveAttribute('data-scans-unknown', 'true');
+  });
+
+  // M2, ronda 4 de review del PR #727 — mismo argumento que el test de
+  // arriba (B2, ronda 3), pero para `ScanHistoryList`: `scansUnknown` YA se
+  // calculaba dos líneas antes de este render, sólo faltaba propagarlo. Sin
+  // esto, un operario que verificó 18 bultos con señal y reabre sin red
+  // leía literalmente "No scans yet" bajo "Escaneos recientes".
+  it('passes scansUnknown: true to ScanHistoryList when offline (M2)', () => {
+    mockUseSyncQueue.mockReturnValue(offlineSync());
+    mockOfflineScanSource.mockReturnValue({
+      unknown: false,
+      blocked: false,
+      snapshot: {
+        operatorId: 'op-1',
+        externalLoadId: 'CARGA-99817',
+        manifestId: 'manifest-1',
+        totalPackages: 25,
+        pickupRouteId: 'route-1',
+        retailerName: 'Ripley',
+        pickupLocation: 'Parque Arauco',
+        orders: [],
+        downloadedAt: new Date().toISOString(),
+      },
+    });
+
+    render(<ScanningPage />);
+
+    expect(screen.getByTestId('scan-history')).toHaveAttribute('data-scans-unknown', 'true');
   });
 
   // spec-82 fase 2, revisión B2 — sin este aviso, un operario que verificó
