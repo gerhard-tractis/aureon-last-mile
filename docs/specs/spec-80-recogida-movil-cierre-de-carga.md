@@ -1233,7 +1233,7 @@ Releído cada spec downstream contra lo que **realmente** se mergeó en esta fas
   hereda esta misma decisión** — si la evidencia necesita ser literalmente inmutable
   (no sólo auditada), ese spec necesita un RPC, no este patrón.
 
-### Fase 6 — cablear `5g`/`5h` a `ManifestPhotoStrip` (que «Las fotos también» sea verdad) `[pending]`
+### Fase 6 — cablear `5g`/`5h` a `ManifestPhotoStrip` (que «Las fotos también» sea verdad) `[in_progress]`
 
 **Por qué existe esta fase y no un párrafo suelto (2026-09-09).** Esto llevaba
 tres PRs viviendo como «pendiente con dueño» en prosa, fuera de todo checklist
