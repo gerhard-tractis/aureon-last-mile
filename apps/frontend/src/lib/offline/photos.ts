@@ -97,6 +97,43 @@ export async function unconfirmedPhotoBytes(
 }
 
 /**
+ * Ronda 4 de review del PR #736 (bloqueante 2) — cuántas fotos de ESTE
+ * manifiesto siguen en la cola local sin confirmar (`pending`/`sending`).
+ * `complete/[loadId]/page.tsx` la suma a `documents.length` (lo que el
+ * SERVIDOR ya confirmó) para el "Respaldo: N fotos" de `5i` — un número
+ * honesto, no dos que el operario tenga que sumar él mismo (decisión del
+ * usuario, ver el spec).
+ *
+ * NO cuenta `dead` — a diferencia de `unconfirmedPhotoBytes` (que sí, porque
+ * ese blob sigue ocupando disco hasta que un humano lo resuelva). Aquí la
+ * pregunta es otra: "¿está a salvo?". Una entrada `dead` agotó los
+ * reintentos con un rechazo irrecuperable — nunca llegó al servidor y no va
+ * a llegar sin intervención humana. Contarla como respaldo repetiría, en la
+ * otra dirección, el error del bloqueante 1: pintar a salvo algo que no lo
+ * está.
+ *
+ * Tampoco cuenta `sent` — ese número ya lo tiene `documents.length`, la
+ * fuente de verdad del servidor para lo confirmado; sumarlo aquí también lo
+ * contaría dos veces.
+ */
+export async function queuedManifestPhotoCount(
+  db: PickupQueueStore,
+  operatorId: string,
+  manifestId: string,
+): Promise<number> {
+  return db.pickup_queue
+    .where('operatorId')
+    .equals(operatorId)
+    .and(
+      (entry) =>
+        entry.manifestId === manifestId &&
+        entry.type === 'manifest_photo' &&
+        (entry.status === 'pending' || entry.status === 'sending'),
+    )
+    .count();
+}
+
+/**
  * B3, review del PR #712 (bloqueante) — `ManifestPhotoStrip.tsx` calcula el
  * número de hoja contra `useManifestDocuments`, una query AL SERVIDOR. Sin
  * señal esa lista queda congelada, así que dos fotos capturadas offline en

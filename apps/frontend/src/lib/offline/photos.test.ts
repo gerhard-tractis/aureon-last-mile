@@ -18,6 +18,7 @@ import {
   manifestPhotoStoragePath,
   sendManifestPhoto,
   unconfirmedPhotoBytes,
+  queuedManifestPhotoCount,
   MAX_UNCONFIRMED_PHOTO_BYTES_PER_OPERATOR,
   MAX_PHOTO_FILE_BYTES,
 } from './photos';
@@ -28,6 +29,7 @@ const OPERATOR_A = 'operator-a';
 const OPERATOR_B = 'operator-b';
 const USER_A = 'user-a';
 const MANIFEST_1 = 'manifest-1';
+const MANIFEST_2 = 'manifest-2';
 
 function blobOfSize(bytes: number): Blob {
   return new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' });
@@ -552,6 +554,76 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
       await seed({ operatorId: OPERATOR_B, blob: fakeBlob(2000) });
 
       await expect(unconfirmedPhotoBytes(db, OPERATOR_A)).resolves.toBe(0);
+    });
+  });
+
+  // Ronda 4 de review del PR #736 (bloqueante 2) — `complete/[loadId]/page.tsx`
+  // pasaba `photosCount={documents.length}` a `ManifestClosedSummary`: sólo lo
+  // que el SERVIDOR ya confirmó. Desde esta fase `enqueueManifestPhoto` tiene
+  // su primer llamador de producción (`ManifestPhotoStrip`), así que una foto
+  // recién capturada — encolada pero todavía sin confirmar — leía "0 fotos"
+  // en la pantalla que existe para tranquilizar al operario de que el
+  // respaldo está a salvo. Este contador es la mitad que faltaba: cuántas
+  // fotos de ESTE manifiesto siguen en la cola local, esperando salir.
+  describe('queuedManifestPhotoCount', () => {
+    async function seed(overrides: Partial<PickupQueueEntry>) {
+      await db.pickup_queue.add({
+        clientOperationId: `seed-${Math.random()}`,
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'manifest_photo',
+        payload: { sheetNumber: 1 },
+        blob: fakeBlob(0),
+        status: 'pending',
+        retryCount: 0,
+        claimToken: null,
+        lastAttemptAt: null,
+        nextAttemptAt: null,
+        createdAt: new Date().toISOString(),
+        ...overrides,
+      });
+    }
+
+    it('counts pending and sending manifest_photo entries for the given manifest', async () => {
+      await seed({ status: 'pending' });
+      await seed({ status: 'sending' });
+
+      await expect(queuedManifestPhotoCount(db, OPERATOR_A, MANIFEST_1)).resolves.toBe(2);
+    });
+
+    it('does not count a sent photo — the server count already reflects it', async () => {
+      await seed({ status: 'sent' });
+
+      await expect(queuedManifestPhotoCount(db, OPERATOR_A, MANIFEST_1)).resolves.toBe(0);
+    });
+
+    // Un `dead` agotó los reintentos con un rechazo irrecuperable — no llegó
+    // al servidor y no va a llegar sin que un humano intervenga. Contarlo
+    // como "respaldo" repetiría exactamente el error del bloqueante 1:
+    // pintar a salvo algo que no lo está.
+    it('does not count a dead photo — it never reached the server and needs human help', async () => {
+      await seed({ status: 'dead' });
+
+      await expect(queuedManifestPhotoCount(db, OPERATOR_A, MANIFEST_1)).resolves.toBe(0);
+    });
+
+    it('does not count a manifest_photo entry from a different manifest', async () => {
+      await seed({ manifestId: MANIFEST_2 });
+
+      await expect(queuedManifestPhotoCount(db, OPERATOR_A, MANIFEST_1)).resolves.toBe(0);
+    });
+
+    it('does not count another operator\'s photo for the same manifest id', async () => {
+      await seed({ operatorId: OPERATOR_B });
+
+      await expect(queuedManifestPhotoCount(db, OPERATOR_A, MANIFEST_1)).resolves.toBe(0);
+    });
+
+    it('does not count an entry of another type even if it shares the manifest', async () => {
+      await seed({ type: 'close_manifest' });
+
+      await expect(queuedManifestPhotoCount(db, OPERATOR_A, MANIFEST_1)).resolves.toBe(0);
     });
   });
 
