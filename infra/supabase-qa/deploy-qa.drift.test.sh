@@ -139,8 +139,28 @@ echo "read_qa_prev_sha() (spec-88 fase 3, ronda 6)"
 # pre-merge environment — `restart_auth()` was simply never called.
 QA_CHECKOUT_DIR="$REPO"
 QA_STATE_FILE="$TMP/state-missing"
-check_eq "falls back to git HEAD when no marker exists yet (first run on a host)" \
-  "$(git -C "$REPO" rev-parse HEAD)" "$(read_qa_prev_sha)"
+# An ABSENT marker must report NOTHING, which widen_changed_flags() turns
+# into "rebuild every app" (see its unknown-baseline cases above).
+#
+# This used to fall back to `git rev-parse HEAD`, on the reasoning that the
+# only way to have no marker was a first run on a fresh host. Making the
+# marker write non-fatal (#732, after five deploys died on an unwritable
+# marker) created a second way, and with it a hole big enough to undo this
+# whole ronda:
+#
+#   run N   degraded - the marker could not be written at all, deploy green
+#   run N+1 sync_checkout's `git reset --hard` lands, then main() dies
+#           partway (the #718 permission bug, same day)
+#   run N+2 no marker, so prev = HEAD = run N+1's sha - and every file run
+#           N+1 checked out but never deployed drops out of the diff
+#
+# That is the bug this ronda exists to remove, arriving by the back door.
+# Before the write became non-fatal the invariant survived by CRASHING. It
+# now survives by degrading to the SAFE baseline instead: no marker, no
+# baseline, rebuild everything. The cost is one slow run on a genuinely
+# fresh host - the case where rebuilding everything was correct anyway.
+check_eq "reports no baseline when the marker is absent, so everything rebuilds" \
+  "" "$(read_qa_prev_sha)"
 
 printf '%s' "$FRONTEND_SHA" > "$TMP/state-present"
 QA_STATE_FILE="$TMP/state-present"
@@ -152,6 +172,14 @@ check_eq "reads the marker instead of git HEAD once one exists" \
 # later restarts died. read_qa_prev_sha() must still report the OLDER,
 # marker-recorded commit — not the checkout's newer HEAD — so
 # widen_changed_flags() sees the true, still-outstanding diff.
+# STALE is not ABSENT, and the difference is the whole design: the real
+# incident's marker was root-owned but perfectly READABLE, so it is a safe,
+# older baseline and stays in use. Only a marker that is not there at all
+# forces the full rebuild.
+QA_STATE_FILE="$TMP/state-present"
+check_eq "still uses a stale-but-readable marker rather than rebuilding everything" \
+  "$FRONTEND_SHA" "$(read_qa_prev_sha)"
+
 current_head="$(git -C "$REPO" rev-parse HEAD)"
 if [ "$current_head" = "$FRONTEND_SHA" ]; then
   fail=$((fail + 1)); echo "  FAIL test setup — REPO HEAD unexpectedly equals FRONTEND_SHA, the case below proves nothing"

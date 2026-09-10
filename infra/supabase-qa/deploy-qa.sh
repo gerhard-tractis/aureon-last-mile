@@ -32,6 +32,8 @@
 #   QA_CHECKOUT_DIR=<path>   QA checkout location (default /home/aureon/aureon-qa)
 #   QA_ENV_FILE=<path>       QA env file (default /home/aureon/.env.qa)
 #   QA_STATE_FILE=<path>     last-completed-deploy marker (default /home/aureon/.qa-last-deployed-sha)
+#   QA_DEGRADED_FILE=<path>  consecutive-degraded-run counter (default <marker>.degraded)
+#   QA_DEGRADED_MAX=<n>      degraded runs in a row before the deploy goes red (default 3)
 # The script can also be `source`d: functions are defined but nothing runs.
 
 set -Eeuo pipefail   # -E: the ERR trap main() installs must fire inside functions too
@@ -39,6 +41,8 @@ set -Eeuo pipefail   # -E: the ERR trap main() installs must fire inside functio
 QA_CHECKOUT_DIR="${QA_CHECKOUT_DIR:-/home/aureon/aureon-qa}"
 QA_ENV_FILE="${QA_ENV_FILE:-/home/aureon/.env.qa}"
 QA_STATE_FILE="${QA_STATE_FILE:-/home/aureon/.qa-last-deployed-sha}"
+QA_DEGRADED_FILE="${QA_DEGRADED_FILE:-${QA_STATE_FILE}.degraded}"
+QA_DEGRADED_MAX="${QA_DEGRADED_MAX:-3}"
 
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
 err() { log "ERROR: $*" >&2; }
@@ -128,8 +132,30 @@ guard_inputs() {
 # is written only at the very end of main(), after post_checks() passes —
 # so a partial run never advances it, and the next run's diff naturally
 # spans back to the last run that TRULY finished, re-triggering every flag
-# a dead run left unapplied. Falls back to `git rev-parse HEAD` only when
-# the marker does not exist yet (first run ever on a host).
+# a dead run left unapplied.
+#
+# An ABSENT marker reports NOTHING, which widen_changed_flags() turns into
+# "rebuild every app". It used to fall back to `git rev-parse HEAD` here, on
+# the reasoning that the only way to have no marker was a first run on a
+# fresh host. Making the write non-fatal (see record_deploy_marker) created a
+# second way, and with it a hole big enough to undo this whole ronda:
+#
+#   run N   degraded — the marker could not be written at all, deploy green
+#   run N+1 sync_checkout's `git reset --hard` lands, then main() dies partway
+#           (the #718 permission bug, same day)
+#   run N+2 no marker, so prev = HEAD = run N+1's sha — and every file run
+#           N+1 checked out but never deployed drops silently out of the diff
+#
+# That is, word for word, the bug ronda 6 exists to remove. Before the write
+# became non-fatal the invariant survived by CRASHING: an unwritable marker
+# aborted the deploy. Non-fatal is still right — a good deploy must not die
+# over a note — but it has to degrade to the SAFE baseline, not to a
+# plausible-looking one. So: no marker, no baseline, rebuild everything.
+#
+# The cost is one slow run on a genuinely fresh host, which is the case where
+# rebuilding everything was correct anyway. The distinction that matters is
+# STALE vs ABSENT: a stale marker (the real incident — wrong owner but
+# readable) is a safe, older baseline and is still used as one.
 # --------------------------------------------------------------------------
 # Split out for testability: sync_checkout() also does a real `git fetch`
 # against GitHub, which nothing here can stub cheaply. This one function is
@@ -137,8 +163,6 @@ guard_inputs() {
 read_qa_prev_sha() {
   if [ -f "$QA_STATE_FILE" ]; then
     cat "$QA_STATE_FILE" 2>/dev/null || true
-  else
-    git -C "$QA_CHECKOUT_DIR" rev-parse HEAD 2>/dev/null || true
   fi
 }
 
@@ -697,6 +721,28 @@ post_checks() {
 }
 
 # --------------------------------------------------------------------------
+# Replace $1's contents with $2, atomically, without ever leaving a partial
+# file behind. Returns non-zero instead of dying, so callers decide.
+#
+# Writes a temp beside the target and renames. rename(2) needs write
+# permission on the DIRECTORY, not on the target file, which is why this
+# recovers the incident's own shape: a marker owned by root inside a home
+# owned by the runner is simply replaced, and ends up owned by the runner.
+#
+# The -d guard is not paranoia: `mv -f file dir` moves the file INSIDE dir and
+# exits 0, so a path some stray mkdir turned into a directory would report a
+# successful write having written nothing. `mv -T` would cover it but is
+# GNU-only; the guard and its test are portable.
+write_atomic() { # $1 path, $2 content
+  local path="$1" content="$2" tmp="$1.tmp.$$"
+  [ ! -d "$path" ] || return 1
+  if printf '%s' "$content" > "$tmp" 2>/dev/null && mv -f "$tmp" "$path" 2>/dev/null; then
+    return 0
+  fi
+  rm -f "$tmp" 2>/dev/null || true
+  return 1
+}
+
 # --------------------------------------------------------------------------
 # Records the last-FULLY-COMPLETED deploy for the next run's baseline. Called
 # as the final statement of main(), after post_checks() has passed — see the
@@ -705,7 +751,7 @@ post_checks() {
 # Best-effort ON PURPOSE. Ronda 6 wrote the marker as a bare
 # `printf ... > "$QA_STATE_FILE"` under `set -Eeuo pipefail`, which made an
 # unwritable marker abort a deploy in which every actual step had succeeded.
-# It did, five runs running (34397163949 → 34422244965, 2026-09-09): the
+# It did, five runs running (34397163949 -> 34422244965, 2026-09-09): the
 # marker on the VPS was `root:root 0644` inside aureon's home, seeded by hand
 # over SSH during this same spec's catch-up, while the runner executes as
 # `aureon` — so the open got EACCES. Since spec-57 made a green QA sync
@@ -713,42 +759,69 @@ post_checks() {
 # deploy for the day. Same class as #718's root-owned edge-functions dir.
 #
 # The marker is an OPTIMISATION of widen_changed_flags()' diff, not a
-# correctness guarantee. Losing it is self-healing in the safe direction:
-# read_qa_prev_sha() falls back to the checkout's HEAD (or, failing that, an
-# unusable baseline, which widens every CHANGED_* flag to true), so the next
-# run rebuilds MORE than it needs to. It can never leave QA under-deployed.
-# Failing a good deploy over it trades a real outage for a stale note.
+# correctness guarantee, so failing a deploy whose every real step passed is
+# the wrong trade. But "degrade" has to mean the SAFE direction, and the first
+# cut of this did not: losing the marker made the next run inherit the
+# checkout's HEAD as its baseline, which is precisely the stale-baseline bug
+# ronda 6 removed. read_qa_prev_sha() now reports no baseline at all when the
+# marker is absent, so a degraded run costs a full rebuild — never a skipped
+# one. That is what makes carrying on safe rather than merely quiet.
 #
-# So: warn loudly enough that nobody mistakes the cause, and return 0.
-# Written to a temp file and renamed rather than redirected in place, so a
-# write that fails partway (ENOSPC) cannot leave read_qa_prev_sha() catting a
-# truncated sha — which would be read as a real baseline and diffed against
-# garbage, instead of falling back to "rebuild everything".
+# Degrading silently forever is its own failure, though: the warning lands on
+# a GREEN run, and nobody owns a yellow annotation. So consecutive degraded
+# runs are counted, and the streak escalates to a red deploy. One bad run is
+# noise; a standing misconfiguration is an outage waiting for the next #718.
 record_deploy_marker() {
   local sha="${QA_SYNCED_SHA:-${DEPLOY_SHA}}"
-  local tmp="${QA_STATE_FILE}.tmp.$$"
-  # The -d guard is not paranoia: `mv -f file dir` moves the file INSIDE dir
-  # and exits 0, so a marker path that some stray mkdir turned into a
-  # directory would report a recorded deploy while recording nothing, and
-  # read_qa_prev_sha()'s `cat` would then fail on it every run afterwards.
-  # `mv -T` would cover it but is GNU-only; a test for the path is not.
-  if [ ! -d "$QA_STATE_FILE" ] &&
-     printf '%s' "$sha" > "$tmp" 2>/dev/null &&
-     mv -f "$tmp" "$QA_STATE_FILE" 2>/dev/null; then
+  local runner; runner="$(id -un 2>/dev/null || echo '?')"
+
+  # Sweep temps a killed run left behind (SIGKILL between write and rename).
+  # Safe to take all of them, not just this pid's: the workflow's `qa-deploy`
+  # concurrency group guarantees one QA sync at a time on this host.
+  rm -f "${QA_STATE_FILE}".tmp.* 2>/dev/null || true
+
+  if write_atomic "$QA_STATE_FILE" "$sha"; then
+    rm -f "$QA_DEGRADED_FILE" 2>/dev/null || true
     return 0
   fi
-  rm -f "$tmp" 2>/dev/null || true
-  # ::warning:: so it surfaces in the run summary, not only in the log body.
+
+  # ::warning:: so it surfaces in the run summary, not only in the log body —
+  # and on stderr, which this script's header explains is the stream that is
+  # not block-buffered and so arrives where it actually happened.
   printf '::warning::deploy-qa.sh could not write the deploy marker %s — the deploy itself SUCCEEDED.\n' \
     "$QA_STATE_FILE" >&2
   err "could not write the deploy marker ${QA_STATE_FILE}"
   err "the deploy itself SUCCEEDED and QA is in sync at ${sha} — this is NOT a failed sync"
-  err "consequence: the next run has no completed-deploy baseline, so it widens its changed-file"
-  err "diff and rebuilds more of QA than it needs to. QA is never left under-deployed by this."
-  err "cause is almost always a marker owned by the wrong user — the runner runs as $(id -un 2>/dev/null || echo '?'):"
+  err "consequence: the next run has NO baseline, so it rebuilds every app rather than diffing."
+  err "that is slow, never unsafe — QA is not left under-deployed by this."
+  err "cause is almost always a marker owned by the wrong user — the runner runs as ${runner}:"
   err "  $(ls -ld "$QA_STATE_FILE" 2>&1 || true)"
   err "  $(ls -ld "$(dirname "$QA_STATE_FILE")" 2>&1 || true)"
-  err "fix on the VPS: sudo chown $(id -un 2>/dev/null || echo aureon) ${QA_STATE_FILE}"
+  err "fix on the VPS: sudo chown ${runner} ${QA_STATE_FILE}"
+
+  local streak
+  streak="$(cat "$QA_DEGRADED_FILE" 2>/dev/null || echo 0)"
+  case "$streak" in ''|*[!0-9]*) streak=0 ;; esac
+  streak=$((streak + 1))
+  if ! write_atomic "$QA_DEGRADED_FILE" "$streak"; then
+    # Nothing beside the marker is writable, so no streak can be remembered
+    # and this can never escalate on its own. Say so rather than imply the
+    # counter below is watching.
+    err "the degraded-run counter ${QA_DEGRADED_FILE} is unwritable too, so this cannot escalate"
+    err "on its own — it will warn on every run until someone fixes the directory."
+    return 0
+  fi
+
+  if [ "$streak" -ge "$QA_DEGRADED_MAX" ]; then
+    printf '::error::deploy-qa.sh has failed to record the deploy marker %s times in a row.\n' \
+      "$streak" >&2
+    err "FAILING THE DEPLOY on purpose: ${streak} consecutive runs could not write ${QA_STATE_FILE}."
+    err "each of those runs deployed QA correctly but rebuilt every app to stay safe, and the"
+    err "warning sat on a green run where nobody owned it. Fix the permissions and re-run:"
+    err "  sudo chown ${runner} ${QA_STATE_FILE} $(dirname "$QA_STATE_FILE")"
+    exit 1
+  fi
+  log "degraded run ${streak}/${QA_DEGRADED_MAX} — the deploy stays green until the streak reaches the limit"
   return 0
 }
 
