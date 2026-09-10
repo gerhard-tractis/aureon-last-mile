@@ -737,7 +737,7 @@ Extiende `scripts/check-migration-safety.sh` (spec-87 fase 5, en construcción e
 1. **Overload sin `REVOKE` propio.** Si una migración crea `CREATE [OR REPLACE] FUNCTION public.f(tipos_A)` y existe, en cualquier migración anterior, un `REVOKE ... ON FUNCTION public.f(tipos_B)` con `tipos_A ≠ tipos_B`, advertir que el `REVOKE` histórico no cubre la firma nueva. Éste es exactamente el bug de `start_pickup_route`.
 2. **`REVOKE ... FROM anon` sin `REVOKE ... FROM PUBLIC` que lo acompañe**, dentro de la misma o de una migración posterior sobre la misma firma. Éste es el bug de `add_dock_zone_adjacency_pair`/`open_route_reception`/`remove_dock_zone_adjacency_pair`/`reopen_pickup_route`. El check no puede saber si PUBLIC *sigue* expuesto sin consultar el ACL real (algo que un check estático sobre el SQL de las migraciones no puede hacer con certeza — dos migraciones pueden aplicar `REVOKE FROM PUBLIC` y `GRANT ... TO PUBLIC` en cualquier orden) — por eso el check correcto no es "cada `REVOKE FROM anon` debe ir con un `REVOKE FROM PUBLIC` en la misma migración" (demasiado rígido, rompería patrones legítimos donde PUBLIC nunca tuvo el grant para empezar), sino "toda migración `CREATE [OR REPLACE] FUNCTION` nueva que declare guardar el resultado con `GRANT EXECUTE ... TO authenticated` sin ningún `REVOKE` en la misma migración debe fallar" — que es el chequeo que spec-80 fase 1b ya necesitó a mano y que `check-migration-safety.sh` puede aplicar mecánicamente sobre el SQL de cada migración nueva, sin necesitar el ACL en vivo.
 
-### Fase 5 — Defensa en profundidad del resto `[pending]`
+### Fase 5 — Defensa en profundidad del resto `[in_progress]`
 
 > **Auditoría ejecutada (2026-09-09). Resultado: 0 de 16 explotables. Es
 > higiene — pero con dos minas que hay que desactivar ANTES de escribir la
@@ -821,6 +821,115 @@ Extiende `scripts/check-migration-safety.sh` (spec-87 fase 5, en construcción e
 **Archivos:** migración nueva en `packages/database/supabase/migrations/`, test pgTAP en `packages/database/supabase/tests/`
 
 Las 17 funciones con guard efectivo pero sin `REVOKE` nunca aplicado (`add_manifest_to_route`, `cancel_pickup_route`, `close_pickup_route`, `complete_route_reception`, `delete_minted_carton`, `disable_module_for_operator`, `enable_module_for_operator`, `expand_carton`, `get_current_user_role`, `get_enabled_modules_for_operator`, `get_manifest_label_data`, `get_module_audit_for_operator`, `get_operator_id`, `get_route_reception_snapshot`, `list_operators_with_module_state`, `mark_manifest_labels_printed`, `remove_manifest_from_route`). Sin riesgo activo — cada una falla limpio ante `anon` hoy — pero dejar el ACL real coherente con la intención de cada función es higiene que cierra la clase de "hoy no hay guard porque alguien lo olvidó" antes de que ocurra, no después. Baja prioridad, sin fecha — se puede tomar en cualquier momento sin coordinar con nada más de este spec.
+
+**Recuento re-medido en la implementación (no heredado de las dos cifras sin reconciliar de arriba): 16, no 17.** Comando y resultado — contra un contenedor pgTAP propio (`PGTAP_LOCAL_CONTAINER=spec88f5-pg`, nunca `spec52-pg`), levantado desde `origin/main` con las fases 1-3 de este spec ya aplicadas:
+
+```sql
+SELECT count(*) FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'public'
+  AND p.prosecdef
+  AND p.prorettype <> 'trigger'::regtype
+  AND has_function_privilege('anon', p.oid, 'EXECUTE')
+  AND has_schema_privilege('anon', n.nspname, 'USAGE')
+  AND NOT EXISTS (
+    SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid = d.refobjid
+    WHERE d.objid = p.oid AND d.deptype = 'e'
+  );
+-- => 16
+```
+
+`complete_route_reception` de la lista de 17 de arriba ya no pertenece a este conjunto: tiene hoy una tercera firma en vivo, `(uuid,text,jsonb)` (no la `(uuid,text)` que esa lista todavía nombra), con ACL ya cerrado — `postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres`, sin PUBLIC ni `anon` — confirmado con `aclexplode` contra el objeto real, no asumido. El recuento de 17 que el otro agente dejó sin reconciliar usaba la lista estática de la tabla de este spec, no el ACL en vivo — el mismo tipo de cifra propagada sin verificar que esta spec ya corrigió dos veces antes (34→39, 13→10).
+
+**Implementado:**
+
+- `packages/database/supabase/migrations/20261002000001_spec88_fase5_defense_in_depth.sql`
+  — `REVOKE ALL ... FROM PUBLIC` + `REVOKE ALL ... FROM anon` sobre las 16
+  (`authenticated` intacto en las 16, incluidas `get_operator_id`/
+  `get_current_user_role` — **MINA 1** respetada explícitamente, con
+  comentario y verificación `DO` block dedicados). `get_operator_id` gana
+  `SET search_path = public, pg_temp` (**MINA 2**), plantilla = su última
+  `CREATE OR REPLACE` real (`20260216170542_create_users_table_with_rbac.sql`
+  — no `20260209000001_auth_function.sql`, la original). Dos correcciones de
+  guard, ambas `CREATE OR REPLACE` sobre la plantilla más reciente:
+  `get_enabled_modules_for_operator` ahora también falla cuando
+  `p_operator_id IS NULL` (antes: `NULL IS DISTINCT FROM NULL` = `FALSE`
+  esquivaba el `RAISE`); `get_manifest_label_data` ahora lanza `42501`
+  cuando el manifest **existe** pero pertenece a otro operador — un
+  manifest inexistente sigue devolviendo 0 filas (eso sí es "no hay datos").
+- `packages/database/supabase/tests/spec88_fase5_defense_in_depth.test.sql`
+  — pgTAP, `plan(68)`. `has_function()` antes de cada bloque de `aclexplode`
+  (patrón `spec88_fase1_revoke_anon.test.sql:10-14`), assert explícito de
+  que `authenticated` sobrevive en las 16 (no sólo que PUBLIC/anon se
+  fueron), dos pruebas de comportamiento para los guards corregidos, y una
+  tercera confirmando que un manifest genuinamente inexistente sigue dando
+  0 filas sin error. Excepción declarada al límite de 300 líneas, mismo
+  motivo que `spec88_fase1_revoke_anon.test.sql` (partirlo por grupo rompe
+  el `plan(N)` único que pgTAP exige por transacción).
+- `packages/database/supabase/tests/spec53_package_labels_rls.sql` —
+  actualizado: la aserción que codificaba el bug ("0 rows cross-tenant es
+  correcto") ahora exige `42501`. Confirmado en rojo antes del cambio de
+  comportamiento (falló exactamente en la línea del `RAISE` nuevo, por la
+  razón correcta), verde después.
+
+**TDD y mutation-testing, uno a uno (no en bloque) — 5 mutaciones, las 5 cazadas por la razón exacta esperada, restauradas entre cada una:**
+1. Quitar `p_operator_id IS NULL OR` de `get_enabled_modules_for_operator` →
+   falla exactamente en "did not raise — bypass not fixed" (RED confirmado
+   también contra el estado pre-migración real, no sólo simulado).
+2. Quitar el bloque `IF EXISTS (...) RAISE` de `get_manifest_label_data` →
+   falla exactamente en "did not raise for a cross-tenant manifest".
+3. Re-`GRANT ... TO PUBLIC` sobre `get_operator_id` → `not ok 2` (sólo esa
+   aserción, 67/68 el resto).
+4. `REVOKE ... FROM authenticated` sobre `get_operator_id` (simulando el
+   reflejo de la fase 1 que el spec pide no repetir aquí) → `not ok 4`,
+   "authenticated KEEPS EXECUTE" — la aserción que existe específicamente
+   para detectar la MINA 1.
+5. `CREATE OR REPLACE` de `get_operator_id` sin `SET search_path` → `not ok
+   5`, la aserción de MINA 2 — y confirmado por separado que `CREATE OR
+   REPLACE` preserva el ACL real (`authenticated` seguía con `EXECUTE` tras
+   la mutación, sin necesidad de volver a `GRANT`), verificando en la
+   práctica la regla del repo sobre `CREATE OR REPLACE` vs. `DROP FUNCTION`.
+   Mutación de control adicional: re-`GRANT ... TO PUBLIC` sobre
+   `delete_minted_carton` (uno de los 14, elegido para confirmar que el
+   patrón repetido 14 veces no es vacuo) → `not ok 59`, sólo esa función.
+
+**Regresión — sin `spec52-pg` compartido, contenedor propio, `up` desde cero
+usando el archivo de migración real (no los `psql` manuales de la
+mutation-testing):** 206 migraciones sincronizadas, 203 aplicadas (3 fallos
+pre-existentes y ajenos a esta fase — `20250130165844_example_storage`,
+`20260409000003_spec30_dashboard_rpcs`, `20260430000001_...storage_bucket`,
+los tres reproducidos **antes** de escribir esta migración, contra el mismo
+`origin/main` limpio, y documentados como fricción conocida entre el
+`supabase/postgres` stock y el proyecto real — no algo que esta fase
+introdujo). Suites corridas en verde tras el rebuild limpio:
+`spec88_fase5_defense_in_depth` (68), `spec53_package_labels_rls` (1),
+`spec88_fase1_revoke_anon` (64), `spec88_fase2_assert_operator_access_service_role`,
+`spec88_fase3_custom_access_token_hook_acl`,
+`spec88_assert_operator_access_internal_guard`,
+`cross_tenant_definer_rpcs_test`, `spec45_module_activation_test` — 153
+aserciones/archivos en total, 0 fallos. Además, sin rebuild (mismo
+contenedor, antes del rebuild final), se corrieron y pasaron todas las
+suites que tocan las 16 funciones o sus vecinas directas:
+`add_manifest_to_route_authz`, `rbac_users_test`,
+`recogida_visible_when_carga_verified`, `rls_operators_test`,
+`route_reception_snapshot_contract`, `spec47_close_route_zero_packages_fails`,
+`spec47_pickup_routes_rls`, `spec52_open_route_reception`,
+`spec52_start_route_text_wrapper`, `spec52_vehicle_constraints`,
+`spec52_vehicles_rls`, `spec55_carton_expansion`, `spec61_cancel_route_authz`,
+`spec61_pending_excludes_routed`, `spec62_snapshot_scans_ordering`,
+`spec64_remove_manifest_from_route`, `spec66_ops_leader_route_authz`,
+`spec72_phase5_actual_sequence`, `spec73_phase3_adjacency_management`,
+`spec74_phase3_partially_staged`, `spec80_close_manifest`,
+`spec80_fase3_manifest_documents`, `spec84_fase1_drivers_user_id`,
+`spec85_discrepancies_rpcs`, `spec85_discrepancies_schema`,
+`spec86_fase3_ops_control_discrepancies_view` — 106 aserciones/archivos,
+0 fallos.
+
+**No cerrado.** Esta fase implementa y trae su propia evidencia de tests
+(arriba), pero no trae `> Implementado por:`/`> Review:`/`> QA:` — eso
+requiere una PR, un review de otra sesión, y confirmación de CI/deploy que
+todavía no existen. Queda `[in_progress]`; el orquestador la cierra tras el
+review y QA.
 
 ### Fase 6 — `set_config` deja de ser un bypass genérico de GUC `[pending]`
 
