@@ -156,10 +156,13 @@ BEGIN
   FROM   pg_proc p
   WHERE  p.oid = 'public.get_pending_manifests()'::regprocedure;
 
+  -- spec-83 fase 2 added pickup_window_start/end and pickup_cutoff_time —
+  -- expected list updated accordingly, not just widened with a wildcard,
+  -- so a future column drop still fails this assertion.
   IF v_cols IS DISTINCT FROM
-     'id,external_load_id,retailer_name,order_count,package_count,created_at,pickup_point,verified_count,labels_printed_at,labels_printed_by_name'
+     'id,external_load_id,retailer_name,order_count,package_count,created_at,pickup_point,verified_count,labels_printed_at,labels_printed_by_name,pickup_window_start,pickup_window_end,pickup_cutoff_time'
   THEN
-    RAISE EXCEPTION 'get_pending_manifests no longer returns the spec-53 column set, got: %', v_cols;
+    RAISE EXCEPTION 'get_pending_manifests no longer returns the expected column set, got: %', v_cols;
   END IF;
 END $$;
 
