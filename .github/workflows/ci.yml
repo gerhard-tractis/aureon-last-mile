@@ -120,6 +120,16 @@ jobs:
       - name: Test the deploy-gating guard — quarantine veto step (differential harness)
         run: bash ./scripts/check-deploy-gating-quarantine-differential.test.sh
 
+      # check-deploy-gating.sh only asserts the SHAPE of the gating
+      # (needs/if/concurrency); it is blind to what the frontend= path
+      # filter's regex actually matches. This pins its content against the
+      # real deploy.yml so a future "simplification" back to
+      # `^apps/frontend/` alone cannot silently reintroduce the
+      # stale-bundle bug (a root package-lock.json bump would then leave
+      # deploy-vercel skipped, green all the way).
+      - name: Test the deploy-vercel frontend path filter contents
+        run: bash ./scripts/check-deploy-vercel-frontend-filter.test.sh
+
       # A malformed quarantine.json only fails today's e2e-qa run on the VPS —
       # by then it has already re-blocked production, the exact state spec-87
       # fase 1 exists to end. Catch a bad entry (missing field, impossible
