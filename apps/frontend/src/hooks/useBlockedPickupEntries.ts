@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { db, type PickupQueueEntry } from '@/lib/db';
-import { countPendingInManifests, listDeadPickupEntries } from '@/lib/offline/queue';
+import {
+  countPendingInManifests,
+  deadEntryBlocksManifestClose,
+  listDeadPickupEntries,
+} from '@/lib/offline/queue';
 
 /**
  * spec-81 fase 4 — el detalle detrás del contador `blockedCount` de
@@ -60,7 +64,18 @@ export function useBlockedPickupEntries(
     }
     try {
       const rows = await listDeadPickupEntries(db, operatorId);
-      const deadManifestIds = Array.from(new Set(rows.map((row) => row.manifestId)));
+      // Ronda 3 de review del PR #725 (B bloqueante) — el mismo seam que B1
+      // cerró, invertido. `manifestHasDeadEntry`/`manifestIsBlocked`
+      // (`queue-blocking.ts`) EXCLUYEN `manifest_photo` de "¿hay un dead
+      // que bloquee este manifiesto?" (B-1, spec-81 fase 5). Derivar
+      // `deadManifestIds` de TODOS los `dead`, fotos incluidas, contaba
+      // como "bloqueadas por la misma carga" unas `pending` que
+      // `getBlockedPickupCount` no cuenta como bloqueadas en absoluto —
+      // van a drenar en el próximo sync, no están atascadas. Mismo
+      // predicado (`deadEntryBlocksManifestClose`) en los dos sitios, para
+      // que las dos mitades no puedan volver a separarse.
+      const blockingRows = rows.filter((row) => deadEntryBlocksManifestClose(row.type));
+      const deadManifestIds = Array.from(new Set(blockingRows.map((row) => row.manifestId)));
       const sameManifestBlockedCount = await countPendingInManifests(db, operatorId, deadManifestIds);
       const crossUserBlockedCount = Math.max(blockedCount - rows.length - sameManifestBlockedCount, 0);
       setResult({ entries: rows, status: 'ok', sameManifestBlockedCount, crossUserBlockedCount });

@@ -230,11 +230,57 @@ describe('SyncChip', () => {
       mockState.blockedCount = 1;
       mockDetail.status = 'ok';
       mockDetail.entries = [
+        {
+          id: 1,
+          manifestId: 'manifest-77',
+          externalLoadId: 'CARGA-001',
+          type: 'pickup_scan',
+          lastError: 'MANIFEST_NOT_CLOSABLE',
+        },
+      ];
+      render(<SyncChip />);
+      expect(screen.getByText(/CARGA-001.*requiere ayuda/is)).toBeInTheDocument();
+      expect(screen.queryByText(/contacta a soporte/i)).not.toBeInTheDocument();
+    });
+
+    // M, ronda 3 de review del PR #725 (mayor) — `manifestId` es un UUID
+    // (`manifests.id`), sin significado ni utilidad de navegación para el
+    // operario. "Abre la carga 3f2a9c8e-4b1d-…" no es una instrucción
+    // ejecutable — sólo `externalLoadId` lo es.
+    it('never tells the operator to open a load by its internal UUID', () => {
+      mockState.blockedCount = 1;
+      mockDetail.status = 'ok';
+      mockDetail.entries = [
+        {
+          id: 1,
+          manifestId: '3f2a9c8e-4b1d-4a1e-9c3a-abcdef123456',
+          externalLoadId: 'CARGA-001',
+          type: 'pickup_scan',
+          lastError: 'MANIFEST_NOT_CLOSABLE',
+        },
+      ];
+      render(<SyncChip />);
+      expect(screen.queryByText(/abre la carga 3f2a9c8e/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/abre la carga carga-001/i)).toBeInTheDocument();
+      // El encabezado "Carga X" también prefiere el id navegable — mostrar
+      // el UUID ahí, aunque no sea una instrucción, sigue sin decirle nada
+      // al operario que la instrucción de abajo sí puede aprovechar.
+      expect(screen.queryByText(/^Carga 3f2a9c8e/)).not.toBeInTheDocument();
+      expect(screen.getByText('Carga CARGA-001')).toBeInTheDocument();
+    });
+
+    // Sin `externalLoadId` (ningún llamador de `pickup_scan`/
+    // `manifest_photo` lo pasa todavía) el chip no puede fingir una
+    // instrucción de navegación que no puede cumplir.
+    it('falls back to a generic (still actionable) instruction when externalLoadId is not available', () => {
+      mockState.blockedCount = 1;
+      mockDetail.status = 'ok';
+      mockDetail.entries = [
         { id: 1, manifestId: 'manifest-77', type: 'pickup_scan', lastError: 'MANIFEST_NOT_CLOSABLE' },
       ];
       render(<SyncChip />);
-      expect(screen.getByText(/manifest-77.*requiere ayuda/is)).toBeInTheDocument();
-      expect(screen.queryByText(/contacta a soporte/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/abre la carga manifest-77/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/ábrela desde recogida.*requiere ayuda/is)).toBeInTheDocument();
     });
 
     // B1, ronda 2 de review del PR #725 (bloqueante) — el resto de

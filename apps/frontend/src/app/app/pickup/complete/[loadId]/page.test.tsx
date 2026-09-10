@@ -542,6 +542,9 @@ describe('CompletionPage', () => {
           // saber que esta entrada le pertenece a esta sesión.
           userId: 'user-1',
           manifestId: 'm1',
+          // Ronda 3 de review del PR #725 (M mayor, spec-81 fase 4) — el
+          // chip de sync necesita el id navegable, no el UUID interno.
+          externalLoadId: 'CARGA-001',
           type: 'close_manifest',
           payload: expect.objectContaining({
             manifestId: 'm1',

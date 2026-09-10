@@ -114,12 +114,21 @@ export function SyncChip({ operatorId = null }: { operatorId?: string | null }) 
             {detail.status === 'ok' &&
               detail.entries.map((entry) => {
                 const blocksClose = deadEntryBlocksManifestClose(entry.type);
+                // Ronda 3 de review del PR #725 (M mayor) — `manifestId` es
+                // un UUID (`manifests.id`), no algo que el operario
+                // reconozca ni pueda teclear en ningún sitio.
+                // `externalLoadId` (el segmento de `/pickup/complete/
+                // [loadId]`) es lo único navegable — pero es opcional
+                // (ningún llamador de `pickup_scan`/`manifest_photo` lo
+                // pasa todavía), así que la instrucción de navegación sólo
+                // se da cuando existe de verdad.
+                const loadLabel = entry.externalLoadId ?? entry.manifestId;
                 return (
                   <div
                     key={entry.id}
                     className="space-y-0.5 border-b border-status-warning-border/40 pb-2 last:border-0 last:pb-0"
                   >
-                    <p className="font-mono text-[11px] font-medium">Carga {entry.manifestId}</p>
+                    <p className="font-mono text-[11px] font-medium">Carga {loadLabel}</p>
                     <p>{entry.lastError ?? 'Rechazo sin detalle disponible.'}</p>
                     <p className="text-text-secondary">
                       {blocksClose
@@ -132,8 +141,9 @@ export function SyncChip({ operatorId = null }: { operatorId?: string | null }) 
                         a soporte por algo que se arregla con un toque nombra
                         al actor equivocado. */}
                     <p className="text-text-secondary">
-                      Abre la carga {entry.manifestId} y toca “REQUIERE AYUDA” para
-                      reintentar.
+                      {entry.externalLoadId
+                        ? `Abre la carga ${entry.externalLoadId} y toca “REQUIERE AYUDA” para reintentar.`
+                        : 'Ábrela desde Recogida y toca “REQUIERE AYUDA” para reintentar.'}
                     </p>
                   </div>
                 );

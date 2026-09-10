@@ -1240,6 +1240,38 @@ Redacción del handoff: «se guardan en el dispositivo y se envían solos…». 
       `blockedCount`/las entradas `dead` por el `manifestId` que tiene
       abierto, trabajo de una fase futura si se decide que vale la pena.
 
+      **Ronda 3 de review del PR #725 (2026-09-09) — B bloqueante, el mismo
+      seam de B1 invertido.** `useBlockedPickupEntries` derivaba
+      `deadManifestIds` de TODOS los `dead`, fotos incluidas — pero
+      `manifestHasDeadEntry`/`manifestIsBlocked` (`queue-blocking.ts`)
+      EXCLUYEN `manifest_photo` de "¿hay un dead que bloquee este
+      manifiesto?" (B-1, spec-81 fase 5, ronda 3 del PR #712). Medido: una
+      foto `dead` + 4 `pickup_scan` `pending` en el mismo manifiesto daba
+      `blockedCount=1, dead=1, same=4` — el clamp (`Math.max(...,0)`)
+      escondía el `-4` en vez de dejarlo revelar la inconsistencia, y el
+      panel decía a la vez "es respaldo, no bloquea el cierre" y "+4 más
+      bloqueadas por la misma carga" sobre las MISMAS cuatro filas.
+      **Corregido:** `blockingRows = rows.filter(deadEntryBlocksManifestClose)`
+      antes de derivar `deadManifestIds` — el mismo predicado que ya
+      decidía la mitad de `getBlockedPickupCount`, ahora también decide
+      esta. El clamp de la ronda 2 queda como guard de una carrera real
+      (dos lecturas independientes, `blockedCount` de `useSyncQueue` contra
+      esta lectura, en instantes distintos) — no como lo que ocultaba el
+      bug de tipos; su test se re-documentó para decir eso, no se quitó.
+
+      **M (mayor, misma ronda).** "Abre la carga `<manifestId>`…" imprimía
+      un UUID (`manifests.id`) — el operario navega por `external_load_id`
+      (el segmento de `/app/pickup/complete/[loadId]`), no por la clave
+      primaria. **Corregido:** `PickupQueueEntry`/`EnqueueInput` ganan
+      `externalLoadId?: string`; `complete/[loadId]/page.tsx` lo pasa al
+      encolar `close_manifest` (`loadId`, ya resuelto de la URL). El chip
+      usa `entry.externalLoadId` cuando existe (encabezado y la
+      instrucción de navegación); sin él — ningún llamador de
+      `pickup_scan`/`manifest_photo` lo pasa todavía, sin escritor de
+      producción para ninguno de los dos — cae a una instrucción genérica
+      ("Ábrela desde Recogida…") en vez de fingir una navegación que no
+      puede cumplir.
+
 ### Fase 5 — Fotos `[in_progress]`
 
 **Depende de:** spec-80 fase 3 (`useUploadManifestDocument`/`ManifestPhotoStrip`, mergeada — es el hueco que esta fase cierra, declarado explícitamente en `complete/[loadId]/page.tsx`)

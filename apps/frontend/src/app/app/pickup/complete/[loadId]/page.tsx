@@ -156,10 +156,17 @@ export default function CompletionPage() {
   // movido verbatim a `useCloseManifest.ts` para mantener este archivo bajo
   // el límite de líneas del repo. `onClosed` es lo único que cambia de
   // significado: antes navegaba a `/app/pickup`, ahora muestra `5i`.
+  //
+  // Rebase de spec-81 fase 4 ronda 3 (PR #725) sobre spec-80 fase 5 (PR
+  // #726) — el `enqueue(db, { ..., externalLoadId: loadId, ... })` que esa
+  // ronda añadió inline aquí se movió DENTRO de `useCloseManifest.ts` junto
+  // con el resto de `handleComplete`; `externalLoadId` pasa ahora como
+  // parámetro del hook.
   const { isSubmitting, handleComplete } = useCloseManifest({
     manifestId,
     operatorId,
     userId,
+    externalLoadId: loadId,
     operatorSignature,
     clientSignature,
     clientName,

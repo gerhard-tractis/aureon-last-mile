@@ -10,6 +10,13 @@ export interface UseCloseManifestParams {
   manifestId: string | null;
   operatorId: string | null;
   userId: string | null;
+  /** Ronda 3 de review del PR #725 (spec-81 fase 4, M mayor) — `manifestId`
+   * es un UUID (`manifests.id`) sin significado para el operario; el chip
+   * de sync necesita `external_load_id` (el segmento de esta misma URL,
+   * `/app/pickup/complete/[loadId]`) para poder decirle "abre la carga X"
+   * de forma navegable. Opcional porque no todo llamador de `enqueue` lo
+   * tiene a mano (ver `PickupQueueEntry.externalLoadId`, `@/lib/db`). */
+  externalLoadId?: string;
   operatorSignature: string | null;
   clientSignature: string | null;
   clientName: string;
@@ -37,6 +44,7 @@ export function useCloseManifest({
   manifestId,
   operatorId,
   userId,
+  externalLoadId,
   operatorSignature,
   clientSignature,
   clientName,
@@ -123,6 +131,7 @@ export function useCloseManifest({
             operatorId,
             userId,
             manifestId,
+            externalLoadId,
             type: 'close_manifest',
             payload: {
               manifestId,

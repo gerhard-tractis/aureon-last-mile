@@ -173,12 +173,56 @@ describe('useBlockedPickupEntries', () => {
       expect(result.current.sameManifestBlockedCount).toBe(1);
       expect(result.current.crossUserBlockedCount).toBe(3);
     });
+
+    // Escenario C, ronda 3 de review del PR #725 (bloqueante) — el seam
+    // invertido. `manifestHasDeadEntry`/`manifestIsBlocked` EXCLUYEN
+    // `manifest_photo` (B-1, spec-81 fase 5, ronda 3 del PR #712): un
+    // manifiesto cuyo ÚNICO `dead` es una foto no bloquea sus `pending`
+    // reales — `getBlockedPickupCount` no las cuenta. Sin el mismo filtro
+    // aquí, `deadManifestIds` incluía manifiestos de fotos, y
+    // `countPendingInManifests` contaba `pending` que NO están bloqueadas
+    // de verdad — medido: `blockedCount=1, dead=1, same=4, cross(sin
+    // clamp)=-4`, y el clamp a 0 escondía la inconsistencia en vez de
+    // arreglarla.
+    it('does not attribute same-manifest pending to a dead manifest_photo — a lost photo does not block pending scans', async () => {
+      await db.pickup_queue.add({
+        ...baseEntry,
+        clientOperationId: 'dead-photo',
+        manifestId: 'm-1',
+        type: 'manifest_photo',
+        status: 'dead',
+        lastError: 'sheet_number collision',
+      });
+      await db.pickup_queue.bulkAdd(
+        Array.from({ length: 4 }, (_, i) => ({
+          ...baseEntry,
+          clientOperationId: `pending-${i}`,
+          manifestId: 'm-1',
+          type: 'pickup_scan' as const,
+          status: 'pending' as const,
+        })),
+      );
+      // getBlockedPickupCount real, en este escenario, sólo cuenta la foto
+      // muerta — las 4 pending NO están bloqueadas (manifestHasDeadEntry es
+      // false para un manifiesto cuyo único dead es una foto).
+      const { result } = renderHook(() => useBlockedPickupEntries('op-1', 1));
+
+      await waitFor(() => expect(result.current.status).toBe('ok'));
+      expect(result.current.sameManifestBlockedCount).toBe(0);
+      expect(result.current.crossUserBlockedCount).toBe(0);
+    });
   });
 
-  // Carrera entre las dos lecturas independientes: `blockedCount`
-  // (`useSyncQueue`, su propio poll) puede llegar STALE — más chico que lo
-  // que esta lectura, más reciente, ya encuentra. `crossUserBlockedCount`
-  // no puede irse a negativo en ese caso.
+  // Ronda 3 de review del PR #725 — este clamp es un guard de CARRERA real
+  // entre dos lecturas independientes (`blockedCount` de `useSyncQueue`,
+  // su propio poll, contra esta lectura, más reciente), NO el arreglo del
+  // seam invertido de arriba (escenario C): ese se corrige filtrando ANTES
+  // de derivar `deadManifestIds`, no clampando después. Con ese filtro en
+  // su sitio, este escenario sólo puede producirse por timing entre dos
+  // `useEffect` distintos leyendo la misma cola en instantes distintos —
+  // sigue siendo real (dos `setInterval`/efectos separados, sin lectura
+  // atómica conjunta), sólo que ya no es lo único que evita ver el bug de
+  // tipos.
   it('clamps crossUserBlockedCount to 0 when a stale blockedCount is smaller than what this read finds', async () => {
     await db.pickup_queue.bulkAdd([
       { ...baseEntry, clientOperationId: 'dead-1', manifestId: 'm-1', type: 'close_manifest', status: 'dead', lastError: 'MANIFEST_NOT_CLOSABLE' },

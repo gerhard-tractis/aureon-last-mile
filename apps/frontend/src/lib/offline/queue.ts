@@ -35,6 +35,10 @@ export interface EnqueueInput {
    * tiene forma de saber que esta entrada es suya. */
   userId: string;
   manifestId: string;
+  /** Ver el docstring de `externalLoadId` en `PickupQueueEntry` (`@/lib/db`)
+   * — el id humano/navegable, no `manifestId` (un UUID). Opcional: no
+   * todo llamador lo tiene a mano hoy. */
+  externalLoadId?: string;
   type: PickupQueueOperationType;
   payload: Record<string, unknown>;
   /** Ver PickupQueueEntry.blob — reservado, sin lógica hasta fase 5. */
@@ -77,6 +81,7 @@ export async function enqueue(
     operatorId: input.operatorId,
     userId: input.userId,
     manifestId: input.manifestId,
+    externalLoadId: input.externalLoadId,
     type: input.type,
     payload: input.payload,
     blob: input.blob,

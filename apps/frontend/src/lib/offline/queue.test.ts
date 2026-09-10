@@ -102,6 +102,37 @@ describe("recogida offline queue", () => {
       expect(entry.userId).toBe(USER_A);
     });
 
+    // Ronda 3 de review del PR #725 (M mayor) — `manifestId` es
+    // `manifests.id`, un UUID generado sin significado para el operario.
+    // Lo que él ve y por lo que navega es `external_load_id` (el segmento
+    // de `/app/pickup/complete/[loadId]`). Una afordancia que dice "abre la
+    // carga X" tiene que dar un X que se pueda teclear en algún sitio real
+    // — el UUID no lo es.
+    it("stores the human-facing external_load_id alongside the internal manifestId, when given one", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        externalLoadId: "CARGA-001",
+        type: "close_manifest",
+        payload: { manifestId: MANIFEST_1 },
+      });
+
+      expect(entry.externalLoadId).toBe("CARGA-001");
+    });
+
+    it("leaves externalLoadId undefined when the caller does not have one", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "ABC123" },
+      });
+
+      expect(entry.externalLoadId).toBeUndefined();
+    });
+
     it("persists the payload's blob (B6 — a mutant dropping it must fail)", async () => {
       // fake-indexeddb's structured-clone polyfill does not round-trip a
       // real Blob's identity (it comes back as `{}`), so asserting on a
