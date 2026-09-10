@@ -786,7 +786,6 @@ record_deploy_marker() {
   local sha="${QA_SYNCED_SHA:-${DEPLOY_SHA}}"
   local runner; runner="$(id -un 2>/dev/null || echo '?')"
 
-
   if write_atomic "$QA_STATE_FILE" "$sha"; then
     rm -f "$QA_DEGRADED_FILE" 2>/dev/null || true
     return 0
@@ -799,8 +798,9 @@ record_deploy_marker() {
     "$QA_STATE_FILE" >&2
   err "could not write the deploy marker ${QA_STATE_FILE}"
   err "the deploy itself SUCCEEDED and QA is in sync at ${sha} — this is NOT a failed sync"
-  err "consequence: the next run has NO baseline, so it rebuilds every app rather than diffing."
-  err "that is slow, never unsafe — QA is not left under-deployed by this."
+  err "consequence: the next run falls back to the last recorded marker, or to a full"
+  err "rebuild if there is none — never to the checkout's HEAD."
+  err "that is slow at worst, never unsafe — QA is not left under-deployed by this."
   err "cause is almost always a marker owned by the wrong user — the runner runs as ${runner}:"
   err "  $(ls -ld "$QA_STATE_FILE" 2>&1 || true)"
   err "  $(ls -ld "$(dirname "$QA_STATE_FILE")" 2>&1 || true)"
@@ -823,13 +823,15 @@ record_deploy_marker() {
     printf '::error::deploy-qa.sh has failed to record the deploy marker %s times in a row.\n' \
       "$streak" >&2
     err "FAILING THE DEPLOY on purpose: ${streak} consecutive runs could not write ${QA_STATE_FILE}."
-    err "each of those runs deployed QA correctly but rebuilt every app to stay safe, and the"
-    err "warning sat on a green run where nobody owned it. Fix the permissions and re-run:"
+    err "each of those runs deployed QA correctly; each one diffed from whatever marker was"
+    err "already on disk, or rebuilt every app if there was none — never against a false"
+    err "baseline. The warning just sat on a green run where nobody owned it. Fix the"
+    err "permissions and re-run:"
     err "  sudo chown ${runner} ${QA_STATE_FILE} $(dirname "$QA_STATE_FILE")"
     # A DISTINCT code, not 1. The workflow's generic failure step says "QA is
     # now drifted from main", which here would be a lie: QA is in sync, only
-    # the note failed, and the runs that led here rebuilt EVERYTHING to stay
-    # safe. deploy.yml branches on this code to print the true diagnosis.
+    # the note failed, and every run that led here still deployed correctly.
+    # deploy.yml branches on this code to print the true diagnosis.
     # A wrong reason attached to a correct red is how #718 cost two hours.
     exit "$QA_EXIT_MARKER_STREAK"
   fi

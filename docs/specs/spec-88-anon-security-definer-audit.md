@@ -816,7 +816,7 @@ verdes que no probaban nada. Van al spec porque el patrón se repite, no el bug.
    vacío chocaba con `log()`, que escribe en stdout con todo derecho. De ahí
    los *probes* separados por fichero y por directorio, y que un caso que no
    puede morder se **salte declarándolo** en vez de pasar.
-4. **El arnés de mutación con la estructura de directorios plana.** Los
+3. **El arnés de mutación con la estructura de directorios plana.** Los
    ficheros copiados a un solo directorio hacían que
    `$HERE/../../.github/workflows/deploy.yml` no resolviera, así que el bloque
    que asserta contra el workflow **se saltaba** y la suite salía **0** con
@@ -825,7 +825,7 @@ verdes que no probaban nada. Van al spec porque el patrón se repite, no el bug.
    `deploy.yml` ausente es ahora **fallo duro**, no skip — los skips de
    `chmod` son entornos legítimos, un checkout sin su workflow no lo es.
 
-3. **`QA_EXIT_MARKER_STREAK` sin definir en el test.** `extract()` sólo saca
+4. **`QA_EXIT_MARKER_STREAK` sin definir en el test.** `extract()` sólo saca
    funciones, así que la variable no existía; `exit "$QA_EXIT_MARKER_STREAK"`
    tropezaba con `set -u` y salía **1**, y el assert que decía «esperado 1»
    pasaba **sin verificar nada** del código de salida que existe para fijar. El

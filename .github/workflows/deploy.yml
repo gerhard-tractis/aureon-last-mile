@@ -546,6 +546,12 @@ jobs:
           # Written to a file rather than $GITHUB_ENV: this step exits
           # non-zero right after, and a plain file needs no assumption about
           # whether the env file is still processed for a failed step.
+          #
+          # Cleared here for the same reason the file is used at all — no
+          # assumptions. $RUNNER_TEMP persists for the whole job, so a stale
+          # file from an earlier attempt on the same runner would otherwise
+          # let the failure step read a code this run never produced.
+          rm -f "$RUNNER_TEMP/qa-deploy-rc"
           rc=0
           bash infra/supabase-qa/deploy-qa.sh || rc=$?
           echo "$rc" > "$RUNNER_TEMP/qa-deploy-rc"
@@ -562,15 +568,17 @@ jobs:
         run: |
           # Exit 78 is NOT a drifted QA, and saying so sends whoever is on call
           # hunting a deriva that does not exist. QA synced fine; the deploy
-          # marker could not be written for QA_DEGRADED_MAX runs in a row, and
-          # every one of those runs rebuilt EVERY app precisely so that a
-          # missing marker could never skip one. The operator reads the LAST
-          # ::error::, so the accurate one has to be the only one printed.
+          # marker could not be written for QA_DEGRADED_MAX runs in a row.
+          # Each of those runs still diffed from whatever marker was already
+          # on disk (or rebuilt every app if there was none) — never against
+          # a false baseline, so nothing was skipped. The operator reads the
+          # LAST ::error::, so the accurate one has to be the only one printed.
           QA_DEPLOY_RC="$(cat "$RUNNER_TEMP/qa-deploy-rc" 2>/dev/null || true)"
           if [ "${QA_DEPLOY_RC:-}" = "78" ]; then
             echo "::error::QA is in sync — but the deploy marker has been unwritable for several runs and is now failing the deploy on purpose."
             echo "QA itself is fine: migrations, seed and every app restart succeeded, and each degraded"
-            echo "run rebuilt every app rather than trusting a diff, so nothing was skipped."
+            echo "run fell back to the last recorded marker, or to a full rebuild if there was none —"
+            echo "never to the checkout's HEAD, so nothing was skipped."
             echo "What to fix is a FILE PERMISSION on the VPS, not a QA drift — the deploy log above"
             echo "names the marker path, its owner and the exact chown. Almost always a file created"
             echo "by hand over SSH as root inside /home/aureon (same class as #718)."
