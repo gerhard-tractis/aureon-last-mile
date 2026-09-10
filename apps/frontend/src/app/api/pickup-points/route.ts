@@ -1,30 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSSRClient } from '@/lib/supabase/server';
 import { z } from 'zod';
+import { pickupLocationSchema, slaConfigSchema } from './pickupPointApiSchemas';
 
 // RF-2: Zod schemas. All fields optional — operators may save partial
 // records and fill in the rest later. DB constraints were relaxed in
 // 20260428000005.
-const operatingHoursSchema = z.object({
-  start: z.string().optional(),
-  end: z.string().optional(),
-});
-
-const pickupLocationSchema = z.object({
-  name: z.string().optional(),
-  address: z.string().optional(),
-  comuna: z.string().optional(),
-  contact_name: z.string().optional(),
-  contact_phone: z.string().optional(),
-  // spec-83 fase 2
-  operating_hours: operatingHoursSchema.optional(),
-});
-
-// spec-83 fase 2 — sla_config.pickup_cutoff_time.
-const slaConfigSchema = z.object({
-  pickup_cutoff_time: z.string().optional(),
-});
-
 const createPickupPointSchema = z.object({
   name: z.string().optional(),
   code: z.string().optional(),

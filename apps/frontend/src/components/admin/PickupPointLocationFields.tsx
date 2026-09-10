@@ -89,6 +89,7 @@ export function PickupPointLocationFields({ register, errors, isPending }: Picku
             className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm"
             disabled={isPending}
           />
+          {errors.location_window_start && <p className="text-xs text-destructive mt-1">{errors.location_window_start.message}</p>}
         </div>
         <div>
           <label htmlFor="loc-window-end" className="block text-xs font-medium mb-1">Cierre</label>
@@ -99,6 +100,7 @@ export function PickupPointLocationFields({ register, errors, isPending }: Picku
             className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm"
             disabled={isPending}
           />
+          {errors.location_window_end && <p className="text-xs text-destructive mt-1">{errors.location_window_end.message}</p>}
         </div>
       </div>
 
@@ -113,6 +115,7 @@ export function PickupPointLocationFields({ register, errors, isPending }: Picku
           className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm"
           disabled={isPending}
         />
+        {errors.sla_pickup_cutoff_time && <p className="text-xs text-destructive mt-1">{errors.sla_pickup_cutoff_time.message}</p>}
       </div>
     </div>
   );

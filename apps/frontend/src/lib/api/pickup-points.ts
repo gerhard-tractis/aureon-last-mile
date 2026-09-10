@@ -11,9 +11,12 @@ export interface PickupLocation {
 }
 
 /** spec-83 fase 2 — sla_config.pickup_cutoff_time, the operator-wide "no
- * more pickups after this" line, stricter than a single point's own window. */
+ * more pickups after this" line, stricter than a single point's own window.
+ * `null` is a real, distinct write intent (review round 2, B2): PUT sends
+ * it explicitly to CLEAR a previously-set cutoff, since an omitted key
+ * means "leave whatever is there", not "remove it". */
 export interface PickupPointSlaConfig {
-  pickup_cutoff_time?: string;
+  pickup_cutoff_time?: string | null;
 }
 
 export interface PickupPoint {

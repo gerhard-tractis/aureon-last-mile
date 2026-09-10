@@ -69,9 +69,19 @@ export const PickupPointForm = ({ mode, pointId }: PickupPointFormProps) => {
     }
     const pickup_locations = Object.keys(loc).length > 0 ? [loc] : [];
 
-    const sla_config = values.sla_pickup_cutoff_time
-      ? { pickup_cutoff_time: values.sla_pickup_cutoff_time }
-      : undefined;
+    // spec-83 fase 2, review round 2 (B2): in CREATE mode there is no row
+    // yet, so an untouched/blank field can just be omitted (`undefined`).
+    // In EDIT mode that same `undefined` is what let the PUT route SKIP the
+    // update entirely (`if (validation.data.sla_config !== undefined)`) —
+    // blanking the field in the UI and saving did nothing, forever. Editing
+    // always resends the full current state, so blank there unambiguously
+    // means "clear it": send an explicit `null`, never omit the key.
+    const sla_config =
+      mode === 'edit'
+        ? { pickup_cutoff_time: values.sla_pickup_cutoff_time || null }
+        : values.sla_pickup_cutoff_time
+          ? { pickup_cutoff_time: values.sla_pickup_cutoff_time }
+          : undefined;
 
     // Convert empty strings to undefined so the API treats them as "not
     // provided" rather than "blank value to save". The API in turn writes

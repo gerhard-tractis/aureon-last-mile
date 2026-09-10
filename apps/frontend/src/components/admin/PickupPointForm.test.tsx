@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PickupPointForm } from './PickupPointForm';
@@ -15,13 +15,19 @@ vi.mock('@/hooks/useClients', () => ({
 }));
 
 const createMutate = vi.fn();
+const updateMutate = vi.fn();
+let mockPoints: unknown[] = [];
 vi.mock('@/hooks/usePickupPoints', () => ({
-  usePickupPoints: () => ({ data: [] }),
+  usePickupPoints: () => ({ data: mockPoints }),
   useCreatePickupPoint: () => ({ mutate: createMutate, isPending: false }),
-  useUpdatePickupPoint: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdatePickupPoint: () => ({ mutate: updateMutate, isPending: false }),
 }));
 
 describe('PickupPointForm', () => {
+  beforeEach(() => {
+    mockPoints = [];
+  });
+
   it('renders create form with all fields (all optional)', () => {
     render(<PickupPointForm mode="create" />);
     expect(screen.getByLabelText(/Nombre \(opcional\)/i)).toBeDefined();
@@ -106,6 +112,59 @@ describe('PickupPointForm', () => {
       const [payload] = createMutate.mock.calls[0];
       expect(payload.pickup_locations).toEqual([]);
       expect(payload.sla_config).toBeUndefined();
+    });
+
+    describe('en modo edición', () => {
+      it('sends an explicit null to clear a previously-set cutoff, not an omitted key', async () => {
+        // Review round 2, B2: PUT skips any key that arrives as `undefined`
+        // (`if (validation.data.sla_config !== undefined) ...`). Editing the
+        // form and blanking the field must produce a payload the route can
+        // act on to actually clear it.
+        mockPoints = [
+          {
+            id: 'pp1',
+            name: 'Bodega Uno',
+            code: 'BU-1',
+            tenant_client_id: null,
+            is_active: true,
+            pickup_locations: [{}],
+            sla_config: { pickup_cutoff_time: '12:30' },
+          },
+        ];
+        updateMutate.mockClear();
+        const user = userEvent.setup();
+        render(<PickupPointForm mode="edit" pointId="pp1" />);
+
+        const cutoffInput = screen.getByLabelText(/Cierre de retiros/i);
+        expect(cutoffInput).toHaveValue('12:30');
+        await user.clear(cutoffInput);
+        await user.click(screen.getByRole('button', { name: /guardar/i }));
+
+        expect(updateMutate).toHaveBeenCalledTimes(1);
+        const [{ data }] = updateMutate.mock.calls[0];
+        expect(data.sla_config).toEqual({ pickup_cutoff_time: null });
+      });
+
+      it('resends the same cutoff (not null) when the field is left untouched', async () => {
+        mockPoints = [
+          {
+            id: 'pp1',
+            name: 'Bodega Uno',
+            code: 'BU-1',
+            tenant_client_id: null,
+            is_active: true,
+            pickup_locations: [{}],
+            sla_config: { pickup_cutoff_time: '12:30' },
+          },
+        ];
+        updateMutate.mockClear();
+        const user = userEvent.setup();
+        render(<PickupPointForm mode="edit" pointId="pp1" />);
+        await user.click(screen.getByRole('button', { name: /guardar/i }));
+
+        const [{ data }] = updateMutate.mock.calls[0];
+        expect(data.sla_config).toEqual({ pickup_cutoff_time: '12:30' });
+      });
     });
   });
 });
