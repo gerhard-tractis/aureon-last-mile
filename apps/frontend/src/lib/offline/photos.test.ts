@@ -84,6 +84,25 @@ describe('recogida offline queue — fotos (spec-81 fase 5)', () => {
       addSpy.mockRestore();
     });
 
+    // Ronda 4 de review del PR #725 (spec-81 fase 4) — mismo campo que
+    // `EnqueueInput` (`queue.ts`) ganó en la ronda 3, para el mismo motivo:
+    // `manifestId` es un UUID sin utilidad de navegación para el chip de
+    // sync. `enqueueManifestPhoto` no tenía forma de pasarlo — sin esto,
+    // toda foto que llegue a `dead` cae en la instrucción genérica del
+    // chip aunque quien la encoló sí tuviera el `external_load_id` a mano.
+    it('persists externalLoadId alongside manifestId, when given one', async () => {
+      const entry = await enqueueManifestPhoto(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        externalLoadId: 'CARGA-001',
+        sheetNumber: 1,
+        blob: blobOfSize(1024),
+      });
+
+      expect(entry.externalLoadId).toBe('CARGA-001');
+    });
+
     it('rejects when the operator would exceed the declared byte cap for unconfirmed photos', async () => {
       // Semilla directa (no vía enqueue, para no pagar el coste de blobs
       // reales de 200 MB en el test) de una entrada `pending` cuyo blob ya

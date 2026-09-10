@@ -69,6 +69,18 @@ export interface PickupQueueEntry {
    */
   userId: string;
   manifestId: string;
+  /**
+   * Ronda 3 de review de spec-81 fase 4 (PR #725, M mayor) — `manifestId`
+   * es `manifests.id`, un UUID generado, sin significado para el
+   * operario. `external_load_id` (`manifests.external_load_id`,
+   * `20260310100000…:56`) es lo que él ve y lo que resuelve
+   * `complete/[loadId]/page.tsx` desde la URL. Una afordancia que le pida
+   * "abre la carga X" necesita este campo — el UUID no es una instrucción
+   * ejecutable. Opcional porque no todo encolado tiene el dato a mano
+   * hoy (sin llamador de producción todavía para `pickup_scan`/
+   * `manifest_photo`, ver `EnqueueInput`); `undefined` cuando no se pasó.
+   */
+  externalLoadId?: string;
   type: PickupQueueOperationType;
   payload: Record<string, unknown>;
   /**

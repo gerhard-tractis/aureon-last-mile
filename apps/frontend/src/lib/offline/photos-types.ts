@@ -20,6 +20,11 @@ export interface EnqueueManifestPhotoInput {
   operatorId: string;
   userId: string;
   manifestId: string;
+  /** Ver el docstring de `externalLoadId` en `PickupQueueEntry` (`@/lib/db`)
+   * — ronda 4 de review del PR #725 (spec-81 fase 4). Opcional: no todo
+   * llamador lo tiene a mano; sin él, el chip cae a una instrucción
+   * genérica en vez de fingir una navegación inejecutable. */
+  externalLoadId?: string;
   sheetNumber: number;
   blob: Blob;
 }

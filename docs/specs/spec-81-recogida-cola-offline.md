@@ -1138,32 +1138,169 @@ review):**
 > en la propia fase 1 de spec-82). Revisado también spec-80 (fase 2, en
 > paralelo) — coordinado explícitamente en el PR para no compartir archivos.
 
-### Fase 4 — Chip de sync `[pending]`
+### Fase 4 — Chip de sync `[in_progress]`
 
-**Archivos:** `components/ConnectionStatusBanner.tsx` → chip; su test e i18n
+**Archivos:** `components/SyncChip.tsx` (el `ConnectionStatusBanner.tsx` de
+este campo no existe desde 2026-08-16, `0fb4184` — ver el ítem 1 abajo),
+`hooks/useBlockedPickupEntries.ts`, `lib/offline/queue.ts`
+(`countPendingInManifests`), sus tests, `lib/i18n/es.ts`
 
 Redacción del handoff: «se guardan en el dispositivo y se envían solos…». Cuenta pendientes, como pide `5i`.
 
-- [ ] Desmontar el `fixed top-0` sin romper auth ni landing, que hoy también lo montan.
-- [ ] **Afordancia humana para `dead` (B3, ronda 2 de review del PR #679 —
+- [x] **Desmontar el `fixed top-0` sin romper auth ni landing.** Ya hecho —
+      no en esta fase: `ConnectionStatusBanner.tsx` fue borrado el
+      2026-08-16 en `0fb4184` (spec-54 fase 4.5, PR #429), reemplazado por
+      `SyncChip.tsx`, montado una única vez en `TopBar` (dentro de
+      `AppLayout`, nunca en `app/auth/layout.tsx` ni en `app/(landing)`).
+      El fichero que este ítem nombra (`components/ConnectionStatusBanner.tsx`)
+      no existe en el árbol — verificado (`git log --follow` sobre ese
+      path, y un grep de `SyncChip`/`scan_queue`/`syncManager` sobre
+      `app/auth/` y `app/(landing)/`, ninguno). El `**Archivos:**` de esta
+      fase queda desactualizado por la misma razón: el archivo real es
+      `components/SyncChip.tsx`.
+- [x] **Afordancia humana para `dead` (B3, ronda 2 de review del PR #679 —
       bloqueante en fase 2, no cerrado del todo ahí).** `dead` es
       deliberadamente permanente — ver el docstring de `manifestHasDeadEntry`
       y la decisión de no revertirlo tomada en la ronda 2: soltar el cierre
       detrás de un escaneo muerto cierra la carga con un bulto de menos, que
-      es el riesgo nº1 del spec. Pero hoy, tras la ronda 2, `dead` sólo dejó
-      de mentir (`getBlockedPickupCount`, separado de `queuedCount`;
-      `SyncChip` ya no lo pinta en verde de éxito) — no tiene ninguna salida.
-      Grep de `'dead'` en todo `apps/frontend/src`: sólo aparece en el tipo,
-      en los guards de `queue-claims.ts`, en `manifestHasDeadEntry` y en
-      `getBlockedPickupCount` (para contarlo). Ninguna pantalla, botón,
-      `markAlive` ni purga manual. Sin esto el operario recibió el toast
-      «tu firma se guardó y el cierre se enviará solo» y nada se lo
-      desmiente nunca — el chip ahora dice «requiere ayuda» pero no dice a
-      quién pedírsela ni qué hacer. Esta fase, que ya toca `SyncChip` y su
-      pantalla, debe: mostrar qué manifiesto está bloqueado y por qué
-      (`lastError`), y dar una vía para que un humano lo resuelva (contactar
-      soporte/operaciones — no necesariamente reintentar solo, dado que
-      `dead` es un rechazo de negocio, no de red).
+      es el riesgo nº1 del spec. Parcialmente cerrado ya antes de esta
+      fase: `retryDead`/`retryBlockedManifest` (fase 2, rondas 4-5 de
+      review del PR #679) y el botón "REQUIERE AYUDA · Toca para
+      reintentar" en `complete/[loadId]/page.tsx` — el grep que este ítem
+      citaba como evidencia de que no había nada ya no es cierto. Lo que
+      seguía faltando, y esta fase entrega: el chip global (`SyncChip`,
+      topbar, visible en TODA pantalla, no sólo en la de cierre) no decía
+      QUÉ manifiesto está bloqueado ni POR QUÉ (`lastError`) — sólo un
+      conteo. Nuevo: `listDeadPickupEntries` (`lib/offline/queue.ts`) +
+      `useBlockedPickupEntries` (hook) + un `<details>` en `SyncChip` que,
+      por cada `dead`, muestra el id del manifiesto, su `lastError`, y —
+      la distinción que el spec pide explícitamente, y que cambió el mismo
+      día que esta fase se implementó (fase 5, ronda 3 de review del PR
+      #712) — si ESE `dead` concreto bloquea el cierre de la carga o no
+      (`deadEntryBlocksManifestClose`: una `manifest_photo` muerta cuenta
+      como bloqueada en `getBlockedPickupCount` pero ya NO frena
+      `close_manifest`; el chip lo dice explícitamente en vez de dejar que
+      el operario asuma que si el badge está en rojo, la carga no puede
+      cerrarse).
+
+      **Ronda 2 de review del PR #725 (2026-09-09) — B1 bloqueante, corregido
+      aquí y no sólo en el código.** La primera versión de este párrafo
+      afirmaba que "el resto de `blockedCount` no explicado por
+      `listDeadPickupEntries` es espera cross-user que se libera sola" —
+      **falso**. `manifestIsBlocked` (`queue-blocking.ts`) prueba PRIMERO
+      `manifestHasDeadEntry`, y esa rama domina: cualquier `pending` del
+      MISMO manifiesto que un `dead` cuenta como bloqueada sin que exista
+      ningún otro operario, y esa `pending` no se libera sola — se resuelve
+      cuando el `dead` de arriba se resuelva. Medido con Dexie (mismo
+      operador, mismo usuario, un `close_manifest` `dead` y cuatro
+      `pickup_scan` `pending` en el mismo manifiesto): `getBlockedPickupCount
+      = 5`, `listDeadPickupEntries = 1`, resto = 4, y el texto anterior
+      habría dicho "+4 esperando a otro operario; se liberan solas" sobre
+      cuatro filas que no van a salir hasta que se resuelva la de arriba.
+      **Corregido:** `countPendingInManifests` (`lib/offline/queue.ts`)
+      cuenta las `pending` que comparten manifiesto con un `dead` ya
+      listado; `useBlockedPickupEntries` separa `sameManifestBlockedCount`
+      (se resuelven cuando el `dead` de arriba se resuelva, nunca solas) de
+      `crossUserBlockedCount` (el resto, sin ningún `dead` que lo explique
+      — esa sí se libera sola). El panel muestra las dos causas por
+      separado, nunca mezcladas.
+
+      **M1 (mayor, misma ronda).** El texto original de la vía de
+      resolución ("Contacta a soporte u operaciones para resolverlo")
+      nombraba al actor equivocado: `retryDead` ya existe y ya está
+      cableado al botón "REQUIERE AYUDA · Toca para reintentar" en
+      `complete/[loadId]/page.tsx` — el operario puede resolver esto con un
+      toque, sin ningún ticket. **Corregido:** cada `dead` listado dice
+      "Abre la carga `<manifestId>` y toca REQUIERE AYUDA para reintentar."
+      Sigue sin añadirse ningún botón nuevo al chip — eso seguía siendo
+      correcto — pero "no añadir botón" no es lo mismo que "mandar a
+      soporte".
+
+      **M2/M3 (menores, mismos huecos de test, sin cambio de comportamiento
+      nuevo).** El test de "bloquea el cierre" no anclaba el regex (la rama
+      contraria, "No bloquea el cierre…", lo satisfacía como substring) y
+      la rama "nada requiere ayuda" podía coexistir sin test con un `dead`
+      ya listado (contradictorio: la carga de arriba SÍ requiere ayuda).
+      Cerrados con regex ancladas y aserciones negativas cruzadas.
+
+      **Menor:** el panel quedaba en blanco mientras el hook seguía en
+      `idle` con `blockedCount > 0` (la ventana entre el mount y su primera
+      lectura) — rama nueva "Cargando detalle…".
+
+      **Fuera de alcance, declarado en la ronda 2 de review del PR #725, no
+      arreglado aquí.** `complete/[loadId]/page.tsx:296` pinta el
+      `blockedCount` GLOBAL (device/operador, no por manifiesto) en una
+      pantalla que es POR carga, y su `handleRetryBlocked` sólo reintenta
+      el manifiesto que esa pantalla tiene abierto. Un `dead` en la carga
+      m-1 hace que la pantalla de m-2 muestre "1 REQUIERE AYUDA" también, y
+      tocarlo ahí revive cero filas. Es preexistente a esta fase (el badge
+      ya existía desde fase 2) — pero el panel de `SyncChip`, que sí nombra
+      el manifiesto real, es lo que lo vuelve visible como contradicción.
+      Queda anotado, no resuelto: la pantalla de cierre necesitaría filtrar
+      `blockedCount`/las entradas `dead` por el `manifestId` que tiene
+      abierto, trabajo de una fase futura si se decide que vale la pena.
+
+      **Ronda 3 de review del PR #725 (2026-09-09) — B bloqueante, el mismo
+      seam de B1 invertido.** `useBlockedPickupEntries` derivaba
+      `deadManifestIds` de TODOS los `dead`, fotos incluidas — pero
+      `manifestHasDeadEntry`/`manifestIsBlocked` (`queue-blocking.ts`)
+      EXCLUYEN `manifest_photo` de "¿hay un dead que bloquee este
+      manifiesto?" (B-1, spec-81 fase 5, ronda 3 del PR #712). Medido: una
+      foto `dead` + 4 `pickup_scan` `pending` en el mismo manifiesto daba
+      `blockedCount=1, dead=1, same=4` — el clamp (`Math.max(...,0)`)
+      escondía el `-4` en vez de dejarlo revelar la inconsistencia, y el
+      panel decía a la vez "es respaldo, no bloquea el cierre" y "+4 más
+      bloqueadas por la misma carga" sobre las MISMAS cuatro filas.
+      **Corregido:** `blockingRows = rows.filter(deadEntryBlocksManifestClose)`
+      antes de derivar `deadManifestIds` — el mismo predicado que ya
+      decidía la mitad de `getBlockedPickupCount`, ahora también decide
+      esta. El clamp de la ronda 2 queda como guard de una carrera real
+      (dos lecturas independientes, `blockedCount` de `useSyncQueue` contra
+      esta lectura, en instantes distintos) — no como lo que ocultaba el
+      bug de tipos; su test se re-documentó para decir eso, no se quitó.
+
+      **M (mayor, misma ronda).** "Abre la carga `<manifestId>`…" imprimía
+      un UUID (`manifests.id`) — el operario navega por `external_load_id`
+      (el segmento de `/app/pickup/complete/[loadId]`), no por la clave
+      primaria. **Corregido:** `PickupQueueEntry`/`EnqueueInput` ganan
+      `externalLoadId?: string`; `complete/[loadId]/page.tsx` lo pasa al
+      encolar `close_manifest` (`loadId`, ya resuelto de la URL).
+
+      **Ronda 4 de review del PR #725 (2026-09-09).** El texto de arriba
+      decía "ningún llamador de `pickup_scan`/`manifest_photo` lo pasa
+      todavía" como si fuera hipotético — corregido, con la comprobación
+      que lo sostiene: `enqueueManifestPhoto` (`lib/offline/photos.ts:191`)
+      **también gana `externalLoadId?: string`** (mismo campo,
+      `EnqueueManifestPhotoInput`), así que el encolado de fotos ya no se
+      queda atrás del de `close_manifest` cuando alguien lo conecte a una
+      UI. **Verificado explícitamente, no asumido:** un grep de
+      `enqueueManifestPhoto(` sobre `apps/frontend/src` fuera de
+      `photos.test.ts`, y `git log --follow` sobre
+      `ManifestPhotoStrip.tsx` (último commit: `2f80d83`, PR #706,
+      spec-80 fase 3) — **cero llamadores de producción**. La pantalla de
+      captura sigue en `useUploadManifestDocument` (online-only), sin
+      ninguna ruta offline conectada; el propio `ManifestCameraSheet.tsx`
+      dice explícitamente que "cableado a
+      `ManifestPhotoStrip`/`useUploadManifestDocument` queda fuera de
+      alcance" de spec-80 fase 4. Conectar esa UI a `enqueueManifestPhoto`
+      sigue siendo el ítem `- [ ]` ya declarado en spec-80 fase 4 (M3, "debe
+      llamar a `enqueueManifestPhoto`, no a `useUploadManifestDocument`") —
+      no es un cambio de una línea ("`loadId` como prop"), es reemplazar el
+      camino de subida completo de esa pantalla, y sigue fuera del alcance
+      de esta fase.
+
+      **Decisión del usuario sobre el fallback del chip cuando falta
+      `externalLoadId`, independiente de si `manifest_photo` está o no
+      conectado hoy:** un `close_manifest`/`manifest_photo` `dead` encolado
+      por una versión de la app anterior a este campo (los `dead` son
+      justo las entradas que nunca drenan, así que sobreviven una
+      actualización) sigue siendo alcanzable. `SyncChip` **nunca** cae al
+      UUID (`entry.manifestId`) ni en el encabezado ni en la instrucción —
+      ese identificador no aparece en ninguna pantalla que el operario vea,
+      y ofrecerlo es peor que no ofrecer ninguno. Encabezado: "Carga sin
+      identificar". Instrucción: explica que la carga se encoló con una
+      versión anterior de la app y a dónde ir (Recogida, la carga con algo
+      bloqueado) — nunca inventa un identificador navegable que no existe.
 
 ### Fase 5 — Fotos `[in_progress]`
 
