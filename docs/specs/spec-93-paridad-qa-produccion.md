@@ -2,7 +2,7 @@
 
 > **Related:** spec-92 (el gate de producción diferenciado — todavía en la rama `feat/spec-92-gate-prod-diferenciado`, sin mergear; el gate descansa **entero** sobre la premisa que este spec pone a prueba), [spec-88](spec-88-anon-security-definer-audit.md) (fase 3 es la instancia medida que abre este spec), [spec-57](spec-57-qa-gate-before-production.md) (el gate original y el clic humano que spec-92 retira), [spec-87](spec-87-desbloquear-produccion.md) (`verify-prod-migrations`, el precedente de un check que compara dos entornos)
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit + e2e
 **Downstream:** spec-92 (aún sin mergear, ver Related) — si este spec encuentra superficies de divergencia además de la de auth, la tabla «clase de cambio → cobertura» de spec-92 tiene que crecer con ellas
 **Depende de:** ninguno. Puede empezar hoy.
@@ -108,7 +108,7 @@ distinto y no se resuelve haciendo QA más grande.
 
 ## Fases
 
-### Fase 1 — Inventario medido de divergencia `[pending]`
+### Fase 1 — Inventario medido de divergencia `[in_progress]`
 
 **Archivos:** `docs/specs/spec-93-paridad-qa-produccion.md` (la tabla del inventario vive aquí), `docs/qa-environment.md`
 
@@ -133,6 +133,140 @@ configuración no cuenta: el compose declara la intención, no el estado.
 Producción es **sólo lectura**, y nunca por SSH ni `docker` (es Supabase
 gestionado). QA es un entorno vivo compartido — no tocar los datos de Musan;
 lo que sea consulta, en `BEGIN`/`ROLLBACK`.
+
+---
+
+#### Cómo se mide cada lado
+
+Los dos entornos no se leen igual, y ésa es la razón de que este inventario
+haya tardado en existir.
+
+**QA** es autohospedado en la VPS: se mide por SSH contra el **contenedor
+vivo**, nunca contra `docker-compose.yml`. La distinción no es teórica —
+`docker inspect` mostró en su día el contenedor `auth` corriendo un mes con
+una configuración que el compose ya no declaraba (fase 2, matiz 2).
+
+```bash
+ssh root@<VPS> "docker inspect <contenedor> --format '{{range .Config.Env}}{{println .}}{{end}}'"
+ssh root@<VPS> "docker exec supabase-qa-db psql -U postgres -d postgres -At -c '<SELECT>'"
+```
+
+**Producción** es un proyecto Supabase gestionado: no hay SSH ni `docker`. Sus
+dos únicas lecturas son la Management API y una sesión `psql` por el pooler
+IPv4, y las credenciales de ambas viven como secretos del pipeline. Por eso la
+medición corre desde un workflow —
+`.github/workflows/measure-prod-surfaces.yml`, PR #755, que copia la forma de
+`prod-readonly-query.yml` (spec-87 fase 4). Se dispara con
+`gh workflow run measure-prod-surfaces.yml` y vuelca las ocho superficies al
+step summary.
+
+#### El inventario
+
+> **Columna «¿lo ejercita algo?»** — se refiere a `e2e-qa`, la única red que
+> hoy bloquea de verdad un deploy (ver fase 4 sobre `sql_tests_check`).
+
+Medido el 2026-09-10.
+
+| # | Superficie | QA (medido) | Producción | ¿Lo ejercita algo? |
+|---|---|---|---|---|
+| 1 | Hook `custom_access_token_hook` | `GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED=true`, `..._URI=pg-functions://postgres/public/custom_access_token_hook` | _pendiente del dispatch_ | **Sí** — `spec52-…spec.ts:97-99` exige `operator_id`/`role`/`permissions` en la **raíz** del JWT (fase 2, matiz 1) |
+| 2 | Expiración del JWT | `GOTRUE_JWT_EXP=3600` | _pendiente_ | No |
+| 3 | Proveedores de auth | `EXTERNAL_EMAIL_ENABLED=true`, `PHONE=false`, `ANONYMOUS_USERS=false`, `DISABLE_SIGNUP=true` | _pendiente_ | Parcial — el login por email sí; que teléfono y anónimo estén **apagados**, nadie lo comprueba |
+| 4 | Extensiones instaladas | `pg_cron 1.6.4`, `pg_net 0.20.3`, `pg_stat_statements 1.11`, `pgcrypto 1.3`, `plpgsql 1.0`, `postgis 3.3.7`, `supabase_vault 0.3.1`, `uuid-ossp 1.1` | _pendiente_ | Indirecto — `postgis` lo usan 9 migraciones; `pg_net` **ninguna** |
+| 5 | `pgtap` | **NO instalada.** Disponible (`1.3.3`) pero ausente de `pg_extension` | _pendiente_ | **No, y peor:** ver «El hallazgo 1» |
+| 6 | `pg_graphql` | **NO instalada.** Disponible (`1.5.11`) pero ausente — aunque el esquema `graphql_public` existe y PostgREST lo expone | _pendiente_ | No |
+| 7 | Roles y pertenencias | 16 roles; `authenticator` ∈ {anon, authenticated, service_role}; `supabase_storage_admin` ∈ {authenticator} | _pendiente_ | Indirecto — cada consulta del e2e pasa por RLS bajo `anon`/`authenticated` |
+| 8 | GUCs de base | `app.settings.jwt_secret`, `app.settings.jwt_exp` sobre `postgres` | _pendiente_ | No |
+| 9 | `cron.job` | 2 jobs, ambos como `postgres`: `nightly-metrics` (`0 2 * * *`), `dashboard_monthly_rollup` (`30 2 * * *`) | _pendiente_ | **No** — el e2e no espera a las 02:00 |
+| 10 | PostgREST | `DB_SCHEMAS=public,graphql_public`, `MAX_ROWS=1000`, `ANON_ROLE=anon`, `EXTRA_SEARCH_PATH=public` | _pendiente_ | Parcial — los datos del e2e no rozan `max-rows`, así que una diferencia ahí nunca se vería |
+| 11 | Rutas de Kong | `/auth/v1/`, `/rest/v1/`, `/storage/v1/`, `/functions/v1/`, `/graphql/v1`, `/realtime/v1/`, `/analytics/v1` | **No comparable** — prod es el gateway gestionado, no Kong | Sólo `/auth/v1/` y `/rest/v1/` |
+| 12 | Publicación `supabase_realtime` | **2 tablas**: `public.orders`, `public.dock_verifications` | _pendiente_ | **No** — ver «El hallazgo 2» |
+| 13 | Buckets de storage | `files` (privado, sin límite), `manifests` (privado, 10 MiB, `image/{jpeg,png,webp,heic,heif}`) | _pendiente_ | **No** — ningún e2e sube un fichero |
+| 14 | Políticas de storage | 8 sobre `storage.objects`: 4 `manifests_*` (`authenticated`) + 4 heredadas `Give users access to own folder …` (`public`) | _pendiente_ | No |
+| 15 | Edge functions desplegadas | `beetrack-webhook`, `dispatchtrack-route-poll`, `main` | _pendiente_ | **No** — ningún e2e invoca `/functions/v1/` |
+| 16 | Variables del runtime de edge | `BEETRACK_WEBHOOK_SECRET`, `JWT_SECRET`, `SUPABASE_{URL,ANON_KEY,SERVICE_ROLE_KEY,DB_URL,PUBLIC_URL,PUBLISHABLE_KEYS,SECRET_KEYS}`, `VERIFY_JWT` | _pendiente_ | No |
+
+Comandos de la columna QA, para que cada fila sea reproducible:
+
+```bash
+# filas 1-3   (auth vivo, sin volcar valores secretos)
+ssh root@<VPS> "docker inspect supabase-qa-auth --format '{{range .Config.Env}}{{println .}}{{end}}' \
+  | grep -iE 'HOOK|EXTERNAL_|JWT_EXP|DISABLE_SIGNUP' | grep -viE 'secret|password|key'"
+# filas 4-6
+ssh root@<VPS> "docker exec supabase-qa-db psql -U postgres -At -c \
+  \"SELECT extname||' '||extversion FROM pg_extension ORDER BY 1;\""
+ssh root@<VPS> "docker exec supabase-qa-db psql -U postgres -At -c \
+  \"SELECT name||' avail='||default_version FROM pg_available_extensions WHERE name IN ('pgtap','pg_graphql');\""
+# fila 7
+ssh root@<VPS> "docker exec supabase-qa-db psql -U postgres -At -c \
+  \"SELECT r.rolname||' memberof='||coalesce((SELECT string_agg(g.rolname,',' ORDER BY g.rolname) \
+     FROM pg_auth_members m JOIN pg_roles g ON g.oid=m.roleid WHERE m.member=r.oid),'-') \
+     FROM pg_roles r WHERE r.rolname NOT LIKE 'pg\\_%' ORDER BY 1;\""
+# filas 8-9
+ssh root@<VPS> "docker exec supabase-qa-db psql -U postgres -At -c \
+  \"SELECT datname||' :: '||unnest(setconfig) FROM pg_db_role_setting s LEFT JOIN pg_database d ON d.oid=s.setdatabase;\""
+ssh root@<VPS> "docker exec supabase-qa-db psql -U postgres -At -c \"SELECT jobid,jobname,username,schedule,active FROM cron.job;\""
+# fila 10
+ssh root@<VPS> "docker inspect supabase-qa-rest --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -E 'SCHEMAS|MAX_ROWS|ANON_ROLE|EXTRA_SEARCH'"
+# fila 11
+ssh root@<VPS> "docker exec supabase-qa-kong grep -oE '/[a-z0-9._/-]+/v1[a-z0-9._/-]*' /usr/local/kong/kong.yml | sort -u"
+# fila 12
+ssh root@<VPS> "docker exec supabase-qa-db psql -U postgres -At -c \
+  \"SELECT pubname||' -> '||schemaname||'.'||tablename FROM pg_publication_tables ORDER BY pubname, schemaname, tablename;\""
+# filas 13-14
+ssh root@<VPS> "docker exec supabase-qa-db psql -U postgres -At -c \"SELECT id,public,file_size_limit,allowed_mime_types FROM storage.buckets ORDER BY id;\""
+ssh root@<VPS> "docker exec supabase-qa-db psql -U postgres -At -c \
+  \"SELECT tablename,policyname,cmd,roles FROM pg_policies WHERE schemaname='storage' ORDER BY tablename, policyname;\""
+# filas 15-16
+ssh root@<VPS> "docker exec supabase-qa-edge-functions ls /home/deno/functions"
+ssh root@<VPS> "docker inspect supabase-qa-edge-functions --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -E 's/=.*//' | sort"
+```
+
+#### Tres hallazgos que no necesitaban la columna de producción
+
+La pregunta del spec era «qué superficies existen en producción y no en QA».
+Tres de los hallazgos son de otra forma: **superficies que existen en QA y no
+las ejercita nada**, y se resuelven sin esperar al dispatch.
+
+**Hallazgo 1 — `pgtap` no está instalada, así que 20 ficheros de prueba SQL se
+saltan en silencio.** `sql_tests_check` (`deploy-qa.sh:619`) comprueba
+`SELECT 1 FROM pg_extension WHERE extname='pgtap'` y, si no la encuentra,
+escribe `SKIPPED-NO-PGTAP` por cada fichero que contenga `plan(`. Son **20 de
+91**. Y encima el check es advisory: reporta un pase habiendo ejecutado nada.
+Es el patrón exacto del spec — cobertura que se declara y no mide.
+
+**Hallazgo 2 — cinco de las siete suscripciones de realtime están muertas en
+QA.** El frontend se suscribe por `postgres_changes` a siete tablas
+(`customer_session_messages`, `customer_sessions`, `dock_verifications`,
+`intake_submissions`, `orders`, `packages`, `routes`). La publicación
+`supabase_realtime` de QA tiene **dos**, y son las dos únicas que alguna
+migración añadió jamás (`20260313000007` → `orders`, `20260428000006` →
+`dock_verifications`). Un canal sobre las otras cinco **se suscribe sin error
+y no recibe un evento nunca**. Falta la columna de producción para saber en qué
+dirección corre la divergencia: si prod las tiene añadidas a mano por el
+dashboard, es configuración fuera de control de versiones; si tampoco las
+tiene, son cinco suscripciones muertas en los dos sitios.
+
+**Hallazgo 3 — la fase 2 cerró la instancia, no la clase.** `deploy-qa.sh`
+tiene exactamente dos ayudantes de recreación: `restart_functions()` (:390) y
+`restart_auth()` (:439). Medido contra los contenedores vivos:
+
+| Contenedor | Arrancado |
+|---|---|
+| `supabase-qa-auth` | 2026-09-09 |
+| `supabase-qa-edge-functions` | 2026-09-09 |
+| `supabase-qa-kong` | 2026-08-31 |
+| `supabase-qa-rest` | **2026-08-11** |
+| `supabase-qa-storage` | **2026-08-11** |
+| `realtime-dev.supabase-qa-realtime` | **2026-08-11** |
+
+**Hoy no hay deriva real**: desde el 2026-08-11 los únicos cambios del compose
+tocaron `auth` (#710) y el runtime de edge (#497), y los dos servicios sí
+tienen ayudante. La divergencia es **latente, no realizada** — y decirlo así
+importa, porque la tentación es reportar cuatro contenedores rancios como si
+ya estuvieran mal. Lo que está mal es el mecanismo: el siguiente cambio del
+compose sobre `rest`, `storage`, `realtime` o `kong` se mergea, se despliega y
+**no llega nunca al contenedor que modifica**.
 
 ### Fase 2 — Cerrar la divergencia de auth `[done]`
 
@@ -182,14 +316,28 @@ Lo que tiene que quedar cierto, venga de donde venga:
   `operator_id`, `role` y `permissions`. Sin esto, el `EXCEPTION WHEN OTHERS`
   del hook hace que la prueba pase con un token vacío.
 
-### Fase 3 — El resto del inventario `[pending]`
+### Fase 3 — El resto del inventario `[in_progress]`
 
-**Archivos:** por determinar en la fase 1 — depende de qué superficies aparezcan. `docs/specs/spec-93-paridad-qa-produccion.md` y `docs/qa-environment.md` en todo caso.
+**Depende de:** ninguna — los dos hallazgos que esta fase cierra se midieron enteros contra QA y no esperan la columna de producción.
+
+**Archivos:** `infra/supabase-qa/deploy-qa.sh`, `infra/supabase-qa/setup-qa.sh`, `scripts/` (los tests de bash de los dos guards), `docs/specs/spec-93-paridad-qa-produccion.md`, `docs/qa-environment.md`
 
 Cerrar las divergencias que la fase 1 encuentre, **o declararlas
 explícitamente como aceptadas**, cada una con su motivo y con qué clase de
 cambio queda sin cobertura. Una divergencia aceptada y escrita es un riesgo
 gestionado; una no escrita es una trampa.
+
+**Despachada en dos tandas, a propósito.** La primera cierra los hallazgos 1 y
+3 de la fase 1 — `pgtap` ausente y el mecanismo de recreación que sólo cubre
+dos de seis servicios — porque los dos se midieron enteros contra QA y no
+dependen de la columna de producción. La segunda espera al dispatch de
+`measure-prod-surfaces.yml`: hasta saber qué tiene producción no se puede
+decidir si una fila se cierra o se acepta, y aceptar una divergencia sin haber
+medido el otro lado sería exactamente lo que el spec prohíbe en «Lo que NO hay
+que hacer».
+
+Los dos hallazgos van en **un solo implementer, no dos en paralelo**: ambos
+tocan `deploy-qa.sh` y el guard de solapamiento los rechazaría con razón.
 
 ### Fase 4 — Guardarraíl determinista `[pending]`
 
