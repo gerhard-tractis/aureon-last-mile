@@ -83,6 +83,8 @@ jobs:
       # SUPERFICIE 1 — Auth (GoTrue): hooks, proveedores, expiracion JWT
       # ---------------------------------------------------------------
       - name: 'Surface: auth (GoTrue) config'
+        id: s_auth
+        continue-on-error: true
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
@@ -111,6 +113,13 @@ jobs:
       # SUPERFICIE 2 — PostgREST: esquemas expuestos, max-rows
       # ---------------------------------------------------------------
       - name: 'Surface: PostgREST config'
+        id: s_rest
+        continue-on-error: true
+        # El endpoint es `/v1/projects/{ref}/postgrest`, NO
+        # `/v1/projects/{ref}/config/postgrest`: eso ultimo devuelve 404 y tumbo
+        # la primera corrida entera (run 34534798127). Auth si vive bajo
+        # `/config/auth` — los dos no son simetricos, y suponerlo costo una
+        # corrida.
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
@@ -118,9 +127,9 @@ jobs:
           set -euo pipefail
           HTTP_STATUS=$(curl -sS -o rest.json -w '%{http_code}' \
             -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
-            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/config/postgrest")
+            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/postgrest")
           if [ "$HTTP_STATUS" != "200" ]; then
-            echo "::error::/config/postgrest returned HTTP ${HTTP_STATUS}"
+            echo "::error::/postgrest returned HTTP ${HTTP_STATUS}"
             rm -f rest.json
             exit 1
           fi
@@ -135,6 +144,8 @@ jobs:
       # SUPERFICIE 3 — Edge functions desplegadas
       # ---------------------------------------------------------------
       - name: 'Surface: deployed edge functions'
+        id: s_fns
+        continue-on-error: true
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
@@ -161,6 +172,8 @@ jobs:
       # SUPERFICIE 4 — Postgres: extensiones
       # ---------------------------------------------------------------
       - name: 'Surface: installed extensions'
+        id: s_ext
+        continue-on-error: true
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
@@ -174,6 +187,8 @@ jobs:
       # SUPERFICIE 5 — Postgres: roles y pertenencias
       # ---------------------------------------------------------------
       - name: 'Surface: roles and memberships'
+        id: s_roles
+        continue-on-error: true
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
@@ -197,6 +212,8 @@ jobs:
       # SUPERFICIE 6 — Postgres: GUCs de base/rol, cron.job
       # ---------------------------------------------------------------
       - name: 'Surface: database GUCs and cron jobs'
+        id: s_gucs
+        continue-on-error: true
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
@@ -224,6 +241,8 @@ jobs:
       # SUPERFICIE 7 — Realtime: publicaciones y sus tablas
       # ---------------------------------------------------------------
       - name: 'Surface: realtime publications'
+        id: s_realtime
+        continue-on-error: true
         # `supabase_realtime` es la lista de tablas que emiten cambios por
         # websocket. Es configuracion, no datos: una tabla que esta en la
         # publicacion de produccion y no en la de QA emite en un entorno y
@@ -247,6 +266,8 @@ jobs:
       # SUPERFICIE 8 — Storage: buckets y sus politicas
       # ---------------------------------------------------------------
       - name: 'Surface: storage buckets and policies'
+        id: s_storage
+        continue-on-error: true
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
@@ -268,3 +289,42 @@ jobs:
                 FROM pg_policies WHERE schemaname = 'storage'
                ORDER BY tablename, policyname;" \
             | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # ---------------------------------------------------------------
+      # PUERTA FINAL — una superficie caida no puede pasar por silencio
+      # ---------------------------------------------------------------
+      - name: Fail if any surface could not be read
+        # Los ocho pasos de arriba llevan `continue-on-error: true` para que un
+        # endpoint que cambia de sitio no tire la corrida entera y se pierdan
+        # las otras siete superficies — que fue justo lo que paso en la primera
+        # corrida (34534798127): un 404 en PostgREST y ningun dato de las seis
+        # que venian detras.
+        #
+        # Pero `continue-on-error` solo, sin esta puerta, convierte un fallo en
+        # un check VERDE que no midio nada — el patron exacto que spec-93
+        # persigue. Asi que los outcomes se recogen aqui y el job se pone rojo
+        # nombrando cual falto. Verde = las ocho superficies se leyeron.
+        if: always()
+        run: |
+          set -euo pipefail
+          FAILED=""
+          for pair in \
+            "auth:${{ steps.s_auth.outcome }}" \
+            "postgrest:${{ steps.s_rest.outcome }}" \
+            "edge-functions:${{ steps.s_fns.outcome }}" \
+            "extensions:${{ steps.s_ext.outcome }}" \
+            "roles:${{ steps.s_roles.outcome }}" \
+            "gucs-cron:${{ steps.s_gucs.outcome }}" \
+            "realtime:${{ steps.s_realtime.outcome }}" \
+            "storage:${{ steps.s_storage.outcome }}"; do
+            name="${pair%%:*}"; outcome="${pair##*:}"
+            if [ "$outcome" != "success" ]; then
+              FAILED="${FAILED} ${name}(${outcome})"
+            fi
+          done
+          if [ -n "$FAILED" ]; then
+            echo "::error::No se pudieron leer estas superficies:${FAILED}"
+            echo "Superficies no leidas:${FAILED}" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "Las ocho superficies se leyeron." | tee -a "$GITHUB_STEP_SUMMARY"
