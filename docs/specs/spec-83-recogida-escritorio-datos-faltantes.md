@@ -2,7 +2,7 @@
 
 > **Related:** [spec-54](spec-54-ui-rebrand.md) (**su fase 4.4 construyó esta pantalla contra el mock `1l` y difirió estos tres datos con razón escrita**), [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (el cierre que produce la merma que aquí se muestra), [spec-82](spec-82-recogida-movil-asignacion-y-ruta.md) (`5b`/`5c`; **corrección 2026-09-09**: la asignación no aterriza aquí — el usuario decidió que la define el líder de recogida en el punto de retiro, in-situ, no desde este panel de escritorio), [spec-61](spec-61-pickup-route-crew.md) (panel de armado de ruta), [spec-73](spec-73-capacity-ladder-truck-topup.md) (capacidad de vehículo en Despacho — precedente directo)
 
-**Status:** awaiting_user_test — fase 1 y 4 `[done]`, fase 3 `[parked]`
+**Status:** awaiting_user_test — fases 1, 2 y 4 `[done]`, fase 3 `[parked]`; queda ver la columna VENTANA con datos reales, y hoy no hay ni un punto de retiro con horario cargado (ver el hueco declarado en la fase 2)
 (decisión del usuario, se retoma cuando el rollout lo pida). Sólo queda fase 2
 `[blocked]`: falta que el usuario decida qué gana el borde izquierdo de la
 fila cuando ventana y merma coinciden (ver `> Bloqueo:` en la fase 2). Ningún
