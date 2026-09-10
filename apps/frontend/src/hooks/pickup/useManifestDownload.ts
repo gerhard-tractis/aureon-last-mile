@@ -12,12 +12,23 @@ import {
 /**
  * spec-82 fase 2 — "DESCARGAR" (`5c`).
  *
- * Query key compartida por el hook de lectura y el de escritura, para que
- * `useDownloadManifest` sepa qué invalidar sin que el llamador tenga que
- * conocer la forma interna de la clave.
+ * Prefijo compartido por TODAS las claves de este módulo (lista de
+ * descargadas Y snapshot por carga), para que `useDownloadManifest` pueda
+ * invalidar las dos familias de una sola vez sin que el llamador tenga que
+ * conocer su forma interna.
+ *
+ * B1, ronda 4 de review del PR #727 — antes, `onSuccess` invalidaba SÓLO
+ * `downloadedIdsKey`. La clave de `useCachedManifestSnapshot` tiene
+ * `staleTime: Infinity` y nunca se invalidaba: si `5d` se abrió antes de
+ * la descarga (queda cacheado `null` — "nunca se descargó"), volver a `5d`
+ * después de tocar DESCARGAR seguía leyendo ese `null` sin refetch, en el
+ * mismo `QueryClient` — "CARGA-1 no está descargada" sobre una carga recién
+ * descargada.
  */
+const manifestCacheKeyPrefix = ['pickup', 'manifest-cache'] as const;
+
 const downloadedIdsKey = (operatorId: string | null) =>
-  ['pickup', 'manifest-cache', 'downloaded', operatorId] as const;
+  [...manifestCacheKeyPrefix, 'downloaded', operatorId] as const;
 
 /**
  * Qué cargas ya están descargadas para este operador. Lectura 100% local
@@ -104,7 +115,8 @@ export function useDownloadManifest(operatorId: string | null) {
       });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: downloadedIdsKey(operatorId) });
+      // Prefijo completo, no sólo `downloadedIdsKey` — ver B1 arriba.
+      void queryClient.invalidateQueries({ queryKey: manifestCacheKeyPrefix });
     },
   });
 }
@@ -124,7 +136,7 @@ export function useCachedManifestSnapshot(
   externalLoadId: string | null,
 ) {
   return useQuery({
-    queryKey: ['pickup', 'manifest-cache', 'snapshot', operatorId, externalLoadId],
+    queryKey: [...manifestCacheKeyPrefix, 'snapshot', operatorId, externalLoadId],
     queryFn: async () => (await getManifestSnapshot(db, operatorId!, externalLoadId!)) ?? null,
     enabled: !!operatorId && !!externalLoadId,
     networkMode: 'always',

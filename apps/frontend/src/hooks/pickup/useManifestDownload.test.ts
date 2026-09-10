@@ -278,6 +278,51 @@ describe('useDownloadManifest', () => {
     await waitFor(() => expect(listResult.current.data).toEqual([LOAD_1]));
   });
 
+  // B1, ronda 4 de review del PR #727 — antes, `onSuccess` sólo invalidaba
+  // `downloadedIdsKey`. La clave de `useCachedManifestSnapshot`
+  // (`staleTime: Infinity`) nunca se invalidaba: si `5d` se abrió ANTES de
+  // la descarga (queda cacheado `null` — "nunca se descargó"), volver a
+  // `5d` después de tocar DESCARGAR seguía leyendo ese `null`, en el mismo
+  // `QueryClient`, sin refetch — "CARGA-1 no está descargada" sobre una
+  // carga recién descargada.
+  it('makes the cached-null snapshot resolve to the real data after a download, in the same QueryClient (B1)', async () => {
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'manifests') {
+        return mockManifestChain({
+          id: 'manifest-1',
+          total_packages: 25,
+          pickup_route_id: 'route-1',
+          retailer_name: 'Ripley',
+          pickup_location: 'Parque Arauco',
+        });
+      }
+      return mockOrdersChain([]);
+    });
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client: queryClient }, children);
+
+    // El conductor abre 5d ANTES de descargar — la app cachea `null` con
+    // `staleTime: Infinity`.
+    const { result: snapshotResult } = renderHook(
+      () => useCachedManifestSnapshot(OPERATOR_A, LOAD_1),
+      { wrapper },
+    );
+    await waitFor(() => expect(snapshotResult.current.data).toBeNull());
+
+    const { result: downloadResult } = renderHook(() => useDownloadManifest(OPERATOR_A), {
+      wrapper,
+    });
+    await act(async () => {
+      await downloadResult.current.mutateAsync(LOAD_1);
+    });
+
+    await waitFor(() => expect(snapshotResult.current.data?.retailerName).toBe('Ripley'));
+  });
+
   it('does not write anything to manifest_cache when the manifest fetch fails', async () => {
     mockFrom.mockImplementation((table: string) => {
       if (table === 'manifests') {
