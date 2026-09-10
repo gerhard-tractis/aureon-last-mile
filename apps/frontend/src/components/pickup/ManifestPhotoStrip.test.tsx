@@ -26,8 +26,12 @@ vi.mock('@/lib/offline/photos', () => ({
 vi.mock('@/lib/db', () => ({ db: { pickup_queue: {} } }));
 
 const mockToastError = vi.fn();
+const mockToastSuccess = vi.fn();
 vi.mock('sonner', () => ({
-  toast: { error: (...args: unknown[]) => mockToastError(...args) },
+  toast: {
+    error: (...args: unknown[]) => mockToastError(...args),
+    success: (...args: unknown[]) => mockToastSuccess(...args),
+  },
 }));
 
 // Dobles mínimos de 5g/5h: cada uno expone un botón por callback relevante,
@@ -42,6 +46,7 @@ vi.mock('./ManifestCameraSheet', () => ({
       <div data-testid="camera-sheet">
         <span data-testid="camera-load-label">{String(props.loadLabel)}</span>
         <span data-testid="camera-sheet-number">{String(props.sheetNumber)}</span>
+        <span data-testid="camera-captured-count">{String(props.capturedCount)}</span>
         <button
           type="button"
           data-testid="camera-capture-button"
@@ -52,6 +57,9 @@ vi.mock('./ManifestCameraSheet', () => ({
           }
         >
           Capturar
+        </button>
+        <button type="button" data-testid="camera-done-button" onClick={props.onDone as () => void}>
+          Listo
         </button>
       </div>
     );
@@ -88,6 +96,7 @@ describe('ManifestPhotoStrip', () => {
     mockEnqueueManifestPhoto.mockReset();
     mockEnqueueManifestPhoto.mockResolvedValue({ id: 1 });
     mockToastError.mockReset();
+    mockToastSuccess.mockReset();
     latestCameraProps = {};
     latestReviewProps = null;
   });
@@ -153,6 +162,24 @@ describe('ManifestPhotoStrip', () => {
     expect(latestCameraProps.open).toBe(true);
     expect(screen.getByTestId('camera-sheet-number')).toHaveTextContent('2');
     expect(screen.getByTestId('camera-load-label')).toHaveTextContent('CARGA-99814');
+    // Ronda 2 de review del PR #736 (M2c) — "YA CAPTURADAS · N" en 5g debe
+    // reflejar cuántas hojas hay, no un valor fijo.
+    expect(screen.getByTestId('camera-captured-count')).toHaveTextContent('1');
+  });
+
+  // Ronda 2 de review del PR #736 (M2d) — el botón "Listo" de la cámara
+  // (`onDone`) debe cerrarla sin pasar por la revisión.
+  it('closes the camera without opening the review sheet when 5g reports "Listo" (onDone)', () => {
+    mockUseManifestDocuments.mockReturnValue({ data: [], isFetching: false });
+    render(<ManifestPhotoStrip operatorId="op-1" manifestId="manifest-1" userId="user-1" />);
+
+    fireEvent.click(screen.getByRole('button', { name: /agregar/i }));
+    expect(latestCameraProps.open).toBe(true);
+
+    fireEvent.click(screen.getByTestId('camera-done-button'));
+
+    expect(latestCameraProps.open).toBe(false);
+    expect(screen.queryByTestId('review-sheet')).not.toBeInTheDocument();
   });
 
   // Seguimiento — mismo caso que el suite anterior cubría contra
@@ -223,7 +250,28 @@ describe('ManifestPhotoStrip', () => {
     expect((input.blob as File).name).toBe('sheet-3.jpg');
   });
 
-  it('closes the review sheet after a successful enqueue', async () => {
+  // Ronda 2 de review del PR #736 (M2b, bloqueante) — el test de arriba usa
+  // `documents=[]`, donde la respuesta correcta (`nextSheetNumber`) Y un
+  // `sheetNumber: 1` fijo dan lo mismo: un mutante que reemplazara
+  // `nextSheetNumber` por `1` sobrevivía. Con un hueco (sólo la hoja 2 viva)
+  // el valor correcto es 3 — distinto de cualquier constante fija.
+  it('calls enqueueManifestPhoto with the real nextSheetNumber, not a fixed value, when a gap exists', async () => {
+    mockUseManifestDocuments.mockReturnValue({
+      data: [{ id: 'doc-2', storage_path: 'x', sheet_number: 2, captured_at: 't' }],
+      isFetching: false,
+    });
+    render(<ManifestPhotoStrip operatorId="op-1" manifestId="manifest-1" userId="user-1" />);
+
+    fireEvent.click(screen.getByRole('button', { name: /agregar/i }));
+    fireEvent.click(screen.getByTestId('camera-capture-button'));
+    fireEvent.click(screen.getByTestId('review-use-photo-button'));
+
+    await waitFor(() => expect(mockEnqueueManifestPhoto).toHaveBeenCalledOnce());
+    const [, input] = mockEnqueueManifestPhoto.mock.calls[0];
+    expect(input).toEqual(expect.objectContaining({ sheetNumber: 3 }));
+  });
+
+  it('closes the review sheet, shows a success toast, and re-enables Agregar after a successful enqueue', async () => {
     mockUseManifestDocuments.mockReturnValue({ data: [], isFetching: false });
     render(<ManifestPhotoStrip operatorId="op-1" manifestId="manifest-1" userId="user-1" />);
 
@@ -232,6 +280,21 @@ describe('ManifestPhotoStrip', () => {
     fireEvent.click(screen.getByTestId('review-use-photo-button'));
 
     await waitFor(() => expect(screen.queryByTestId('review-sheet')).not.toBeInTheDocument());
+
+    // Ronda 2 de review del PR #736 (M3) — sin señal, "0 fotos" en la tira
+    // no cambia entre la primera y la segunda captura (cuenta sólo lo que el
+    // servidor confirmó): este toast es la única confirmación que el
+    // operario recibe de que la hoja anterior no se perdió.
+    expect(mockToastSuccess).toHaveBeenCalledWith(
+      'Foto guardada en el dispositivo. Se sube al recuperar señal.'
+    );
+
+    // Ronda 2 de review del PR #736 (M2a, bloqueante) — sin
+    // `setIsSaving(false)` en el `finally`, "Agregar" quedaba deshabilitado
+    // para siempre tras la primera foto: nadie podía fotografiar la hoja 2
+    // de un manifiesto normal de dos hojas. El test anterior sólo comprobaba
+    // deshabilitado DURANTE el vuelo, nunca que se re-habilitara después.
+    expect(screen.getByRole('button', { name: /agregar/i })).not.toBeDisabled();
   });
 
   it('disables Agregar and marks the review sheet as saving while enqueueManifestPhoto is in flight', async () => {
@@ -270,7 +333,7 @@ describe('ManifestPhotoStrip', () => {
   it('shows a Spanish, actionable error and keeps the review sheet open when enqueueing fails', async () => {
     mockUseManifestDocuments.mockReturnValue({ data: [], isFetching: false });
     mockEnqueueManifestPhoto.mockRejectedValueOnce(
-      new Error('recogida offline queue: la foto supera el tamaño máximo (10 MiB) que el bucket admite — repite la captura antes de continuar')
+      new Error('la foto supera el tamaño máximo (10 MiB) que el bucket admite — repite la captura antes de continuar')
     );
     render(<ManifestPhotoStrip operatorId="op-1" manifestId="manifest-1" userId="user-1" />);
 

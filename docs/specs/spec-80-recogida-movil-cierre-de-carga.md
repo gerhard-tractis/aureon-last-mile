@@ -1279,3 +1279,40 @@ traspaso de custodia — el respaldo de una eventual indemnización.
 **Depende de:** ninguna — spec-81 fase 5 (`enqueueManifestPhoto`) y spec-80
 fase 4 (`5g`/`5h`) están **mergeadas**. Se puede tomar hoy.
 
+**Ronda 2 de review del PR #736 (2026-09-10) — decisiones y hallazgos.**
+
+- **Decisión de producto: `toast.success` al encolar una foto, no un
+  contador de cola en la tira.** Sin señal, `manifest-photo-count`
+  (`documents.length`) sólo cuenta lo que el SERVIDOR ya confirmó — tras
+  encolar la primera hoja sigue en "0", sin ningún otro aviso, y un operario
+  puede leer eso como "no se guardó" y repetir la foto (filas duplicadas de
+  2-4 MB contra el tope de 200 MB, `MAX_UNCONFIRMED_PHOTO_BYTES_PER_OPERATOR`).
+  Se añadió `toast.success('Foto guardada en el dispositivo. Se sube al
+  recuperar señal.')` en `handleUsePhoto`, mismo precedente que
+  `useCloseManifest.ts` (`toast.success` cuando el cierre queda encolado, no
+  sólo online). Deliberadamente NO se cuenta la cola local en la tira: eso
+  exigiría leer `pickup_queue` desde este componente, con riesgo de que ese
+  contador y el del servidor discreparan — el mismo problema que costó una
+  ronda de review en spec-81 fase 5. Ningún criterio de aceptación de esta
+  fase pedía un indicador — la desviación es de este spec, no un hallazgo de
+  código sin resolver.
+- **`loadLabel` cae al `manifestId` (un UUID) cuando `externalLoadId` no se
+  pasa** (`ManifestPhotoStrip.tsx`, props de `5g`/`5h`). Es el mismo
+  fallback que el PR #725 (spec-81 fase 4) descartó por decisión del
+  usuario para el chip de sync. Hoy inalcanzable en producción —
+  `complete/[loadId]/page.tsx` siempre pasa `externalLoadId={loadId}` — pero
+  el prop sigue siendo opcional en el tipo; si algún día se monta
+  `ManifestPhotoStrip` sin él, `5g`/`5h` mostrarían un UUID en vez de
+  "CARGA-99814". No se cerró en esta ronda (ningún llamador real lo
+  dispara); queda anotado para quien toque ese prop.
+- **`useUploadManifestDocument` (`hooks/pickup/useManifestDocuments.ts`) es
+  código muerto** desde esta fase — sin llamadores de producción, con su
+  propia suite de tests que sigue pasando. Borrarlo excedía el alcance
+  declarado de esta fase (`**Archivos:**` arriba no lo incluye), pero
+  "fuera de alcance" caduca: sin un ítem que lo diga, el próximo que lo lea
+  lo toma como una ruta de subida legítima.
+  - [ ] Borrar `useUploadManifestDocument` y su test de
+        `hooks/pickup/useManifestDocuments.ts`/`.test.ts` — verificar antes
+        que sigue sin llamadores (`grep -rn useUploadManifestDocument
+        apps/frontend/src`).
+

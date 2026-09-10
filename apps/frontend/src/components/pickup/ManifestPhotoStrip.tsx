@@ -80,6 +80,19 @@ export function ManifestPhotoStrip({ operatorId, manifestId, userId, externalLoa
         blob: file,
       });
       setReviewPhoto(null);
+      // Ronda 2 de review del PR #736 (M3, decisión del usuario) — sin
+      // señal, la única evidencia de que la foto sobrevivió es esta
+      // confirmación: `documents.length` (arriba) sólo cuenta lo que el
+      // SERVIDOR ya confirmó, así que tras encolar sigue mostrando el mismo
+      // número que antes de la captura — "0 fotos" tras la primera hoja, sin
+      // ningún otro aviso. Mismo precedente que `useCloseManifest.ts`
+      // (`toast.success` cuando el cierre queda encolado, no sólo cuando se
+      // confirma online). Deliberadamente NO se cuenta la cola en la tira
+      // (`manifest-photo-count`): eso exigiría leer `pickup_queue` desde este
+      // componente y arriesgaría que ese contador y el del servidor
+      // discreparan (mismo problema que costó una ronda en spec-81 fase 5) —
+      // ver el spec.
+      toast.success('Foto guardada en el dispositivo. Se sube al recuperar señal.');
     } catch (err) {
       // `enqueueManifestPhoto` lanza mensajes ya redactados en español y
       // accionables (tamaño máximo, cuota de fotos sin confirmar) — mismo

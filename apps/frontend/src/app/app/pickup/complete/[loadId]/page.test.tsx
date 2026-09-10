@@ -2,8 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import CompletionPage from './page';
 
+// Ronda 2 de review del PR #736 (M1) — el doble anterior descartaba TODOS
+// los props, así que borrar `externalLoadId={loadId}` en `page.tsx` no lo
+// detectaba ningún test (26/26 seguían en verde). Registrarlos es lo que
+// convierte este mock en una guardia real del eslabón page → strip, no sólo
+// en un placeholder visual.
+const mockManifestPhotoStripProps: Array<Record<string, unknown>> = [];
 vi.mock('@/components/pickup/ManifestPhotoStrip', () => ({
-  ManifestPhotoStrip: () => <div data-testid="manifest-photo-strip" />,
+  ManifestPhotoStrip: (props: Record<string, unknown>) => {
+    mockManifestPhotoStripProps.push(props);
+    return <div data-testid="manifest-photo-strip" />;
+  },
 }));
 
 const mockUsePickupScans = vi.fn();
@@ -129,6 +138,7 @@ vi.mock('@/hooks/useOfflineQueue', () => ({
 
 describe('CompletionPage', () => {
   beforeEach(() => {
+    mockManifestPhotoStripProps.length = 0;
     mockUsePickupScans.mockReturnValue({
       data: [
         { id: 's1', scan_result: 'verified', package_id: 'pkg-a' },
@@ -344,6 +354,19 @@ describe('CompletionPage', () => {
       'Todo queda en el teléfono y se sube al recuperar señal. Las fotos también.',
     );
     expect(strip.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  // Ronda 2 de review del PR #736 (M1, bloqueante) — sin esta guardia,
+  // borrar `externalLoadId={loadId}` en `page.tsx` deja los 26/26 tests de
+  // esta suite en verde: el chip de sync (spec-81 fase 4) no podría decirle
+  // al operario qué carga abrir para una foto `dead`, y ningún test lo
+  // notaría.
+  it('passes externalLoadId (the human-readable loadId) down to ManifestPhotoStrip', async () => {
+    render(<CompletionPage />);
+    await screen.findByTestId('manifest-photo-strip');
+    expect(mockManifestPhotoStripProps.at(-1)).toEqual(
+      expect.objectContaining({ externalLoadId: 'CARGA-001' })
+    );
   });
 
   // M3, ronda 2 de review del PR #706 — el reordenado de firmas es uno de

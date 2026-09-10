@@ -168,8 +168,12 @@ export async function enqueueManifestPhoto(
 ): Promise<PickupQueueEntry> {
   if (input.blob.size > MAX_PHOTO_FILE_BYTES) {
     const limitMb = Math.round(MAX_PHOTO_FILE_BYTES / (1024 * 1024));
+    // Ronda 2 de review del PR #736 (menor) — sin el prefijo interno
+    // "recogida offline queue: ": spec-80 fase 6 empezó a mostrar este
+    // mensaje tal cual en un `toast.error` frente al conductor
+    // (`ManifestPhotoStrip.tsx`), y ese prefijo no significa nada para él.
     throw new Error(
-      `recogida offline queue: la foto supera el tamaño máximo (${limitMb} MiB) que el bucket admite — repite la captura antes de continuar`,
+      `la foto supera el tamaño máximo (${limitMb} MiB) que el bucket admite — repite la captura antes de continuar`,
     );
   }
 
@@ -177,7 +181,7 @@ export async function enqueueManifestPhoto(
   if (currentBytes + input.blob.size > MAX_UNCONFIRMED_PHOTO_BYTES_PER_OPERATOR) {
     const capMb = Math.round(MAX_UNCONFIRMED_PHOTO_BYTES_PER_OPERATOR / (1024 * 1024));
     throw new Error(
-      `recogida offline queue: cola de fotos llena (${capMb} MB sin confirmar) para este operador — no se puede encolar más hasta que el drenado confirme o descarte alguna`,
+      `cola de fotos llena (${capMb} MB sin confirmar) para este operador — no se puede encolar más hasta que el drenado confirme o descarte alguna`,
     );
   }
 
