@@ -62,6 +62,7 @@ import {
   findRevokeSignatures,
   findGrantExecuteSignatures,
   findSchemaWideGrants,
+  findDropFunctionSignatures,
 } from './check-migration-safety-acl-parse.mjs';
 
 export {
@@ -70,6 +71,7 @@ export {
   findRevokeSignatures,
   findGrantExecuteSignatures,
   findSchemaWideGrants,
+  findDropFunctionSignatures,
   lineNumberAt,
 } from './check-migration-safety-acl-parse.mjs';
 
@@ -137,13 +139,32 @@ function pushEvent(map, key, event) {
 
 /**
  * Builds the cumulative PUBLIC-grant timeline across every migration file
- * in `filePaths`, in the given (filename/chronological) order. Only events
- * that name PUBLIC in their role list are recorded — rule 5 cares
+ * in `filePaths`, in the given (filename/chronological) order. `perKey`
+ * only records events that name PUBLIC in their role list — rule 5 cares
  * exclusively about whether PUBLIC (which `anon` inherits) is open, not
  * about `authenticated`/`service_role`/other roles.
+ *
+ * `anonPerKey` (round 4) tracks a SEPARATE timeline: every GRANT/REVOKE that
+ * names `anon` explicitly, regardless of PUBLIC. `anon` does not need
+ * PUBLIC's inherited grant when it has its own explicit one — a migration
+ * that REVOKEs FROM PUBLIC and then `GRANT ... TO anon` directly is still
+ * wide open, and a per-PUBLIC-only view of the world would miss it (real
+ * shape found in review, PR #723 rebase).
+ *
+ * A `DROP FUNCTION` event (round 4) resets BOTH timelines for its exact
+ * name+signature — unlike `CREATE OR REPLACE`, which PRESERVES the existing
+ * ACL (round 3), a `DROP` destroys the function object entirely, and
+ * whatever `CREATE` follows gets Postgres's default EXECUTE-to-PUBLIC grant
+ * fresh, with no explicit anon grant either. It is recorded as a 'grant' in
+ * `perKey` (the state becomes open, same effect as an explicit GRANT TO
+ * PUBLIC for this rule's purposes) and as a 'revoke' in `anonPerKey` (any
+ * earlier explicit anon grant is gone along with the dropped function — the
+ * state becomes "no explicit anon grant", which `isAnonOpenDirectly` reads
+ * as closed, same as if anon had never been touched).
  */
 export function buildAclTimeline(filePaths) {
   const perKey = new Map(); // `${name}::${signature|'*'}` -> [{fileIdx, charIdx, type}]
+  const anonPerKey = new Map(); // same shape, 'anon'-named events only
   const schemaWide = []; // [{fileIdx, charIdx, type: 'grant'}]
   filePaths.forEach((f, fileIdx) => {
     let rawSql;
@@ -153,27 +174,34 @@ export function buildAclTimeline(filePaths) {
       return;
     }
     for (const r of findRevokeSignatures(rawSql)) {
-      if (!r.roles.includes('public')) continue;
-      pushEvent(perKey, `${r.name}::${r.signature ?? WILDCARD_SIGNATURE}`, {
-        fileIdx,
-        charIdx: r.index,
-        type: 'revoke',
-      });
+      const key = `${r.name}::${r.signature ?? WILDCARD_SIGNATURE}`;
+      if (r.roles.includes('public')) {
+        pushEvent(perKey, key, { fileIdx, charIdx: r.index, type: 'revoke' });
+      }
+      if (r.roles.includes('anon')) {
+        pushEvent(anonPerKey, key, { fileIdx, charIdx: r.index, type: 'revoke' });
+      }
     }
     for (const g of findGrantExecuteSignatures(rawSql)) {
-      if (!g.roles.includes('public')) continue;
-      pushEvent(perKey, `${g.name}::${g.signature ?? WILDCARD_SIGNATURE}`, {
-        fileIdx,
-        charIdx: g.index,
-        type: 'grant',
-      });
+      const key = `${g.name}::${g.signature ?? WILDCARD_SIGNATURE}`;
+      if (g.roles.includes('public')) {
+        pushEvent(perKey, key, { fileIdx, charIdx: g.index, type: 'grant' });
+      }
+      if (g.roles.includes('anon')) {
+        pushEvent(anonPerKey, key, { fileIdx, charIdx: g.index, type: 'grant' });
+      }
     }
     for (const sw of findSchemaWideGrants(rawSql)) {
       if (!sw.roles.includes('public')) continue;
       schemaWide.push({ fileIdx, charIdx: sw.index, type: 'grant' });
     }
+    for (const d of findDropFunctionSignatures(rawSql)) {
+      const key = `${d.name}::${d.signature ?? WILDCARD_SIGNATURE}`;
+      pushEvent(perKey, key, { fileIdx, charIdx: d.index, type: 'grant' });
+      pushEvent(anonPerKey, key, { fileIdx, charIdx: d.index, type: 'revoke' });
+    }
   });
-  return { perKey, schemaWide };
+  return { perKey, anonPerKey, schemaWide };
 }
 
 function comparePos(a, b) {
@@ -199,12 +227,32 @@ export function isPublicOpenAt(timeline, name, signature, uptoFileIdx) {
 }
 
 /**
- * Rule 5 (redesigned rounds 2-3 — see module doc for why). Returns a list
- * of rejection messages: for each CREATE/CREATE OR REPLACE SECURITY
- * DEFINER FUNCTION (not RETURNS TRIGGER) in `rawSql`, whether PUBLIC is
- * open for that exact signature as of `fileIdx` in `timeline`'s corpus
- * order. `fileIdx` is the position of the file currently being checked
- * within the SAME corpus `timeline` was built from — see
+ * Round 4. Whether `anon` has been explicitly GRANTed EXECUTE for
+ * `name`(`signature`), directly (not via inherited PUBLIC), as of and
+ * including `uptoFileIdx`. Unlike `isPublicOpenAt`, no event at all means
+ * anon was never explicitly touched — false, i.e. "rely on
+ * `isPublicOpenAt` instead" — there is no Postgres default grant to `anon`
+ * specifically the way there is to PUBLIC.
+ */
+export function isAnonOpenDirectly(timeline, name, signature, uptoFileIdx) {
+  const events = [
+    ...(timeline.anonPerKey.get(`${name}::${signature}`) || []),
+    ...(timeline.anonPerKey.get(`${name}::${WILDCARD_SIGNATURE}`) || []),
+  ].filter((e) => e.fileIdx <= uptoFileIdx);
+  if (events.length === 0) return false;
+  events.sort(comparePos);
+  return events[events.length - 1].type === 'grant';
+}
+
+/**
+ * Rule 5 (redesigned rounds 2-3, extended round 4 — see module doc for why).
+ * Returns a list of rejection messages: for each CREATE/CREATE OR REPLACE
+ * SECURITY DEFINER FUNCTION (not RETURNS TRIGGER) in `rawSql`, whether
+ * PUBLIC is open for that exact signature, OR `anon` has been explicitly
+ * granted EXECUTE directly (round 4 — `anon` does not need PUBLIC's
+ * inherited grant when it has its own), as of `fileIdx` in `timeline`'s
+ * corpus order. `fileIdx` is the position of the file currently being
+ * checked within the SAME corpus `timeline` was built from — see
  * check-migration-safety.mjs for how that's computed.
  */
 export function findGrantWithoutRevokeViolations(rawSql, timeline, fileIdx) {
@@ -215,9 +263,14 @@ export function findGrantWithoutRevokeViolations(rawSql, timeline, fileIdx) {
 
   const violations = [];
   for (const fn of createdFns) {
-    if (isPublicOpenAt(timeline, fn.name, fn.signature, fileIdx)) {
+    const publicOpen = isPublicOpenAt(timeline, fn.name, fn.signature, fileIdx);
+    const anonOpen = isAnonOpenDirectly(timeline, fn.name, fn.signature, fileIdx);
+    if (publicOpen || anonOpen) {
+      const reason = publicOpen
+        ? `PUBLIC's EXECUTE grant is open for this exact signature`
+        : `anon has been explicitly GRANTed EXECUTE directly for this exact signature (PUBLIC itself is closed)`;
       violations.push(
-        `CREATE FUNCTION public.${fn.name}(${fn.signature}) is SECURITY DEFINER and PUBLIC's EXECUTE grant is open for this exact signature, considering the cumulative REVOKE/GRANT history of the whole migrations corpus up to and including this file — add REVOKE ALL ON FUNCTION public.${fn.name}(${fn.signature}) FROM PUBLIC (see spec-80 fase 1b, 20260913000004)`
+        `CREATE FUNCTION public.${fn.name}(${fn.signature}) is SECURITY DEFINER and ${reason}, considering the cumulative REVOKE/GRANT history of the whole migrations corpus up to and including this file — add REVOKE ALL ON FUNCTION public.${fn.name}(${fn.signature}) FROM PUBLIC${anonOpen ? ', anon' : ''} (see spec-80 fase 1b, 20260913000004)`
       );
     }
   }

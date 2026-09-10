@@ -1335,10 +1335,107 @@ Extiende `scripts/check-migration-safety.sh` (spec-87 fase 5, en construcción e
 > reabre una función — así que ese hallazgo de ronda 2 quedó resuelto por
 > el rediseño mismo, no por una limpieza aparte.
 >
-> PR: #723, **sin auto-merge**.
-> Review: ronda 3 completa (adversarial, contra el objeto vivo, incluida
-> verificación de los dos precedentes reales que motivaron la ronda) —
-> bloqueantes cerrados arriba. Pendiente una ronda de confirmación.
+> **Ronda 4 (rebase de #723 sobre `main`, dos falsos negativos señalados en
+> el encargo de rebase): la regla 5 seguía ciega a dos formas de abrir
+> `anon`.**
+>
+> 1. **`DROP FUNCTION` + `CREATE FUNCTION`.** Ronda 3 ya documentó que
+>    `CREATE OR REPLACE` **preserva** el ACL — por eso la máquina de estados
+>    no necesitaba ver un `CREATE OR REPLACE` como un reseteo. Pero un
+>    `DROP FUNCTION` **sí** destruye el objeto entero, y el `CREATE` que le
+>    sigue recibe el grant a `PUBLIC` por defecto de Postgres, sin importar
+>    qué `REVOKE` existiera antes del `DROP`. La línea de tiempo no
+>    registraba `DROP FUNCTION` en absoluto — un `REVOKE FROM PUBLIC` en una
+>    migración vieja seguía "vigente" para siempre, aunque una migración
+>    posterior hubiera `DROP`eado y recreado la función sin volver a
+>    cerrarla. Confirmado antes de tocar código: la migración maliciosa
+>    (`REVOKE FROM PUBLIC` en un fichero, `DROP FUNCTION; CREATE FUNCTION;`
+>    sin ACL propio en el siguiente) pasaba con `exit 0`.
+> 2. **`GRANT ... TO anon` directo.** La línea de tiempo sólo registraba
+>    eventos que nombraran `PUBLIC` — un `GRANT EXECUTE ... TO anon` sin
+>    mencionar `PUBLIC` nunca se veía, aunque abriera acceso a `anon`
+>    exactamente igual. Confirmado antes de tocar código: `REVOKE ... FROM
+>    PUBLIC` seguido de `GRANT ... TO anon` en la misma migración pasaba con
+>    `exit 0`.
+>
+> **Arreglo, mismo patrón de máquina de estados que ronda 3, no un chequeo
+> nuevo aparte:** `buildAclTimeline` gana `findDropFunctionSignatures`
+> (`check-migration-safety-acl-parse.mjs`, mismo soporte de referencia sin
+> paréntesis que ya tenía `REVOKE`) y una segunda línea de tiempo,
+> `anonPerKey`, que registra sólo eventos que nombren `anon` explícitamente
+> (independiente de `PUBLIC`). Un `DROP FUNCTION` se registra como
+> `'grant'` en `perKey` (el estado vuelve a abierto, mismo efecto que un
+> `GRANT` explícito para esta regla) y como `'revoke'` en `anonPerKey` (un
+> `GRANT ... TO anon` anterior desaparece junto con la función borrada).
+> `findGrantWithoutRevokeViolations` ahora rechaza si `PUBLIC` está abierto
+> **o** si `anon` tiene un grant directo vigente — `anon` no necesita el
+> grant heredado de `PUBLIC` cuando tiene el suyo propio.
+>
+> **TDD**: 6 tests nuevos escritos primero — DROP+CREATE reabre,
+> DROP bare (sin paréntesis) reabre, DROP de un overload distinto no resetea
+> el hermano, `GRANT ... TO anon` directo rechaza con `PUBLIC` cerrado,
+> `GRANT ... TO authenticated` (no `anon`) no rechaza (guarda de regresión),
+> y DROP también resetea un `GRANT ... TO anon` previo (el fichero #1, que
+> abre por `anon`, se rechaza solo por sí mismo; el fichero #2, que
+> `DROP`ea+recrea y cierra bien, no debe arrastrar el hallazgo del #1) —
+> confirmados en rojo por la razón correcta (3 fallando con "expected exit
+> 1, got 0"; 2 guardas de regresión pasando vacuamente porque nada las
+> disparaba todavía) antes de escribir la implementación mínima.
+>
+> **El sexto test encontró un defecto en el propio test, no en el código**:
+> la primera versión de "DROP resetea un GRANT previo a anon" esperaba
+> `exit 0` sobre el directorio completo — pero el fichero #1, tomado solo,
+> es una migración genuinamente mala (abre `anon` sin `REVOKE` después), así
+> que el chequeo lo rechaza correctamente y el `exit 0` esperado era
+> incorrecto. Corregido a comprobar que el fichero #2 específicamente no
+> aparece en la salida `::error::`, no el código de salida del directorio
+> completo.
+>
+> **Mutation-testing — 4 mutantes, uno a uno, cada uno restaurado a verde
+> antes del siguiente:**
+> 1. Quitar el bucle de `findDropFunctionSignatures` de `buildAclTimeline`
+>    → mató exactamente los 2 tests de DROP+CREATE (con y sin paréntesis);
+>    el test del overload distinto y el de reseteo de `anon` no dependían de
+>    esa rama y siguieron en verde, como se esperaba.
+> 2. Cambiar `if (publicOpen || anonOpen)` a `if (publicOpen)` en
+>    `findGrantWithoutRevokeViolations` → mató exactamente el test de
+>    `GRANT ... TO anon` directo.
+> 3. Quitar la rama `if (g.roles.includes('anon'))` de la construcción de
+>    `anonPerKey` en `buildAclTimeline` → mató exactamente el mismo test
+>    (la vía de entrada distinta a la misma señal).
+> 4. Quitar el `pushEvent(anonPerKey, ..., { type: 'revoke' })` del bloque
+>    de `DROP FUNCTION` → mató exactamente el test de reseteo de `anon` vía
+>    `DROP` (el fichero #2 volvía a arrastrar el hallazgo del #1).
+> Los 4 probados individualmente contra las 42 aserciones de
+> `check-migration-safety-acl.test.sh`; ninguno se probó en lote ni se
+> afirma "todos mueren" sobre mutantes no probados.
+>
+> **Cifras — verificadas, no heredadas.** El corpus real
+> (`packages/database/supabase/migrations`) tiene **16** ficheros que
+> contienen `DROP FUNCTION` (`grep -rEli '^\s*DROP\s+FUNCTION\b'
+> packages/database/supabase/migrations | wc -l`) y **0** que contengan un
+> `GRANT EXECUTE ... TO anon` directo (`grep -rEli 'GRANT\s+EXECUTE\s+ON\s+
+> FUNCTION.*TO\s+anon\b' packages/database/supabase/migrations | wc -l`).
+> Escaneando el corpus completo con el chequeo ya extendido
+> (`node scripts/check-migration-safety.mjs
+> packages/database/supabase/migrations`), los rechazos siguen siendo
+> exactamente los mismos 3 de siempre (`expand_carton`,
+> `add_dock_zone_adjacency_pair`/`remove_dock_zone_adjacency_pair`,
+> `close_manifest`) — ninguno de los 16 `DROP FUNCTION` reales del corpus
+> introduce un falso positivo nuevo.
+>
+> **Regresión**: las 8 suites preexistentes de `check-migration-safety*`
+> siguen en verde tras el rebase (13, 11, 10, 10, 10, 8, 6, y ahora 42 —
+> antes 36 — de `check-migration-safety-acl.test.sh`). `node --check`
+> limpio en los dos `.mjs` tocados. Límite de 300 líneas respetado:
+> `check-migration-safety-acl.mjs` 278, `check-migration-safety-acl-parse.mjs`
+> 284, `check-migration-safety.mjs` 258 (sin cambios, no tocado esta ronda).
+>
+> PR: #723, **sin auto-merge**, rebaseado sobre `main` (conflictos resueltos
+> en `docs/specs/spec-88-anon-security-definer-audit.md` conservando la fase
+> 3 ronda 7 y la fase 5 ronda 3 que se mergearon en `main` mientras este PR
+> estaba abierto — ninguna evidencia de esas dos fases se perdió).
+> Review: pendiente sobre esta ronda 4.
 > QA: pendiente — PR sin auto-merge, a la espera de review.
 > Downstream: ninguno declarado en la cabecera del spec — sin cambios.
 

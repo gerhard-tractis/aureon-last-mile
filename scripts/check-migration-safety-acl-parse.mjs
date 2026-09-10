@@ -126,6 +126,14 @@ const REVOKE_HEADER_RE = /REVOKE\s+(?:ALL(?:\s+PRIVILEGES)?|EXECUTE)\s+ON\s+FUNC
 const GRANT_HEADER_RE = /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+(?:"?public"?\.)?"?(\w+)"?/gi;
 const SCHEMA_WIDE_GRANT_RE =
   /GRANT\s+EXECUTE\s+ON\s+ALL\s+FUNCTIONS\s+IN\s+SCHEMA\s+(?:"?public"?)\s+TO\s+([^;]+)/gi;
+// DROP FUNCTION [IF EXISTS] name[(...)] — round 4: unlike CREATE OR REPLACE
+// (which preserves the existing ACL — round 3), a DROP destroys the
+// function object entirely; whatever CREATE follows gets Postgres's default
+// EXECUTE-to-PUBLIC grant fresh, regardless of any earlier REVOKE. No
+// trailing `\(` requirement, same reasoning as REVOKE_HEADER_RE above: a
+// bare `DROP FUNCTION name` (no argument list) is legal Postgres (PG14+)
+// when the name is unambiguous.
+const DROP_HEADER_RE = /DROP\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?(?:"?public"?\.)?"?(\w+)"?/gi;
 
 // Marks the start of a dollar-quoted function body ($$, $function$, etc.) —
 // used to bound the search window for SECURITY DEFINER/INVOKER and RETURNS
@@ -227,6 +235,32 @@ export function findRevokeSignatures(rawSql) {
  * `rawSql`. Same `signature: null` convention as findRevokeSignatures. */
 export function findGrantExecuteSignatures(rawSql) {
   return findOnFunctionStatements(rawSql, GRANT_HEADER_RE, 'TO');
+}
+
+/** Every `DROP FUNCTION [IF EXISTS] public.name[(...)]` in `rawSql`.
+ * `signature` is `null` for a bare (no argument list) reference — legal
+ * Postgres (PG14+) when the name is unambiguous (round 4). Unlike REVOKE/
+ * GRANT there is no role list to parse — a DROP destroys the function's ACL
+ * entirely, it doesn't touch a specific role. */
+export function findDropFunctionSignatures(rawSql) {
+  const sql = stripLineComments(rawSql);
+  const results = [];
+  const re = new RegExp(DROP_HEADER_RE.source, DROP_HEADER_RE.flags);
+  let m;
+  while ((m = re.exec(sql))) {
+    const name = m[1];
+    let i = m.index + m[0].length;
+    while (i < sql.length && /\s/.test(sql[i])) i++;
+    let signature = null;
+    if (sql[i] === '(') {
+      const group = extractParenGroup(sql, i);
+      if (!group) continue;
+      signature = normalizeSignature(group.params);
+      re.lastIndex = group.endIdx + 1;
+    }
+    results.push({ name, signature, index: m.index });
+  }
+  return results;
 }
 
 /** Every `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO <roles>` in

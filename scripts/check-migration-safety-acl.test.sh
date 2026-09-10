@@ -649,5 +649,165 @@ else
 fi
 
 echo ""
+echo "-- round 4 (post-merge follow-up, PR #723 rebase): two false negatives found by review --"
+
+# ── DROP FUNCTION resets the ACL — CREATE OR REPLACE preserves it (round 3),
+# but a DROP destroys the function object entirely, and Postgres's default
+# EXECUTE-to-PUBLIC grant applies fresh to whatever CREATE follows. A
+# migration that REVOKEs, then later DROPs and recreates the same function
+# with no REVOKE of its own, is open again — the timeline must not keep
+# treating the earlier REVOKE as still in effect across the DROP.
+write_file drop-then-create-reopens 0000000001_harden <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC;
+SQL
+write_file drop-then-create-reopens 0000000002_drop_and_recreate <<'SQL'
+DROP FUNCTION public.internal_helper();
+
+CREATE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+assert_exit 1 "round 4: DROP FUNCTION + CREATE FUNCTION reopens PUBLIC even though an earlier REVOKE existed — rejects" drop-then-create-reopens
+
+# ── DROP FUNCTION with no argument list (bare, unambiguous name — legal
+# PG14+, same convention as the existing REVOKE-without-parens support) must
+# still be recognized as a reset, not silently ignored by the parser.
+write_file drop-bare-no-args-reopens 0000000001_harden <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC;
+SQL
+write_file drop-bare-no-args-reopens 0000000002_drop_bare_and_recreate <<'SQL'
+DROP FUNCTION public.internal_helper;
+
+CREATE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+assert_exit 1 "round 4: a bare (no-parens) DROP FUNCTION also reopens — the reset is not invisible to the parser" drop-bare-no-args-reopens
+
+# ── DROP FUNCTION on a DIFFERENT signature of the same name must not reset
+# an unrelated overload — kills a mutant that resets by name alone.
+write_file drop-different-overload-does-not-reset-sibling 0000000001_harden <<'SQL'
+CREATE OR REPLACE FUNCTION public.overloaded_fn(p_id UUID) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.overloaded_fn(UUID) FROM PUBLIC;
+SQL
+write_file drop-different-overload-does-not-reset-sibling 0000000002_drop_other_overload <<'SQL'
+DROP FUNCTION public.overloaded_fn(TEXT);
+SQL
+write_file drop-different-overload-does-not-reset-sibling 0000000003_replace_no_acl_touch <<'SQL'
+CREATE OR REPLACE FUNCTION public.overloaded_fn(p_id UUID) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+assert_exit 0 "round 4: a DROP of a DIFFERENT overload does not reset this one's REVOKE" drop-different-overload-does-not-reset-sibling
+
+# ── Direct GRANT ... TO anon, with no PUBLIC involved at all, opens access
+# for anon regardless of PUBLIC's own (closed) state — anon does not need
+# PUBLIC's inherited grant when it has its own explicit one.
+write_file grant-to-anon-directly-rejects 0000000001_fixture <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.internal_helper() TO anon;
+SQL
+assert_exit 1 "round 4: a direct GRANT ... TO anon rejects even though PUBLIC itself is closed" grant-to-anon-directly-rejects
+
+# ── Negative: PUBLIC closed and no explicit anon grant at all — must not
+# reject (regression guard against an over-eager anon check).
+write_file no-anon-grant-stays-closed 0000000001_fixture <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.internal_helper() TO authenticated;
+SQL
+assert_exit 0 "round 4: GRANT TO authenticated (not anon) alongside a closed PUBLIC does not reject" no-anon-grant-stays-closed
+
+# ── DROP FUNCTION also resets a previously-explicit anon grant, not just
+# PUBLIC — file #1 is correctly flagged on its own (it opens anon directly
+# with no REVOKE undoing it), but file #2, which DROPs+recreates and closes
+# PUBLIC properly with no new anon grant, must NOT be independently flagged
+# for an anon exposure that no longer exists after the DROP.
+write_file drop-resets-prior-anon-grant-too 0000000001_open_via_anon <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.internal_helper() TO anon;
+SQL
+write_file drop-resets-prior-anon-grant-too 0000000002_drop_recreate_properly_closed <<'SQL'
+DROP FUNCTION public.internal_helper();
+
+CREATE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC;
+SQL
+output=$(bash "$SCRIPT" "$TMP/drop-resets-prior-anon-grant-too" 2>&1 || true)
+if printf '%s' "$output" | grep "::error::" | grep -q "0000000002_drop_recreate_properly_closed"; then
+  fail=$((fail + 1))
+  echo "  FAIL round 4: DROP also resets a prior explicit anon grant — file #2 was flagged even though it re-closes properly after the DROP"
+  printf '%s\n' "$output" | sed 's/^/         /'
+else
+  pass=$((pass + 1))
+  echo "  ok   round 4: DROP also resets a prior explicit anon grant — file #2 (properly re-closed after the DROP) is not flagged, even though file #1 alone correctly is"
+fi
+
+echo ""
 echo "check-migration-safety.sh (rules 4/5): $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
