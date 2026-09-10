@@ -67,12 +67,19 @@ import {
   findRule1Violations,
   findRule1Warnings,
 } from './check-migration-safety-rule1.mjs';
-import { listSqlFiles, changedFilesSince, newViolationsSinceBase } from './check-migration-safety-git.mjs';
+import {
+  listSqlFiles,
+  changedFilesSince,
+  newViolationsSinceBase,
+  buildBaseAclTimeline,
+} from './check-migration-safety-git.mjs';
 import {
   buildRevokeIndex,
   buildAclTimeline,
   findOrphanedOverloadWarnings,
   findGrantWithoutRevokeViolations,
+  isPublicOpenAt,
+  isAnonOpenDirectly,
   lineNumberAt,
 } from './check-migration-safety-acl.mjs';
 import { checkIndexConcurrency, checkUniqueIndexGuard } from './check-migration-safety-rule23.mjs';
@@ -169,6 +176,17 @@ function main(argv) {
   const corpusIndex = new Map(corpusFiles.map((f, i) => [normalizePath(f), i]));
   const fileIdxOf = (f) => corpusIndex.get(normalizePath(f)) ?? corpusFiles.length;
 
+  // B10 (review round 5): rule 5 degrades under --base exactly like rule 1
+  // — a violation that ALREADY existed before this PR warns; only a
+  // GENUINELY NEW one rejects. Without this, any PR touching one of the
+  // corpus's real pre-existing offenders (measured — see the spec) fails CI
+  // for a problem it did not introduce, which is how a guard gets disabled
+  // within a week. See check-migration-safety-git.mjs's buildBaseAclTimeline
+  // for what "state at base" means here.
+  const baseTimeline = base
+    ? buildBaseAclTimeline(base, files, fileStatus, fileOldPath, corpusFiles, fileIdxOf)
+    : null;
+
   let rejected = false;
   // Tracked separately (review round 2, medium finding) so the rule-1
   // summary message ("mixes DDL with an unbounded backfill") does not print
@@ -210,9 +228,25 @@ function main(argv) {
       }
     }
     for (const violation of result.aclRejections) {
-      rejected = true;
-      aclRejected = true;
-      console.error(`::error::${f} — ${violation}`);
+      // B10: same pre-existing/new split as rule 1, using baseTimeline
+      // (state AT base) instead of a statement-identity diff — rule 5's
+      // "identity" is the function's name+signature, not statement text.
+      const status = fileStatus.get(f);
+      const preexisting =
+        base &&
+        (status === 'M' || status === 'R') &&
+        baseTimeline &&
+        (isPublicOpenAt(baseTimeline, violation.name, violation.signature, fileIdxOf(f)) ||
+          isAnonOpenDirectly(baseTimeline, violation.name, violation.signature, fileIdxOf(f)));
+      if (preexisting) {
+        console.log(
+          `::warning::${f} — ${violation.message} (already present before this PR at ${base}; not blocking, but worth fixing while the file is being touched)`
+        );
+      } else {
+        rejected = true;
+        aclRejected = true;
+        console.error(`::error::${f} — ${violation.message}`);
+      }
     }
     for (const w of result.warnings) {
       console.log(`::warning::${f} — ${w}`);

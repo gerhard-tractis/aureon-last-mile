@@ -75,62 +75,14 @@ export {
   lineNumberAt,
 } from './check-migration-safety-acl-parse.mjs';
 
+// Rule 4 (findOrphanedOverloadWarnings/buildRevokeIndex) split out to
+// check-migration-safety-acl-rule4.mjs (review round 5) — this file is
+// rule 5's timeline machinery only.
+export { findOrphanedOverloadWarnings, buildRevokeIndex } from './check-migration-safety-acl-rule4.mjs';
+
 // Sentinel signature for a bare `ON FUNCTION name` reference with no
 // argument list — applies to every overload of `name` (see module doc).
 const WILDCARD_SIGNATURE = '*';
-
-/**
- * Rule 4. `revokeIndex` maps function name -> Set of normalized signatures
- * REVOKEd anywhere in the corpus (built once by the caller across every
- * migration file, not just the one being checked). Returns a list of
- * `{ message, index }` for each new CREATE/CREATE OR REPLACE SECURITY
- * DEFINER FUNCTION (not RETURNS TRIGGER — see module doc) in `rawSql` whose
- * signature does not exactly match any REVOKEd signature for that name
- * (a bare, no-argument-list REVOKE counts as covering every overload),
- * when at least one non-wildcard REVOKE for that name exists.
- */
-export function findOrphanedOverloadWarnings(rawSql, revokeIndex) {
-  const warnings = [];
-  for (const fn of findCreateFunctionSignatures(rawSql)) {
-    if (!fn.isSecurityDefiner || fn.returnsTrigger) continue;
-    const revokedSignatures = revokeIndex.get(fn.name);
-    if (!revokedSignatures || revokedSignatures.size === 0) continue; // nothing to compare against
-    if (revokedSignatures.has(WILDCARD_SIGNATURE) || revokedSignatures.has(fn.signature)) continue; // covered
-    const known = [...revokedSignatures]
-      .filter((s) => s !== WILDCARD_SIGNATURE)
-      .map((s) => `(${s})`)
-      .join(', ');
-    if (!known) continue; // only ever a wildcard reference — already handled above
-    warnings.push({
-      message: `CREATE FUNCTION public.${fn.name}(${fn.signature}) — an earlier REVOKE exists for ${fn.name} but only for a different signature (${known}); it does not cover this overload`,
-      index: fn.index,
-    });
-  }
-  return warnings;
-}
-
-/**
- * Builds { name -> Set(normalized signature | '*') } across every migration
- * file in `filePaths` — rule 4 needs the WHOLE corpus, not just the file
- * being checked, because the REVOKE it looks for typically lives in an
- * earlier migration than the CREATE FUNCTION it's warning about.
- */
-export function buildRevokeIndex(filePaths) {
-  const index = new Map();
-  for (const f of filePaths) {
-    let rawSql;
-    try {
-      rawSql = readFileSync(f, 'utf8');
-    } catch {
-      continue; // unreadable file — skip it for index purposes, checkFile() will report the real error
-    }
-    for (const r of findRevokeSignatures(rawSql)) {
-      if (!index.has(r.name)) index.set(r.name, new Set());
-      index.get(r.name).add(r.signature ?? WILDCARD_SIGNATURE);
-    }
-  }
-  return index;
-}
 
 function pushEvent(map, key, event) {
   if (!map.has(key)) map.set(key, []);
@@ -161,17 +113,37 @@ function pushEvent(map, key, event) {
  * earlier explicit anon grant is gone along with the dropped function — the
  * state becomes "no explicit anon grant", which `isAnonOpenDirectly` reads
  * as closed, same as if anon had never been touched).
+ *
+ * `contentOverrides` (B10, round 5): optional `Map<filePath, content|null>`.
+ * When a path is present, its OVERRIDE content is scanned instead of the
+ * file on disk — `null` means "did not exist at this point", i.e. the file
+ * contributes no events at all. Used to build a SECOND timeline reflecting
+ * corpus state AT `--base`, so rule 5 can tell a violation that already
+ * existed before this PR (degrade to warning) from one this PR introduces
+ * (reject) — the same distinction rule 1 already makes, extended to rule 5.
  */
-export function buildAclTimeline(filePaths) {
+export function buildAclTimeline(filePaths, contentOverrides) {
   const perKey = new Map(); // `${name}::${signature|'*'}` -> [{fileIdx, charIdx, type}]
   const anonPerKey = new Map(); // same shape, 'anon'-named events only
   const schemaWide = []; // [{fileIdx, charIdx, type: 'grant'}]
+  // B3 (round 5): a schema-wide grant naming `anon` (not `PUBLIC`) reopens
+  // every function it covers to `anon` directly in one statement — the
+  // round-3 schema-wide tracking only ever checked for PUBLIC in the role
+  // list, so this axis (schema-wide) and the anon axis (per-function) never
+  // crossed.
+  const anonSchemaWide = [];
   filePaths.forEach((f, fileIdx) => {
     let rawSql;
-    try {
-      rawSql = readFileSync(f, 'utf8');
-    } catch {
-      return;
+    if (contentOverrides && contentOverrides.has(f)) {
+      const override = contentOverrides.get(f);
+      if (override === null) return; // did not exist at this point in history
+      rawSql = override;
+    } else {
+      try {
+        rawSql = readFileSync(f, 'utf8');
+      } catch {
+        return;
+      }
     }
     for (const r of findRevokeSignatures(rawSql)) {
       const key = `${r.name}::${r.signature ?? WILDCARD_SIGNATURE}`;
@@ -192,8 +164,12 @@ export function buildAclTimeline(filePaths) {
       }
     }
     for (const sw of findSchemaWideGrants(rawSql)) {
-      if (!sw.roles.includes('public')) continue;
-      schemaWide.push({ fileIdx, charIdx: sw.index, type: 'grant' });
+      if (sw.roles.includes('public')) {
+        schemaWide.push({ fileIdx, charIdx: sw.index, type: 'grant' });
+      }
+      if (sw.roles.includes('anon')) {
+        anonSchemaWide.push({ fileIdx, charIdx: sw.index, type: 'grant' });
+      }
     }
     for (const d of findDropFunctionSignatures(rawSql)) {
       const key = `${d.name}::${d.signature ?? WILDCARD_SIGNATURE}`;
@@ -201,7 +177,7 @@ export function buildAclTimeline(filePaths) {
       pushEvent(anonPerKey, key, { fileIdx, charIdx: d.index, type: 'revoke' });
     }
   });
-  return { perKey, anonPerKey, schemaWide };
+  return { perKey, anonPerKey, schemaWide, anonSchemaWide };
 }
 
 function comparePos(a, b) {
@@ -238,6 +214,7 @@ export function isAnonOpenDirectly(timeline, name, signature, uptoFileIdx) {
   const events = [
     ...(timeline.anonPerKey.get(`${name}::${signature}`) || []),
     ...(timeline.anonPerKey.get(`${name}::${WILDCARD_SIGNATURE}`) || []),
+    ...timeline.anonSchemaWide,
   ].filter((e) => e.fileIdx <= uptoFileIdx);
   if (events.length === 0) return false;
   events.sort(comparePos);
@@ -245,8 +222,14 @@ export function isAnonOpenDirectly(timeline, name, signature, uptoFileIdx) {
 }
 
 /**
- * Rule 5 (redesigned rounds 2-3, extended round 4 — see module doc for why).
- * Returns a list of rejection messages: for each CREATE/CREATE OR REPLACE
+ * Rule 5 (redesigned rounds 2-3, extended rounds 4-5 — see module doc for
+ * why). Returns a list of `{ message, name, signature }` — structured
+ * rather than a plain message string (B10, round 5) so
+ * check-migration-safety.mjs can re-run `isPublicOpenAt`/`isAnonOpenDirectly`
+ * for the SAME name+signature against a SECOND timeline built from corpus
+ * state at `--base`, to decide whether a violation is pre-existing (degrade
+ * to warning) or newly introduced by this PR (reject) — the same
+ * distinction rule 1 already makes. For each CREATE/CREATE OR REPLACE
  * SECURITY DEFINER FUNCTION (not RETURNS TRIGGER) in `rawSql`, whether
  * PUBLIC is open for that exact signature, OR `anon` has been explicitly
  * granted EXECUTE directly (round 4 — `anon` does not need PUBLIC's
@@ -269,9 +252,11 @@ export function findGrantWithoutRevokeViolations(rawSql, timeline, fileIdx) {
       const reason = publicOpen
         ? `PUBLIC's EXECUTE grant is open for this exact signature`
         : `anon has been explicitly GRANTed EXECUTE directly for this exact signature (PUBLIC itself is closed)`;
-      violations.push(
-        `CREATE FUNCTION public.${fn.name}(${fn.signature}) is SECURITY DEFINER and ${reason}, considering the cumulative REVOKE/GRANT history of the whole migrations corpus up to and including this file — add REVOKE ALL ON FUNCTION public.${fn.name}(${fn.signature}) FROM PUBLIC${anonOpen ? ', anon' : ''} (see spec-80 fase 1b, 20260913000004)`
-      );
+      violations.push({
+        message: `CREATE FUNCTION public.${fn.name}(${fn.signature}) is SECURITY DEFINER and ${reason}, considering the cumulative REVOKE/GRANT history of the whole migrations corpus up to and including this file — add REVOKE ALL ON FUNCTION public.${fn.name}(${fn.signature}) FROM PUBLIC${anonOpen ? ', anon' : ''} (see spec-80 fase 1b, 20260913000004)`,
+        name: fn.name,
+        signature: fn.signature,
+      });
     }
   }
   return violations;

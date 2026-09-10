@@ -9,6 +9,7 @@ import { readdirSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { findRule1Violations } from './check-migration-safety-rule1.mjs';
+import { buildAclTimeline } from './check-migration-safety-acl.mjs';
 
 export function listSqlFiles(target) {
   const st = statSync(target);
@@ -91,6 +92,55 @@ export function violationsAtBase(baseSha, filePath, oldPathAtBase) {
   } catch {
     return []; // file did not exist at base under that path -> nothing pre-existed
   }
+}
+
+/**
+ * B10 (review round 5, PR #723): the raw content of `filePath` (as it
+ * existed at `baseSha`, under `oldPathAtBase` — see m8) or `null` if it did
+ * not exist there. Used by rule 5's `--base` degradation (a violation that
+ * ALSO held at base is pre-existing — warn; one that only holds now is
+ * genuinely new — reject) — the same "measure against base" shape as
+ * `violationsAtBase` above, but returning raw content rather than a parsed
+ * violation list, because rule 5's "pre-existing" test needs a whole
+ * second `buildAclTimeline` corpus, not a per-statement diff.
+ */
+export function readFileAtBase(baseSha, filePath, oldPathAtBase) {
+  try {
+    return execFileSync('git', ['show', `${baseSha}:${oldPathAtBase ?? filePath}`], {
+      encoding: 'utf8',
+    });
+  } catch {
+    return null; // did not exist at base under that path
+  }
+}
+
+/**
+ * B10 (review round 5): the full `buildAclTimeline` corpus AS OF `baseSha`
+ * — split out of check-migration-safety.mjs's `main()` (review round 5) to
+ * keep that file under the repo's 300-line limit, same reason this file
+ * already exists. `corpusPath = corpusFiles[fileIdxOf(f)]` is the exact
+ * string `buildAclTimeline` iterates over for that file — overrides must be
+ * keyed by that, not by `f` (which under `--base` is a forward-slash
+ * git-diff path that may differ from `corpusFiles`'s platform separator).
+ * Unchanged files get no override (read from disk — identical at base,
+ * since base is an ancestor and the file wasn't touched); `M`/`R` files
+ * read via `git show base:<oldPath>`; `A`(dded) files get an explicit
+ * `null` override — they did not exist at base, so nothing they contain
+ * should count as having applied before this PR.
+ */
+export function buildBaseAclTimeline(baseSha, files, fileStatus, fileOldPath, corpusFiles, fileIdxOf) {
+  const overrides = new Map();
+  for (const f of files) {
+    const status = fileStatus.get(f);
+    const corpusPath = corpusFiles[fileIdxOf(f)];
+    if (corpusPath === undefined) continue; // should not happen — checked file is always in corpusFiles
+    if (status === 'A') {
+      overrides.set(corpusPath, null);
+    } else if (status === 'M' || status === 'R') {
+      overrides.set(corpusPath, readFileAtBase(baseSha, f, fileOldPath.get(f)));
+    }
+  }
+  return buildAclTimeline(corpusFiles, overrides);
 }
 
 /**

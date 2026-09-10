@@ -1392,11 +1392,19 @@ Extiende `scripts/check-migration-safety.sh` (spec-87 fase 5, en construcción e
 > completo.
 >
 > **Mutation-testing — 4 mutantes, uno a uno, cada uno restaurado a verde
-> antes del siguiente:**
+> antes del siguiente. Corrección (ronda 5, B6): esta lista afirmaba que el
+> mutante 1 mataba "exactamente 1 test" — es falso, medido de nuevo con el
+> comando de abajo y no de memoria: mata 3, incluido el de reseteo de
+> `anon` vía `DROP` (que SÍ depende de esa rama — `pushEvent(anonPerKey, ...
+> type: 'revoke')` vive dentro del mismo bucle). La conclusión ("el mutante
+> murió, restaurado") seguía siendo correcta; la razón escrita al lado no
+> lo era.**
 > 1. Quitar el bucle de `findDropFunctionSignatures` de `buildAclTimeline`
->    → mató exactamente los 2 tests de DROP+CREATE (con y sin paréntesis);
->    el test del overload distinto y el de reseteo de `anon` no dependían de
->    esa rama y siguieron en verde, como se esperaba.
+>    → mata 3 tests: los 2 de DROP+CREATE (con y sin paréntesis) y el de
+>    "DROP también resetea un GRANT previo a anon" (verificado:
+>    `bash scripts/check-migration-safety-acl.test.sh 2>&1 | grep -c FAIL`
+>    → `3`). El test del overload distinto no depende de esa rama y sigue
+>    en verde, como se esperaba.
 > 2. Cambiar `if (publicOpen || anonOpen)` a `if (publicOpen)` en
 >    `findGrantWithoutRevokeViolations` → mató exactamente el test de
 >    `GRANT ... TO anon` directo.
@@ -1416,13 +1424,18 @@ Extiende `scripts/check-migration-safety.sh` (spec-87 fase 5, en construcción e
 > packages/database/supabase/migrations | wc -l`) y **0** que contengan un
 > `GRANT EXECUTE ... TO anon` directo (`grep -rEli 'GRANT\s+EXECUTE\s+ON\s+
 > FUNCTION.*TO\s+anon\b' packages/database/supabase/migrations | wc -l`).
-> Escaneando el corpus completo con el chequeo ya extendido
-> (`node scripts/check-migration-safety.mjs
-> packages/database/supabase/migrations`), los rechazos siguen siendo
-> exactamente los mismos 3 de siempre (`expand_carton`,
-> `add_dock_zone_adjacency_pair`/`remove_dock_zone_adjacency_pair`,
-> `close_manifest`) — ninguno de los 16 `DROP FUNCTION` reales del corpus
-> introduce un falso positivo nuevo.
+> **Corrección (ronda 5, B5): la frase de abajo ("los rechazos siguen
+> siendo exactamente los mismos 3 de siempre") es falsa, y es la cuarta
+> cifra sin verificar que se propaga en este spec.** El reviewer la midió:
+> `node scripts/check-migration-safety.mjs packages/database/supabase/migrations`
+> da, con el código de esta ronda (4), **56 rechazos en 35 ficheros sobre
+> 33 funciones distintas** — no 3. La conclusión que SÍ se sostiene (y es
+> la que de verdad importaba comprobar) es la más estrecha: de esos 56, ni
+> uno es un falso positivo nuevo introducido por el soporte de `DROP
+> FUNCTION`/`anon` directo de esta ronda — son violaciones reales,
+> preexistentes, que la regla 5 ya encontraba desde antes de esta ronda
+> (documentadas en la fase 5 de este mismo spec). "Los rechazos no
+> cambiaron" habría sido la frase honesta; "son 3" no lo era.
 >
 > **Regresión**: las 8 suites preexistentes de `check-migration-safety*`
 > siguen en verde tras el rebase (13, 11, 10, 10, 10, 8, 6, y ahora 42 —
@@ -1438,6 +1451,195 @@ Extiende `scripts/check-migration-safety.sh` (spec-87 fase 5, en construcción e
 > Review: pendiente sobre esta ronda 4.
 > QA: pendiente — PR sin auto-merge, a la espera de review.
 > Downstream: ninguno declarado en la cabecera del spec — sin cambios.
+
+> **Ronda 5 (review adversarial, PR #723) — "no mergeable". Seis
+> hallazgos Alto/Medio cerrados, uno (B10) era una decisión de diseño del
+> reviewer que se implementó, cuatro (B7/B9/B11/B12) quedan como deuda
+> declarada abajo.**
+>
+> **Lo que el review verificó y se sostiene** (no se repite el trabajo,
+> se cita): salida del corpus byte-a-byte idéntica entre rondas 3 y 4;
+> la máquina de estados respeta el orden real de sentencias (`DROP;
+> CREATE; GRANT auth; REVOKE FROM PUBLIC` → `rc=0`; orden invertido →
+> `rc=1`); la precisión por sobrecarga (mutar la clave del DROP a
+> comodín, y por separado borrar el parseo de la firma, matan ambos);
+> `GRANT TO PUBLIC` seguido de `REVOKE FROM anon` sigue rechazando
+> (correcto — `REVOKE FROM anon` no borra el grant de PUBLIC que anon
+> hereda).
+>
+> **B1 [Alto] — rol entrecomillado invisible.** `splitRoleList` hacía
+> `.toLowerCase()` pero nunca quitaba comillas: `TO "anon"` (la forma que
+> emite `supabase db diff`, precedente real en el repo:
+> `20250130181641_todo_list.sql:23`) no coincidía con `'anon'`. Arreglado:
+> `.replace(/^"|"$/g, '')` tras el `toLowerCase()`. TDD: 1 test, rojo por
+> la razón correcta (`expected exit 1, got 0`) antes del fix. Mutation:
+> revertir el `.replace` mata exactamente ese test, ninguno más.
+>
+> **B2 [Alto] — `GRANT ALL`/`GRANT ALL PRIVILEGES` invisibles.**
+> `GRANT_HEADER_RE` sólo aceptaba `EXECUTE`, mientras `REVOKE_HEADER_RE`
+> ya aceptaba `ALL(\s+PRIVILEGES)?|EXECUTE` — la asimetría estaba en el
+> lado que abre, no en el que cierra. Arreglado: mismo patrón `ALL(\s+
+> PRIVILEGES)?|EXECUTE` en `GRANT_HEADER_RE`. TDD: 2 tests (`GRANT ALL`,
+> `GRANT ALL PRIVILEGES`), ambos rojos por la razón correcta. Mutation:
+> revertir a sólo `EXECUTE` mata exactamente esos 2 tests.
+>
+> **B3 [Alto] — grant de esquema completo a `anon` invisible.** La ronda
+> 3 sólo trackeaba `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public` para
+> `PUBLIC`; el eje "esquema completo" y el eje "anon directo" (ronda 4)
+> nunca se cruzaban. Arreglado: `buildAclTimeline` gana `anonSchemaWide`
+> (mismo patrón que `schemaWide`), consultado por `isAnonOpenDirectly`.
+> TDD: 1 test (`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon`
+> reabre una función ya cerrada por `PUBLIC`), rojo por la razón correcta.
+> Mutation — 2 mutantes, uno a uno: (a) quitar la rama `anon` de la
+> construcción de `anonSchemaWide` → mata exactamente ese test; (b) quitar
+> `...timeline.anonSchemaWide` del array de eventos en
+> `isAnonOpenDirectly` → mata exactamente ese test.
+>
+> **B4 [Medio] — rama comodín de `isAnonOpenDirectly` sin test.** Cierto:
+> ningún test existente disparaba `GRANT EXECUTE ON FUNCTION nombre TO
+> anon` (referencia sin paréntesis, PG14+). Añadido. Mutation: quitar
+> `...(timeline.anonPerKey.get(...WILDCARD_SIGNATURE) || [])` del array
+> de `isAnonOpenDirectly` → mata exactamente ese test nuevo, ninguno de
+> los 46 anteriores.
+>
+> **B5/B6 [cifras falsas] — corregidas in situ, arriba, donde se
+> escribieron originalmente** (no aquí, para que quien lea la ronda 4 vea
+> la corrección junto a la afirmación que corrige). Regla seguida desde
+> aquí en adelante: cada cifra que seguía se verificó con el comando al
+> lado, no se copió.
+>
+> **B8 [barato, arreglado aunque no estaba en la lista Alto/Medio] — DROP
+> dentro de un cuerpo `$$...$$` contaba como reset real.**
+> `findCreateFunctionSignatures` ya acota su ventana de opciones al
+> exterior del cuerpo (ronda 3); `findDropFunctionSignatures` no tenía la
+> misma protección — la asimetría era interna, no del reviewer.
+> Arreglado: `stripFunctionBodies` (ya existente,
+> `check-migration-safety-rule1.mjs`, blanquea `AS $$...$$` pero no
+> `DO $$...$$`, que sí corre) aplicado antes de escanear. TDD: 1 test
+> (una función que `RETURN`a el texto literal `'DROP FUNCTION
+> public.internal_helper();'` no cuenta como DROP real), rojo por la
+> razón correcta. Mutation: quitar `stripFunctionBodies(...)` del scan →
+> mata exactamente ese test.
+>
+> **B10 [decisión del reviewer, implementada] — la regla 5 degrada bajo
+> `--base` igual que la regla 1.** `buildBaseAclTimeline` (nuevo, en
+> `check-migration-safety-git.mjs` — se extrajo de `main()` para no
+> volver a superar 300 líneas) construye una SEGUNDA línea de tiempo
+> reflejando el estado del corpus AL momento de `base`: ficheros sin
+> tocar se leen de disco (idénticos a como estaban en `base`, por
+> definición de `base` como ancestro); ficheros `M`/`R` se leen vía
+> `git show base:<oldPath>`; ficheros `A` reciben un override explícito
+> `null` (no existían en `base`, así que nada de lo que contengan cuenta
+> como "ya presente antes de este PR"). Una violación de la regla 5 sobre
+> un fichero `M`/`R` se degrada (`::warning::`) si `isPublicOpenAt`/
+> `isAnonOpenDirectly` contra la línea de tiempo de `base` **también** la
+> encuentran abierta; si no, rechaza. Un fichero `A` nunca degrada — no
+> hay "antes" en el que pudiera haber estado a salvo.
+>
+> TDD: 3 tests — violación preexistente sobre fichero tocado degrada;
+> violación genuinamente introducida (el PR borra el `REVOKE`) sigue
+> rechazando bajo `--base`; un fichero `A` insertado antes (por nombre)
+> de un fichero tocado no contamina la línea de tiempo de `base` de ese
+> fichero tocado (el caso cruzado que demuestra por qué el override
+> `null` para `A` importa, no sólo documenta intención). Los tres rojos
+> por la razón correcta antes de implementar.
+>
+> Mutation — 5 mutantes, uno a uno, cada uno restaurado antes del
+> siguiente:
+> 1. `preexisting = false` fijo → mata exactamente el test de
+>    "preexistente degrada".
+> 2. `preexisting = true` fijo → mata **20** tests (todo lo que no usa
+>    `--base`, porque `base` deja de ser la única condición que hace
+>    falso el flag) — el radio de explosión confirma que la guarda
+>    `base &&` es la que de verdad protege el modo sin `--base`.
+> 3. Quitar el filtro `status === 'M' || status === 'R'` → mata
+>    exactamente el test "--base: rule 5 rejects a newly added migration
+>    with the B1 bug" (un fichero `A` empezaba a degradar).
+> 4. Quitar la rama `override.set(corpusPath, readFileAtBase(...))` para
+>    `M`/`R` → mata exactamente el test de "violación genuinamente
+>    introducida" (deja de rechazar, la trata como preexistente porque
+>    el fallback a disco lee el contenido ACTUAL, no el de `base`).
+> 5. Quitar el override `null` para `A` → **sobrevive los 50 tests
+>    existentes.** Investigado, no forzado a pasar: cualquier evento de
+>    un fichero `A` que afecte a la clave de la función también está
+>    presente, sin condición, en la línea de tiempo `timeline` (la real,
+>    no la de `base`) — así que siempre que ese evento es lo bastante
+>    fuerte para cambiar el veredicto de `baseTimeline`, también cambia
+>    si la violación existe siquiera en `timeline`, colapsando el caso
+>    antes de llegar a comparar. La rama es higiene correcta (documenta y
+>    aplica la regla real: "un fichero que no existía en `base` no debe
+>    contar como si hubiera existido"), pero con la arquitectura actual
+>    no hay una construcción de un único fichero `A` + un único fichero
+>    tocado que la haga observable — declarado, no maquillado como
+>    "cazado".
+>
+> **Refactor de tamaño (los dos ficheros que el reviewer no midió pero
+> que crecieron por los arreglos de arriba):** `check-migration-safety.mjs`
+> pasó a 308 líneas y `check-migration-safety-acl.mjs` a 311 —ambos sobre
+> el límite de 300. La construcción de `baseTimeline` se extrajo a
+> `buildBaseAclTimeline` en `check-migration-safety-git.mjs` (292→174,
+> quedaba hueco); la regla 4 completa
+> (`findOrphanedOverloadWarnings`/`buildRevokeIndex`) se extrajo a
+> `check-migration-safety-acl-rule4.mjs` (nuevo, 71 líneas) — este fichero
+> ya no mezcla las dos reglas. Líneas finales: `check-migration-safety.mjs`
+> 292, `check-migration-safety-acl.mjs` 263, `check-migration-safety-acl-parse.mjs`
+> 296, `check-migration-safety-acl-rule4.mjs` 71, `check-migration-safety-git.mjs`
+> 174 — los cinco bajo 300.
+>
+> **Cifras del corpus real, re-medidas tras B1-B4/B8/B10 (comando al
+> lado, no heredadas):**
+> `node scripts/check-migration-safety.mjs packages/database/supabase/migrations
+> 2>&1 | grep -c "::error::"` → **68**. Distinto de los "56" de la ronda 4
+> porque B1-B4 encuentran casos reales que la ronda 4 no veía (roles
+> entrecomillados, `GRANT ALL`, grants de esquema completo a `anon`) —
+> no investigado cuáles de los 68 son cuáles; queda para quien tome la
+> fase 5 de este spec, que es donde vive la responsabilidad de auditar
+> caso por caso.
+> `grep -rEli '^\s*DROP\s+FUNCTION\b' packages/database/supabase/migrations
+> | wc -l` → **16** (anclado — el mismo comando que la regla usa
+> internamente para su header). Sin anclar (`grep -rEl 'DROP\s+FUNCTION'`)
+> → **17** — el 17º sólo aparece en un comentario, que `stripLineComments`
+> ya elimina; confirma B11 (medir con el instrumento equivocado da una
+> cifra plausible pero no real).
+>
+> **Deuda declarada — no arreglada esta ronda, con su forma exacta:**
+> - **B7.** `DROP FUNCTION a(), b();` (lista separada por comas, SQL
+>   válido) sólo registra el primer nombre — la segunda función queda sin
+>   resetear (falsamente cerrada si tenía un `REVOKE` histórico que ya no
+>   aplica tras el DROP real). No reproducido en el corpus actual
+>   (`grep -rEl 'DROP\s+FUNCTION\s+\w+\s*\([^;]*,' packages/database/supabase/migrations`
+>   → vacío), pero es SQL legal y el parser no lo distingue.
+> - **B9.** Un `DROP FUNCTION nombre;` (sin paréntesis, referencia
+>   desnuda) que aparece DESPUÉS de un `CREATE FUNCTION nombre(tipos)`
+>   correctamente cerrado, en el mismo fichero, reabre la firma vía la
+>   entrada comodín — falso positivo sobre un fichero que en realidad
+>   está bien. Requiere que la firma exacta y el comodín se resuelvan de
+>   forma consciente del ORDEN, no sólo unidos en un array — cambio de
+>   diseño, no una línea.
+> - **B11.** Corregido como hallazgo de medición arriba (16 anclado, 17
+>   sin anclar) — no requiere cambio de código, la regla ya usa el patrón
+>   anclado internamente.
+> - **B12.** `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON
+>   FUNCTIONS TO anon` pasa en verde (falla ABIERTO — el que preocupa,
+>   confirmado con un fixture: `exit 0` sin ningún `::warning::`/
+>   `::error::` que lo mencione). `REVOKE ALL ... ON ROUTINE` (sinónimo
+>   válido de `FUNCTION` desde PG11) tampoco se ve — falla CERRADO (más
+>   seguro: un `REVOKE` real que el check no reconoce sólo produce un
+>   falso rechazo, no un falso "todo bien"). Modelar `ALTER DEFAULT
+>   PRIVILEGES` requiere un tercer eje en la línea de tiempo (afecta sólo
+>   a funciones creadas DESPUÉS del `ALTER`, no a las existentes) —
+>   diseño nuevo, no una línea; se deja fuera de esta ronda a propósito
+>   en vez de improvisar una regla a medias que podría introducir sus
+>   propios falsos positivos/negativos.
+>
+> **Regresión final**: 8 suites de `check-migration-safety*`, **119
+> aserciones, 0 fallos** (13, 11, 10, 10, 10, 8, 6, y 51 —antes 36— de
+> `check-migration-safety-acl.test.sh`). `node --check` limpio en los
+> cinco `.mjs` de la superficie ACL.
+>
+> PR: #723, **sin auto-merge**. Review: pendiente sobre esta ronda 5.
+> QA: pendiente. Downstream: ninguno declarado en la cabecera del spec —
+> sin cambios.
 
 
 ### Fase 5 — Defensa en profundidad del resto `[in_progress]`

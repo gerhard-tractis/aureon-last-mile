@@ -809,5 +809,291 @@ else
 fi
 
 echo ""
+echo "-- round 5 (PR #723 review, B1-B4: two more direct-anon shapes, one more DROP shape, one untested branch) --"
+
+# ── B1: a QUOTED role name ("anon") is what `supabase db diff` actually
+# emits (real precedent: 20250130181641_todo_list.sql:23, `to "anon"`) —
+# splitRoleList lower-cased but never stripped the quotes, so `"anon"` never
+# matched the literal `'anon'` check.
+write_file b1-quoted-anon-role-rejects 0000000001_fixture <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.internal_helper() TO "anon";
+SQL
+assert_exit 1 "B1: GRANT ... TO \"anon\" (quoted, the supabase db diff form) rejects same as unquoted" b1-quoted-anon-role-rejects
+
+# ── B2: GRANT ALL (not just GRANT EXECUTE) ON FUNCTION ... TO anon must be
+# seen — REVOKE already accepted ALL|EXECUTE symmetrically; GRANT_HEADER_RE
+# only accepted EXECUTE, which is the wrong side to be strict on (the OPEN
+# side, not the CLOSE side).
+write_file b2-grant-all-to-anon-rejects 0000000001_fixture <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.internal_helper() TO anon;
+SQL
+assert_exit 1 "B2: GRANT ALL (not GRANT EXECUTE) ON FUNCTION ... TO anon rejects" b2-grant-all-to-anon-rejects
+
+write_file b2-grant-all-privileges-to-anon-rejects 0000000001_fixture <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC;
+GRANT ALL PRIVILEGES ON FUNCTION public.internal_helper() TO anon;
+SQL
+assert_exit 1 "B2: GRANT ALL PRIVILEGES ON FUNCTION ... TO anon rejects" b2-grant-all-privileges-to-anon-rejects
+
+# ── B3: a schema-wide grant that names `anon` (not `PUBLIC`) opens every
+# SECURITY DEFINER function it covers to anon directly, in one statement —
+# the round-3 schema-wide tracking only ever checked for PUBLIC in the role
+# list, never anon.
+write_file b3-schema-wide-grant-to-anon-rejects 0000000001_harden <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC;
+SQL
+write_file b3-schema-wide-grant-to-anon-rejects 0000000002_schema_wide_grant_to_anon <<'SQL'
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon;
+SQL
+write_file b3-schema-wide-grant-to-anon-rejects 0000000003_replace_no_acl_touch <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+assert_exit 1 "B3: a schema-wide GRANT ... TO anon reopens every function it covers, even PUBLIC-closed ones" b3-schema-wide-grant-to-anon-rejects
+
+# ── B4: the wildcard branch of isAnonOpenDirectly — a bare (no-parens)
+# GRANT ... TO anon reference, PG14+, unambiguous name — was never exercised
+# by any existing test; this is the case that specifically needs it.
+write_file b4-bare-grant-to-anon-wildcard-rejects 0000000001_fixture <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.internal_helper TO anon;
+SQL
+assert_exit 1 "B4: a bare (no-parens) GRANT ... TO anon reference rejects — exercises isAnonOpenDirectly's wildcard branch" b4-bare-grant-to-anon-wildcard-rejects
+
+echo ""
+echo "-- B10 (review round 5, decision): rule 5 degrades under --base same as rule 1 --"
+
+# ── A violation that ALREADY existed at base, on a file this PR merely
+# TOUCHES (without fixing the ACL), must WARN, not reject — otherwise any
+# PR editing one of the corpus's 35+ pre-existing offenders fails CI for a
+# problem it did not introduce (the "check disables itself in a week"
+# scenario B10 exists to prevent).
+GIT_FIXTURE3="$TMP/gitrepo-rule5-base-preexisting"
+mkdir -p "$GIT_FIXTURE3/migrations"
+(
+  cd "$GIT_FIXTURE3"
+  git init -q
+  git config user.email test@example.com
+  git config user.name test
+  cat > migrations/0000000001_already_open.sql <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+  git add -A
+  git commit -q -m base
+  cat > migrations/0000000001_already_open.sql <<'SQL'
+-- touched by this PR for an unrelated reason, ACL still not closed
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+  git add -A
+  git commit -q -m "touch file for an unrelated reason"
+)
+BASE_SHA3=$(cd "$GIT_FIXTURE3" && git rev-parse HEAD~1)
+output3=$(cd "$GIT_FIXTURE3" && bash "$SCRIPT" --base "$BASE_SHA3" migrations 2>&1)
+actual3=$?
+if [ "$actual3" -eq 0 ] && printf '%s' "$output3" | grep -q "::warning::.*already present before this PR"; then
+  pass=$((pass + 1))
+  echo "  ok   B10: a pre-existing rule-5 violation on a touched (not fixed) file degrades to a warning, does not reject"
+else
+  fail=$((fail + 1))
+  echo "  FAIL B10: pre-existing rule-5 violation did not degrade — expected exit 0 with a degradation warning, got exit $actual3"
+  printf '%s\n' "$output3" | sed 's/^/         /'
+fi
+
+# ── A violation this PR genuinely INTRODUCES — the file was properly
+# closed at base, and this PR's edit removes the REVOKE — must still
+# reject. Degradation must not become a blanket exemption for every edit.
+GIT_FIXTURE4="$TMP/gitrepo-rule5-base-newly-introduced"
+mkdir -p "$GIT_FIXTURE4/migrations"
+(
+  cd "$GIT_FIXTURE4"
+  git init -q
+  git config user.email test@example.com
+  git config user.name test
+  cat > migrations/0000000001_properly_closed.sql <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC;
+SQL
+  git add -A
+  git commit -q -m base
+  cat > migrations/0000000001_properly_closed.sql <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+  git add -A
+  git commit -q -m "PR removes the REVOKE — this is the bug"
+)
+BASE_SHA4=$(cd "$GIT_FIXTURE4" && git rev-parse HEAD~1)
+output4=$(cd "$GIT_FIXTURE4" && bash "$SCRIPT" --base "$BASE_SHA4" migrations 2>&1)
+actual4=$?
+if [ "$actual4" -eq 1 ] && printf '%s' "$output4" | grep -q "::error::.*internal_helper"; then
+  pass=$((pass + 1))
+  echo "  ok   B10: a violation genuinely introduced by this PR's edit (REVOKE removed) still rejects, even under --base"
+else
+  fail=$((fail + 1))
+  echo "  FAIL B10: a newly-introduced rule-5 violation did not reject — expected exit 1 with an ::error::, got exit $actual4"
+  printf '%s\n' "$output4" | sed 's/^/         /'
+fi
+
+# ── B10 cross-file: an ADDED file must contribute NOTHING to baseTimeline —
+# it did not exist at base. A file lexically ordered BEFORE it that is only
+# TOUCHED (not fixed) must still read as "was already open at base", i.e.
+# degrade — not have its baseline state polluted by the added file's
+# CURRENT (post-PR) content leaking backward into "state at base".
+GIT_FIXTURE5="$TMP/gitrepo-rule5-base-added-does-not-pollute"
+mkdir -p "$GIT_FIXTURE5/migrations"
+(
+  cd "$GIT_FIXTURE5"
+  git init -q
+  git config user.email test@example.com
+  git config user.name test
+  cat > migrations/0000000001_open_fn.sql <<'SQL'
+CREATE OR REPLACE FUNCTION public.shared_fn() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+  git add -A
+  git commit -q -m base
+  cat > migrations/0000000000_inserted_before.sql <<'SQL'
+REVOKE ALL ON FUNCTION public.shared_fn() FROM PUBLIC;
+SQL
+  cat > migrations/0000000001_open_fn.sql <<'SQL'
+-- touched by this PR for an unrelated reason, still open
+CREATE OR REPLACE FUNCTION public.shared_fn() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+  git add -A
+  git commit -q -m "add an earlier-sorting file with its own REVOKE, and touch the open one"
+)
+BASE_SHA5=$(cd "$GIT_FIXTURE5" && git rev-parse HEAD~1)
+output5=$(cd "$GIT_FIXTURE5" && bash "$SCRIPT" --base "$BASE_SHA5" migrations 2>&1)
+if printf '%s' "$output5" | grep -q "::error::.*0000000001_open_fn.sql"; then
+  fail=$((fail + 1))
+  echo "  FAIL B10 cross-file: the added file's CURRENT content leaked into baseTimeline, wrongly rejecting a pre-existing violation"
+  printf '%s\n' "$output5" | sed 's/^/         /'
+else
+  pass=$((pass + 1))
+  echo "  ok   B10 cross-file: an added file contributes nothing to baseTimeline — the touched file's pre-existing violation still degrades"
+fi
+
+# ── B8: a `DROP FUNCTION` mentioned inside another function's dollar-quoted
+# BODY (e.g. a code-generation helper that emits SQL text, or a comment
+# preserved inside a string literal) must not count as a real reset — the
+# body never runs at migration-apply time on its own. findCreateFunctionSignatures
+# already bounds its option-clause scan to outside function bodies (round 3,
+# the window-bound test); findDropFunctionSignatures needs the same
+# treatment.
+write_file b8-drop-inside-function-body-does-not-count 0000000001_harden <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC;
+SQL
+write_file b8-drop-inside-function-body-does-not-count 0000000002_unrelated_body_mentions_drop <<'SQL'
+CREATE OR REPLACE FUNCTION public.emits_ddl_text() RETURNS TEXT
+LANGUAGE plpgsql
+AS $function$
+BEGIN
+  -- this body never runs "DROP FUNCTION public.internal_helper();" for real —
+  -- it only returns the literal text below
+  RETURN 'DROP FUNCTION public.internal_helper();';
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+assert_exit 0 "B8: a DROP FUNCTION mentioned inside a function BODY (never actually run) does not count as a real reset" b8-drop-inside-function-body-does-not-count
+
+echo ""
 echo "check-migration-safety.sh (rules 4/5): $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

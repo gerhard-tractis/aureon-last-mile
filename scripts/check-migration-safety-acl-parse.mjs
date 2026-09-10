@@ -12,6 +12,7 @@
  * FUNCTION` (same shape), and every schema-wide `GRANT EXECUTE ON ALL
  * FUNCTIONS IN SCHEMA` (role list only — it has no single function name).
  */
+import { stripFunctionBodies } from './check-migration-safety-rule1.mjs';
 
 /** Strips `-- ...` line comments so comment text never matches a rule
  * (same pattern as check-migration-safety.mjs's rules 2/3) — otherwise a
@@ -105,12 +106,16 @@ export function normalizeSignature(paramsRaw) {
  *    valid Postgres — CASCADE/RESTRICT is a trailing keyword of the REVOKE
  *    statement, not a role name, and must be stripped before splitting or
  *    it corrupts the last role into the literal string "public cascade".
+ *  - B1 (round 5): a double-quoted role (`TO "anon"`) is what `supabase db
+ *    diff` actually emits — real precedent in this repo,
+ *    `20250130181641_todo_list.sql:23` (`grant ... to "anon";`). Without
+ *    stripping the quotes, `"anon" !== 'anon'` and the role never matches.
  */
 function splitRoleList(roleListRaw) {
   const withoutTrailingKeyword = roleListRaw.replace(/\s+(CASCADE|RESTRICT)\s*$/i, '');
   return withoutTrailingKeyword
     .split(',')
-    .map((r) => r.trim().toLowerCase())
+    .map((r) => r.trim().toLowerCase().replace(/^"|"$/g, ''))
     .filter(Boolean);
 }
 
@@ -123,7 +128,11 @@ const CREATE_FN_RE = /CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\s+(?:"?public"?\.)?"?(
 // name is unambiguous — the paren group, if present, is parsed separately
 // below.
 const REVOKE_HEADER_RE = /REVOKE\s+(?:ALL(?:\s+PRIVILEGES)?|EXECUTE)\s+ON\s+FUNCTION\s+(?:"?public"?\.)?"?(\w+)"?/gi;
-const GRANT_HEADER_RE = /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+(?:"?public"?\.)?"?(\w+)"?/gi;
+// B2 (round 5): GRANT ALL / GRANT ALL PRIVILEGES opens EXECUTE exactly like
+// GRANT EXECUTE does — REVOKE already accepted both forms symmetrically
+// (above); GRANT only accepting EXECUTE was strict on the wrong side: the
+// side that OPENS access, not the side that closes it.
+const GRANT_HEADER_RE = /GRANT\s+(?:ALL(?:\s+PRIVILEGES)?|EXECUTE)\s+ON\s+FUNCTION\s+(?:"?public"?\.)?"?(\w+)"?/gi;
 const SCHEMA_WIDE_GRANT_RE =
   /GRANT\s+EXECUTE\s+ON\s+ALL\s+FUNCTIONS\s+IN\s+SCHEMA\s+(?:"?public"?)\s+TO\s+([^;]+)/gi;
 // DROP FUNCTION [IF EXISTS] name[(...)] — round 4: unlike CREATE OR REPLACE
@@ -243,7 +252,10 @@ export function findGrantExecuteSignatures(rawSql) {
  * GRANT there is no role list to parse — a DROP destroys the function's ACL
  * entirely, it doesn't touch a specific role. */
 export function findDropFunctionSignatures(rawSql) {
-  const sql = stripLineComments(rawSql);
+  // B8 (round 5): a DROP mentioned inside another function's dollar-quoted
+  // BODY never runs at apply time — same asymmetry findCreateFunctionSignatures
+  // already closed via its option-clause window (round 3).
+  const sql = stripLineComments(stripFunctionBodies(rawSql));
   const results = [];
   const re = new RegExp(DROP_HEADER_RE.source, DROP_HEADER_RE.flags);
   let m;
