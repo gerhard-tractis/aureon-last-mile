@@ -1833,10 +1833,18 @@ Extiende `scripts/check-migration-safety.sh` (spec-87 fase 5, en construcción e
 > (INVOKER→DEFINER, TRIGGER→no-trigger), ambos confirmados en rojo por
 > la razón correcta (`::warning::` con "already present", `exit=0`,
 > cuando debía ser `::error::`/`exit=1`) antes de tocar el `.some(...)`.
-> Mutation — 2 mutantes, uno a uno, restaurados entre cada uno: quitar
-> `fn.isSecurityDefiner` → mata exactamente el test INVOKER→DEFINER;
-> quitar `!fn.returnsTrigger` → mata exactamente el test
-> TRIGGER→no-trigger.
+> Mutation — 2 mutantes, uno a uno, restaurados entre cada uno.
+> **Corrección (post-merge, verificación pedida por el coordinador):
+> "mata exactamente el test INVOKER→DEFINER" era impreciso — medido de
+> nuevo, quitar `fn.isSecurityDefiner` mata 2 tests, no 1: el
+> INVOKER→DEFINER de M1 **y** el fixture de rechazo de M2 (abajo), que
+> también depende de este filtro porque su escenario ES un flip
+> INVOKER→DEFINER, sólo que con rename genuino de por medio. Quitar
+> `!fn.returnsTrigger` sí mata exactamente 1: el test TRIGGER→no-trigger
+> de M1, que no comparte fixture con ningún otro test.** Quitar ambas
+> condiciones a la vez mata 3 (los dos de M1 más el de M2). Los tres
+> conteos re-verificados en esta corrección, con el arnés imprimiendo
+> el `FAIL` en los tres casos, uno a la vez, restaurado entre cada uno.
 >
 > **m3 [Menor, no cosmético] — comentario falso en el propio fichero
 > que este commit edita.** `check-migration-safety.mjs` decía que la
