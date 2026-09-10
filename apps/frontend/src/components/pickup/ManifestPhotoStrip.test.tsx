@@ -146,7 +146,7 @@ describe('ManifestPhotoStrip', () => {
     mockUseManifestDocuments.mockReturnValue({ data: undefined, isFetching: false });
     render(<ManifestPhotoStrip operatorId="op-1" manifestId="manifest-1" userId="user-1" />);
 
-    expect(screen.getByTestId('manifest-photo-count')).not.toHaveTextContent('0');
+    expect(screen.getByTestId('manifest-photo-count')).toHaveTextContent('—');
     expect(screen.getByRole('button', { name: /agregar/i })).toBeDisabled();
   });
 

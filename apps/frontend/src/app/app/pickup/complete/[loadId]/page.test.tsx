@@ -538,6 +538,7 @@ describe('CompletionPage', () => {
 
     await completeAndSubmit();
 
+    await screen.findByText('Carga cerrada');
     expect(
       within(screen.getByTestId('summary-row-backup')).getByText('5 fotos · 1 firmas')
     ).toBeInTheDocument();
