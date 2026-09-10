@@ -158,9 +158,14 @@ export function PickupFlowHeader({
           aria-valuemin={0}
           aria-valuemax={total}
           aria-valuetext={unknown ? 'Desconocido sin conexión' : undefined}
+          // Menor, ronda 4 de review del PR #727 — antes esto era
+          // `w-full`: una barra LLENA se lee como 100% a simple vista, la
+          // misma mentira que `aria-valuetext` sólo arregla para lector de
+          // pantalla. `w-1/3` + `animate-pulse` se lee como "cargando/no lo
+          // sé", nunca como "completo".
           className={
             unknown
-              ? 'h-[9px] w-full rounded-full bg-border-strong'
+              ? 'h-[9px] w-1/3 animate-pulse rounded-full bg-border-strong'
               : 'h-[9px] rounded-full bg-accent transition-all'
           }
           style={unknown ? undefined : { width: `${pct}%` }}

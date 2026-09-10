@@ -163,6 +163,25 @@ describe('PickupFlowHeader', () => {
     expect(screen.getByRole('progressbar')).toHaveStyle({ width: '99%' });
   });
 
+  // Menor, ronda 4 de review del PR #727 — la barra "no lo sé" (`scanned:
+  // null`) se pintaba `w-full`: una barra LLENA se lee como 100% a simple
+  // vista, exactamente la mentira que `aria-valuetext` sólo corrige para
+  // lector de pantalla, no para el ojo.
+  it('does not paint the indeterminate bar full-width (w-full reads as 100%, not "unknown")', () => {
+    render(
+      <PickupFlowHeader
+        loadId="CARGA-001"
+        retailerName={null}
+        pickupPoint={null}
+        scanned={null}
+        total={25}
+        queuedCount={0}
+        blockedCount={0}
+      />
+    );
+    expect(screen.getByRole('progressbar')).not.toHaveClass('w-full');
+  });
+
   describe('queue badge', () => {
     it('shows "COLA N" when there are queued scans', () => {
       render(
