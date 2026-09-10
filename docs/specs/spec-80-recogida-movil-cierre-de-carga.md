@@ -1261,18 +1261,17 @@ pantalla que promete al operario algo que el código no hace. Aquí es peor que
 en otros casos, porque lo que se pierde es la evidencia fotográfica del
 traspaso de custodia — el respaldo de una eventual indemnización.
 
-- [ ] `ManifestPhotoStrip` llama a `enqueueManifestPhoto`, **no** a
+- [x] `ManifestPhotoStrip` llama a `enqueueManifestPhoto`, **no** a
       `useUploadManifestDocument`.
-- [ ] La captura entra por `5g`/`5h` (`onUsePhoto` entrega un `File`, que **es**
+- [x] La captura entra por `5g`/`5h` (`onUsePhoto` entrega un `File`, que **es**
       un `Blob`: encaja sin reconversión).
-- [ ] `externalLoadId` se pasa al encolar — sin él, el chip de sync (spec-81
+- [x] `externalLoadId` se pasa al encolar — sin él, el chip de sync (spec-81
       fase 4) no puede decirle al operario **qué carga** abrir cuando una foto
       queda muerta.
-- [ ] Test que ejercite el camino sin señal de punta a punta: capturar →
-      encolar → drenar, sin que la foto se pierda.
-- [ ] Sólo cuando lo anterior esté: verificar que la leyenda de `5f` es verdad,
-      y **si por lo que sea no se cablea, cambiar la leyenda** — la pantalla no
-      puede seguir prometiéndolo.
+- [x] Test que ejercite el camino sin señal de punta a punta: capturar →
+      encolar → drenar, sin que la foto se pierda (`photos-capture-flow.test.ts`).
+- [x] Verificado: con el cableado hecho, la leyenda de `5f` («Las fotos
+      también») ya es verdad — no hizo falta cambiarla.
 
 **Archivos:** `apps/frontend/src/components/pickup/ManifestPhotoStrip.tsx` (+ test),
 `apps/frontend/src/app/app/pickup/complete/[loadId]/page.tsx` (montaje de `5g`/`5h`).
