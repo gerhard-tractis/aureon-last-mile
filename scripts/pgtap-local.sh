@@ -166,7 +166,13 @@ case "${1:-}" in
         exit 1
       fi
     fi
-    ( cd "$ROOT" && docker cp scripts/pgtap-local-apply-inner.sh "$C:/supabase/apply-inner.sh" >/dev/null )
+    # Round 3 review (item 6): unchecked, same trap `sync` already guards
+    # against three lines above its own docker cp — a failed copy leaves
+    # whatever apply-inner.sh the container already had (stale, or none),
+    # and apply would silently run OLD logic believing it's running this
+    # fix.
+    ( cd "$ROOT" && docker cp scripts/pgtap-local-apply-inner.sh "$C:/supabase/apply-inner.sh" >/dev/null ) \
+      || { echo "apply: failed to copy apply-inner.sh into $C — refusing to run possibly-stale logic" >&2; exit 1; }
     dex env FORCE_VERSION="$force_version" bash /supabase/apply-inner.sh
     ;;
   run)

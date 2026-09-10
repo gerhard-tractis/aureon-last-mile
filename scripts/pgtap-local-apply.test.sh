@@ -34,11 +34,13 @@ VER2="99999999999902"; FUNC2="public.pgtap_apply_selftest_widget2"  # B1: unveri
 VER4="99999999999904"; FUNC4="public.pgtap_apply_selftest_broken"   # B2: failed=N -> rc!=0
 VER5="99999999999905"                                               # C-3: orphaned ledger row
 VER6="99999999999910"                                               # C-5: --force regex metachar
+VER_ALLOWLISTED="20250130165844"                                    # B1: a real KNOWN_BASE_IMAGE_FAILURES entry
 
 MIGFILE="${VER}_pgtap_apply_selftest.sql"
 MIGFILE2="${VER2}_pgtap_apply_selftest_unverified.sql"
 MIGFILE4="${VER4}_pgtap_apply_selftest_broken.sql"
 MIGFILE6="${VER6}_pgtap_apply_selftest.sql"
+MIGFILE_ALLOWLISTED="${VER_ALLOWLISTED}_example_storage.sql"        # must match pgtap-local-apply-inner.sh exactly
 
 docker exec "$C" psql -U postgres -d postgres -tAc "select 1" >/dev/null 2>&1 || {
   echo "SKIP: container '$C' not reachable" >&2
@@ -48,9 +50,9 @@ docker exec "$C" mkdir -p /supabase/migrations /supabase/tests
 
 cleanup() {
   docker exec "$C" rm -f "/supabase/migrations/$MIGFILE" "/supabase/migrations/$MIGFILE2" \
-    "/supabase/migrations/$MIGFILE4" "/supabase/migrations/$MIGFILE6" >/dev/null 2>&1
+    "/supabase/migrations/$MIGFILE4" "/supabase/migrations/$MIGFILE6" "/supabase/migrations/$MIGFILE_ALLOWLISTED" >/dev/null 2>&1
   docker exec "$C" psql -U postgres -d postgres -q -c \
-    "delete from supabase_migrations.schema_migrations where version in ('$VER','$VER2','$VER4','$VER5','$VER6');
+    "delete from supabase_migrations.schema_migrations where version in ('$VER','$VER2','$VER4','$VER5','$VER6','$VER_ALLOWLISTED');
      drop function if exists $FUNC(); drop function if exists $FUNC2(); drop function if exists $FUNC4();" >/dev/null 2>&1
 }
 trap cleanup EXIT
@@ -131,7 +133,7 @@ fi
 docker exec "$C" psql -U postgres -d postgres -q -c \
   "create or replace function $FUNC2() returns integer language sql immutable as \$\$ select 7 \$\$;
    insert into supabase_migrations.schema_migrations(version, name) values ('$VER2', '$MIGFILE2');" >/dev/null
-out5=$(bash "$WRAPPER" apply 2>&1)
+out5=$(bash "$WRAPPER" apply 2>&1); rc5=$?
 v5=$(live_value "$FUNC2")
 if printf '%s\n' "$out5" | grep -qF "no recorded content hash"; then
   ok "a ledger row with no recorded hash prints a loud, distinct WARNING (round 2 review, B1)"
@@ -148,6 +150,52 @@ if [ "$v5" = "7" ]; then
 else
   notok "...and the migration body is NOT executed (live='$v5' — backfilling silently ran the file, THE BUG THIS GUARD EXISTS TO CATCH)"
 fi
+# Round 3 review, B1: unverified > 0 is the DANGEROUS outcome and must fail
+# the run too, same as changed and failed — round 2 left it at rc=0.
+if [ "$rc5" -ne 0 ]; then
+  ok "unverified=N alone makes apply exit nonzero (round 3 review, B1)"
+else
+  notok "unverified=N alone makes apply exit nonzero (rc=$rc5 — a caller checking only the exit code sees success)"
+fi
+
+# =====================================================================
+# Round 3 review, B2: round 2's backfill went QUIET after one run — the
+# second `apply` invocation, with the exact same file still on disk,
+# reported a perfectly clean run (skipped=1, everything else zero, rc=0)
+# while the database still held the ORIGINAL, unverified content. Run
+# apply a SECOND time against the same still-unresolved row and demand it
+# is JUST AS NOISY, not quieter.
+# =====================================================================
+out5b=$(bash "$WRAPPER" apply 2>&1); rc5b=$?
+v5b=$(live_value "$FUNC2")
+if printf '%s\n' "$out5b" | grep -qF "still UNVERIFIED"; then
+  ok "a second apply run on the same unresolved row is STILL noisy, not silently 'skipped' (round 3 review, B2)"
+else
+  notok "a second apply run on the same unresolved row is still noisy (output: $out5b — THE BUG THIS TEST EXISTS TO CATCH: round 2 went quiet here)"
+fi
+if printf '%s\n' "$out5b" | grep -qE 'unverified=[1-9]'; then
+  ok "...still counted under unverified=, never silently folded into skipped="
+else
+  notok "...still counted under unverified= (output: $out5b)"
+fi
+if [ "$rc5b" -ne 0 ]; then
+  ok "...and the second run's exit code is still nonzero"
+else
+  notok "...and the second run's exit code is still nonzero (rc=$rc5b)"
+fi
+if [ "$v5b" = "7" ]; then
+  ok "...and the live object is still untouched (7) two runs later"
+else
+  notok "...and the live object is still untouched two runs later (live='$v5b')"
+fi
+# This row is now PERSISTENTLY unverified by design — every apply on this
+# container from here on would otherwise report unverified=1 and rc!=0,
+# unrelated to whatever the rest of this script is testing. Clean it up so
+# later sections run against a clean world again (a real container would
+# need `up`, not this — the self-test just resets its own fixture).
+docker exec "$C" rm -f "/supabase/migrations/$MIGFILE2"
+docker exec "$C" psql -U postgres -d postgres -q -c \
+  "delete from supabase_migrations.schema_migrations where version = '$VER2'; drop function if exists $FUNC2();" >/dev/null
 
 # =====================================================================
 # B2: a real apply FAILURE must also make the exit code nonzero — the
@@ -162,6 +210,25 @@ else
   notok "a migration that fails to apply makes apply exit nonzero (rc=$rc6, output: $out6)"
 fi
 docker exec "$C" rm -f "/supabase/migrations/$MIGFILE4"  # stop it failing every subsequent apply in this run
+
+# =====================================================================
+# Round 3 review, B1: a failure ON THE LITERAL ALLOWLIST
+# (KNOWN_BASE_IMAGE_FAILURES in pgtap-local-apply-inner.sh) must NOT make
+# apply exit nonzero — forcing `up` (which ends with `apply`) to fail on
+# every machine, forever, for base-image gaps nobody can fix teaches
+# everyone to bolt on `|| true`, which cancels this whole guard. Uses one
+# of the three real allowlisted filenames directly, with broken content —
+# exercises the actual allowlist, not a simulation of it.
+# =====================================================================
+( cd "$ROOT" && docker cp "scripts/pgtap-local-fixtures/apply_selftest_broken.sql" "$C:/supabase/migrations/$MIGFILE_ALLOWLISTED" >/dev/null ) \
+  || { echo "not ok - fixture broken (allowlisted name) failed to copy into $C"; exit 1; }
+out6b=$(bash "$WRAPPER" apply 2>&1); rc6b=$?
+docker exec "$C" rm -f "/supabase/migrations/$MIGFILE_ALLOWLISTED"
+if [ "$rc6b" -eq 0 ] && printf '%s\n' "$out6b" | grep -qF "known base-image gap"; then
+  ok "a failure on the literal KNOWN_BASE_IMAGE_FAILURES allowlist does NOT make apply exit nonzero (round 3 review, B1)"
+else
+  notok "an allowlisted failure does not fail the run (rc=$rc6b, output: $out6b)"
+fi
 
 # =====================================================================
 # C-3: a ledger row whose migration file was renamed/deleted must be

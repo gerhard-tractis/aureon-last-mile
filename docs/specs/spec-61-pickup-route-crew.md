@@ -376,9 +376,11 @@ longer open a route. Task 2's last step ships the QA leader in the same commit f
 that reason.
 
 Before starting: `./scripts/pgtap-local.sh up` (once), then `./scripts/pgtap-local.sh sync`
-and `./scripts/pgtap-local.sh apply`. Expect `migrations: applied=N skipped=M changed=0 failed=0`
-(a nonzero `changed=` means a migration's content drifted from what's recorded for its already-applied
-version — see the mutation-testing note at the top of `pgtap-local.sh`).
+and `./scripts/pgtap-local.sh apply`. Expect `migrations: applied=N skipped=M changed=0
+unverified=0 orphaned=0 failed=3` and exit 0 — the 3 failures are known base-image fidelity
+gaps (`KNOWN_BASE_IMAGE_FAILURES` in `scripts/pgtap-local-apply-inner.sh`), not migration bugs,
+and don't fail the command. A nonzero `changed=` or `unverified=` does fail it — see
+`docs/runbooks/pgtap-mutation-testing.md`.
 
 ### Task 1.1: `pickup_leader` on the `user_role` enum, alone in its own migration
 
