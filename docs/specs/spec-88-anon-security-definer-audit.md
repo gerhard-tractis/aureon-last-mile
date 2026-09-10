@@ -580,6 +580,19 @@ que ocurra.
 > quedó parado. 3 tests nuevos en `deploy-qa.drift.test.sh`
 > (`read_qa_prev_sha()`), mutation-verificados: reducir la función a sólo
 > `git rev-parse HEAD` (quitando la lectura del marcador) → 2 de 3 en rojo.
+>
+> **Corregido en ronda 7 (#732) — esta frase ya no es cierta.** El fallback a
+> `git rev-parse HEAD` **se eliminó**. Al hacer no fatal la escritura del
+> marcador aparecieron dos formas de no tener marcador, no una: host nuevo
+> **y corrida degradada**. Con el fallback puesto, la segunda reabría por la
+> puerta de atrás el mismo bug que esta ronda elimina — corrida N degradada
+> (sin marcador), corrida N+1 muere tras el `git reset --hard`, corrida N+2
+> lee `prev = HEAD = sha_{N+1}` y los ficheros de la corrida muerta
+> desaparecen del diff. Ahora **marcador ausente = sin baseline = reconstruir
+> todo**; sólo un marcador *presente pero rancio* (el caso del incidente
+> real: dueño equivocado pero legible) se sigue usando como baseline. El
+> coste es una corrida lenta en un host nuevo, que es justo el caso donde
+> reconstruir todo ya era lo correcto.
 > Sin regresión: las 4 suites de shell existentes (`drift`, `functions`,
 > `guard-sudo`, `seed`, `sql-tests`) siguen en verde.
 >
@@ -616,6 +629,16 @@ que ocurra.
 > (el HEAD real del checkout en ese momento) para que la corrida que aplique
 > este PR arranque desde un estado consistente con la realidad, no desde
 > "archivo ausente" otra vez.
+>
+> **⚠️ Esto no fue un arreglo: fue la causa del corte de cinco deploys.** El
+> `printf` se ejecutó por SSH como **root**, así que el fichero quedó
+> `root:root 0644` dentro de `/home/aureon`. El runner corre como `aureon`,
+> de modo que la escritura del marcador al final de `main()` daba EACCES y,
+> bajo `set -Eeuo pipefail`, abortaba el deploy. Cinco `Deploy Production`
+> seguidos (`34397163949` → `34422244965`) murieron en esa última línea con
+> todo lo real en verde, y como spec-57 hace del sync de QA la precondición
+> de producción, bloquearon los deploys a producción del día. Misma clase
+> que #718. Diagnosticado y arreglado en ronda 7 (#732).
 >
 > **Este catch-up manual NO sustituye el arreglo en código**, y el arreglo
 > en código **tampoco está verificado de punta a punta todavía** — hueco
@@ -727,6 +750,55 @@ estructural se equivocó de lado.
 
 Esta fase queda **desbloqueada para tomarse** — la investigación que la
 bloqueaba ya se hizo y el resultado ya se leyó.
+
+#### Ronda 7 (#732) — la escritura del marcador pasa a ser no fatal, y a degradar hacia el lado seguro
+
+**Decisión, y vive aquí y no sólo en el cuerpo del PR:** `QA_STATE_FILE` es una
+**optimización** del diff de `widen_changed_flags()`, no una garantía de
+corrección. No poder guardarlo **no puede tumbar** un deploy cuyos pasos
+reales pasaron todos. Lo tumbó: cinco `Deploy Production` seguidos
+(`34397163949` → `34422244965`) murieron en la última sentencia de `main()`
+con migraciones, seed, usuarios, reinicios, `post_checks` y tests SQL en
+verde, porque el fichero sembrado a mano por SSH en ronda 6 quedó
+`root:root` y el runner corre como `aureon`.
+
+Tres piezas, y la segunda es la que casi se me escapa:
+
+1. **No fatal.** `record_deploy_marker()` avisa (anotación `::warning::` por
+   stderr, dueño y modo del fichero, el `chown` exacto) y devuelve 0.
+2. **Degradar hacia el lado seguro.** El primer intento heredaba el `HEAD` del
+   checkout cuando faltaba el marcador — o sea, reabría por la puerta de
+   atrás el bug de baseline rancia que ronda 6 elimina. Corregido: **marcador
+   ausente = sin baseline = reconstruir todo**. La distinción que importa es
+   **rancio vs ausente**: un marcador presente pero de dueño equivocado sigue
+   siendo legible y sigue siendo una baseline válida, más vieja.
+3. **La escritura se auto-repara.** Temporal + `rename()`, que sólo necesita
+   permiso en el **directorio**: el caso exacto del incidente se arregla solo
+   y el marcador pasa a ser del runner. Verificado con un fichero root real —
+   código viejo `exit 1`, código nuevo `exit 0` y marcador actualizado.
+
+Un aviso amarillo sobre una corrida verde no tiene dueño ni caducidad, así que
+las corridas degradadas **consecutivas** se cuentan
+(`QA_DEGRADED_FILE`, por defecto `<marcador>.degraded`) y a las
+`QA_DEGRADED_MAX` (3) el deploy se pone **rojo**. Una corrida degradada es
+ruido; una racha es un host que producirá el próximo #718. Hueco honesto: si
+el directorio tampoco es escribible no hay dónde llevar la cuenta, así que
+eso no escala solo — lo dice en el log en vez de fingir que el contador vigila.
+
+Tests en `infra/supabase-qa/deploy-qa.marker.test.sh` (cableado en `ci.yml`,
+que es donde las suites de `infra/` llevaban sin correr) más los de
+`read_qa_prev_sha()` en `deploy-qa.drift.test.sh`. Los casos que dependen de
+permisos hacen *probe* por separado de fichero y de directorio y se **saltan
+declarándolo** donde `chmod` no se aplica (Git Bash, root) en vez de pasar en
+falso; en el runner de CI, que es Linux no-root, corren los tres bloques.
+Verificado en Linux como el usuario `aureon` real: **39 + 11 verdes, cero
+skips**, y **14 mutantes, cero supervivientes**.
+
+Dos de esos mutantes cambiaron el diseño en vez de sólo confirmarlo: `mv -f`
+sobre un path que es **directorio** mete el fichero dentro y sale 0 (de ahí la
+guarda `-d`), y `record_deploy_marker` llamado dentro de `$(...) || rc=$?`
+**desactiva `errexit` y el trap ERR**, así que la red del test no mordía en
+los cuatro casos de fallo — se llaman en pelado.
 
 ### Fase 4 — Check automático de ACL huérfana `[pending]`
 
