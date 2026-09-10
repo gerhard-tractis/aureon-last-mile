@@ -134,14 +134,44 @@ Producción es **sólo lectura**, y nunca por SSH ni `docker` (es Supabase
 gestionado). QA es un entorno vivo compartido — no tocar los datos de Musan;
 lo que sea consulta, en `BEGIN`/`ROLLBACK`.
 
-### Fase 2 — Cerrar la divergencia de auth `[pending]`
+### Fase 2 — Cerrar la divergencia de auth `[done]`
 
 **Archivos:** `infra/supabase-qa/docker-compose.yml`, `apps/frontend/e2e/support/spec52-fixture.ts`
 
-> **Ojo, solapa con spec-88 fase 3, que está en vuelo.** Si el PR #710 ya
-> trajo el registro del hook en el compose de QA y el assert de JWT en el
-> e2e, esta fase se cierra como `[done]` referenciando ese PR. **Compruébalo
-> antes de implementar nada.**
+> Implementado por: **spec-88 fase 3** — no por esta fase. PRs #710 (`2d18739`) y #721 (`1ab41eb`).
+> Review: seis rondas sobre spec-88 fase 3; los hallazgos que cerraron esto fueron el assert que leía la llave equivocada y el `deploy-qa.sh` que no recreaba `auth`.
+> QA: `e2e-qa` **verde** en el run `34395854405` (`41ea770`), con el assert de claims ejecutándose contra QA real.
+> Downstream: ninguno — esta fase no habilita trabajo de nadie más.
+
+**Cerrada sin que nadie la trabajara desde aquí (2026-09-09).** La nota
+original decía «si el PR #710 ya lo trajo, ciérrala referenciándolo;
+compruébalo antes de implementar nada». Se comprobó, contra `origin/main`, y
+está:
+
+- `infra/supabase-qa/docker-compose.yml:166-167` — `GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED: "true"` y `..._URI: pg-functions://${POSTGRES_DB}/public/custom_access_token_hook`.
+- `apps/frontend/e2e/spec52-pickup-reception-end-to-end.spec.ts:97-99` — `expect(claims.operator_id).toBe(OPERATOR_ID)` más `permissions` array no vacío.
+- `infra/supabase-qa/deploy-qa.sh:411,736` — `restart_auth()` existe **y se llama** desde `main()` cuando cambia el compose.
+
+**Dos matices que valen más que el checkbox, porque cambian lo que hay que
+mirar en las otras fases:**
+
+1. **El assert NO va sobre `app_metadata.claims`, va sobre la RAÍZ del JWT.**
+   El trigger `sync_claims_to_auth_metadata` rellena `app_metadata.claims`
+   **idéntico** con el hook apagado — medido, byte a byte. Un assert sobre esa
+   llave habría pasado en verde con el hook muerto. **Cualquier verificación
+   futura de un hook de GoTrue tiene que atacar lo que el hook escribe en
+   exclusiva**, no lo que además escribe otra cosa.
+2. **`restart_auth()` existir no bastaba.** El primer deploy falló porque la
+   bandera que lo dispara se calculaba desde la posición de git del checkout y
+   no desde el último deploy **terminado** — así que una corrida muerta a mitad
+   envenenaba la siguiente. Arreglado en #721. **La fase 1 tiene que medir
+   contra el contenedor vivo, nunca contra el YAML**: `docker inspect` mostró
+   el contenedor `auth` corriendo **un mes** con una configuración que el
+   compose ya no declaraba.
+
+**Hueco heredado, declarado:** el arreglo de #721 está probado en unitarios
+pero **nadie lo ha visto aguantar una muerte a mitad de verdad**. Se demostrará
+la próxima vez que ocurra.
 
 Lo que tiene que quedar cierto, venga de donde venga:
 
