@@ -189,7 +189,43 @@ con actor y momento.
 > «N faltantes de 0». Viene de spec-54 y está igual en la rama de cierre
 > limpio — va a un barrido de copy, no a esta fase.
 
-### Fase 2 — Ventana `[in_progress]`
+### Fase 2 — Ventana `[done]`
+
+> Implementado por: `implementer` — rama `feat/spec-83-fase-2-ventana`, SHA `40a4322`, PR #738 (mergeado como `8246cbc`).
+> Review: `reviewer` adversarial, **tres rondas**. La que cambió el resultado fue la ronda 2: una casilla de este checklist estaba marcada `[x]` **sin haberse hecho** — el poblado de `operating_hours`/`pickup_cutoff_time`. Lo que existía era el camino de escritura y la lectura, no el dato. La ronda 3 cerró que el formulario tolerase `HH:MM:SS` al cargar, para que un punto guardado con segundos no quedara inescribible.
+> QA: PR #738 merged 2026-09-10T06:04:39Z, CI verde. pgTAP `spec83_fase2_pending_manifests_pickup_window.test.sql` 4/4 `ok`, **verificado con `psql` crudo y no con el resumen de `pgtap-local.sh`** — que es la precaución correcta, porque ese resumen es justo lo que spec-88 estaba arreglando en paralelo. `e2e-qa` no ejercita esta columna.
+> Downstream: revisado spec-80, spec-82 y spec-86 — **sin cambios**. La migración no toca ACL: `get_pending_manifests` nunca tuvo un GRANT explícito y queda fuera del alcance de spec-88.
+
+**Hueco heredado, y no es de código: la columna sale gris en TODAS las filas.**
+No hay hoy ni un solo punto de retiro con `operating_hours` o
+`pickup_cutoff_time` configurado, ni en QA ni en producción. El esquema los
+admite desde marzo y ahora existen el formulario y las rutas API que los
+escriben, pero **nadie ha cargado el dato**. Hasta que alguien lo haga, el
+semáforo dice `sin_datos` siempre.
+
+Las dos salidas, y ninguna es inventar el dato — mismo criterio que spec-54 ya
+sentó para esta pantalla:
+
+- **(a)** que alguien con el dato real —horario del punto, hora de cierre de
+  retiros del operador— lo cargue punto por punto desde el admin ya construido;
+- **(b)** un seed de QA si se quiere ver la columna en verde o ámbar antes de
+  eso. Si se elige ésta, **el seed debe escribir `HH:MM` estricto, no
+  `HH:MM:SS`**: el formulario ya normaliza al cargar, pero depender de esa
+  tolerancia en vez de escribir el formato limpio desde el origen es acumular
+  una capa que no hace falta.
+
+**Lo que esta fase deja medido y vale fuera de ella:**
+
+1. **`sin_datos` es el default, nunca `dentro_de_plazo`.** Cuando no hay ventana
+   ni cutoff, la columna dice que no sabe. Es la misma regla que la cola offline
+   y la pantalla de cierre han tenido que aprender a la fuerza: **un cero o un
+   verde fabricado sobre un dato ausente es peor que un hueco visible.**
+2. **Dos de cinco mutantes sobrevivieron a la primera pasada** — el `<=` del
+   umbral de 60 minutos (sin ningún caso exactamente en el borde) y una regex de
+   hora debilitada (ningún caso cubría una hora fuera de rango). Se cerraron con
+   un test nuevo cada uno, no se descartaron. Es el argumento de siempre: la
+   suite estaba verde y no veía ni el borde ni la entrada inválida.
+
 
 **Desbloqueada (2026-09-09). El usuario delegó la decisión: «haz lo que creas
 que debas hacer». La tomo yo y queda escrita aquí, no en la cabeza de nadie.**
