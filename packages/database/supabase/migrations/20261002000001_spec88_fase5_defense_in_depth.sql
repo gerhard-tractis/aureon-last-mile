@@ -3,8 +3,10 @@
 -- funciones SECURITY DEFINER con guard efectivo pero cuyo ACL nunca fue
 -- revocado de PUBLIC/anon, más dos correcciones de "mina" y dos guards que
 -- no hacían lo que decían. Razonamiento completo, recuento re-medido (16,
--- no 17 — comando y resultado), y la corrección de ronda 2 de review sobre
--- el riesgo real de anon (20 tablas con SELECT propio, no cero): ver
+-- no 17 — comando y resultado), y la corrección de ronda 3 de review sobre
+-- el riesgo real de anon (18 tablas en prod con SELECT propio, no cero —
+-- de ellas sólo 5 cambian de 0 filas a 42501; 13 no cambian porque sus
+-- políticas no invocan estas dos funciones): ver
 -- docs/specs/spec-88-anon-security-definer-audit.md, fase 5.
 -- =============================================================================
 -- ⚠️ MINA 1 — get_operator_id()/get_current_user_role() son el guard de 61
@@ -56,7 +58,11 @@ AS $$
   LIMIT 1;
 $$;
 
-COMMENT ON FUNCTION public.get_operator_id IS 'Extract operator_id from users table for RLS policies (updated for Story 1.3). spec-88 fase 5: added SET search_path (mina 2) — body unchanged.';
+-- Ronda 3 de review: sin `()` esta línea era la única sin cualificar la
+-- firma — con un overload presente la migración moriría AQUÍ, antes de
+-- llegar al DO block de verificación de más abajo. Falla seguro hoy (no hay
+-- overload), pero es la función de la que depende todo lo demás.
+COMMENT ON FUNCTION public.get_operator_id() IS 'Extract operator_id from users table for RLS policies (updated for Story 1.3). spec-88 fase 5: added SET search_path (mina 2) — body unchanged.';
 
 REVOKE ALL ON FUNCTION public.get_operator_id() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_operator_id() FROM anon;
@@ -262,7 +268,16 @@ BEGIN
       JOIN pg_roles r ON r.oid = a.grantee AND r.rolname = 'authenticated'
       WHERE p.oid = fn
     ) THEN
-      RAISE EXCEPTION '% lost its authenticated EXECUTE grant — this breaks its real caller outright (get_operator_id/get_current_user_role: 61 RLS policies)', fn;
+      -- Ronda 3 de review: el paréntesis de RLS/61-políticas sólo aplica a
+      -- get_operator_id/get_current_user_role — dejarlo en el mensaje
+      -- general manda a mirar políticas RLS ante un fallo de, por ejemplo,
+      -- delete_minted_carton, que no tiene nada que ver con RLS.
+      IF fn IN ('public.get_operator_id()'::regprocedure,
+                'public.get_current_user_role()'::regprocedure) THEN
+        RAISE EXCEPTION '% lost its authenticated EXECUTE grant — this breaks EVERY RLS-guarded SELECT in the app (61 policies invoke this function in USING/WITH CHECK)', fn;
+      ELSE
+        RAISE EXCEPTION '% lost its authenticated EXECUTE grant — this breaks its real caller outright', fn;
+      END IF;
     END IF;
   END LOOP;
 

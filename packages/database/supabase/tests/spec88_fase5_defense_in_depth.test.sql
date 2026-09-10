@@ -15,6 +15,15 @@
 -- search_path reventaba con "more than one row returned by a subquery" en
 -- cuanto existiera un segundo overload — el mismo tipo de bug que
 -- start_pickup_route ya causó en fase 1).
+--
+-- NOTA (ronda 3 de review de PR #733) — la reescritura de ronda 2 quitó el
+-- `p.proacl IS NULL OR` que fase 1 llevaba delante de cada aserción de
+-- PUBLIC. Parece un debilitamiento a primera vista (proacl NULL implica
+-- PUBLIC=EXECUTE implícito), pero el reviewer lo probó y lo descartó: los
+-- `ALTER DEFAULT PRIVILEGES` de Supabase materializan el ACL completo en
+-- toda función nueva, así que `proacl` nunca queda NULL en este proyecto —
+-- el borrado era seguro. Anotado para que nadie lo revierta "por
+-- precaución" sin volver a medirlo.
 
 BEGIN;
 SELECT plan(68);
