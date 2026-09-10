@@ -243,6 +243,68 @@ abajo); se listan igual porque el hallazgo original las nombró así y la
 tabla es el registro de qué se midió, no sólo de qué queda abierto.
 Filas 1–3 siguen abiertas.
 
+## Realimentación de spec-93 — 2026-09-10
+
+spec-93 midió el inventario de superficies QA↔producción **contra los dos
+entornos vivos**, que es lo que este spec asumía sin comprobar. Tres
+consecuencias, en orden de cuánto cambian lo de arriba.
+
+### 1. La fila 2 de la tabla se cierra, y la 1 cambia de forma
+
+- **Fila 2 — cambios al compose de QA fuera de `functions`.** spec-93 fase 3 la
+  cierra: `deploy-qa.sh` gana un mecanismo que diffea `docker-compose.yml`
+  entre los SHAs del deploy, mapea cada hunk al bloque de servicio en que cae y
+  recrea ese servicio. Deja de hacer falta un redeploy manual de infra.
+  **Matiz medido que conviene no perder:** hasta ahora **no había deriva real**
+  — desde el 2026-08-11 los únicos cambios del compose tocaron `auth` (#710) y
+  el runtime de edge (#497), y ambos ya tenían ayudante. El hueco era
+  **latente**, no realizado.
+- **Fila 1 — pgTAP en rojo contra QA.** El hueco era peor de lo que dice la
+  fila. `pgtap` **no está instalada en QA**: `sql_tests_check` escribe
+  `SKIPPED-NO-PGTAP` por cada fichero con `plan(` — **20 de 91**. O sea que no
+  es que un pgTAP rojo no tumbe el deploy: es que **esos 20 no se ejecutan
+  jamás**. spec-93 fase 3 instala la extensión; que el check pase de advisory a
+  bloqueante sigue siendo trabajo de la precondición de merge de este spec.
+
+### 2. Cinco divergencias nuevas — clases de cambio que NO pueden auto-aprobarse
+
+Ninguna estaba en la tabla de arriba porque nadie las había medido. Todas
+salen de la primera lectura de la configuración de producción (2026-09-10).
+
+| # | Clase | Verificado | Qué lo cubriría |
+|---|---|---|---|
+| 7 | Alta de usuarios y confirmación por email | `disable_signup`: prod `false` (abierto) / QA `true` (cerrado). `mailer_autoconfirm`: prod `false` (exige confirmar) / QA `true` (auto-confirma). En QA **el flujo de alta no existe** y el usuario nace confirmado | Alinear QA con producción, o declarar la divergencia y exigir clic para cambios que toquen el alta |
+| 8 | MFA / AAL | `mfa_totp_enroll_enabled` y `mfa_totp_verify_enabled`: prod `true` / QA no declarada (default de GoTrue) | Igual que 7 |
+| 9 | Refresco de sesión y reuso de token | `refresh_token_rotation_enabled`: prod `true`, `security_refresh_token_reuse_interval` 10s / QA no declarada | Igual que 7 |
+| 10 | Referencias sin cualificar al esquema `extensions` | PostgREST `extra_search_path`: prod `public, extensions` / QA `public`. Un nombre **sin cualificar** resuelve en producción y falla en QA, o al revés | Alinear el `search_path`, o cualificar siempre en las migraciones |
+| 11 | UI dirigida por realtime | La publicación `supabase_realtime` de QA tiene **2 tablas** (`orders`, `dock_verifications`) y el frontend se suscribe a **7**. Las otras cinco se suscriben sin error y no reciben un evento nunca | Pendiente de la columna de producción (bloqueada por #753): decide si prod las tiene añadidas a mano —configuración fuera de control de versiones— o si están muertas en los dos sitios |
+
+**La 7 es la más afilada.** En producción el registro está **abierto y exige
+confirmar por email**; en QA está **cerrado y auto-confirma**. Un cambio en el
+alta llega a producción sin haberse ejecutado nunca contra esa forma — que es
+exactamente la premisa que este spec necesita que sea falsa.
+
+**La 11 todavía no se puede cerrar**: la mitad de producción del inventario
+depende de una vía `psql` que hoy está rota (`resolve-supabase-pooler-host.sh`
+construye el host del pooler en vez de leerlo; lo arregla el PR #753, sin
+mergear). Queda declarada como medida a medias, no como cerrada.
+
+### 3. El guardarraíl que mantiene honesta esta tabla
+
+spec-93 fase 4 construye `qa-prod-parity.yml`: compara las superficies entre
+los dos entornos contra un fichero de línea base y **falla ante una divergencia
+no declarada**. Ésa es la pieza que impide que esta tabla vuelva a quedarse
+corta en silencio — hasta hoy crecía sólo cuando alguien tropezaba con una
+divergencia en un review.
+
+**Lo que este spec tiene que decidir, y no decide spec-93:** cada fila 7–11 es
+una clase de cambio que hoy **se auto-aprobaría** sin que nada la haya
+ejercitado. O se alinea QA con producción (y la fila desaparece), o la clase se
+suma a la detección que hoy sólo cubre el hook de auth. Mientras ninguna de las
+dos cosas ocurra, el argumento de este spec —«la red de seguridad ya existe y
+es más fuerte que un clic»— es cierto para casi todo el diff, pero **no** para
+estas cinco.
+
 ## Revisión de código — review 2026-09-09, PR #716, ronda 2
 
 Bloqueantes B1–B3, mayores M1–M4 y tres menores. Los seis mutantes que
