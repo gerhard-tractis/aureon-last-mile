@@ -109,13 +109,21 @@ export default function CompletionPage() {
   // — on the exact screen that is the client's evidence of what was
   // handed over. Same rule useRouteManifests.ts already applies
   // (verifiedByManifest, a Set of package_id per manifest).
-  const verifiedCount = useMemo(
-    () =>
-      new Set(
-        scans.filter((s) => s.scan_result === 'verified').map((s) => s.package_id),
-      ).size,
-    [scans]
-  );
+  //
+  // Seguimiento, ronda 3 — SQL's COUNT(DISTINCT) drops NULLs; a plain
+  // `new Set(...).map(s => s.package_id)` would count a null package_id as
+  // its own distinct member, one client_operation_id short of the server's
+  // figure. Not reachable today (pickup_scans only ever writes package_id
+  // on a real match), but `useRouteManifests.ts:139` — the precedent this
+  // comment already cites — filters `!s.package_id` before adding to its
+  // Set, and this code did not. Matched here rather than left diverging.
+  const verifiedCount = useMemo(() => {
+    const packageIds = new Set<string>();
+    for (const s of scans) {
+      if (s.scan_result === 'verified' && s.package_id) packageIds.add(s.package_id);
+    }
+    return packageIds.size;
+  }, [scans]);
 
   // 5i — same dedupe rule close_manifest applies server-side (H3): distinct
   // not_found barcodes, not a row count.

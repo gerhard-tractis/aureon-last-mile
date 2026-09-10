@@ -196,6 +196,27 @@ describe('CompletionPage', () => {
     expect(valueEls[0].textContent).toBe('2');
   });
 
+  // Seguimiento del PR #726 (ronda 3) — SQL's COUNT(DISTINCT) drops NULLs;
+  // a JS Set counts `null` as a member. Not reachable today (pickup_scans
+  // only writes package_id on a real match), but the precedent this code
+  // cites (useRouteManifests.ts) already guards it — this brings the two
+  // in line rather than leaving a silent divergence for whoever copies
+  // this pattern next.
+  it('does not count a verified scan with a null package_id, matching COUNT(DISTINCT) dropping NULLs', async () => {
+    mockUsePickupScans.mockReturnValue({
+      data: [
+        { id: 's1', scan_result: 'verified', package_id: 'pkg-a' },
+        { id: 's2', scan_result: 'verified', package_id: null },
+      ],
+    });
+
+    const { container } = render(<CompletionPage />);
+    await screen.findByText('Verificados');
+
+    const valueEls = container.querySelectorAll('[data-value]');
+    expect(valueEls[0].textContent).toBe('1');
+  });
+
   it('renders Spanish legal notice', async () => {
     render(<CompletionPage />);
     expect(await screen.findByText('Aviso de transferencia de custodia')).toBeInTheDocument();
@@ -434,6 +455,42 @@ describe('CompletionPage', () => {
     expect(within(screen.getByTestId('summary-row-missing')).getByText('1')).toBeInTheDocument();
     expect(mockPush).not.toHaveBeenCalled();
     expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  // Seguimiento del PR #726 (ronda 3) — B1 sólo ancló verified/missing;
+  // unexpectedCount, photosCount y signaturesCount seguían sin ninguna
+  // aserción a nivel de página, así que sustituirlos por constantes en
+  // `page.tsx` pasaba las 24/24 pruebas de este archivo. Valores todos
+  // distintos entre sí y de cualquier default (1 ajeno, 3 fotos, 2 firmas)
+  // para que una constante equivocada no pueda colar por coincidencia.
+  it('anchors unexpectedCount, photosCount and signaturesCount too — not just verified/missing', async () => {
+    mockUsePickupScans.mockReturnValue({
+      data: [
+        { id: 's1', scan_result: 'verified', package_id: 'pkg-a' },
+        { id: 's2', scan_result: 'verified', package_id: 'pkg-b' },
+        { id: 's3', scan_result: 'not_found', barcode_scanned: 'BC-1', scanned_at: '2026-09-09T10:00:00Z' },
+      ],
+    });
+    mockUseManifestDocuments.mockReturnValue({
+      data: [{ id: 'd1' }, { id: 'd2' }, { id: 'd3' }],
+    });
+
+    render(<CompletionPage />);
+    const operatorSig = await screen.findByTestId('signature-pad-Firma del operador (obligatoria)');
+    fireEvent.click(operatorSig);
+
+    // "Agregar firma del cliente" → firma del cliente, para que
+    // signaturesCount sea 2, no el 1 por defecto.
+    fireEvent.click(screen.getByLabelText('Agregar firma del cliente'));
+    const clientSig = await screen.findByTestId('signature-pad-Firma del cliente (opcional)');
+    fireEvent.click(clientSig);
+
+    fireEvent.click(screen.getByRole('button', { name: /confirmar y cerrar carga/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /confirmar y completar/i }));
+
+    await screen.findByText('Carga cerrada');
+    expect(within(screen.getByTestId('summary-row-unexpected')).getByText('1')).toBeInTheDocument();
+    expect(within(screen.getByTestId('summary-row-backup')).getByText('3 fotos · 2 firmas')).toBeInTheDocument();
   });
 
   it('maps MANIFEST_NOT_CLOSABLE to a Spanish message', async () => {
