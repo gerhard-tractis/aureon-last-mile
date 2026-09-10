@@ -13,6 +13,14 @@ interface ManifestDetailListProps {
   isLoading: boolean;
   isError: boolean;
   onRetry: () => void;
+  /**
+   * spec-82 fase 2, revisión B2 (ronda 3) — `true` cuando `scans` llega
+   * vacío porque la lectura de red está pausada (sin conexión), no porque
+   * nada se haya verificado. Sin esto, "0/N verified" fabrica un cero sobre
+   * trabajo que sí existe. Optativo, por defecto `false` — ningún llamador
+   * existente cambia de comportamiento.
+   */
+  scansUnknown?: boolean;
 }
 
 export function ManifestDetailList({
@@ -22,6 +30,7 @@ export function ManifestDetailList({
   isLoading,
   isError,
   onRetry,
+  scansUnknown = false,
 }: ManifestDetailListProps) {
   const totalPackages = useMemo(
     () => orders.reduce((sum, o) => sum + o.packages.length, 0),
@@ -45,7 +54,7 @@ export function ManifestDetailList({
           <CardTitle className="text-sm">Orders & Packages</CardTitle>
           {!isLoading && !isError && orders.length > 0 && (
             <span className="text-xs text-text-secondary">
-              {verifiedCount}/{totalPackages} verified
+              {scansUnknown ? '—' : verifiedCount}/{totalPackages} verified
             </span>
           )}
         </div>
@@ -78,6 +87,7 @@ export function ManifestDetailList({
             order={order}
             scans={scans}
             onManualVerify={onManualVerify}
+            scansUnknown={scansUnknown}
           />
         ))}
       </CardContent>

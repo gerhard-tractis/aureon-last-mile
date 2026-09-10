@@ -4,7 +4,16 @@ interface PickupFlowHeaderProps {
    * unset — never a placeholder. */
   retailerName: string | null;
   pickupPoint: string | null;
-  scanned: number;
+  /**
+   * spec-82 fase 2, revisión B2 (ronda 3) — `null` es "no lo sé", NUNCA
+   * "cero verificado". Sin red, `usePickupScans` queda pausada
+   * (`networkMode` por defecto) y no hay forma honesta de confirmar cuántos
+   * bultos ya se verificaron; pasar un `0` fabricado aquí pintaba cinco
+   * afirmaciones numéricas (el número en 32px, el "0%", la barra vacía,
+   * `aria-valuenow={0}`, "0/N" en cada orden) de que no se había hecho
+   * nada, más fuertes que cualquier aviso de texto al lado.
+   */
+  scanned: number | null;
   total: number;
   /**
    * spec-54 mock 1h — scans written to the device and not yet accepted by
@@ -58,7 +67,9 @@ export function PickupFlowHeader({
   // Floor, not round: 199/200 must read 99%, not a false 100% while a
   // package is still missing. The min-clamp still lets a true 100% (or an
   // over-scan) reach exactly 100.
-  const pct = total > 0 ? Math.min(Math.floor((scanned / total) * 100), 100) : 0;
+  const pct =
+    scanned !== null && total > 0 ? Math.min(Math.floor((scanned / total) * 100), 100) : 0;
+  const unknown = scanned === null;
   const subtitle = [retailerName, pickupPoint].filter(Boolean).join(' · ');
 
   return (
@@ -117,13 +128,21 @@ export function PickupFlowHeader({
       <div className="mt-3 flex items-baseline gap-2">
         {/* text-accent-emphasis, not text-accent: the raw brand gold is
             ~2.6:1 on this white card, below the 3:1 floor for large text. */}
-        <span className="font-mono text-[32px] font-bold leading-none text-accent-emphasis">
-          {scanned}
+        <span
+          className={
+            unknown
+              ? 'font-mono text-[32px] font-bold leading-none text-text-muted'
+              : 'font-mono text-[32px] font-bold leading-none text-accent-emphasis'
+          }
+        >
+          {unknown ? '—' : scanned}
         </span>
         <span className="text-sm text-text-secondary">de {total} paquetes</span>
-        <span className="ml-auto font-mono text-sm font-semibold text-text-secondary">
-          {pct}%
-        </span>
+        {!unknown && (
+          <span className="ml-auto font-mono text-sm font-semibold text-text-secondary">
+            {pct}%
+          </span>
+        )}
       </div>
 
       {/* bg-border, not bg-surface-raised: the raised tint is nearly
@@ -131,11 +150,20 @@ export function PickupFlowHeader({
       <div className="mt-2 h-[9px] w-full overflow-hidden rounded-full bg-border">
         <div
           role="progressbar"
-          aria-valuenow={scanned}
+          // Sin `aria-valuenow` cuando `unknown` — es la forma ARIA estándar
+          // de declarar una barra indeterminada, y evita fijar `0` (la
+          // misma mentira que el número de arriba) para lectores de
+          // pantalla.
+          aria-valuenow={unknown ? undefined : (scanned as number)}
           aria-valuemin={0}
           aria-valuemax={total}
-          className="h-[9px] rounded-full bg-accent transition-all"
-          style={{ width: `${pct}%` }}
+          aria-valuetext={unknown ? 'Desconocido sin conexión' : undefined}
+          className={
+            unknown
+              ? 'h-[9px] w-full rounded-full bg-border-strong'
+              : 'h-[9px] rounded-full bg-accent transition-all'
+          }
+          style={unknown ? undefined : { width: `${pct}%` }}
         />
       </div>
     </div>

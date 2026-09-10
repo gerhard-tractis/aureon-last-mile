@@ -8,8 +8,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import ScanningPage from './page';
 
+const mockUsePickupScans = vi.fn(() => ({ data: [] }));
 vi.mock('@/hooks/pickup/usePickupScans', () => ({
-  usePickupScans: () => ({ data: [] }),
+  usePickupScans: (...args: unknown[]) => mockUsePickupScans(...args),
   useScanMutation: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
@@ -67,20 +68,22 @@ vi.mock('@/components/pickup/ScanResultCard', () => ({
   ScanResultCard: () => <div data-testid="scan-result-card" />,
 }));
 vi.mock('@/components/pickup/ManifestDetailList', () => ({
-  ManifestDetailList: (props: { orders: unknown[]; isError: boolean }) => (
+  ManifestDetailList: (props: { orders: unknown[]; isError: boolean; scansUnknown?: boolean }) => (
     <div
       data-testid="manifest-detail"
       data-order-count={props.orders.length}
       data-error={String(props.isError)}
+      data-scans-unknown={String(!!props.scansUnknown)}
     />
   ),
 }));
 vi.mock('@/components/pickup/PickupFlowHeader', () => ({
-  PickupFlowHeader: (props: { retailerName: string | null; total: number }) => (
+  PickupFlowHeader: (props: { retailerName: string | null; total: number; scanned: number | null }) => (
     <div
       data-testid="flow-header"
       data-retailer={props.retailerName ?? ''}
       data-total={props.total}
+      data-scanned={props.scanned === null ? 'null' : String(props.scanned)}
     />
   ),
 }));
@@ -213,6 +216,34 @@ describe('ScanningPage offline (spec-82 fase 2)', () => {
 
     expect(screen.getByTestId('scanner-input')).toHaveAttribute('data-disabled', 'true');
     expect(screen.getByText(/sin conexión/i)).toBeInTheDocument();
+  });
+
+  // spec-82 fase 2, revisión B2 (ronda 3) — "el texto declara; la interfaz
+  // miente más fuerte". El banner de texto no basta si `scanned` sigue
+  // siendo un `0` numérico de verdad — `PickupFlowHeader`/`ManifestDetailList`
+  // necesitan el dato real (`null`/`scansUnknown`), no sólo un aviso al lado.
+  it('passes scanned: null and scansUnknown: true downstream when offline (B2, ronda 3)', () => {
+    mockUseSyncQueue.mockReturnValue(offlineSync());
+    mockOfflineScanSource.mockReturnValue({
+      unknown: false,
+      blocked: false,
+      snapshot: {
+        operatorId: 'op-1',
+        externalLoadId: 'CARGA-99817',
+        manifestId: 'manifest-1',
+        totalPackages: 25,
+        pickupRouteId: 'route-1',
+        retailerName: 'Ripley',
+        pickupLocation: 'Parque Arauco',
+        orders: [],
+        downloadedAt: new Date().toISOString(),
+      },
+    });
+
+    render(<ScanningPage />);
+
+    expect(screen.getByTestId('flow-header')).toHaveAttribute('data-scanned', 'null');
+    expect(screen.getByTestId('manifest-detail')).toHaveAttribute('data-scans-unknown', 'true');
   });
 
   // spec-82 fase 2, revisión B2 — sin este aviso, un operario que verificó
@@ -348,5 +379,51 @@ describe('ScanningPage offline (spec-82 fase 2)', () => {
     mockOfflineScanSource.mockReturnValue({ unknown: false, blocked: false, snapshot: null });
     render(<ScanningPage />);
     expect(mockOfflineScanSource).toHaveBeenCalledWith('op-1', 'CARGA-99817', false);
+  });
+
+  // Menores, ronda 3 — dos seams más que "todos mueren" no cubría: pasar
+  // `loadId` (en vez de `null`) a `useManifestOrders` sin red, o el
+  // `manifestId` de red en vez de `effectiveManifestId` a `usePickupScans`,
+  // sobrevivían sin que ningún test los notara.
+  it('does not fetch useManifestOrders over the network while offline', () => {
+    mockUseSyncQueue.mockReturnValue(offlineSync());
+    mockOfflineScanSource.mockReturnValue({
+      unknown: false,
+      blocked: false,
+      snapshot: {
+        operatorId: 'op-1',
+        externalLoadId: 'CARGA-99817',
+        manifestId: 'manifest-1',
+        totalPackages: 25,
+        pickupRouteId: 'route-1',
+        retailerName: 'Ripley',
+        pickupLocation: 'Parque Arauco',
+        orders: [],
+        downloadedAt: new Date().toISOString(),
+      },
+    });
+    render(<ScanningPage />);
+    expect(mockUseManifestOrders).toHaveBeenCalledWith(null, 'op-1');
+  });
+
+  it('passes the snapshot manifestId (not null) to usePickupScans when offline and downloaded', () => {
+    mockUseSyncQueue.mockReturnValue(offlineSync());
+    mockOfflineScanSource.mockReturnValue({
+      unknown: false,
+      blocked: false,
+      snapshot: {
+        operatorId: 'op-1',
+        externalLoadId: 'CARGA-99817',
+        manifestId: 'manifest-1',
+        totalPackages: 25,
+        pickupRouteId: 'route-1',
+        retailerName: 'Ripley',
+        pickupLocation: 'Parque Arauco',
+        orders: [],
+        downloadedAt: new Date().toISOString(),
+      },
+    });
+    render(<ScanningPage />);
+    expect(mockUsePickupScans).toHaveBeenCalledWith('manifest-1', 'op-1');
   });
 });

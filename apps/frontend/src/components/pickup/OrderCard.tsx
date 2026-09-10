@@ -11,6 +11,14 @@ interface OrderCardProps {
   order: ManifestOrder;
   scans: ScanRecord[];
   onManualVerify: (label: string) => void;
+  /**
+   * spec-82 fase 2, revisión B2 (ronda 3) — `true` cuando `scans` llega
+   * vacío por falta de red, no por falta de trabajo. "0/N" con badge gris
+   * ("nada verificado") es una afirmación de confianza tan falsa como el
+   * verde o el amarillo — por eso `unknown` tiene su propio estilo, no
+   * reutiliza `gray`.
+   */
+  scansUnknown?: boolean;
 }
 
 function getBadgeColor(verified: number, total: number): string {
@@ -24,9 +32,10 @@ const BADGE_CLASSES: Record<string, string> = {
   green: 'bg-status-success-bg text-status-success',
   yellow: 'bg-status-warning-bg text-status-warning',
   gray: 'bg-surface-raised text-text-secondary',
+  unknown: 'bg-border text-text-muted',
 };
 
-export function OrderCard({ order, scans, onManualVerify }: OrderCardProps) {
+export function OrderCard({ order, scans, onManualVerify, scansUnknown = false }: OrderCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const verifiedPackageIds = useMemo(() => {
@@ -63,7 +72,7 @@ export function OrderCard({ order, scans, onManualVerify }: OrderCardProps) {
   const orderPackageIds = new Set(order.packages.map(p => p.id));
   const verifiedCount = [...verifiedPackageIds].filter(id => orderPackageIds.has(id)).length;
   const totalCount = order.packages.length;
-  const badgeColor = getBadgeColor(verifiedCount, totalCount);
+  const badgeColor = scansUnknown ? 'unknown' : getBadgeColor(verifiedCount, totalCount);
 
   return (
     <Card>
@@ -91,7 +100,7 @@ export function OrderCard({ order, scans, onManualVerify }: OrderCardProps) {
           data-testid="badge"
           className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${BADGE_CLASSES[badgeColor]}`}
         >
-          {verifiedCount}/{totalCount}
+          {scansUnknown ? '—' : verifiedCount}/{totalCount}
         </span>
       </button>
 

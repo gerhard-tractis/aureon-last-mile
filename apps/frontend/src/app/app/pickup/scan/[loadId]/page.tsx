@@ -23,15 +23,8 @@ import { useModuleEnabled } from '@/hooks/modules/useEnabledModules';
 import { ModuleKey } from '@/lib/modules/registry';
 import { useOfflineScanSource } from '@/hooks/pickup/useOfflineScanSource';
 import { ManifestNotDownloadedNotice } from '@/components/pickup/ManifestNotDownloadedNotice';
-
-/** DD/MM HH:MM, a mano — ver el comentario donde se usa: Intl/toLocaleString
- * varía el padding de día/mes entre entornos de ICU, y esto sólo necesita
- * ser legible, no localizado. */
-function formatDownloadedAt(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+import { OfflinePickupNotice } from '@/components/pickup/OfflinePickupNotice';
+import { effectiveManifestFields } from '@/lib/pickup/effectiveManifestFields';
 
 export default function ScanningPage() {
   const params = useParams();
@@ -112,19 +105,24 @@ export default function ScanningPage() {
     return () => clearInterval(interval);
   }, [startTime]);
 
-  // spec-82 fase 2 — sin red, el snapshot local reemplaza por completo lo
-  // que el fetch de red (arriba) y `useManifestOrders` (abajo) no pueden
-  // traer. Con red, `offline.snapshot` es siempre `null` (ver el hook) y
-  // estas líneas no cambian nada del comportamiento existente.
-  const effectiveManifestId = offline.snapshot ? offline.snapshot.manifestId : manifestId;
-  const effectiveTotalPackages = offline.snapshot
-    ? (offline.snapshot.totalPackages ?? 0)
-    : totalPackages;
-  const effectivePickupRouteId = offline.snapshot
-    ? offline.snapshot.pickupRouteId
-    : pickupRouteId;
-  const effectiveRetailerName = offline.snapshot ? offline.snapshot.retailerName : retailerName;
-  const effectivePickupPoint = offline.snapshot ? offline.snapshot.pickupLocation : pickupPoint;
+  // spec-82 fase 2 — sin red, el snapshot local reemplaza por completo los
+  // campos del manifiesto que el fetch de red (arriba) no pudo traer. Con
+  // red, `offline.snapshot` es siempre `null` (ver el hook) y esto no
+  // cambia nada del comportamiento existente. Ver
+  // `lib/pickup/effectiveManifestFields.ts`.
+  const {
+    manifestId: effectiveManifestId,
+    totalPackages: effectiveTotalPackages,
+    pickupRouteId: effectivePickupRouteId,
+    retailerName: effectiveRetailerName,
+    pickupPoint: effectivePickupPoint,
+  } = effectiveManifestFields(offline.snapshot, {
+    manifestId,
+    totalPackages,
+    pickupRouteId,
+    retailerName,
+    pickupPoint,
+  });
 
   const { data: scans = [] } = usePickupScans(effectiveManifestId, operatorId);
   const scanMutation = useScanMutation();
@@ -137,6 +135,11 @@ export default function ScanningPage() {
   } = useManifestOrders(sync.status === 'offline' ? null : loadId, operatorId);
 
   const effectiveOrders = offline.snapshot ? offline.snapshot.orders : orders;
+  // spec-82 fase 2, revisión B2 (ronda 3) — `usePickupScans` es una query de
+  // red; sin señal queda pausada y `scans` llega `[]` sin decir por qué.
+  // Todo lo que se derive de `scans` (conteos, badges por orden) tiene que
+  // saber que es "no lo sé", no "cero".
+  const scansUnknown = sync.status === 'offline';
 
   const verifiedCount = useMemo(
     () => {
@@ -336,7 +339,12 @@ export default function ScanningPage() {
           loadId={loadId}
           retailerName={effectiveRetailerName}
           pickupPoint={effectivePickupPoint}
-          scanned={verifiedCount}
+          // spec-82 fase 2, revisión B2 (ronda 3) — sin red, `usePickupScans`
+          // (query de red) queda pausada y `scans` llega vacío por falta de
+          // señal, no por falta de trabajo. Pasar `verifiedCount` (siempre
+          // 0 en ese caso) fabricaba un cero de confianza; `null` es el
+          // tercer estado real. Ver `PickupFlowHeader`'s propio docstring.
+          scanned={scansUnknown ? null : verifiedCount}
           total={effectiveTotalPackages}
           queuedCount={sync.queuedCount}
           blockedCount={sync.blockedCount}
@@ -347,46 +355,10 @@ export default function ScanningPage() {
           onRetryBlocked={effectiveManifestId && operatorId ? handleRetryBlocked : undefined}
         />
 
-        {/* spec-82 fase 2, revisión B1 — descargar sólo habilita VER el
-            manifiesto sin red, nunca escanear: `useScanMutation` sigue
-            yendo directo a Supabase, sin cola offline en esta pantalla
-            (eso es spec-81). Sin este aviso, la pantalla se veía "perfecta"
-            sin red y el operario escaneaba contra una mutación pausada en
-            memoria que TanStack Query nunca ejecuta ni informa — sin toast,
-            sin beep, y el trabajo desaparece si cierra la pestaña antes de
-            recuperar señal. */}
+        {/* spec-82 fase 2 (ronda 3) — extraído a OfflinePickupNotice; ver
+            su propio docstring para B1/B2/downloadedAt. */}
         {sync.status === 'offline' && (
-          <div className="space-y-2">
-            <p className="text-sm text-status-warning-text bg-status-warning-bg border border-status-warning-border rounded-lg px-3 py-2">
-              Sin conexión: no se puede escanear ahora. Vuelve a tener señal
-              para registrar bultos.
-            </p>
-            {/* spec-82 fase 2, revisión B2 — `usePickupScans` es una query
-                de red (por defecto pausada sin señal): sin este aviso, un
-                operario que verificó 18/25 con señal y reabre `5d` sin red
-                ve "0/25" y ningún check verde, indistinguible de "nada
-                verificado todavía". El progreso no se perdió — no se puede
-                LEER sin red — y la pantalla tiene que decirlo. */}
-            <p className="text-xs text-text-muted">
-              No se puede confirmar cuántos bultos ya se verificaron mientras
-              no haya red. Lo que ves abajo puede no reflejar el progreso real.
-            </p>
-            {/* Menor, revisión de fase 2 — `downloadedAt` se escribía y
-                nunca se leía: una carga descargada ayer con bultos
-                corregidos hoy se mostraba como si fuera actual, sin marca
-                de tiempo ni aviso. Esto no resuelve la desactualización
-                (sigue sin invalidación automática, ver el spec) pero al
-                menos dice DE CUÁNDO son los datos. */}
-            {/* Formateado a mano (no Intl/toLocaleString) — el padding de
-                día/mes de Intl varía entre entornos/versiones de ICU
-                (Node local vs. CI), y esto sólo necesita ser legible, no
-                localizado. */}
-            {offline.snapshot && (
-              <p className="text-xs text-text-muted">
-                Descargado el {formatDownloadedAt(offline.snapshot.downloadedAt)}
-              </p>
-            )}
-          </div>
+          <OfflinePickupNotice downloadedAt={offline.snapshot?.downloadedAt ?? null} />
         )}
 
         <ScannerInput
@@ -417,6 +389,7 @@ export default function ScanningPage() {
           orders={effectiveOrders}
           scans={scans}
           onManualVerify={handleManualVerify}
+          scansUnknown={scansUnknown}
           isLoading={ordersLoading}
           // M6, revisión de fase 2 — un fallo de red ANTERIOR (con señal)
           // deja `ordersError` pegado en la caché de React Query incluso

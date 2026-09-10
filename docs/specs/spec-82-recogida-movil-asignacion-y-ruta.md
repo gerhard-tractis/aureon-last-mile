@@ -408,6 +408,26 @@ defecto; sin señal queda en su `data = []` por defecto, así que el conteo
 escaneado antes de perder señal. No se precachean escaneos en esta fase —
 sólo manifiesto+órdenes+bultos, como dice "Qué NO se precarga" arriba.
 
+**B1/B2 (ronda 3 de revisión, 2026-09-09) — la pantalla ya no oculta este
+límite.** Sin red, `ScannerInput` y "Mark Verified" (`PackageRow`) se
+deshabilitan con el motivo escrito (banner + `OfflinePickupNotice`), y
+`PickupFlowHeader`/`ManifestDetailList`/`OrderCard` reciben `scanned: null`/
+`scansUnknown: true` en vez de fabricar un `0` sobre progreso que sí existe
+pero no se puede confirmar sin conexión. `ManifestNotDownloadedNotice` ya no
+promete "podrás escanear sin red" al descargar.
+
+**Mutantes de ronda 1 que seguían vivos, encontrados en ronda 3 — dos
+cerrados, uno pendiente de identificar.** El revisor midió que tres
+mutantes sobrevivían 86/86 verdes:
+- `useManifestOrders` sin gatear por red — **cerrado**, con test que afirma
+  la llamada exacta (`toHaveBeenCalledWith(null, operatorId)` offline).
+- `usePickupScans` con el `manifestId` de red en vez de
+  `effectiveManifestId` — **cerrado**, mismo patrón de test.
+- "El chip que nunca se deshabilita" — **no identificado todavía**. El
+  revisor no dio el archivo/línea exacto y las hipótesis probadas
+  (`downloadingId` de `RouteManifestList`) ya tenían test que sí lo mata.
+  Queda como hueco declarado, no como "todos los mutantes mueren".
+
 ### Fase 3 — Asignación `[pending]`
 
 **Decisión del usuario (2026-09-09), textual:** «El líder de recogida define la
