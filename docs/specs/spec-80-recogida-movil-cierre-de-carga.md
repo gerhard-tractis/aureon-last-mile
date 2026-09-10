@@ -885,6 +885,64 @@ render).
 > `PickupMobileActiveRoute` dentro de `PickupMobileView.tsx`), ambos matan al menos un test en
 > `page.test.tsx` y/o `PickupMobileView.test.tsx`.
 
+> **Ronda 4 de review (PR #737, 2026-09-10) — mergeable, dos asserts corregidos.**
+>
+> **1. La aserción de tenant del pgTAP era vacua.** `M9` (la carga de otro operador) nunca tenía
+> `pickup_route_id`, así que el `JOIN` a `pickup_routes` ya la excluía por sí solo — la aserción
+> nunca llegaba a ejercitar `WHERE m.operator_id = me.op`. Verificado por la ronda 4: con
+> `WHERE (m.operator_id = me.op OR TRUE)` aplicado directo contra el contenedor y confirmado en el
+> `prosrc` vivo, el fichero seguía 6/6 en verde. Corregido: `M9` ahora cuelga de una ruta nueva,
+> `R9`, en el operador ajeno, cuyo `driver_id` es **el mismo uid** que Ana (no hay FK que ate
+> `driver_id` al `operator_id` de su propia ruta, así que el fixture es válido) — la pertenencia
+> SÍ coincidiría; sólo el filtro de operador la detiene. Repetida la misma mutación después de la
+> corrección: **5/6**, sólo esa aserción falla. Restaurado el SQL real, 6/6, comprobado contra el
+> `prosrc` vivo en ambos sentidos.
+>
+> **2. Nada fijaba el tile `CERRADAS` contra los rescates.** `value={completedLoads.length +
+> rescueManifests.length}` sobrevivía porque hoy las dos fuentes son disjuntas por construcción,
+> no por contrato probado. Nuevo test: una carga genuinamente cerrada en la ruta actual
+> (`completedLoads.length === 1`) más un rescate no relacionado (`rescueManifests.length === 1`)
+> debe seguir leyendo «1», nunca «2» — un rescate no es, por definición, algo que esta ruta cerró.
+> Confirmado que mata el mutante exacto que citó la review (`"CERRADAS2"` sin el fix).
+>
+> **Tres notas atendidas:**
+> - **Colocación:** el bloque de rescate se movió de antes de los tiles/hero a **después** —
+>   la carga de ayer sigue imposible de no ver, pero ya no empuja el trabajo de hoy (ni, en la
+>   primera carga, el skeleton) hacia abajo. De acuerdo con el criterio de la ronda 4; no hubo
+>   objeción que hacer.
+> - **`useManifests.ts:100`** decía «measured in QA: 40 six-month-old closures» — no fue QA, fue
+>   un fixture sintético en el contenedor pgTAP local. Corregido ahí y en el comentario equivalente
+>   de la migración `20261003000001` (comentarios de cabecera del script, fuera del cuerpo `$$` —
+>   no tocan `prosrc`).
+> - **Riesgo futuro declarado, no resuelto:** si una fase futura añade "quitar a un picker de la
+>   cuadrilla a mitad de ruta" como un `removed_at` manual (distinto del automático que
+>   `trg_pickup_route_crew_sync` estampa al cerrar la ruta), `get_signature_rescue_manifests`
+>   seguiría dándole el rescate — `c.deleted_at IS NULL` sólo cubre el borrado suave de la fila.
+>   Una línea de comentario en la migración deja la trampa escrita para quien construya esa fase.
+>
+> **Norma aplicada, no retroactiva:** la ronda 3 editó `20261002000001` (comentarios dentro del
+> cuerpo `$$`, cambiando `prosrc`) para reponer comentarios perdidos — inocuo porque esa migración
+> nunca se aplicó fuera de este contenedor local (no mergeada), pero mientras el bug del harness
+> (`apply` salta por nombre de migración, no por contenido — #740) siga sin mergear, cualquier
+> entorno que YA la hubiera aplicado se saltaría el cambio sin verlo. Confirmado como norma para
+> este PR en adelante: lo que toca una migración **ya mergeada/aplicada en algún entorno** va en
+> una migración nueva, nunca editando la existente. `20261002000001` y `20261003000001` siguen
+> siendo ediciones directas legítimas en esta ronda porque ninguna de las dos ha mergeado a `main`
+> todavía — no se deshace lo ya hecho, sólo se declara la regla para lo que sigue.
+>
+> **Archivos tocados en esta ronda:** `packages/database/supabase/tests/spec80_fase2b_signature_
+> rescue_manifests.test.sql` (fixture M9/R9 corregido), `packages/database/supabase/migrations/
+> 20261003000001_...` (comentario de riesgo futuro + wording "measured in QA" corregido, ambos
+> ediciones directas — la migración no ha mergeado), `apps/frontend/src/hooks/pickup/useManifests.ts`
+> (wording corregido), `apps/frontend/src/components/pickup/PickupMobileActiveRoute.tsx`+test
+> (reposicionado; test nuevo que pinea `CERRADAS`).
+>
+> pgTAP: `spec80_fase2b_signature_rescue_manifests.test.sql` 6/6 — mutado a mano
+> (`WHERE (m.operator_id = me.op OR TRUE)`, aplicado y verificado contra el `prosrc` vivo del
+> contenedor, no vía `apply`): mata 1/6 (antes de la corrección del fixture no mataba ninguno).
+> Vitest: 959/959 en `src/lib/pickup src/components/pickup src/app/app/pickup src/hooks/pickup`
+> (101 archivos). `tsc --noEmit` y `eslint` limpios.
+
 ### Fase 3 — `5f` firma y fotos `[done]`
 
 > **Corrección (2026-09-08) a la nota de abajo sobre la leyenda offline.**

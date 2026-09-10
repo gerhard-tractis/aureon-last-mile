@@ -129,16 +129,6 @@ export function PickupMobileActiveRoute({
         crew={activeRoute.crew}
       />
 
-      {/* spec-80 fase 2b (ronda 3, A2) — shown regardless of route state;
-          see this file's doc comment. */}
-      <ManifestsAvailabilityNotice availability={rescueAvailability} onRetry={onRetryRescue} />
-      {rescueAvailability === 'known' && (
-        <RescueManifestsSection
-          manifests={rescueManifests}
-          onOpen={onOpenRescueManifest ?? onOpenRouteManifest}
-        />
-      )}
-
       <div className="grid grid-cols-3 gap-2">
         <StatTile label="CARGAS" value={activeManifests.length} />
         <StatTile label="PAQUETES" value={paquetesLabel} />
@@ -165,6 +155,20 @@ export function PickupMobileActiveRoute({
           icon={CheckCircle2}
           title="Ruta completa"
           description="Todos los manifiestos de esta ruta ya fueron cerrados."
+        />
+      )}
+
+      {/* spec-80 fase 2b (ronda 3, A2) — shown regardless of route state;
+          see this file's doc comment. Below the tiles and the hero "next
+          load" card (ronda 4 placement decision): yesterday's unsigned
+          closure needs to stay unmissable, but it must not shove today's
+          work — and, on first load, the loading skeleton — out from under
+          the driver's thumb. */}
+      <ManifestsAvailabilityNotice availability={rescueAvailability} onRetry={onRetryRescue} />
+      {rescueAvailability === 'known' && (
+        <RescueManifestsSection
+          manifests={rescueManifests}
+          onOpen={onOpenRescueManifest ?? onOpenRouteManifest}
         />
       )}
 

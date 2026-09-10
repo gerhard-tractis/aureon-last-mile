@@ -127,6 +127,33 @@ describe('PickupMobileActiveRoute — rescate de firma vía rescueManifests (ron
     expect(screen.getByText('FALTA FIRMA')).toBeInTheDocument();
   });
 
+  // Ronda 4 review — `value={completedLoads.length + rescueManifests.length}`
+  // survived: today the two sources are disjoint (one is THIS route's own
+  // manifests, the other operator/user-scoped from a totally different
+  // query), so summing them happens to equal the correct count — a property
+  // of the data, not a contract the code enforces. Pins it directly: one
+  // genuinely-closed load on THIS route (completedLoads.length === 1) PLUS
+  // one unrelated rescue (rescueManifests.length === 1) must still read "1",
+  // not "2" — a rescue is not, by definition, something this route closed.
+  it('CERRADAS counts only this route\'s own closed loads, never rescueManifests', () => {
+    const signedOnThisRoute = manifest({
+      id: 'signed-1',
+      external_load_id: 'CARGA-SIGNED-HERE',
+      status: 'completed',
+      signature_operator: 'M. Rojas',
+    });
+    render(
+      <PickupMobileActiveRoute
+        {...baseProps()}
+        activeManifests={[signedOnThisRoute]}
+        rescueManifests={[rescueRow()]}
+        rescueAvailability="known"
+      />,
+    );
+    expect(screen.getByText('CERRADAS').closest('div')?.textContent).toContain('1');
+    expect(screen.getByText('CERRADAS').closest('div')?.textContent).not.toContain('2');
+  });
+
   it('opens via onOpenRescueManifest, not onOpenRouteManifest', async () => {
     const onOpenRescueManifest = vi.fn();
     const onOpenRouteManifest = vi.fn();

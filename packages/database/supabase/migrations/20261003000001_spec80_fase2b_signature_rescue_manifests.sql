@@ -7,9 +7,10 @@
 -- review measured the actual cost of that lack of a bound: `signature_operator`
 -- has only ever been written by `close_manifest` (20260913000002), so every
 -- manifest completed BEFORE that migration — plausibly most of production's
--- history — has it NULL. 40 six-month-old closures showed up as red "FALTA
--- FIRMA" rows on the mobile landing screen in a real measurement, burying the
--- one that actually matters (yesterday's) under months of legacy noise. Worse:
+-- history — has it NULL. Against a local pgTAP fixture (not production QA
+-- data), 40 synthetic six-month-old closures showed up as red "FALTA FIRMA"
+-- rows on the mobile landing screen — a shape check, not a real count —
+-- burying the one that actually matters (yesterday's) under legacy noise. Worse:
 -- every row is actionable — close_manifest only checks operator, not route/
 -- crew membership — so any picker could sign a stranger's months-old load,
 -- and that close records a 'missing' discrepancy per unscanned package,
@@ -119,6 +120,13 @@ AS $$
         SELECT 1 FROM public.pickup_route_crew c
          WHERE c.pickup_route_id = pr.id
            AND c.user_id = me.uid
+           -- Ronda 4 review, risk noted for a future fase, not fixed here:
+           -- deleted_at IS NULL only excludes a soft-deleted crew ROW. If a
+           -- later spec adds "remove a picker from the crew mid-route" as a
+           -- manual removed_at stamp (distinct from the automatic one
+           -- trg_pickup_route_crew_sync sets on route close), this EXISTS
+           -- would still match them — they'd keep seeing a rescue for a
+           -- route they were pulled off of.
            AND c.deleted_at IS NULL
       )
     )

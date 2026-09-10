@@ -10,8 +10,12 @@
 --   R3 (driver = Carla, no Ana anywhere): M3 unsigned, 1 day ago -> HIDDEN (not Ana's)
 --   R4 (driver = Ana): M4 unsigned, completed 40 days ago   -> HIDDEN (too old)
 --   R5 (driver = Ana): M5 SIGNED, completed today           -> HIDDEN (not a rescue)
--- Plus a cross-operator manifest for a DIFFERENT operator, same driver id
--- pattern, to prove operator scoping still applies to the new function.
+-- Plus R9/M9: a DIFFERENT operator's route whose driver_id equals Ana's own
+-- user id, and a manifest on it. Ownership WOULD match; only operator
+-- scoping stops it. (Ronda 4 review: a prior version of this fixture left
+-- M9's pickup_route_id NULL, so the JOIN to pickup_routes excluded it before
+-- the operator_id clause was ever reached — a mutated `WHERE (m.operator_id
+-- = me.op OR TRUE)` stayed 6/6 green. This shape is the fix.)
 
 BEGIN;
 SELECT plan(6);
@@ -44,14 +48,20 @@ INSERT INTO public.users (id, operator_id, email, full_name, permissions) VALUES
 ON CONFLICT (id) DO UPDATE SET operator_id = EXCLUDED.operator_id, full_name = EXCLUDED.full_name, permissions = EXCLUDED.permissions;
 
 INSERT INTO public.vehicles (id, operator_id, plate) VALUES
-  ('00000000-0000-4000-8000-0000000080e0','00000000-0000-4000-8000-0000000080c0','ZZ-80C-1')
+  ('00000000-0000-4000-8000-0000000080e0','00000000-0000-4000-8000-0000000080c0','ZZ-80C-1'),
+  ('00000000-0000-4000-8000-0000000080e9','00000000-0000-4000-8000-0000000080c9','ZZ-80C-9')
 ON CONFLICT (id) DO NOTHING;
 
--- Routes: R1 (Ana drives), R2 (Beto drives, Ana crews), R3 (Carla drives, no Ana)
+-- Routes: R1 (Ana drives), R2 (Beto drives, Ana crews), R3 (Carla drives, no Ana),
+-- R9 — a DIFFERENT operator's route whose driver_id happens to equal Ana's user
+-- id (no FK ties driver_id to the route's own operator_id — see the pgTAP
+-- test's own comment on M9 below for why this is the fixture that actually
+-- exercises the operator_id filter, not just the ownership one).
 INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, vehicle_id, status) VALUES
   ('00000000-0000-4000-8000-0000000080b1','00000000-0000-4000-8000-0000000080c0','PR-80C-1','00000000-0000-4000-8000-0000000080a1','00000000-0000-4000-8000-0000000080e0','received'),
   ('00000000-0000-4000-8000-0000000080b2','00000000-0000-4000-8000-0000000080c0','PR-80C-2','00000000-0000-4000-8000-0000000080a2','00000000-0000-4000-8000-0000000080e0','received'),
-  ('00000000-0000-4000-8000-0000000080b3','00000000-0000-4000-8000-0000000080c0','PR-80C-3','00000000-0000-4000-8000-0000000080a3','00000000-0000-4000-8000-0000000080e0','received')
+  ('00000000-0000-4000-8000-0000000080b3','00000000-0000-4000-8000-0000000080c0','PR-80C-3','00000000-0000-4000-8000-0000000080a3','00000000-0000-4000-8000-0000000080e0','received'),
+  ('00000000-0000-4000-8000-0000000080b9','00000000-0000-4000-8000-0000000080c9','PR-80C-9','00000000-0000-4000-8000-0000000080a1','00000000-0000-4000-8000-0000000080e9','received')
 ON CONFLICT (id) DO NOTHING;
 
 -- Ana was crew on R2 — removed_at IS set (the route is no longer in_progress),
@@ -109,9 +119,19 @@ UPDATE public.manifests
        completed_at = NOW()
  WHERE operator_id = '00000000-0000-4000-8000-0000000080c0' AND external_load_id = 'CARGA-80C-5';
 
--- M9: different operator entirely, same shape as a rescue -> HIDDEN (tenant scope)
+-- M9: a DIFFERENT operator's manifest, on a route R9 whose driver_id equals
+-- Ana's own user id -> HIDDEN, and this is the assertion that actually
+-- exercises operator scoping. A dangling-vehicle/route fixture with no
+-- pickup_route_id at all (the previous version of this test) would have
+-- been excluded by the JOIN to pickup_routes alone, never reaching the
+-- `m.operator_id = me.op` clause — proven in ronda 4 review by applying
+-- `WHERE (m.operator_id = me.op OR TRUE)` directly against the container
+-- and watching this file stay 6/6 green. Attaching M9 to R9 (ownership
+-- WOULD match: driver_id = Ana) forces the operator_id clause to be the
+-- only thing standing between Ana and another tenant's data.
 UPDATE public.manifests
    SET status='completed', signature_operator = NULL, total_packages = 1, total_orders = 1,
+       pickup_route_id = '00000000-0000-4000-8000-0000000080b9',
        completed_at = NOW()
  WHERE operator_id = '00000000-0000-4000-8000-0000000080c9' AND external_load_id = 'CARGA-80C-9';
 
@@ -149,7 +169,7 @@ SELECT ok(
 
 SELECT ok(
   NOT EXISTS (SELECT 1 FROM public.get_signature_rescue_manifests() WHERE external_load_id = 'CARGA-80C-9'),
-  'M9 hidden: a different operator''s unsigned closure never crosses the tenant boundary'
+  'M9 hidden: a different operator''s unsigned closure never crosses the tenant boundary, even on a route whose driver_id matches Ana''s own uid'
 );
 
 SELECT * FROM finish();

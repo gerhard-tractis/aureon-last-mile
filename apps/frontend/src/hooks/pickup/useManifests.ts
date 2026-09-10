@@ -105,8 +105,9 @@ export function useCompletedManifests(operatorId: string | null) {
  * 30 days, because `signature_operator` has only ever been written by
  * `close_manifest` (20260913000002) — unbounded, this surfaced the
  * operator's entire unsigned history, months of it, burying the one closure
- * that actually needs today's attention (ronda 3 review, measured in QA:
- * 40 six-month-old closures).
+ * that actually needs today's attention (ronda 3 review — measured against
+ * a local pgTAP fixture, not production QA data: 40 synthetic six-month-old
+ * closures, chosen to show the shape of the problem, not a real count).
  */
 export function useSignatureRescueManifests(operatorId: string | null) {
   return useQuery({
