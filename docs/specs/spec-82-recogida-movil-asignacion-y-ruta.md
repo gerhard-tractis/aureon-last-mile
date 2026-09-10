@@ -293,31 +293,223 @@ línea contra el HTML real de cada artboard.
 > (fase 2, en paralelo) y spec-81 (fase 3, en paralelo) — confirmado sin
 > solape de archivos (ver "Coordinación con trabajo paralelo" en el PR).
 
-### Fase 2 — `DESCARGAR` `[pending]`
+### Fase 2 — `DESCARGAR` `[in_progress]`
 
-**Archivos:** (indeterminado — el segundo punto habla de precargar «al almacén
-de spec-81», pero `apps/frontend/src/lib/db.ts` hoy sólo tiene colas de SALIDA
-(`scan_queue`, `pickup_queue`), no un caché de lectura offline. No hay tabla,
-hook ni componente que nombrar sin inventarlo. `check-phase-overlap.mjs` la
-reporta como «no puedo juzgar» (exit 3). Rellenar este campo es parte de tomar
-la fase.
+**Decisión técnica (2026-09-09), tomada al implementar — ver corrección de
+arriba, esto no era del usuario.**
 
-**Corrección (2026-09-09): esto no era una decisión del usuario, y escalarla
-como tal fue un error de esta orquestación.** Qué tablas Dexie, qué se
-precarga y cómo se invalida es **ingeniería** — la toma quien implemente esta
-fase, no el usuario. Lo que sí era de producto — si "DESCARGAR una carga para
-trabajar sin red" es una capacidad que queremos — ya está decidido: lo pide el
-mock `5c`. Sigue en `exit 3` hasta que alguien tome la decisión técnica y la
-declare aquí; eso no cambia.)
+Nuevo almacén de **lectura** offline, hermano del de salida (`scan_queue`/
+`pickup_queue`) que ya vive en `lib/db.ts`: tabla Dexie `manifest_cache`
+(`AureonOfflineDB` versión 3, `++id, operatorId, externalLoadId,
+[operatorId+externalLoadId]`), una fila por `(operatorId, externalLoadId)`
+con el snapshot completo que `5d` necesita para escanear sin red: cabecera
+del manifiesto (`id`, `total_packages`, `pickup_route_id`, `retailer_name`,
+`pickup_location`) + `orders` (con sus `packages`, igual forma que
+`useManifestOrders`) + `downloadedAt`.
 
-- [ ] Test: una carga descargada abre `5d` sin red; una no descargada muestra el estado del mock y no deja entrar.
-- [ ] Precarga de manifiesto, órdenes y bultos al almacén de spec-81.
-- [ ] Chip de estado por carga. **Ver la nota "Colisión futura anotada" en
-      la sección "Implementado en esta fase" de Fase 1 (arriba, bajo
-      `COMPLETADA`)**: `RouteManifestList` ya usa ese mismo slot de fila
-      para el chip `COMPLETADA` (`isManifestComplete(m)`); decidir aquí qué
-      chip gana si ambos predicados aplicaran a la vez por un dato
-      inconsistente, antes de renderizar `DESCARGAR` ahí.
+**Por qué una tabla nueva y no reusar `pickup_queue`:** `pickup_queue` es
+una cola de **salida** (algo por enviar, con `status`/reintentos); esto es
+una **caché de lectura** (algo ya recibido, sin reintento — se re-descarga a
+mano, no se reintenta solo). Mezclar los dos en la misma tabla habría hecho
+que `getPendingPickupCount` (el badge "COLA N") tuviera que aprender a
+ignorar filas que no son trabajo pendiente.
+
+**Qué NO se precarga:** documentos/fotos del manifiesto
+(`useManifestDocuments`) — `5d` no los necesita para escanear, sólo para
+imprimir etiquetas (control aparte, ya oculto sin red porque requiere
+`window.print`). No inventar esa precarga sin que el checklist la pida.
+
+**Invalidación:** ninguna automática. `manifest_cache` es una fotografía
+tomada al tocar "DESCARGAR"; si el manifiesto cambia en el servidor después
+(una orden agregada, un bulto corregido) la fila local queda desactualizada
+hasta que alguien vuelva a tocar "DESCARGAR" con señal. Es la misma
+honestidad que ya tiene `5d` para el trabajo pendiente: mejor una carga
+descargada visiblemente vieja que ninguna carga descargable. Cerrar el
+manifiesto (`close_manifest`, ya en la cola de spec-81) no borra la fila.
+
+**Corrección (revisión de fase 2, menor):** este párrafo decía que
+`checkStorageQuota` (`lib/db.ts`) "ya barre lo viejo" de `manifest_cache`.
+Es falso — verificado en el código: `checkStorageQuota` sólo llama a
+`clearOldSynced`, que sólo toca `scan_queue`. **Nada purga jamás una fila
+de `manifest_cache`** hoy. No hay señal de que limpiar el caché ayude más
+que dejarlo — son bytes, no filas que crezcan sin límite (una por carga
+alguna vez descargada) — así que se acepta como gap conocido, no como
+"ya cubierto por otra cosa".
+
+**Estado de "descargando" nunca se persiste.** La descarga es una mutación
+de React Query (`useDownloadManifest`), no una fila con `status:
+'downloading'` en Dexie — así no hay estado de bloqueo que un fallo pueda
+dejar congelado para siempre (la regla dura del módulo offline, ver
+cabecera de esta tarea). Si la descarga falla a mitad, no queda nada escrito
+en `manifest_cache`: el chip `DESCARGAR` sigue ahí, tocar de nuevo reintenta
+limpio.
+
+**Tres estados, no dos, para "¿está descargada?":** `unknown` (todavía no se
+leyó Dexie — nunca se pinta como "no descargada"), `downloaded`,
+`not_downloaded`. El hook que lee `manifest_cache`
+(`useDownloadedManifestIds`) envuelve una lectura 100% local en
+`useQuery({ networkMode: 'always', … })` — **no** el `networkMode: 'online'`
+por defecto de TanStack Query, que pausaría la consulta con el dispositivo
+sin red y la dejaría en `data: undefined`/`isLoading: false` aunque IndexedDB
+sí tenga la respuesta. Ese es exactamente el error que este mismo spec (fase
+1, y la ronda de hoy en spec-81 fase 5) ya cometió dos veces en otros sitios.
+
+**Colisión con `COMPLETADA` (nota de fase 1): gana `COMPLETADA`.** Razón:
+`isManifestComplete` lee `verified_count`/`total_packages`, que vienen del
+servidor — es el estado autoritativo. `DESCARGAR`/nada-que-mostrar viene de
+una tabla local que sólo existe para tolerar la falta de red; si un dato
+inconsistente hiciera que ambos predicados fueran ciertos a la vez (una
+carga marcada completa en el servidor pero cuya fila local de caché no se
+escribió o quedó vieja), mostrar `DESCARGAR` sobre una carga ya verificada
+sería peor mentira que ocultar el estado de descarga de una carga que de
+todos modos ya no necesita re-descargarse para seguir trabajando: si está
+completa, no hay escaneo pendiente que hacer sin red.
+
+**Archivos:**
+- `apps/frontend/src/lib/db.ts` — tabla `manifest_cache` (versión 3).
+- `apps/frontend/src/lib/offline/manifest-cache.ts` (nuevo) — CRUD puro
+  sobre esa tabla, sin DOM/React, mismo patrón que `lib/offline/queue.ts`.
+- `apps/frontend/src/lib/offline/manifest-cache.test.ts` (nuevo).
+- `apps/frontend/src/hooks/pickup/useManifestDownload.ts` (nuevo) —
+  `useDownloadedManifestIds(operatorId)` (lectura, `networkMode: 'always'`)
+  y `useDownloadManifest(operatorId)` (mutación: trae manifiesto + órdenes
+  de Supabase y llama a `manifest-cache.ts`).
+- `apps/frontend/src/hooks/pickup/useManifestDownload.test.ts` (nuevo).
+- `apps/frontend/src/components/pickup/RouteManifestList.tsx` — chip
+  `DESCARGAR` por fila (botón), con la precedencia de `COMPLETADA` de
+  arriba.
+- `apps/frontend/src/components/pickup/RouteManifestList.test.tsx`.
+- `apps/frontend/src/app/app/pickup/route/active/page.tsx` — conecta los
+  hooks nuevos a `RouteManifestList`.
+- `apps/frontend/src/app/app/pickup/route/active/page.test.tsx`.
+- `apps/frontend/src/app/app/pickup/scan/[loadId]/page.tsx` — sin red y
+  con un snapshot cacheado, usa el snapshot para la cabecera y las órdenes
+  en vez del fetch directo a Supabase; sin red y sin snapshot, bloquea la
+  pantalla con el mensaje del estado "no descargada" en vez de dejar
+  escanear contra datos que no van a llegar.
+- `apps/frontend/src/app/app/pickup/scan/[loadId]/page.test.tsx`.
+
+- [x] Test: una carga descargada abre `5d` sin red; una no descargada muestra el estado del mock y no deja entrar.
+- [x] Precarga de manifiesto, órdenes y bultos al almacén nuevo (`manifest_cache`, no el de spec-81 — spec-81 es la cola de SALIDA; ver "Por qué una tabla nueva" arriba).
+- [x] Chip de estado por carga, con la precedencia de `COMPLETADA` resuelta arriba.
+
+**Límite honesto, declarado — no descubierto en review.** "Abrir `5d` sin
+red" significa que la pantalla RENDERIZA desde el caché: cabecera, punto de
+retiro, lista de órdenes/bultos. **Escanear un bulto sin red sigue sin
+funcionar** — `useScanMutation` (`hooks/pickup/usePickupScans.ts`) escribe
+directo a `pickup_scans` vía Supabase, sin pasar por la cola offline de
+spec-81 (`pickup_queue`); el propio código ya lo decía antes de esta fase
+("No writer populates `db.pickup_queue` from this screen yet"). Conectar el
+escaneo a esa cola es trabajo de spec-81, no de éste — esta fase no lo
+inventa ni lo silencia. Mismo límite para `usePickupScans` (lectura de
+escaneos ya confirmados): es una query de red con `networkMode` por
+defecto; sin señal queda en su `data = []` por defecto, así que el conteo
+"verificados" arranca en 0 en cada sesión offline en vez de recordar lo ya
+escaneado antes de perder señal. No se precachean escaneos en esta fase —
+sólo manifiesto+órdenes+bultos, como dice "Qué NO se precarga" arriba.
+
+**B1/B2 (ronda 3 de revisión, 2026-09-09) — la pantalla ya no oculta este
+límite.** Sin red, `ScannerInput` y "Mark Verified" (`PackageRow`) se
+deshabilitan con el motivo escrito (banner + `OfflinePickupNotice`), y
+`PickupFlowHeader`/`ManifestDetailList`/`OrderCard` reciben `scanned: null`/
+`scansUnknown: true` en vez de fabricar un `0` sobre progreso que sí existe
+pero no se puede confirmar sin conexión. `ManifestNotDownloadedNotice` ya no
+promete "podrás escanear sin red" al descargar.
+
+**Mutantes de ronda 1 que seguían vivos, encontrados en ronda 3 — dos
+cerrados, uno pendiente de identificar.** El revisor midió que tres
+mutantes sobrevivían 86/86 verdes:
+- `useManifestOrders` sin gatear por red — **cerrado**, con test que afirma
+  la llamada exacta (`toHaveBeenCalledWith(null, operatorId)` offline).
+- `usePickupScans` con el `manifestId` de red en vez de
+  `effectiveManifestId` — **cerrado**, mismo patrón de test.
+- "El chip que nunca se deshabilita" — **no identificado todavía**. El
+  revisor no dio el archivo/línea exacto y las hipótesis probadas
+  (`downloadingId` de `RouteManifestList`) ya tenían test que sí lo mata.
+  Queda como hueco declarado, no como "todos los mutantes mueren".
+
+**Corrección (ronda 4, sobre el párrafo de arriba): la razón dada era
+falsa, la conclusión no.** El chip sí era identificable: lo testeado en
+ronda 3 era el *componente* (`RouteManifestList.tsx`), no el *cableado de
+página* (`app/pickup/route/active/page.tsx`). El mock de
+`useDownloadManifest` en los tests de página devolvía siempre
+`{ isPending: false, variables: undefined }`, así que ningún test de
+página ejercía la derivación real — mutarla ahí sobrevivía 40/40. Cerrado
+en ronda 4 pasando la página a controlar su propio `Set<string>` de
+manifest ids en curso (no el `isPending`/`variables` del hook), con test
+de página que captura el mock por sus argumentos reales.
+
+**B1, ronda 5 de revisión — el `Set` de ronda 4 no se vaciaba nunca para
+la primera de dos descargas concurrentes.** `handleDownload` pasaba
+`onSuccess`/`onError`/`onSettled` como OPCIONES de `mutate()`.
+`MutationObserver.mutate()` (TanStack `query-core`) pisa
+`this.#mutateOptions` y DESENGANCHA el observer de la invocación anterior
+en cada llamada — si DESCARGAR se toca en una segunda carga antes de que
+la primera resuelva, los callbacks de la primera invocación no vuelven a
+correr NUNCA. Su chip quedaba `disabled` para siempre, sin toast, sin
+salida — todo online, sin relación con M1 (que sólo cubre "sin señal").
+Cerrado usando `mutateAsync()` + `.then()/.catch()/.finally()`: la
+promesa que devuelve `mutateAsync()` es por-invocación (no por-observer)
+y se asienta siempre, aunque el observer ya se haya movido a otra
+descarga.
+
+**El test que "probaba" B2 en ronda 4 no podía ver este bug — llamaba a
+`onSettled` a mano.** `page.download.test.tsx` tomaba
+`downloadMutate.mock.calls[0]` y ejecutaba `handlers.onSettled!()`
+directamente: probaba "la página limpia el `Set` SI alguien llama a
+`onSettled`", no si TanStack lo llama de verdad. Por construcción no podía
+ver que no lo llama en el caso concurrente. Cerrado con un archivo nuevo,
+`page.download.concurrent.test.tsx`, que usa el `useMutation` REAL (no
+mockeado) con dos `mutate` solapados contra un mock de Supabase con
+promesas diferidas — el mismo patrón que exige el resto de este spec para
+mecanismos de librería: mockear la frontera hace el test ciego a esa
+frontera.
+
+**Menores declarados, no resueltos en esta fase:**
+- **Regla de 300 líneas — siete ficheros sobre presupuesto, no cuatro (ni
+  dos).** Ronda 4 declaró dos, ronda 5 declaró cuatro; ambas veces la
+  cuenta era de memoria, no medida. `wc -l` real sobre los 34 ficheros que
+  toca este PR (base `1ab41eb`, comparado contra el HEAD de ronda 5,
+  `b13b663` — ronda 6 le sumó comentarios a `route/active/page.tsx`
+  arreglando la costura `.then`/`.catch`, así que su cifra de la tabla ya
+  está actualizada a la que dejó ronda 6, 366, no a la de ronda 5):
+
+  | Fichero | líneas ahora | líneas en base | ¿lo cruzó este PR? |
+  |---|---|---|---|
+  | `lib/db.ts` | 466 | 382 | ya estaba sobre 300; el PR le sumó 84 |
+  | `scan/[loadId]/page.offline.test.tsx` | 462 | — (fichero nuevo) | sí |
+  | `scan/[loadId]/page.tsx` | 438 | — (creció desde la base de la fase) | sí |
+  | `hooks/pickup/useManifestDownload.test.ts` | 389 | — (creció) | sí |
+  | `route/active/page.tsx` | 366 | 326 (inicio fase) | sí |
+  | `components/pickup/PickupFlowHeader.test.tsx` | 349 | 330 | sí |
+  | `scan/[loadId]/page.test.tsx` | 303 | 296 | sí — cruzó el umbral en este PR |
+
+  Ningún caso es una decisión de producto pendiente: es refactor de
+  extracción puro que ninguna ronda de esta fase absorbió. Queda diferido
+  para quien toque cada fichero después — no hay ticket propio abierto
+  para esto, es deuda declarada aquí.
+- **`effectiveManifestFields.ts:24` (`totalPackages ?? 0`) — preexistente
+  y simétrico, no una contradicción nueva de esta fase.** El camino ONLINE
+  ya hace lo mismo en `scan/[loadId]/page.tsx:83`
+  (`setTotalPackages(data.total_packages ?? 0)`). Un manifiesto sin
+  conteo dice "3 de 0 paquetes" con red y "— de 0 paquetes" sin red — las
+  dos mienten, y la de la red es anterior a esta fase. Cerrarlo bien exige
+  cambiar `PickupFlowHeader.total` de `number` a `number | null` (y su
+  cálculo de porcentaje/denominador), que toca más que esta pantalla. El
+  `?? 0` de `scan/[loadId]/page.tsx:83` es el que habría que tocar primero
+  — esto queda como deuda declarada, sin ticket propio, no como "ítem
+  abierto en otro sitio".
+- **Dos fuentes de verdad para "hay red" en la misma feature — el fondo
+  se sostiene, la cita de ronda 5 no.** `scansUnknown` sale de
+  `useSyncQueue` (lee `navigator.onLine`); `route/active/page.tsx` lee
+  `onlineManager` (TanStack). Coinciden hoy porque `Providers.tsx:26-27`
+  refleja los eventos del `window` hacia `onlineManager` — ese es el
+  único call site real de `setOnline()` fuera de tests. La cita anterior
+  a `review/[loadId]/page.tsx:87` era un comentario que menciona a
+  `Providers.tsx`, no un segundo call site — el riesgo de divergencia
+  sigue siendo real (basta con que algo llame a `onlineManager
+  .setOnline()` a mano, como ya hacen varios tests de este mismo PR) pero
+  hoy es teórico en producción, no concreto como se afirmó.
 
 ### Fase 3 — Asignación `[parked]`
 

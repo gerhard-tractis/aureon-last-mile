@@ -76,4 +76,21 @@ describe('ManifestDetailList', () => {
     render(<ManifestDetailList {...defaultProps} orders={[]} />);
     expect(screen.getByText(/No orders found/)).toBeInTheDocument();
   });
+
+  // spec-82 fase 2, revisión B2 (ronda 3) — sin red, `scans` llega vacío
+  // porque `usePickupScans` es una query de red pausada, no porque nada se
+  // haya verificado. "0/3 verified" es una afirmación fabricada sobre
+  // trabajo que sí existe pero no se puede confirmar sin conexión.
+  describe('scansUnknown (B2, ronda 3)', () => {
+    it('shows "—/N verified" instead of a fabricated 0 when scan data is unknown', () => {
+      render(<ManifestDetailList {...defaultProps} scans={[]} scansUnknown />);
+      expect(screen.getByText('—/3 verified')).toBeInTheDocument();
+      expect(screen.queryByText('0/3 verified')).toBeNull();
+    });
+
+    it('still shows the real count when scansUnknown is false (default)', () => {
+      render(<ManifestDetailList {...defaultProps} />);
+      expect(screen.getByText('1/3 verified')).toBeInTheDocument();
+    });
+  });
 });

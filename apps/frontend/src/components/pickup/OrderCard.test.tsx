@@ -93,4 +93,26 @@ describe('OrderCard', () => {
     fireEvent.click(screen.getByLabelText('Toggle order details'));
     expect(screen.getByText(/No packages/)).toBeInTheDocument();
   });
+
+  // spec-82 fase 2, revisión B2 (ronda 3) — "0/2" con badge gris, sin red,
+  // afirma "nada verificado" sobre un pedido que sí podría estar
+  // verificado; sólo no se puede CONFIRMAR sin conexión.
+  describe('scansUnknown (B2, ronda 3)', () => {
+    it('shows "—/N" instead of a fabricated 0 when scan data is unknown', () => {
+      render(<OrderCard {...defaultProps} scans={[]} scansUnknown />);
+      expect(screen.getByTestId('badge')).toHaveTextContent('—/2');
+    });
+
+    it('does not use the "none verified" gray styling when scan data is unknown — that implies confidence too', () => {
+      render(<OrderCard {...defaultProps} scans={[]} scansUnknown />);
+      expect(screen.getByTestId('badge').className).not.toContain('bg-surface-raised');
+      expect(screen.getByTestId('badge').className).not.toContain('bg-status-success-bg');
+      expect(screen.getByTestId('badge').className).not.toContain('bg-status-warning-bg');
+    });
+
+    it('still shows the real count when scansUnknown is false (default)', () => {
+      render(<OrderCard {...defaultProps} />);
+      expect(screen.getByTestId('badge')).toHaveTextContent('1/2');
+    });
+  });
 });

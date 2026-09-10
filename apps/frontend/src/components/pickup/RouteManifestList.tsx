@@ -86,6 +86,37 @@ interface RouteManifestListProps {
    * existing callers that omit it get an always-enabled trigger.
    */
   isRemoving?: boolean;
+  /**
+   * spec-82 fase 2 (mock 5c) — `external_load_id` de las cargas ya
+   * descargadas al dispositivo para trabajar sin red. Tres estados, no dos:
+   * `undefined` significa "todavía no lo sé" (la lectura local de
+   * `manifest_cache` no resolvió) y NO pinta el chip `DESCARGAR` — pintarlo
+   * afirmaría "no descargada" sobre una carga que sí podría estarlo. Un
+   * `Set` (aunque esté vacío) significa que la respuesta ya se conoce.
+   * Optativo y aditivo, mismo patrón que `onRemove`: sin `onDownload` no se
+   * ofrece el chip aunque `downloadedIds` esté resuelto.
+   */
+  downloadedIds?: Set<string>;
+  /**
+   * Colisión con `COMPLETADA` (misma nota que fase 1): cuando ambos
+   * predicados aplicarían a la vez por un dato inconsistente, gana
+   * `COMPLETADA` — es el estado autoritativo del servidor, `DESCARGAR` es
+   * sólo una comodidad local. Ver "Colisión con COMPLETADA" en el spec.
+   */
+  onDownload?: (manifestId: string, externalLoadId: string) => void;
+  /**
+   * `manifest.id` de cada descarga en curso — deshabilita SÓLO esas filas,
+   * no toda la lista (mismo patrón por-fila que `isRemoving`, que sí es
+   * global porque sólo puede haber una remoción en curso a la vez; aquí dos
+   * descargas distintas pueden solaparse).
+   *
+   * Menor, revisión de fase 2 (ronda 4) — antes era un `string | null`
+   * derivado de `useMutation().isPending`/`variables`, que sólo puede
+   * describir UNA descarga en curso: lanzar una segunda mientras la primera
+   * seguía volando pisaba ese id y reactivaba el chip equivocado. Un `Set`
+   * sostiene tantas descargas concurrentes como filas existan.
+   */
+  downloadingIds?: Set<string>;
 }
 
 /**
@@ -98,6 +129,9 @@ export function RouteManifestList({
   onManifestClick,
   onRemove,
   isRemoving = false,
+  downloadedIds,
+  onDownload,
+  downloadingIds,
 }: RouteManifestListProps) {
   if (manifests.length === 0) {
     return (
@@ -114,6 +148,15 @@ export function RouteManifestList({
       {manifests.map((m) => {
         const complete = isManifestComplete(m);
         const canRemove = !!onRemove && m.verified_count === 0;
+        // spec-82 fase 2 — colisión con COMPLETADA (anotada en fase 1):
+        // gana COMPLETADA. `downloadedIds === undefined` es "todavía no lo
+        // sé" y nunca pinta DESCARGAR — ver el docstring de la prop.
+        const showDownload =
+          !complete && !!onDownload && !!downloadedIds && !downloadedIds.has(m.external_load_id);
+        // Menor, revisión de fase 2 — `downloadedIds` puede seguir siendo
+        // `undefined` ("todavía no lo sé"); `!!downloadedIds` primero
+        // asegura que esto nunca sea `true` en ese caso.
+        const isDownloaded = !!downloadedIds && downloadedIds.has(m.external_load_id);
         return (
           <div
             key={m.id}
@@ -155,9 +198,41 @@ export function RouteManifestList({
                       COMPLETADA
                     </span>
                   )}
+                  {/* Menor, revisión de fase 2 — antes, la ausencia del
+                      chip significaba a la vez "descargada", "completada" y
+                      "todavía no lo sé": tres estados reales colapsados en
+                      un mismo vacío visual. Este estado afirmativo saca
+                      "descargada" de esa ambigüedad; COMPLETADA sigue
+                      ganando la colisión (mismo orden que showDownload). */}
+                  {!complete && isDownloaded && (
+                    <span className="flex-none rounded border border-border bg-surface-raised px-1.5 py-1 font-mono text-[10.5px] font-semibold text-text-secondary">
+                      DESCARGADA
+                    </span>
+                  )}
                 </div>
               </div>
             </button>
+            {showDownload && (
+              // Sibling del <button> principal, no anidado dentro — un
+              // <button> dentro de otro <button> es HTML inválido, y el
+              // chip necesita su propio manejador de click que NO dispare
+              // onManifestClick. Bajo el contenido en vez de superpuesto
+              // arriba a la derecha (donde vive el control de "quitar")
+              // porque ambos pueden estar visibles a la vez en la misma
+              // fila (una carga recién agregada, sin escanear y sin
+              // descargar) y no deben competir por el mismo espacio.
+              <div className="px-4 pb-3 flex justify-end">
+                <button
+                  type="button"
+                  aria-label={`Descargar ${m.external_load_id}`}
+                  disabled={downloadingIds?.has(m.id) ?? false}
+                  onClick={() => onDownload!(m.id, m.external_load_id)}
+                  className="flex-none rounded-md border border-status-warning-border bg-status-warning-bg px-2.5 py-2 font-mono text-[11px] font-semibold text-status-warning-text disabled:opacity-50 disabled:pointer-events-none"
+                >
+                  DESCARGAR
+                </button>
+              </div>
+            )}
             {canRemove && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>

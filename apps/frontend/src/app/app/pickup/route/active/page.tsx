@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { onlineManager } from '@tanstack/react-query';
 import { Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useOperatorId } from '@/hooks/useOperatorId';
@@ -13,6 +14,10 @@ import {
 import { useAddManifestToRoute } from '@/hooks/pickup/useAddManifestToRoute';
 import { useRemoveManifestFromRoute } from '@/hooks/pickup/useRemoveManifestFromRoute';
 import { useClosePickupRoute } from '@/hooks/pickup/useClosePickupRoute';
+import {
+  useDownloadedManifestIds,
+  useDownloadManifest,
+} from '@/hooks/pickup/useManifestDownload';
 import { isManifestComplete } from '@/lib/pickup/manifestProgress';
 import { RouteProgressHeader } from '@/components/pickup/RouteProgressHeader';
 import { RouteMapPlaceholder } from '@/components/pickup/RouteMapPlaceholder';
@@ -49,6 +54,22 @@ export default function ActiveRoutePage() {
   const addMut = useAddManifestToRoute(operatorId);
   const removeMut = useRemoveManifestFromRoute(operatorId);
   const closeMut = useClosePickupRoute(operatorId);
+  // spec-82 fase 2 (mock 5c) — "DESCARGAR". `downloadedIdsList` puede ser
+  // `undefined` mientras la lectura local no resuelve; el `Set` que arma
+  // `useMemo` conserva ese `undefined` tal cual (nunca `?? []`) para que
+  // RouteManifestList siga sabiendo distinguir "no lo sé todavía" de "nada
+  // descargado" — ver su docstring.
+  const { data: downloadedIdsList } = useDownloadedManifestIds(operatorId);
+  const downloadedIds = useMemo(
+    () => (downloadedIdsList ? new Set(downloadedIdsList) : undefined),
+    [downloadedIdsList],
+  );
+  const downloadMut = useDownloadManifest(operatorId);
+  // B2, ronda 4 — la PÁGINA controla qué filas muestran DESCARGAR
+  // deshabilitado, no `downloadMut.isPending`/`variables` (sólo describe
+  // UNA descarga a la vez; ver el docstring de `downloadingIds` en
+  // RouteManifestList).
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
 
   if (routeLoading) {
     return (
@@ -140,6 +161,59 @@ export default function ActiveRoutePage() {
     );
   };
 
+  // spec-82 fase 2 — "DESCARGAR". `manifestId` marca la fila en
+  // `downloadingIds` (deshabilita SÓLO ese chip); `externalLoadId` es la
+  // clave real de la mutación.
+  //
+  // M1 (decisión del usuario) — sin señal, `networkMode: 'online'` deja la
+  // mutación pausada para siempre sin `onSuccess`/`onError`: se niega de
+  // entrada en vez de colgarse invisible.
+  //
+  // B1, ronda 5 de review del PR #727 — `mutateAsync` + `.finally`, no
+  // `mutate(id, { onSettled })`: los callbacks pasados a `mutate()` no
+  // vuelven a correr si un SEGUNDO `mutate()` arranca antes de que el
+  // primero resuelva (`MutationObserver` desengancha el observer previo en
+  // cada llamada). La promesa de `mutateAsync` es por-invocación y siempre
+  // se asienta. Ver `page.download.concurrent.test.tsx` para el mecanismo
+  // completo y la prueba contra el `useMutation` real.
+  const handleDownload = (manifestId: string, externalLoadId: string) => {
+    if (!onlineManager.isOnline()) {
+      toast.error('Sin conexión: no se puede descargar. Busca señal e inténtalo de nuevo.');
+      return;
+    }
+    setDownloadingIds((prev) => new Set(prev).add(manifestId));
+    downloadMut
+      .mutateAsync(externalLoadId)
+      // Nit, ronda 6 de review del PR #727 — `.then(onSuccess, onError)`
+      // (dos argumentos), no `.then(onSuccess).catch(onError)`: con
+      // `.catch` encadenado, una excepción LANZADA DENTRO de `onSuccess`
+      // (p. ej. si `toast.success` fallara) caería en el mismo `onError` y
+      // mostraría "No se pudo descargar" sobre una descarga que sí quedó
+      // en IndexedDB. La forma de dos argumentos sólo invoca `onError`
+      // cuando la promesa de `mutateAsync` RECHAZA — misma exclusividad
+      // que tenía `mutate(id, { onSuccess, onError })`.
+      .then(
+        () => toast.success(`${externalLoadId} descargada para trabajar sin red`),
+        // Menor, revisión de fase 2 — no repetir el mensaje crudo de
+        // PostgREST (códigos, nombres de columna/constraint) al operario;
+        // no le ayuda a decidir nada y expone detalles internos.
+        () => toast.error(`No se pudo descargar ${externalLoadId}. Inténtalo de nuevo.`),
+      )
+      .finally(() => {
+        setDownloadingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(manifestId);
+          return next;
+        });
+      })
+      // Si el propio `toast.success`/`toast.error` de arriba lanzara, esa
+      // rama de `.then` rechaza y `.finally` reenvía el rechazo — sin este
+      // `.catch` final, quedaría como una promesa no manejada. El chip ya
+      // se liberó (el `.finally` de arriba corre siempre); aquí no queda
+      // nada más que hacer con ese error.
+      .catch(() => {});
+  };
+
   const handleClose = () => {
     closeMut.mutate(
       { routeId: route.id },
@@ -193,6 +267,9 @@ export default function ActiveRoutePage() {
                 // shares with useAddManifestToRoute / useCancelPickupRoute).
                 onRemove={operatorId ? handleRemove : undefined}
                 isRemoving={removeMut.isPending}
+                downloadedIds={downloadedIds}
+                onDownload={handleDownload}
+                downloadingIds={downloadingIds}
               />
             </div>
           )}

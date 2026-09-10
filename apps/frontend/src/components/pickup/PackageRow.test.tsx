@@ -56,6 +56,27 @@ describe('PackageRow', () => {
     expect(screen.getByRole('button', { name: /mark verified/i })).toBeInTheDocument();
   });
 
+  // spec-82 fase 2 revisión B1 — sin red, un escaneo/verificación manual
+  // queda pausado en memoria (useScanMutation no tiene cola offline en
+  // esta pantalla) y desaparece sin rastro si la PWA se cierra antes de
+  // recuperar señal. "Mark Verified" no puede prometer un registro que no
+  // va a ocurrir — mismo patrón ya usado por "Agregar bultos" arriba.
+  it('disables Mark Verified when offline, with the reason in the title', () => {
+    window.navigator.onLine = false;
+    render(<PackageRow {...defaultProps} />);
+    const button = screen.getByRole('button', { name: /mark verified/i });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', expect.stringMatching(/sin conexión/i));
+  });
+
+  it('does not call onManualVerify when clicked while offline', () => {
+    window.navigator.onLine = false;
+    const onManualVerify = vi.fn();
+    render(<PackageRow {...defaultProps} onManualVerify={onManualVerify} />);
+    fireEvent.click(screen.getByRole('button', { name: /mark verified/i }));
+    expect(onManualVerify).not.toHaveBeenCalled();
+  });
+
   it('calls onManualVerify with label when button clicked', () => {
     const onManualVerify = vi.fn();
     render(<PackageRow {...defaultProps} onManualVerify={onManualVerify} />);
