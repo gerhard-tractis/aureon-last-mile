@@ -19,6 +19,12 @@
 # worktrees depend on. Use your own throwaway container (matching CI's
 # pattern in .github/workflows/ci.yml).
 #
+# WARNING (round 6 review): the real-migrations stability section near the
+# end DESTROYS and REBUILDS $C from scratch (`docker rm -f` + recreate,
+# via `bash ./scripts/pgtap-local.sh up`) — needed to test against the
+# real 200+ migration set with a real bootstrap, not just pgtap. If $C
+# holds anything you care about, this test discards it. Rebuild ~1-5 min.
+#
 # Run from repo root:
 #   PGTAP_LOCAL_CONTAINER=<your-own-container> bash scripts/pgtap-local-apply.test.sh
 set -uo pipefail
@@ -40,12 +46,14 @@ VER6="99999999999910"                                               # C-5: --for
 # review, B1/item 7), a throwaway entry appended only when this env var is
 # set, never touching KNOWN_BASE_IMAGE_FAILURES itself.
 VER_ALLOW="99999999999920"
+VER7="99999999999930"; FUNC7="public.pgtap_apply_selftest_widget3"       # item 1: BEGIN; no COMMIT;
 
 MIGFILE="${VER}_pgtap_apply_selftest.sql"
 MIGFILE2="${VER2}_pgtap_apply_selftest_unverified.sql"
 MIGFILE4="${VER4}_pgtap_apply_selftest_broken.sql"
 MIGFILE6="${VER6}_pgtap_apply_selftest.sql"
 MIGFILE_ALLOW="${VER_ALLOW}_pgtap_apply_selftest_allowlist.sql"
+MIGFILE7="${VER7}_pgtap_apply_selftest_begin_no_commit.sql"
 ALLOWLIST_MARKER='pgtap apply selftest allowlist marker'
 ALLOWLIST_ENTRY_GOOD="${MIGFILE_ALLOW}|${ALLOWLIST_MARKER}"
 ALLOWLIST_ENTRY_MISMATCHED="${MIGFILE_ALLOW}|this text will never appear in the real error"
@@ -58,10 +66,11 @@ docker exec "$C" mkdir -p /supabase/migrations /supabase/tests
 
 cleanup() {
   docker exec "$C" rm -f "/supabase/migrations/$MIGFILE" "/supabase/migrations/$MIGFILE2" \
-    "/supabase/migrations/$MIGFILE4" "/supabase/migrations/$MIGFILE6" "/supabase/migrations/$MIGFILE_ALLOW" >/dev/null 2>&1
+    "/supabase/migrations/$MIGFILE4" "/supabase/migrations/$MIGFILE6" "/supabase/migrations/$MIGFILE_ALLOW" \
+    "/supabase/migrations/$MIGFILE7" >/dev/null 2>&1
   docker exec "$C" psql -U postgres -d postgres -q -c \
-    "delete from supabase_migrations.schema_migrations where version in ('$VER','$VER2','$VER4','$VER5','$VER6','$VER_ALLOW');
-     drop function if exists $FUNC(); drop function if exists $FUNC2(); drop function if exists $FUNC4();" >/dev/null 2>&1
+    "delete from supabase_migrations.schema_migrations where version in ('$VER','$VER2','$VER4','$VER5','$VER6','$VER_ALLOW','$VER7');
+     drop function if exists $FUNC(); drop function if exists $FUNC2(); drop function if exists $FUNC4(); drop function if exists $FUNC7();" >/dev/null 2>&1
 }
 trap cleanup EXIT
 
@@ -290,18 +299,53 @@ fi
 # degrade the whole guard back to filename-only matching (that's the B1
 # vulnerability again, reachable through a typo instead of a mutant).
 # =====================================================================
-out6e=$(PGTAP_APPLY_TEST_ALLOWLIST_ENTRY="malformed_no_pipe.sql" bash "$WRAPPER" apply 2>&1); rc6e=$?
+out6e=$(PGTAP_APPLY_TEST_ALLOWLIST_ENTRY="9999999999901_malformed_no_pipe.sql" bash "$WRAPPER" apply 2>&1); rc6e=$?
 if [ "$rc6e" -ne 0 ] && printf '%s\n' "$out6e" | grep -qF "no '|' separator"; then
   ok "a malformed allowlist entry with no '|' separator is rejected loudly (round 5 review, medium)"
 else
   notok "a malformed allowlist entry with no '|' separator is rejected loudly (rc=$rc6e, output: $out6e)"
 fi
 
-out6f=$(PGTAP_APPLY_TEST_ALLOWLIST_ENTRY="malformed_empty_expect.sql|" bash "$WRAPPER" apply 2>&1); rc6f=$?
+out6f=$(PGTAP_APPLY_TEST_ALLOWLIST_ENTRY="9999999999902_malformed_empty_expect.sql|" bash "$WRAPPER" apply 2>&1); rc6f=$?
 if [ "$rc6f" -ne 0 ] && printf '%s\n' "$out6f" | grep -qF "empty expected error text"; then
   ok "a malformed allowlist entry with empty expected error text is rejected loudly (round 5 review, medium)"
 else
   notok "a malformed allowlist entry with empty expected error text is rejected loudly (rc=$rc6f, output: $out6f)"
+fi
+
+# =====================================================================
+# Round 6 review, item 4: PGTAP_APPLY_TEST_ALLOWLIST_ENTRY must be
+# restricted BY CONSTRUCTION, not by a WARNING alone — refuse it outright
+# if the version it names is shaped like a REAL migration (this repo's
+# real migrations all start with a 20YYMMDDHHMMSS timestamp), even though
+# no file with this exact fake-but-real-shaped name exists anywhere. The
+# check is on the name's SHAPE, not on disk presence — deliberately: this
+# script's OWN legitimate fixtures under the 9999999999xx sentinel range
+# DO exist on disk (that's how they test real error-text matching), so
+# "exists on disk" can't distinguish a throwaway fixture from a real
+# migration the way the version range can.
+# =====================================================================
+out6g=$(PGTAP_APPLY_TEST_ALLOWLIST_ENTRY="20990101000000_totally_fake_but_real_shaped.sql|anything" bash "$WRAPPER" apply 2>&1); rc6g=$?
+if [ "$rc6g" -ne 0 ] && printf '%s\n' "$out6g" | grep -qF "outside the 9999999999xx test-only sentinel range"; then
+  ok "PGTAP_APPLY_TEST_ALLOWLIST_ENTRY naming a real-shaped version is refused, not just warned about (round 6 review, item 4)"
+else
+  notok "PGTAP_APPLY_TEST_ALLOWLIST_ENTRY naming a real-shaped version is refused (rc=$rc6g, output: $out6g)"
+fi
+
+# =====================================================================
+# Round 6 review, item 1: a migration with its own top-level BEGIN; and no
+# matching top-level COMMIT; must print the SAME warning
+# infra/supabase-qa/apply-migrations.sh already carries for this exact
+# shape (copied verbatim) — this harness inherited the BEGIN exception
+# from that script without inheriting the warning next to it.
+# =====================================================================
+( cd "$ROOT" && docker cp "scripts/pgtap-local-fixtures/apply_selftest_begin_no_commit.sql" "$C:/supabase/migrations/$MIGFILE7" >/dev/null ) \
+  || { echo "not ok - fixture begin_no_commit failed to copy into $C"; exit 1; }
+out_bc=$(bash "$WRAPPER" apply 2>&1)
+if printf '%s\n' "$out_bc" | grep -qF "has a top-level BEGIN; but no matching top-level COMMIT;"; then
+  ok "a migration with BEGIN; and no matching COMMIT; prints the apply-migrations.sh warning (round 6 review, item 1)"
+else
+  notok "a migration with BEGIN; and no COMMIT; prints the warning (output: $out_bc)"
 fi
 
 # =====================================================================

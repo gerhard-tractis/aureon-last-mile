@@ -8,60 +8,45 @@
 set -uo pipefail
 PSQL=(psql -U postgres -d postgres)
 
-# Round 3 review (item 7): a failed ledger query (psql itself erroring —
-# connection drop, bad state) must not be silently read as "no hash
-# recorded" / unverified — that would report "all fine" on a database that
-# isn't even answering. Check $? in the CALLING shell right after each
-# command substitution (a helper function's own `exit` would only kill the
-# subshell command substitution creates, not this script — deliberately
-# inlined, not wrapped, for that reason).
+# A failed ledger query (psql itself erroring — connection drop, bad
+# state) must not be silently read as "no hash recorded" / unverified.
+# Check $? in the CALLING shell right after each command substitution (a
+# helper function's own `exit` would only kill the subshell the
+# substitution creates, not this script).
 
-# Round 3 review (B1): these three migrations fail on the stock
-# supabase/postgres image for base-image fidelity gaps unrelated to this
-# repo (a buckets.public column the image never creates; a
-# dashboard_monthly_rollup relation this local harness never creates) — not
-# introduced by this PR, not something `apply` can fix, and not new.
-#
-# Round 4 review (B1): matching by filename ALONE — no check on the error
-# itself — meant a real, new, unrelated breakage inside one of these
-# files (a typo, a dropped dependency) was waved through as "known gap,
-# not blocking" too. Measured: injected a syntax error into
-# spec30_dashboard_rpcs.sql and it still reported rc=0. Each entry is now
-# "filename|expected error substring" — the filename narrows WHICH file is
-# allowed to fail, the substring narrows WHAT failure is allowed; either
-# one not matching makes it count as unexpected, still `test`/`grep -F`
-# (no globbing, no pattern) so nothing here can accidentally widen.
-#
-# Round 5 review (B1): a THIRD entry for spec30_dashboard_rpcs.sql was
-# here, and it was wrong on two counts. First, its failure wasn't a
-# base-image gap at all — the file opens with `SET LOCAL check_function_bodies
-# = off;`, a no-op outside an explicit transaction, and `psql -f` without
-# `-1` never opens one, so the deferred body check that line exists to
-# skip ran anyway. Second, and worse: that migration's error TEXT isn't
-# stable between runs of `apply` on the SAME container — on a fresh `up`,
-# public.dashboard_monthly_rollup doesn't exist yet (a later migration
-# creates it) and the file dies at line 79; on the very next `apply`
-# against that same container, the table now exists, psql gets further,
-# and it dies at a DIFFERENT line with a different error. One entry can
-# only encode one text, so the second `apply` reported a real
-# fail_unexpected and rc=1 — the round-3 bug back, with zero mutation,
-# just from running `apply` twice on a clean container (the review found
-# this; two more `apply` runs in a row reproduced it identically). Fixed
-# at the actual cause below (`-1`), which makes the file apply cleanly —
-# its allowlist entry is gone, not patched.
+# These two migrations fail on the stock supabase/postgres image for
+# base-image fidelity gaps unrelated to this repo (a buckets.public
+# column the image never creates), not fixable by `apply`. Each entry is
+# "filename|expected error substring", matched with `test`/`grep -F` (no
+# globbing) — filename narrows WHICH file may fail, substring narrows
+# WHAT failure is allowed; a real new failure in either file, or a
+# different error in the same file, is never silently waved through. A
+# third entry lived here for spec30_dashboard_rpcs.sql (its error text
+# depended on migration-application order — see git history / the round
+# 5 PR review for the full story); fixed at the cause (`-1`, below) and
+# removed, not patched.
 KNOWN_BASE_IMAGE_FAILURES=(
   '20250130165844_example_storage.sql|column "public" of relation "buckets" does not exist'
   '20260430000001_create_manifests_storage_bucket.sql|column "public" of relation "buckets" does not exist'
 )
-# Round 4 review (item 7): a self-test must never write/delete a REAL
-# migration filename or version, even pointed at the wrong container by
-# accident. One extra throwaway "name|substring" entry, set only by the
-# self-test, exercises this exact mechanism without touching the real list.
-# Round 5 review (minor): this env var reaches production `apply`, not
-# only the self-test — nothing stops someone from setting it by accident.
-# Requires deliberate action either way; make that action loud instead of
-# silently widening the allowlist.
+# PGTAP_APPLY_TEST_ALLOWLIST_ENTRY: the self-test's own throwaway
+# "name|substring" entry, never touching the real list above. Restricted
+# BY CONSTRUCTION, not just a warning: every real migration filename
+# starts with a 20YYMMDDHHMMSS timestamp; every self-test fixture that
+# uses this variable is in the 9999999999xx sentinel range instead. A
+# name outside that range is refused outright — checked on the NAME'S
+# SHAPE, not disk presence, because the self-test's own fixtures DO exist
+# on disk (that's how they exercise real error-text matching).
 if [ -n "${PGTAP_APPLY_TEST_ALLOWLIST_ENTRY:-}" ]; then
+  test_entry_name="${PGTAP_APPLY_TEST_ALLOWLIST_ENTRY%%|*}"
+  test_entry_ver="${test_entry_name%%_*}"
+  case "$test_entry_ver" in
+    9999999999*) : ;;
+    *)
+      echo "ERROR: PGTAP_APPLY_TEST_ALLOWLIST_ENTRY names '$test_entry_name' — its version ($test_entry_ver) is outside the 9999999999xx test-only sentinel range, so it could be (or become) a real migration filename. Refusing." >&2
+      exit 1
+      ;;
+  esac
   echo "WARNING: PGTAP_APPLY_TEST_ALLOWLIST_ENTRY is set — appending a throwaway allowlist entry: $PGTAP_APPLY_TEST_ALLOWLIST_ENTRY" >&2
   KNOWN_BASE_IMAGE_FAILURES+=("$PGTAP_APPLY_TEST_ALLOWLIST_ENTRY")
 fi
@@ -147,7 +132,7 @@ for f in $(ls /supabase/migrations/*.sql | sort); do
         # re-runs the file and records a real, non-prefixed hash), verified
         # against a live object. 'up' resolves the whole container at once
         # but is NOT free on a container others share — see the runbook.
-        echo "WARNING: $base has no recorded content hash (pre-existing row, applied before this guard existed) — cannot verify the live database matches this file. Marked UNVERIFIED, persistently: this keeps warning on every future run, it does not go quiet after one backfill. Resolve THIS row with 'apply --force $ver' (re-applies and re-verifies just this migration — see docs/runbooks/pgtap-mutation-testing.md on why that isn't free), or rebuild everything with './scripts/pgtap-local.sh up' if you're the only one using this container." >&2
+        echo "WARNING: $base has no recorded content hash (pre-existing row, applied before this guard existed) — cannot verify the live database matches this file. Marked UNVERIFIED, persistently: this keeps warning on every future run, it does not go quiet after one backfill. Resolve THIS row with 'apply --force $ver' (re-applies and re-verifies just this migration — see docs/runbooks/pgtap-mutation-testing.md on why that isn't free), or rebuild everything with 'bash ./scripts/pgtap-local.sh up' if you're the only one using this container." >&2
         unverified=$((unverified+1)); continue
         ;;
       unverified:*)
@@ -156,9 +141,9 @@ for f in $(ls /supabase/migrations/*.sql | sort); do
         # hash recorded alongside the marker, not just detect the prefix.
         prior_hash="${stored#unverified:}"
         if [ "$prior_hash" != "$hash" ]; then
-          echo "WARNING: $base is still UNVERIFIED, AND changed again since being marked unverified — run './scripts/pgtap-local.sh apply --force $ver' to resolve it, or 'up' if you're the only user of this container." >&2
+          echo "WARNING: $base is still UNVERIFIED, AND changed again since being marked unverified — run 'bash ./scripts/pgtap-local.sh apply --force $ver' to resolve it, or 'up' if you're the only user of this container." >&2
         else
-          echo "WARNING: $base is still UNVERIFIED (marked by a previous run, no confirmed baseline exists) — run './scripts/pgtap-local.sh apply --force $ver' to resolve it, or 'up' if you're the only user of this container. Not treated as a match just because a run has gone by." >&2
+          echo "WARNING: $base is still UNVERIFIED (marked by a previous run, no confirmed baseline exists) — run 'bash ./scripts/pgtap-local.sh apply --force $ver' to resolve it, or 'up' if you're the only user of this container. Not treated as a match just because a run has gone by." >&2
         fi
         unverified=$((unverified+1)); continue
         ;;
@@ -185,6 +170,20 @@ for f in $(ls /supabase/migrations/*.sql | sort); do
     txn_flags=(-1)
     if grep -Eqi '^[[:space:]]*BEGIN[[:space:]]*;' "$f"; then
       txn_flags=()
+      # Round 6 review (medium): apply-migrations.sh carries this exact
+      # warning three lines from where the BEGIN exception above was
+      # copied from — a file with its own BEGIN and no matching COMMIT
+      # leaves that transaction open; psql disconnects, Postgres rolls it
+      # back, and this harness (like its sibling) would otherwise record
+      # the version as applied with a real hash while the database holds
+      # NOTHING from that file. Reproduced: CREATE TABLE inside an
+      # unclosed BEGIN -> applied=1, hash recorded, to_regclass() on the
+      # table -> NULL.
+      if ! grep -Eqi '^[[:space:]]*COMMIT[[:space:]]*;' "$f"; then
+        echo "WARNING: $base has a top-level BEGIN; but no matching top-level COMMIT;" >&2
+        echo "         — its final transaction may be left open/rolled back by psql." >&2
+        echo "         Review the file before trusting this migration." >&2
+      fi
     fi
     if "${PSQL[@]}" -v ON_ERROR_STOP=1 -q "${txn_flags[@]}" -f "$f" >/tmp/o.log 2>&1; then
       "${PSQL[@]}" -q -c \
@@ -201,6 +200,17 @@ for f in $(ls /supabase/migrations/*.sql | sort); do
         echo "FAIL $base"
       fi
       printf '%s\n' "$errline" | sed "s/^/     /"
+      # Round 6 review (low, documentation): CREATE INDEX CONCURRENTLY
+      # cannot run inside a transaction block, and `-1` (round 5) puts
+      # every file in one. This is not a harness artifact — the Supabase
+      # CLI and QA's apply-migrations.sh apply the exact same way, so a
+      # CONCURRENTLY failure here means the SAME migration would fail at
+      # deploy time too. Say so, since check-migration-safety.mjs rule 2
+      # nudges authors toward CONCURRENTLY on large tables without saying
+      # this pipeline can't run it in any environment.
+      if printf '%s' "$errline" | grep -qF "cannot run inside a transaction block"; then
+        echo "      (this would fail the same way via the Supabase CLI or QA's apply-migrations.sh — CONCURRENTLY cannot run inside a transaction in any environment this repo deploys through; see docs/runbooks/pgtap-mutation-testing.md)"
+      fi
     fi
   fi
 done

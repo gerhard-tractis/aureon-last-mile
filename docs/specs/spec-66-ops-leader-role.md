@@ -455,10 +455,10 @@ END IF;
 - [ ] **Step 2: Run it — the only verification SQL gets**
 
 ```bash
-./scripts/pgtap-local.sh up          # first run only
-./scripts/pgtap-local.sh sync
-./scripts/pgtap-local.sh apply
-./scripts/pgtap-local.sh run spec66_ops_leader_route_authz
+bash ./scripts/pgtap-local.sh up          # first run only
+bash ./scripts/pgtap-local.sh sync
+bash ./scripts/pgtap-local.sh apply
+bash ./scripts/pgtap-local.sh run spec66_ops_leader_route_authz
 ```
 
 Expected: `pass`. CI will **not** catch a failure here.
@@ -468,7 +468,7 @@ Expected: `pass`. CI will **not** catch a failure here.
 Tasks 2 and 3 re-issue two functions spec-61 owns:
 
 ```bash
-./scripts/pgtap-local.sh run rbac_users_test add_manifest_to_route_authz \
+bash ./scripts/pgtap-local.sh run rbac_users_test add_manifest_to_route_authz \
   spec47_single_active_route_per_driver route_reception_snapshot_contract
 ```
 

@@ -6,13 +6,15 @@
 # scripts/pgtap-local.test.sh, does run in CI, against a throwaway
 # container — see .github/workflows/ci.yml.)
 #
-#   ./scripts/pgtap-local.sh up                    rebuild the container from scratch
-#   ./scripts/pgtap-local.sh sync                  copy migrations+tests into it
-#   ./scripts/pgtap-local.sh apply                 apply any not-yet-applied migrations
-#   ./scripts/pgtap-local.sh apply --force <ver>   re-apply one already-applied migration
-#   ./scripts/pgtap-local.sh run <test...>         run test files by basename
-#   ./scripts/pgtap-local.sh psql                  interactive shell
-#   ./scripts/pgtap-local.sh down                  remove the container
+#   bash ./scripts/pgtap-local.sh up                    rebuild the container from scratch
+#   bash ./scripts/pgtap-local.sh sync                  copy migrations+tests into it
+#   bash ./scripts/pgtap-local.sh apply                 apply any not-yet-applied migrations
+#   bash ./scripts/pgtap-local.sh apply --force <ver>   re-apply one already-applied migration
+#   bash ./scripts/pgtap-local.sh run <test...>         run test files by basename
+#   bash ./scripts/pgtap-local.sh psql                  interactive shell
+#   bash ./scripts/pgtap-local.sh down                  remove the container
+#   (`bash` in front matters — this file is 755, but not every checkout or
+#   copy-paste preserves that; a bare invocation gives exit 126 on Linux.)
 #
 # MUTATION-TESTING A MIGRATION: read docs/runbooks/pgtap-mutation-testing.md
 # BEFORE trusting a green result — two agents got a perfect false-green on

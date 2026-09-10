@@ -30,7 +30,7 @@ it leaves the database mutated for every test run afterward.
 ### 0. Prefer `up`; know that a per-row fix also exists
 
 ```
-./scripts/pgtap-local.sh up
+bash ./scripts/pgtap-local.sh up
 ```
 
 Any **pre-existing** container may hold migrations applied before the
@@ -42,7 +42,7 @@ on the very next run, reachable in exactly two `apply` invocations, with
 the mutant canonized in the ledger forever).
 
 An `unverified` row **can** be resolved without rebuilding everything:
-`./scripts/pgtap-local.sh apply --force <version>` re-applies that one
+`bash ./scripts/pgtap-local.sh apply --force <version>` re-applies that one
 migration and records a real, non-prefixed hash — verified, not just
 claimed: forcing a row genuinely clears its `unverified` state on the next
 `apply`. But re-applying an arbitrary migration is **not guaranteed safe** —
@@ -58,7 +58,7 @@ the same thing for the WHOLE container at once, with a single command.
 ### 1. Mutate the migration, then apply it with `--force`
 
 ```
-./scripts/pgtap-local.sh apply --force <version>
+bash ./scripts/pgtap-local.sh apply --force <version>
 ```
 
 Never a hand-rolled `docker exec -i <c> psql -f /path/...` — see "Why this
@@ -82,7 +82,7 @@ after `up`, before mutating anything), then compare post-mutation:
 Run any of these through:
 
 ```
-./scripts/pgtap-local.sh psql -tAc "<query>"
+bash ./scripts/pgtap-local.sh psql -tAc "<query>"
 ```
 
 ### 3. Trust `run`'s red/green
@@ -118,7 +118,7 @@ not enough:
 
 ```
 git checkout -- path/to/the/migration.sql   # or however you revert it
-./scripts/pgtap-local.sh apply --force <version>
+bash ./scripts/pgtap-local.sh apply --force <version>
 ```
 
 Skipping the `apply --force` after restoring is the exact bug this step
@@ -172,16 +172,42 @@ using that container right now.
 
 ## Platform gotcha: never invoke a script in this repo by bare path
 
-`scripts/pgtap-local.sh` is tracked at mode `100644` — no execute bit (so
-are most sibling scripts; it's not consistently `755` across this repo).
-Git Bash on Windows never enforces that bit, so `"$0" sync` inside the
-script, or any test invoking a sibling script by its path directly, runs
-fine on every developer machine. A Linux CI runner does enforce it: the
-exact same call fails with `Permission denied` / exit 126 — silently
+`scripts/pgtap-local.sh` is now mode `100755` (round 6 review), but most
+sibling scripts in this repo are still `100644` — not consistently `755`
+across the codebase — and Git Bash on Windows never enforces the execute
+bit either way, so a bare `"$0" sync`, or any test invoking a sibling
+script by its path directly, runs fine on every developer machine
+regardless of the bit. A Linux CI runner DOES enforce it: the exact same
+call on a `644` file fails with `Permission denied` / exit 126 — silently
 looking like a real logic bug, discovered only in CI, not locally. Round 5
 review's new stability self-test (the first thing in this whole PR's
-history to exercise `up` in CI) hit this. Always `bash <script>`, never a
-bare `<script>` or `"$0"` — matches how `.github/workflows/ci.yml` already
-invokes every script in this repo. This is the mirror image of B1: there,
-CI passed and the real machine (a pristine repo) failed; here, every
-developer's machine passes and only CI fails.
+history to exercise `up` in CI) hit this on this very file before the bit
+was set. Belt and braces: the execute bit is set on this file now, AND
+every invocation everywhere in this repo (including this file's own usage
+banner, its `WARNING` messages, and every doc that names it) uses `bash
+<script>`, never a bare `<script>` or `"$0"` — matches how
+`.github/workflows/ci.yml` already invokes every script in this repo, and
+survives the bit being lost again (a fresh clone via some tool that
+doesn't preserve it, a copy-paste of a command). This is the mirror image
+of B1: there, CI passed and the real machine (a pristine repo) failed;
+here, every developer's machine passed and only CI failed.
+
+## CONCURRENTLY cannot run through this pipeline, in any environment
+
+`CREATE INDEX CONCURRENTLY` cannot run inside a transaction block. `apply`
+(round 5, `-1`) wraps every migration file in one, so a migration using
+`CONCURRENTLY` fails here — but this is not a harness artifact to work
+around: the Supabase CLI (`supabase db push`) and QA's
+`infra/supabase-qa/apply-migrations.sh` apply the exact same way, so the
+SAME migration would fail identically at deploy time. A `FAIL` here for
+that reason means "this deploy will fail everywhere", not "this harness is
+wrong" — correctly predicting the outcome instead of passing green and
+breaking later.
+
+`scripts/check-migration-safety.mjs` rule 2 nudges migration authors
+toward `CONCURRENTLY` on large tables (`packages`, `orders`, `dispatches`,
+`routes`) with a `::warning::` — advisory, not an instruction this
+pipeline can actually execute. If a migration ever needs a genuinely
+concurrent index build, it has to be applied out-of-band (a one-off
+`psql` connection outside this harness/CI/CLI's transaction wrapping), not
+through `apply`.
