@@ -108,7 +108,12 @@ distinto y no se resuelve haciendo QA más grande.
 
 ## Fases
 
-### Fase 1 — Inventario medido de divergencia `[in_progress]`
+### Fase 1 — Inventario medido de divergencia `[done]`
+
+> Implementado por: **el orquestador** — la medición necesita SSH a la VPS y un `workflow_dispatch` con los secretos de producción, capacidades que un implementer no tiene. Ramas `feat/spec-93-fase-1-inventario` (#755), `docs/spec-93-fase-1-columna-produccion` (#760), `fix/spec-93-measure-postgrest-endpoint` (#758), `fix/spec-93-measure-pooler-from-api` (#763).
+> Review: **sin review adversarial dedicado** — el entregable es una tabla de mediciones, y cada fila lleva escrito el comando que la produjo, que es su propia verificación. El hueco se declara en vez de maquillarse.
+> QA: no aplica — esta fase no toca código de la aplicación. La medición se validó contra los entornos vivos: corrida `34539233402` (producción, ocho superficies en verde) y `docker inspect`/`psql` contra los contenedores de QA.
+> Downstream: revisado spec-92 (PR #761) — su tabla de huecos crece con cinco clases de cambio nuevas y sus filas 1 y 2 cambian. Ver fase 5.
 
 **Archivos:** `docs/specs/spec-93-paridad-qa-produccion.md` (la tabla del inventario vive aquí), `docs/qa-environment.md`
 
@@ -176,18 +181,18 @@ Medido el 2026-09-10.
 | 3c | **`mailer_autoconfirm`** | `true` — auto-confirma | **`false`** — exige confirmar por email | **No** — ⚠️ divergencia |
 | 3d | **MFA TOTP** | no declarada → default de GoTrue | `mfa_totp_enroll_enabled: true`, `mfa_totp_verify_enabled: true` | **No** — ⚠️ divergencia |
 | 3e | **Rotación de refresh tokens** | no declarada → default | `refresh_token_rotation_enabled: true`, `security_refresh_token_reuse_interval: 10` | **No** — ⚠️ divergencia |
-| 4 | Extensiones instaladas | `pg_cron`, `pg_net`, `pg_stat_statements`, `pgcrypto`, `plpgsql`, `postgis 3.3.7`, `supabase_vault`, `uuid-ossp` | ⛔ **sin medir** — ver «El bloqueo» | Indirecto — `postgis` lo usan 9 migraciones; `pg_net` **ninguna** |
-| 5 | `pgtap` | **NO instalada** (disponible 1.3.3) | ⛔ sin medir | **No, y peor:** ver «El hallazgo 1» |
-| 6 | `pg_graphql` | **NO instalada** (disponible 1.5.11), aunque `graphql_public` existe y PostgREST lo expone | ⛔ sin medir | No |
-| 7 | Roles y pertenencias | 16 roles; `authenticator` ∈ {anon, authenticated, service_role} | ⛔ sin medir | Indirecto — cada consulta del e2e pasa por RLS |
-| 8 | GUCs de base | `app.settings.jwt_secret`, `app.settings.jwt_exp` | ⛔ sin medir | No |
-| 9 | `cron.job` | 2 jobs, ambos `postgres`: `nightly-metrics`, `dashboard_monthly_rollup` | ⛔ sin medir | **No** — el e2e no espera a las 02:00 |
+| 4 | Extensiones instaladas | las 7 de prod **más `pg_net 0.20.3`** | `pg_cron`, `pg_stat_statements`, `pgcrypto`, `plpgsql`, `postgis 3.3.7`, `supabase_vault`, `uuid-ossp` | Indirecto — `postgis` lo usan 9 migraciones. ⚠️ `pg_net` **sólo existe en QA**, y no lo usa ninguna migración |
+| 5 | `pgtap` | **NO instalada** (disponible 1.3.3) — la fase 3 la instala | **NO instalada**, y así debe seguir: es una extensión de testing | **No, y peor:** ver «El hallazgo 1» |
+| 6 | `pg_graphql` | **NO instalada** (disponible 1.5.11) | **NO instalada** — converge | No — los dos exponen `graphql_public` sin la extensión detrás |
+| 7 | Roles y pertenencias | 16 roles. Extra: `supabase_functions_admin` (runtime de edge autohospedado) | 16 roles. Extra: `cli_login_postgres` | Indirecto — cada consulta del e2e pasa por RLS. Los dos extras se explican por la forma de cada entorno: **converge en lo que importa** |
+| 8 | **GUCs de base y de rol** | `app.settings.jwt_secret`, `app.settings.jwt_exp`. **Y nada más** | `app.settings.jwt_exp`, más `statement_timeout` 3s/8s, `lock_timeout=8s`, `idle_in_transaction_session_timeout=60000`, `session_preload_libraries=safeupdate`, `search_path="$user", public, auth, extensions` | **No** — ⚠️ la divergencia más consecuente de todo el inventario, ver «El hallazgo 4» |
+| 9 | `cron.job` | **2** jobs, ambos `postgres`: `nightly-metrics`, `dashboard_monthly_rollup` | **3** — los dos de QA **más `archive_old_audit_logs`** (`0 2 * * *`, `postgres`) | **No** — el e2e no espera a las 02:00. ⚠️ un job que sólo corre en producción |
 | 10 | PostgREST — esquemas y `max-rows` | `DB_SCHEMAS=public,graphql_public`, `MAX_ROWS=1000` | `db_schema: public,graphql_public`, `max_rows: 1000` | Parcial — los datos del e2e no rozan `max-rows` |
 | 10b | **PostgREST — `extra_search_path`** | `public` | **`public, extensions`** | **No** — ⚠️ divergencia |
 | 11 | Rutas de Kong | `/auth/v1/`, `/rest/v1/`, `/storage/v1/`, `/functions/v1/`, `/graphql/v1`, `/realtime/v1/`, `/analytics/v1` | **No comparable** — prod es el gateway gestionado, no Kong | Sólo `/auth/v1/` y `/rest/v1/` |
-| 12 | Publicación `supabase_realtime` | **2 tablas**: `orders`, `dock_verifications` | ⛔ **sin medir** — es la fila que decide la dirección del hallazgo 2 | **No** — ver «El hallazgo 2» |
-| 13 | Buckets de storage | `files` (privado), `manifests` (privado, 10 MiB, imágenes) | ⛔ sin medir | **No** — ningún e2e sube un fichero |
-| 14 | Políticas de storage | 8 sobre `storage.objects` | ⛔ sin medir | No |
+| 12 | Publicación `supabase_realtime` | **2 tablas**: `orders`, `dock_verifications` | **Las mismas 2** — converge exactamente | **No** — y la convergencia cambia el hallazgo 2 de divergencia a **bug de producto**, ver abajo |
+| 13 | Buckets de storage | `files` (privado), `manifests` (privado, 10 MiB, imágenes) | **Idénticos** — converge | **No** — ningún e2e sube un fichero |
+| 14 | Políticas de storage | 8 sobre `storage.objects` | **Las mismas 8** — converge | No |
 | 15 | Edge functions desplegadas | `beetrack-webhook`, `dispatchtrack-route-poll`, `main` | `beetrack-webhook` (ACTIVE, `verify_jwt=false`, v30), `dispatchtrack-route-poll` (ACTIVE, `verify_jwt=true`, v12) | **No** — ningún e2e invoca `/functions/v1/`. `main` es el router del runtime autohospedado: **converge** |
 | 16 | Variables del runtime de edge | `BEETRACK_WEBHOOK_SECRET`, `JWT_SECRET`, `SUPABASE_*`, `VERIFY_JWT` | **No comparable** — la Management API no expone los secretos de una function | No |
 
@@ -227,7 +232,7 @@ ssh root@<VPS> "docker exec supabase-qa-edge-functions ls /home/deno/functions"
 ssh root@<VPS> "docker inspect supabase-qa-edge-functions --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -E 's/=.*//' | sort"
 ```
 
-#### El bloqueo: cinco superficies de producción siguen sin medir
+#### El bloqueo que hubo, y cómo se salió de él (histórico)
 
 Las tres superficies que lee la **Management API** (auth, PostgREST, edge
 functions) se midieron sin problema. Las cinco que necesitan **`psql`** —
@@ -257,8 +262,19 @@ error. El workflow existía, se leía como capacidad disponible, y no lo era —
 otra instancia del patrón que este spec persigue, esta vez en la propia
 herramienta de medir.
 
-Cuando #753 mergee: adaptar `measure-prod-surfaces.yml` a la nueva interfaz del
-script y volver a disparar. La fase 1 no se cierra hasta entonces.
+**Resuelto sin esperar a #753.** La regla de `docs/specs/CLAUDE.md` — el
+orquestador comprueba si él mismo tiene la capacidad antes de trasladar un
+bloqueo — aplica también cuando el bloqueo se lo pone él. `measure-prod-surfaces.yml`
+no tenía por qué usar ese script: pregunta
+`GET /v1/projects/{ref}/config/database/pooler` por su cuenta (#763), que
+devuelve el `connection_string` ya montado. Sin duplicar el arreglo de #753 y
+sin tocar el fichero que #753 reescribe.
+
+De paso, el **puerto** y el **usuario** dejaron de estar hardcodeados
+(`6543`, `postgres.<ref>`) y también se leen: suponer en vez de leer es la
+clase de error exacta que costó las cuatro corridas de arriba.
+
+Corrida completa y verde: `34539233402`.
 
 #### Lo que la columna de producción ya cambió
 
@@ -295,6 +311,72 @@ tiene desplegadas dos functions y QA tres (las mismas dos más `main`, el router
 del runtime autohospedado). **`whatsapp-webhook` no está en ninguno de los dos.**
 No es una divergencia QA↔prod — es código que no corre en ninguna parte, y va
 anotado aquí para que quien lo lea no asuma que está vivo.
+
+#### El hallazgo 4 — producción tiene límites de tiempo que QA no tiene
+
+Es la divergencia más consecuente de las dieciséis filas, y no estaba en la
+lista de superficies que el spec enumeró.
+
+| GUC | Producción | QA |
+|---|---|---|
+| `statement_timeout` | **3s / 8s** según el rol | *sin fijar* |
+| `lock_timeout` | **8s** | *sin fijar* |
+| `idle_in_transaction_session_timeout` | **60000** (60s) | *sin fijar* |
+| `session_preload_libraries` | **`safeupdate`** | *sin fijar* |
+| `search_path` | `"$user", public, auth, extensions` | *sin fijar* |
+
+**Una consulta lenta se corta en producción y en QA no.** Una migración, un
+backfill o una RPC que tarde 10 segundos pasa `e2e-qa` en verde y muere en
+producción con `canceling statement due to statement timeout`. QA no puede
+reproducirlo porque no tiene reloj.
+
+Esto explica, y por fin **mide**, algo que ya se sabía por experiencia: los
+backfills de migración revientan en producción y en ningún otro sitio. Se
+atribuía sólo al volumen de datos (~112k despachos / ~61k bultos). El volumen
+es real, pero **no es la única causa**: hay un `statement_timeout` de 3 a 8
+segundos que en QA sencillamente no existe.
+
+`session_preload_libraries=safeupdate` es de la misma familia: en producción
+un `UPDATE`/`DELETE` sin `WHERE` se rechaza; en QA se ejecuta. Y el
+`search_path` de producción incluye `auth` y `extensions`, que en QA no están —
+la misma clase de problema que la fila 10b, en la capa de la base en vez de en
+PostgREST.
+
+**Está fuera del alcance declarado del spec** («fuera de alcance: el volumen de
+datos»), y con razón: esto **no es volumen**, es configuración, que es
+exactamente lo que el spec sí persigue. La exclusión de «hacer QA más grande»
+sigue siendo correcta; lo que hay que copiar a QA no son los datos, son los
+relojes.
+
+#### El hallazgo 2, resuelto: no es una divergencia, es un bug de producto
+
+La fila 12 era la que iba a decidir la dirección. Ya está medida: **producción
+tiene exactamente las mismas dos tablas que QA** (`orders`,
+`dock_verifications`).
+
+Así que las cinco suscripciones restantes — `customer_session_messages`,
+`customer_sessions`, `intake_submissions`, `packages`, `routes` — **están
+muertas en los dos entornos**. No hay nada que alinear entre QA y producción:
+hay cinco canales que el frontend abre, que se suscriben sin error, y que no
+reciben un evento **en ninguna parte**.
+
+Eso lo saca del alcance de este spec y lo convierte en trabajo de producto:
+o esas tablas entran en la publicación, o las suscripciones sobran. Va escrito
+aquí para que quien lea el código no dé por vivo un canal que no lo está. **No
+se arregla en spec-93** — no es paridad.
+
+#### Lo que converge, dicho también
+
+Media docena de superficies salieron **idénticas**, y decirlo importa tanto
+como decir las que no: buckets de storage y sus ocho políticas, la publicación
+de realtime, `pg_graphql` (ausente en los dos), los esquemas expuestos y el
+`max_rows` de PostgREST, y los roles en todo lo que no sea el extra que cada
+entorno se explica solo (`supabase_functions_admin` en QA por el runtime
+autohospedado; `cli_login_postgres` en producción).
+
+El spec preguntaba «qué superficies de producción no existen en QA». La
+respuesta honesta es: **menos de las que se temía, pero las que faltan son
+peores de lo que se temía** — nadie había mirado los relojes.
 
 #### Tres hallazgos que no necesitaban la columna de producción
 
