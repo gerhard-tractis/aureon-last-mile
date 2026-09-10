@@ -12,6 +12,7 @@ import { ManifestClosedSummary } from '@/components/pickup/ManifestClosedSummary
 import { usePickupScans } from '@/hooks/pickup/usePickupScans';
 import { useMissingPackages } from '@/hooks/pickup/useDiscrepancies';
 import { useManifestDocuments } from '@/hooks/pickup/useManifestDocuments';
+import { useQueuedManifestPhotoCount } from '@/hooks/pickup/useQueuedManifestPhotoCount';
 import { useRouteManifests } from '@/hooks/pickup/useRouteManifests';
 import { useManifestCompletionContext } from '@/hooks/pickup/useManifestCompletionContext';
 import { useCloseManifest } from '@/hooks/pickup/useCloseManifest';
@@ -94,6 +95,16 @@ export default function CompletionPage() {
   // 5i — same document count ManifestPhotoStrip already renders, read again
   // here for the "Respaldo" row; react-query dedupes by query key.
   const { data: documents = [] } = useManifestDocuments(operatorId, manifestId);
+  // Ronda 4 de review del PR #736 (bloqueante 2) — `documents.length` sólo
+  // cuenta lo que el SERVIDOR ya confirmó. Desde esta fase
+  // `enqueueManifestPhoto` tiene su primer llamador de producción
+  // (`ManifestPhotoStrip`), así que una foto recién capturada — encolada
+  // pero todavía sin confirmar — podía leer "0 fotos" en la pantalla que
+  // existe para tranquilizar al operario de que el respaldo está a salvo.
+  // `photosCount` (más abajo) suma esto a `documents.length`: un número
+  // honesto, no dos que el operario tenga que sumar él mismo — ver
+  // `queuedManifestPhotoCount` para el porqué de qué estados cuentan.
+  const queuedPhotoCount = useQueuedManifestPhotoCount(operatorId, manifestId);
   // 5i — "Sigue en PR-…": the OTHER manifests on this same route, so this
   // screen can say how many are still pending and which is next.
   const { data: routeManifests = [] } = useRouteManifests(routeId, operatorId);
@@ -198,7 +209,7 @@ export default function CompletionPage() {
         verifiedCount={verifiedCount}
         missingCount={missingPackages.length}
         unexpectedCount={unexpectedCount}
-        photosCount={documents.length}
+        photosCount={documents.length + queuedPhotoCount}
         signaturesCount={clientSignature ? 2 : 1}
         routeExternalId={routeExternalId}
         pendingRouteCount={routeSummary?.pendingCount ?? 0}
@@ -259,6 +270,7 @@ export default function CompletionPage() {
         operatorId={operatorId}
         manifestId={manifestId}
         userId={userId}
+        externalLoadId={loadId}
       />
 
       {/*
@@ -270,16 +282,12 @@ export default function CompletionPage() {
         encoló — esta línea es la promesa hecha ANTES de decidir firmar, no
         un reemplazo de esa confirmación.
 
-        Bloqueante 1, ronda 2 de review del PR #706 — "Las fotos también" es
-        HOY una promesa a medias. La firma (`close_manifest`) SÍ sobrevive
-        sin señal desde spec-81 fase 2 (encolada en IndexedDB, drenada al
-        volver la conexión). Las fotos NO: `useUploadManifestDocument` sube
-        directo al bucket sin ninguna ruta offline, y si `upload` falla el
-        archivo se pierde — `lib/offline/photos.ts` (spec-81 fase 5,
-        `[pending]`) es quien cierra ese hueco, no esta fase. Declarado aquí
-        y en el spec en vez de resuelto en silencio; mientras tanto,
-        `ManifestPhotoStrip` al menos falla en español y sin ambigüedad
-        (ver su propio comentario) en lugar de perder la foto callado.
+        spec-80 fase 6 — "Las fotos también" dejó de ser una promesa a
+        medias: `ManifestPhotoStrip` ya no sube directo al bucket
+        (`useUploadManifestDocument`); la captura (`5g`/`5h`) se encola con
+        `enqueueManifestPhoto` (`lib/offline/photos.ts`, spec-81 fase 5) y
+        drena junto con la firma. Verificado antes de dejar esta línea tal
+        cual — ver el spec.
       */}
       <div className="flex items-center gap-3 p-3 rounded-lg bg-status-warning-bg border border-status-warning-border">
         <p className="text-sm text-status-warning-text">

@@ -97,6 +97,43 @@ export async function unconfirmedPhotoBytes(
 }
 
 /**
+ * Ronda 4 de review del PR #736 (bloqueante 2) — cuántas fotos de ESTE
+ * manifiesto siguen en la cola local sin confirmar (`pending`/`sending`).
+ * `complete/[loadId]/page.tsx` la suma a `documents.length` (lo que el
+ * SERVIDOR ya confirmó) para el "Respaldo: N fotos" de `5i` — un número
+ * honesto, no dos que el operario tenga que sumar él mismo (decisión del
+ * usuario, ver el spec).
+ *
+ * NO cuenta `dead` — a diferencia de `unconfirmedPhotoBytes` (que sí, porque
+ * ese blob sigue ocupando disco hasta que un humano lo resuelva). Aquí la
+ * pregunta es otra: "¿está a salvo?". Una entrada `dead` agotó los
+ * reintentos con un rechazo irrecuperable — nunca llegó al servidor y no va
+ * a llegar sin intervención humana. Contarla como respaldo repetiría, en la
+ * otra dirección, el error del bloqueante 1: pintar a salvo algo que no lo
+ * está.
+ *
+ * Tampoco cuenta `sent` — ese número ya lo tiene `documents.length`, la
+ * fuente de verdad del servidor para lo confirmado; sumarlo aquí también lo
+ * contaría dos veces.
+ */
+export async function queuedManifestPhotoCount(
+  db: PickupQueueStore,
+  operatorId: string,
+  manifestId: string,
+): Promise<number> {
+  return db.pickup_queue
+    .where('operatorId')
+    .equals(operatorId)
+    .and(
+      (entry) =>
+        entry.manifestId === manifestId &&
+        entry.type === 'manifest_photo' &&
+        (entry.status === 'pending' || entry.status === 'sending'),
+    )
+    .count();
+}
+
+/**
  * B3, review del PR #712 (bloqueante) — `ManifestPhotoStrip.tsx` calcula el
  * número de hoja contra `useManifestDocuments`, una query AL SERVIDOR. Sin
  * señal esa lista queda congelada, así que dos fotos capturadas offline en
@@ -168,8 +205,12 @@ export async function enqueueManifestPhoto(
 ): Promise<PickupQueueEntry> {
   if (input.blob.size > MAX_PHOTO_FILE_BYTES) {
     const limitMb = Math.round(MAX_PHOTO_FILE_BYTES / (1024 * 1024));
+    // Ronda 2 de review del PR #736 (menor) — sin el prefijo interno
+    // "recogida offline queue: ": spec-80 fase 6 empezó a mostrar este
+    // mensaje tal cual en un `toast.error` frente al conductor
+    // (`ManifestPhotoStrip.tsx`), y ese prefijo no significa nada para él.
     throw new Error(
-      `recogida offline queue: la foto supera el tamaño máximo (${limitMb} MiB) que el bucket admite — repite la captura antes de continuar`,
+      `la foto supera el tamaño máximo (${limitMb} MiB) que el bucket admite — repite la captura antes de continuar`,
     );
   }
 
@@ -177,7 +218,7 @@ export async function enqueueManifestPhoto(
   if (currentBytes + input.blob.size > MAX_UNCONFIRMED_PHOTO_BYTES_PER_OPERATOR) {
     const capMb = Math.round(MAX_UNCONFIRMED_PHOTO_BYTES_PER_OPERATOR / (1024 * 1024));
     throw new Error(
-      `recogida offline queue: cola de fotos llena (${capMb} MB sin confirmar) para este operador — no se puede encolar más hasta que el drenado confirme o descarte alguna`,
+      `cola de fotos llena (${capMb} MB sin confirmar) para este operador — no se puede encolar más hasta que el drenado confirme o descarte alguna`,
     );
   }
 

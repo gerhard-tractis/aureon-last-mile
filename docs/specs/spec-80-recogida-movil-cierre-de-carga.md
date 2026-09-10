@@ -1607,7 +1607,7 @@ Releído cada spec downstream contra lo que **realmente** se mergeó en esta fas
   hereda esta misma decisión** — si la evidencia necesita ser literalmente inmutable
   (no sólo auditada), ese spec necesita un RPC, no este patrón.
 
-### Fase 6 — cablear `5g`/`5h` a `ManifestPhotoStrip` (que «Las fotos también» sea verdad) `[pending]`
+### Fase 6 — cablear `5g`/`5h` a `ManifestPhotoStrip` (que «Las fotos también» sea verdad) `[in_progress]`
 
 **Por qué existe esta fase y no un párrafo suelto (2026-09-09).** Esto llevaba
 tres PRs viviendo como «pendiente con dueño» en prosa, fuera de todo checklist
@@ -1635,22 +1635,90 @@ pantalla que promete al operario algo que el código no hace. Aquí es peor que
 en otros casos, porque lo que se pierde es la evidencia fotográfica del
 traspaso de custodia — el respaldo de una eventual indemnización.
 
-- [ ] `ManifestPhotoStrip` llama a `enqueueManifestPhoto`, **no** a
+- [x] `ManifestPhotoStrip` llama a `enqueueManifestPhoto`, **no** a
       `useUploadManifestDocument`.
-- [ ] La captura entra por `5g`/`5h` (`onUsePhoto` entrega un `File`, que **es**
+- [x] La captura entra por `5g`/`5h` (`onUsePhoto` entrega un `File`, que **es**
       un `Blob`: encaja sin reconversión).
-- [ ] `externalLoadId` se pasa al encolar — sin él, el chip de sync (spec-81
+- [x] `externalLoadId` se pasa al encolar — sin él, el chip de sync (spec-81
       fase 4) no puede decirle al operario **qué carga** abrir cuando una foto
       queda muerta.
-- [ ] Test que ejercite el camino sin señal de punta a punta: capturar →
-      encolar → drenar, sin que la foto se pierda.
-- [ ] Sólo cuando lo anterior esté: verificar que la leyenda de `5f` es verdad,
-      y **si por lo que sea no se cablea, cambiar la leyenda** — la pantalla no
-      puede seguir prometiéndolo.
+- [x] Test que ejercite capturar → encolar, más un drenado reconstruido a
+      mano (sin `onManifestDocumentsChanged` real — no es punta a punta),
+      confirmando que la foto no se pierde
+      (`photos-capture-flow.test.ts`; wording corregido ronda 4 de review
+      del PR #736 para decir lo que el test mide, no más).
+- [x] Verificado: con el cableado hecho, la leyenda de `5f` («Las fotos
+      también») ya es verdad — no hizo falta cambiarla.
 
 **Archivos:** `apps/frontend/src/components/pickup/ManifestPhotoStrip.tsx` (+ test),
 `apps/frontend/src/app/app/pickup/complete/[loadId]/page.tsx` (montaje de `5g`/`5h`).
 
 **Depende de:** ninguna — spec-81 fase 5 (`enqueueManifestPhoto`) y spec-80
 fase 4 (`5g`/`5h`) están **mergeadas**. Se puede tomar hoy.
+
+**Ronda 2 de review del PR #736 (2026-09-10) — decisiones y hallazgos.**
+
+- **Decisión de producto: `toast.success` al encolar una foto, no un
+  contador de cola en la tira.** Sin señal, `manifest-photo-count`
+  (`documents.length`) sólo cuenta lo que el SERVIDOR ya confirmó — tras
+  encolar la primera hoja sigue en "0", sin ningún otro aviso, y un operario
+  puede leer eso como "no se guardó" y repetir la foto (filas duplicadas de
+  2-4 MB contra el tope de 200 MB, `MAX_UNCONFIRMED_PHOTO_BYTES_PER_OPERATOR`).
+  Se añadió un `toast.success(...)` en `handleUsePhoto`, mismo precedente
+  que `useCloseManifest.ts` (`toast.success` cuando el cierre queda
+  encolado, no sólo online). Deliberadamente NO se cuenta la cola local en
+  la tira: eso exigiría leer `pickup_queue` desde este componente, con
+  riesgo de que ese contador y el del servidor discreparan — el mismo
+  problema que costó una ronda de review en spec-81 fase 5. Ningún criterio
+  de aceptación de esta fase pedía un indicador — la desviación es de este
+  spec, no un hallazgo de código sin resolver.
+- **Ronda 3 de review — el texto del toast, y por qué ya no se gatea por
+  conectividad.** El pedido inicial (ronda 2, del usuario) fue que el
+  mensaje saliera SÓLO sin señal. La implementación no lo hizo, y el
+  revisor lo marcó como hallazgo — con razón, según el código: `:95` no
+  consultaba `navigator.onLine` ni nada equivalente. Pero el usuario retiró
+  su propio pedido al verlo señalado, por una razón que no había pesado al
+  pedirlo: desde esta fase, `enqueueManifestPhoto` es la ÚNICA ruta — ya no
+  existe la subida online directa que `useUploadManifestDocument` ofrecía.
+  El encolado ocurre siempre, con o sin señal, así que "la foto se guardó"
+  nunca es falso en ningún camino; lo único que podía mentir era la
+  SEGUNDA mitad ("se sube al recuperar señal" — con señal, el drenador la
+  sube un segundo después, no "al recuperar" nada). Gatear el texto con
+  `navigator.onLine`/`onlineManager` habría sido dos redacciones que
+  mantener sincronizadas y una rama más que probar, por una diferencia que
+  al operario no le importa. Se cambió el texto a **"Foto guardada. Se sube
+  sola."** — cierto en los dos caminos, sin prometer una espera que online
+  no existe, y sin negar el encolado que sí ocurre siempre.
+- **`loadLabel` cae al `manifestId` (un UUID) cuando `externalLoadId` no se
+  pasa** (`ManifestPhotoStrip.tsx`, props de `5g`/`5h`). Es el mismo
+  fallback que el PR #725 (spec-81 fase 4) descartó por decisión del
+  usuario para el chip de sync. Hoy inalcanzable en producción —
+  `complete/[loadId]/page.tsx` siempre pasa `externalLoadId={loadId}` — pero
+  el prop sigue siendo opcional en el tipo; si algún día se monta
+  `ManifestPhotoStrip` sin él, `5g`/`5h` mostrarían un UUID en vez de
+  "CARGA-99814".
+  - [ ] Decidir si `loadLabel` debe dejar de tener fallback a `manifestId`
+        (mismo criterio que el chip de sync, PR #725) o si es aceptable
+        para una pantalla presentacional — hoy inalcanzable, sin llamador
+        real que lo dispare.
+- **`useUploadManifestDocument` (`hooks/pickup/useManifestDocuments.ts`) es
+  código muerto** desde esta fase — sin llamadores de producción, con su
+  propia suite de tests que sigue pasando. Borrarlo excedía el alcance
+  declarado de esta fase (`**Archivos:**` arriba no lo incluye), pero
+  "fuera de alcance" caduca: sin un ítem que lo diga, el próximo que lo lea
+  lo toma como una ruta de subida legítima.
+  - [ ] Borrar `useUploadManifestDocument` y su test de
+        `hooks/pickup/useManifestDocuments.ts`/`.test.ts` — verificar antes
+        que sigue sin llamadores (`grep -rn useUploadManifestDocument
+        apps/frontend/src`).
+- **Un tercer mensaje sin limpiar, mismo defecto que el de M-menor de la
+  ronda 2 (prefijo `"recogida offline queue: "` mostrado crudo en un
+  `toast.error` del conductor).** `enqueueManifestPhoto` delega en
+  `enqueue` (`lib/offline/queue.ts:75`) para el tope de 500 filas sin
+  confirmar, y ESE mensaje sigue llevando el prefijo — llega igual de crudo
+  al mismo `toast.error` de `ManifestPhotoStrip.tsx`. No se toca en esta
+  fase porque `queue.ts` también lo usa desde `useCloseManifest.ts`
+  (`close_manifest`), fuera del alcance de esta fase.
+  - [ ] Limpiar el prefijo de `queue.ts:75` (o decidir mantenerlo) — afecta
+        tanto a `ManifestPhotoStrip` como a la firma del manifiesto.
 

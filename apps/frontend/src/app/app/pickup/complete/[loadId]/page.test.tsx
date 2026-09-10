@@ -2,8 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import CompletionPage from './page';
 
+// Ronda 2 de review del PR #736 (M1) — el doble anterior descartaba TODOS
+// los props, así que borrar `externalLoadId={loadId}` en `page.tsx` no lo
+// detectaba ningún test (26/26 seguían en verde). Registrarlos es lo que
+// convierte este mock en una guardia real del eslabón page → strip, no sólo
+// en un placeholder visual.
+const mockManifestPhotoStripProps: Array<Record<string, unknown>> = [];
 vi.mock('@/components/pickup/ManifestPhotoStrip', () => ({
-  ManifestPhotoStrip: () => <div data-testid="manifest-photo-strip" />,
+  ManifestPhotoStrip: (props: Record<string, unknown>) => {
+    mockManifestPhotoStripProps.push(props);
+    return <div data-testid="manifest-photo-strip" />;
+  },
 }));
 
 const mockUsePickupScans = vi.fn();
@@ -22,6 +31,13 @@ vi.mock('@/hooks/pickup/useDiscrepancies', () => ({
 const mockUseManifestDocuments = vi.fn();
 vi.mock('@/hooks/pickup/useManifestDocuments', () => ({
   useManifestDocuments: (...args: unknown[]) => mockUseManifestDocuments(...args),
+}));
+
+// Ronda 4 de review del PR #736 (bloqueante 2) — "Respaldo" debe contar
+// también lo encolado sin confirmar, no sólo `documents.length`.
+const mockUseQueuedManifestPhotoCount = vi.fn();
+vi.mock('@/hooks/pickup/useQueuedManifestPhotoCount', () => ({
+  useQueuedManifestPhotoCount: (...args: unknown[]) => mockUseQueuedManifestPhotoCount(...args),
 }));
 
 const mockUseRouteManifests = vi.fn();
@@ -129,6 +145,7 @@ vi.mock('@/hooks/useOfflineQueue', () => ({
 
 describe('CompletionPage', () => {
   beforeEach(() => {
+    mockManifestPhotoStripProps.length = 0;
     mockUsePickupScans.mockReturnValue({
       data: [
         { id: 's1', scan_result: 'verified', package_id: 'pkg-a' },
@@ -147,6 +164,7 @@ describe('CompletionPage', () => {
       isRetrying: false,
     });
     mockUseManifestDocuments.mockReturnValue({ data: [] });
+    mockUseQueuedManifestPhotoCount.mockReturnValue(0);
     mockUseRouteManifests.mockReturnValue({ data: [] });
     // M-3, ronda 5 de review del PR #679 (mayor) — por defecto simula "sí
     // había algo que revivir"; el test dedicado abajo lo sobreescribe con 0.
@@ -346,6 +364,19 @@ describe('CompletionPage', () => {
     expect(strip.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  // Ronda 2 de review del PR #736 (M1, bloqueante) — sin esta guardia,
+  // borrar `externalLoadId={loadId}` en `page.tsx` deja los 26/26 tests de
+  // esta suite en verde: el chip de sync (spec-81 fase 4) no podría decirle
+  // al operario qué carga abrir para una foto `dead`, y ningún test lo
+  // notaría.
+  it('passes externalLoadId (the human-readable loadId) down to ManifestPhotoStrip', async () => {
+    render(<CompletionPage />);
+    await screen.findByTestId('manifest-photo-strip');
+    expect(mockManifestPhotoStripProps.at(-1)).toEqual(
+      expect.objectContaining({ externalLoadId: 'CARGA-001' })
+    );
+  });
+
   // M3, ronda 2 de review del PR #706 — el reordenado de firmas es uno de
   // los tres ítems del checklist de esta fase y no tenía ni un test:
   // volver a intercambiar los bloques (deshacer exactamente lo que esta
@@ -491,6 +522,26 @@ describe('CompletionPage', () => {
     await screen.findByText('Carga cerrada');
     expect(within(screen.getByTestId('summary-row-unexpected')).getByText('1')).toBeInTheDocument();
     expect(within(screen.getByTestId('summary-row-backup')).getByText('3 fotos · 2 firmas')).toBeInTheDocument();
+  });
+
+  // Ronda 4 de review del PR #736 (bloqueante 2) — antes de esta ronda,
+  // `photosCount` era sólo `documents.length`: una foto recién capturada
+  // (encolada pero todavía sin confirmar por el servidor) no sumaba nada al
+  // "Respaldo" de `5i`. `documents.length` fijo en 3 aquí (ver el test de
+  // arriba) — si el merge se rompiera y `photosCount` volviera a leer sólo
+  // `documents.length`, este test seguiría viendo "3 fotos", no "5 fotos".
+  it('adds queuedPhotoCount to documents.length in "Respaldo" — server-confirmed plus not-yet-confirmed', async () => {
+    mockUseManifestDocuments.mockReturnValue({
+      data: [{ id: 'd1' }, { id: 'd2' }, { id: 'd3' }],
+    });
+    mockUseQueuedManifestPhotoCount.mockReturnValue(2);
+
+    await completeAndSubmit();
+
+    await screen.findByText('Carga cerrada');
+    expect(
+      within(screen.getByTestId('summary-row-backup')).getByText('5 fotos · 1 firmas')
+    ).toBeInTheDocument();
   });
 
   it('maps MANIFEST_NOT_CLOSABLE to a Spanish message', async () => {
