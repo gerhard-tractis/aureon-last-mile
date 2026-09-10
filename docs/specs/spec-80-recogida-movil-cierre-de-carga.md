@@ -607,9 +607,19 @@ Con 0 faltantes la pantalla no bloquea: pasa directo a `5f`.
 > origen. Queda para una fase nueva o para spec-85/86; no se abre número aquí
 > por decisión del orquestador — anotado para que no se pierda.
 
-### Fase 2b — entrada de rescate para móvil (Completados sin escritorio) `[pending]`
+### Fase 2b — entrada de rescate para móvil (Completados sin escritorio) `[in_progress]`
 
-**Archivos:** `apps/frontend/src/components/pickup/PickupMobileActiveRoute.tsx`, `+ test` (el diseño exacto de dónde vive la entrada está sin decidir — ver el primer punto de abajo; puede sumar un fichero de pantalla hermana no nombrado aquí)
+**Depende de:** spec-80 fase 1, spec-80 fase 2
+
+**Archivos:** `apps/frontend/src/components/pickup/PickupMobileActiveRoute.tsx` + test nuevo,
+`apps/frontend/src/components/pickup/PickupMobileCompactRow.tsx` + test (variante `needsSignature`),
+`apps/frontend/src/components/pickup/RouteManifestList.tsx` (tipo `RouteManifestRow`, campo nuevo
+`signature_operator`), `apps/frontend/src/components/pickup/PickupMobileView.tsx` (passthrough),
+`apps/frontend/src/hooks/pickup/useRouteManifests.ts` + test (selecciona `signature_operator`),
+`apps/frontend/src/lib/pickup/pickupMobileHelpers.ts` + test (`needsSignatureRescue`, `rescueLoads`
+en `splitLoads`), `apps/frontend/src/lib/pickup/pickupPageHelpers.ts` + test (`isManifestsUnknown`),
+`apps/frontend/src/app/app/pickup/page.tsx` (wiring: nuevo handler `onOpenRescueManifest`, prop
+`manifestsUnknown`). Más ficheros que los originalmente listados — ver la nota de alcance abajo.
 
 > El PR #682 (spec-82 fase 1) ya mergeó (`2026-09-08T17:16:39Z`) — la única dependencia que
 > tenía esta fase ya no bloquea. Toca la misma familia de componentes (`PickupMobileActiveRoute.tsx`
@@ -621,11 +631,69 @@ ya cerró sin firma (rescate de H1, fase 1) — sin escritorio y sin teclear la 
 escritorio esa entrada ya existe (Completados → escanear → revisión → firma); en móvil no hay
 pestaña Completados en absoluto.
 
-- [ ] Diseñar dónde vive la entrada: ¿una pestaña/filtro dentro de `PickupMobileActiveRoute.tsx`,
-      o una pantalla hermana fuera de la ruta activa? El mock de Recogida no dibuja este estado —
-      es un hallazgo a escalar antes de construir, no licencia para inventar el diseño aquí.
-- [ ] Tests primero.
-- [ ] Cablear a `review/[loadId]` (fase 2, ya construida) como destino final.
+**Decisión (2026-09-10, escalada y tomada por el usuario): una pestaña/filtro dentro de
+`PickupMobileActiveRoute.tsx`, no una pantalla hermana.** Razón: una pantalla hermana necesita su
+propio punto de entrada, y el punto de entrada es justo lo que no existe — resolver «no hay forma
+de llegar» creando otro sitio al que tampoco se sabe llegar no resuelve nada. Además la cuadrilla
+ya está *dentro* de la ruta activa cuando descubre que le falta firmar algo — es donde mira. El
+mock no dibuja este estado (no hay diseño que contradecir), pero sí hay un patrón local: la fila de
+manifiesto ya distingue estados visualmente (`RouteManifestList` con el chip `COMPLETADA`,
+`PickupMobileCompactRow` con sus variantes `remaining`/`completed`) — se reutiliza ese lenguaje en
+vez de inventar uno nuevo: la fila de rescate es una tercera variante de `PickupMobileCompactRow`
+(`needsSignature`), con chip **`FALTA FIRMA`** en rojo (`status-error`) en vez de `COMPLETADA` en
+verde, agrupada en una sección propia **«Pendientes de firma»** — visible siempre que exista al
+menos una, no detrás de un tap oculto, porque el problema que se resuelve es exactamente que la
+cuadrilla no sabe que debe buscarla.
+
+**Definición usada para "necesita rescate", y por qué no la otra.** El manifiesto ya es
+`status: 'completed'` (lo puso `trg_route_receptions_status_sync`), así que `isManifestComplete`
+(`verified_count >= total_packages`) no sirve para distinguirlo de uno cerrado con firma — ambos
+pueden estar en cualquier estado de verificación. La señal real es `manifests.signature_operator
+IS NULL` (la misma columna que `close_manifest`, fase 1, usa como guard de "ya firmado"). Nueva
+función pura `needsSignatureRescue` en `pickupMobileHelpers.ts`: `status === 'completed' &&
+signature_operator === null`. **Deliberadamente estricta en `null`, no en falsy**: un
+`RouteManifestRow` cuyo caller nunca pidió esta columna trae `signature_operator: undefined`, y
+tratarlo igual que `null` habría marcado como rescate cada manifiesto completado de cualquier otro
+consumidor del mismo tipo — la trampa que este mismo spec ya tuvo que cerrar una vez en la fase 2
+(el gate de faltantes leyendo `undefined` como "cero"). `splitLoads` gana un cuarto cubo,
+`rescueLoads`, separado de `completedLoads`: un manifiesto de rescate **no** cuenta en el KPI
+`CERRADAS` (no está realmente cerrado sin firma) ni se mezcla con las filas verdaderamente
+completadas.
+
+**La trampa de "no lo sé" vs "no hay nada", aplicada aquí.** `page.tsx` ya hacía
+`useRouteManifests(...).data ?? []`; bajo `networkMode: 'online'` (el default del repo) una query
+sin red queda `paused` con `data: undefined`, y ese `?? []` la convierte en una lista vacía
+indistinguible de una ruta sin manifiestos — que para el banner de rescate significa decirle a la
+cuadrilla que no hay nada que firmar cuando en realidad no se pudo comprobar. Nuevo helper puro
+`isManifestsUnknown(hasActiveRoute, manifestsIsPending)` en `pickupPageHelpers.ts` (usa
+`isPending` del hook, equivalente a `data === undefined` pero sin destructurar el objeto query
+completo), pasado como `manifestsUnknown` hasta `PickupMobileActiveRoute`, que en ese caso
+sustituye tanto el estado vacío "Ruta completa"/"Sin manifiestos" como el silencio del banner de
+rescate por un aviso explícito: *"No pudimos comprobar tus cargas — revisa tu conexión."*
+
+**Cableado a `review/[loadId]`.** El manifiesto de rescate ya está `status: 'completed'` — no hay
+nada que escanear ni que escribir antes de navegar (a diferencia de `handleRouteManifestOpen`, que
+sí llama a `openPendingManifest`, un no-op aquí de todas formas). Nuevo `onOpenRescueManifest` en
+`page.tsx` navega directo a `/app/pickup/review/[loadId]` (el gate `5e` de la fase 2, que pasa de
+largo cuando no hay faltantes) — evita el paso de re-escaneo que la fila `completed` ordinaria
+seguiría exigiendo vía `handleRouteManifestOpen`/`scan/[loadId]`. Prop opcional con fallback a
+`onOpenRouteManifest` para no romper compatibilidad hacia atrás.
+
+**Alcance más amplio que el declarado originalmente.** El punto original decía "Archivos: sólo
+`PickupMobileActiveRoute.tsx` + test". En la práctica, dar a esa pantalla el dato que necesita
+(`signature_operator`) y la lógica pura que lo interpreta (`needsSignatureRescue`, `rescueLoads`,
+`isManifestsUnknown`) obliga a tocar el hook que trae los datos, el tipo compartido, el componente
+de fila que ya existe (`PickupMobileCompactRow`, para no inventar una fila nueva de cero) y el
+`page.tsx` que orquesta la navegación — el flujo `app → components → hooks → lib` de
+`docs/architecture.md` no permite resolverlo en un solo fichero. **No se tocó `RouteManifestList`
+más allá de un campo opcional nuevo en su tipo exportado** (PR #727, spec-82 fase 2, está en vuelo
+sobre ese mismo componente añadiendo el chip `DESCARGAR` — no se tocó su JSX ni su lógica de
+render).
+
+- [x] Diseñar dónde vive la entrada: pestaña/filtro dentro de `PickupMobileActiveRoute.tsx` — ver
+      decisión arriba.
+- [x] Tests primero (TDD real, salida roja confirmada antes de cada implementación).
+- [x] Cablear a `review/[loadId]` (fase 2, ya construida) como destino final.
 
 ### Fase 3 — `5f` firma y fotos `[done]`
 

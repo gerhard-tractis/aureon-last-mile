@@ -59,6 +59,14 @@ interface PickupMobileViewProps {
   onToggleSelect: (id: string) => void;
   selectedManifests: ManifestRow[];
   onOpenRouteManifest: (loadId: string) => void;
+  /** spec-80 fase 2b — see PickupMobileActiveRoute.tsx. Optional; falls
+   *  back to `onOpenRouteManifest` there when omitted. */
+  onOpenRescueManifest?: (loadId: string) => void;
+  /** spec-80 fase 2b — true when `useRouteManifests` is PAUSED/loading
+   *  rather than genuinely returning zero manifests (see page.tsx). Passed
+   *  through so PickupMobileActiveRoute never reads "no data yet" as "no
+   *  manifest needs a rescue signature". */
+  manifestsUnknown?: boolean;
   operatorId: string | null;
   /** The JWT role claim (GlobalContext.tsx:53). Decides 3j vs the crew
    *  screen — a picker promoted to pickup_leader keeps seeing the crew
@@ -93,6 +101,8 @@ export function PickupMobileView({
   onToggleSelect,
   selectedManifests,
   onOpenRouteManifest,
+  onOpenRescueManifest,
+  manifestsUnknown = false,
   operatorId,
   role,
   currentUserId,
@@ -116,6 +126,8 @@ export function PickupMobileView({
         activeRoute={activeRoute}
         activeManifests={activeManifests}
         onOpenRouteManifest={onOpenRouteManifest}
+        onOpenRescueManifest={onOpenRescueManifest}
+        manifestsUnknown={manifestsUnknown}
         operatorId={operatorId}
         canCancelRoute={canCancelRoute}
       />

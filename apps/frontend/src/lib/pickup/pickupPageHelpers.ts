@@ -21,6 +21,21 @@ export function todayLabel(now: Date): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/**
+ * spec-80 fase 2b — `useRouteManifests(...).data ?? []` in page.tsx collapses
+ * "still loading, or PAUSED with no network under this repo's
+ * `networkMode: 'online'` default" and "this route genuinely has zero
+ * manifests" into the same empty array. That's fine for the KPI tiles and
+ * hero card (an empty route already renders its own EmptyState either way),
+ * but it would be actively wrong for the mobile rescue banner
+ * (`needsSignatureRescue`, `pickupMobileHelpers.ts`): a real
+ * signature-pending manifest going invisible during a network gap reads as
+ * "nothing to rescue" to the crew, which is the opposite of true.
+ */
+export function isManifestsUnknown(hasActiveRoute: boolean, manifestsIsPending: boolean): boolean {
+  return hasActiveRoute && manifestsIsPending;
+}
+
 export function matchesSearchTerm(row: ManifestRow, term: string): boolean {
   if (!term) return true;
   const q = term.toLowerCase();

@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, Circle } from 'lucide-react';
+import { Check, Circle, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { expectedLabel } from '@/lib/pickup/manifestProgress';
 import { timeLabel } from '@/lib/pickup/pickupMobileHelpers';
@@ -28,13 +28,26 @@ import type { RouteManifestRow } from './RouteManifestList';
  * `manifestProgress.ts` already applies to `total_packages`.
  */
 export interface PickupMobileCompactRowProps {
-  variant: 'remaining' | 'completed';
+  /**
+   * spec-80 fase 2b adds `needsSignature`: a manifest
+   * `trg_route_receptions_status_sync` closed (`status: 'completed'`)
+   * WITHOUT ever reaching the Firma screen (see `needsSignatureRescue`,
+   * `pickupMobileHelpers.ts`). Shares the "completed" subtitle layout
+   * (notas · cerrada HH:MM — both are populated the same way for a rescue
+   * load) but swaps the chip and leading icon for a warning, so it reads
+   * as needing attention rather than done.
+   */
+  variant: 'remaining' | 'completed' | 'needsSignature';
   manifest: RouteManifestRow;
   onOpen: () => void;
 }
 
 export function PickupMobileCompactRow({ variant, manifest, onOpen }: PickupMobileCompactRowProps) {
   const isCompleted = variant === 'completed';
+  const needsSignature = variant === 'needsSignature';
+  // Both finished variants show the same "N notas · cerrada HH:MM" line —
+  // only the icon/chip differ.
+  const showsClosedSubtitle = isCompleted || needsSignature;
   const title = manifest.pickup_location ?? manifest.external_load_id;
 
   return (
@@ -49,17 +62,25 @@ export function PickupMobileCompactRow({ variant, manifest, onOpen }: PickupMobi
           'grid h-6 w-6 flex-none place-items-center rounded-full border',
           isCompleted
             ? 'border-status-success-border bg-status-success-bg text-status-success-text'
-            : 'border-border-strong text-transparent',
+            : needsSignature
+              ? 'border-status-error-border bg-status-error-bg text-status-error-text'
+              : 'border-border-strong text-transparent',
         )}
       >
-        {isCompleted ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : <Circle className="h-2 w-2 fill-current" />}
+        {isCompleted ? (
+          <Check className="h-3.5 w-3.5" strokeWidth={3} />
+        ) : needsSignature ? (
+          <AlertTriangle className="h-3.5 w-3.5" strokeWidth={2.5} />
+        ) : (
+          <Circle className="h-2 w-2 fill-current" />
+        )}
       </span>
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13px] font-semibold text-text">{title}</p>
         <p className="truncate text-[11.5px] text-text-secondary">
           <span className="font-mono">{manifest.external_load_id}</span>
-          {isCompleted ? (
+          {showsClosedSubtitle ? (
             <>
               {' · '}
               <span className="font-mono">
@@ -87,6 +108,11 @@ export function PickupMobileCompactRow({ variant, manifest, onOpen }: PickupMobi
       {isCompleted && (
         <span className="flex-none text-[10px] font-medium uppercase tracking-[.06em] text-status-success-text">
           COMPLETADA
+        </span>
+      )}
+      {needsSignature && (
+        <span className="flex-none text-[10px] font-medium uppercase tracking-[.06em] text-status-error-text">
+          FALTA FIRMA
         </span>
       )}
     </button>

@@ -245,6 +245,67 @@ describe('useRouteManifests', () => {
     expect(result.current.data?.[0].discrepancy_count).toBe(2);
   });
 
+  // spec-80 fase 2b — the mobile rescue entry (needsSignatureRescue,
+  // pickupMobileHelpers.ts) needs to tell a manifest
+  // `trg_route_receptions_status_sync` closed without a signature apart
+  // from one that was properly signed off in Firma — both are
+  // `status: 'completed'`. `signature_operator` is the only column that
+  // distinguishes them.
+  it('selects signature_operator and passes it through as an explicit null', async () => {
+    const manifestsChain = chainResolving([
+      {
+        id: 'm1',
+        external_load_id: 'L1',
+        retailer_name: 'A',
+        pickup_location: null,
+        total_orders: 1,
+        total_packages: 2,
+        status: 'completed',
+        signature_operator: null,
+      },
+    ]);
+    const scansChain = chainResolving([], null, 'is');
+    mockFrom.mockImplementation((table: string) =>
+      table === 'manifests' ? manifestsChain : scansChain,
+    );
+
+    const { result } = renderHook(() => useRouteManifests('route-1', 'op-1'), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(manifestsChain.select).toHaveBeenCalledWith(
+      expect.stringContaining('signature_operator'),
+    );
+    expect(result.current.data?.[0].signature_operator).toBeNull();
+  });
+
+  it('passes through a real signature_operator for a genuinely closed manifest', async () => {
+    const manifestsChain = chainResolving([
+      {
+        id: 'm1',
+        external_load_id: 'L1',
+        retailer_name: 'A',
+        pickup_location: null,
+        total_orders: 1,
+        total_packages: 2,
+        status: 'completed',
+        signature_operator: 'M. Rojas',
+      },
+    ]);
+    const scansChain = chainResolving([], null, 'is');
+    mockFrom.mockImplementation((table: string) =>
+      table === 'manifests' ? manifestsChain : scansChain,
+    );
+
+    const { result } = renderHook(() => useRouteManifests('route-1', 'op-1'), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.[0].signature_operator).toBe('M. Rojas');
+  });
+
   it('defaults discrepancy_count to 0 for a manifest with no discrepancy_notes rows', async () => {
     const manifestsChain = chainResolving([
       { id: 'm1', external_load_id: 'L1', retailer_name: 'A', pickup_location: null, total_orders: 1, total_packages: 2 },

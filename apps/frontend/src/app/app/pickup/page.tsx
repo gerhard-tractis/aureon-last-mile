@@ -29,7 +29,7 @@ import {
   attachManifestsToRoute,
   partialAttachMessage,
 } from '@/lib/pickup/attachManifestsToRoute';
-import { matchesSearchTerm, pendingToRows, totalsToRows } from '@/lib/pickup/pickupPageHelpers';
+import { matchesSearchTerm, pendingToRows, totalsToRows, isManifestsUnknown } from '@/lib/pickup/pickupPageHelpers';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { toast } from 'sonner';
 
@@ -110,7 +110,7 @@ function PickupPageContent() {
     isError: activeRouteUnknown,
     refetch: refetchActiveRoute,
   } = useActivePickupRoute(operatorId);
-  const { data: activeManifests = [] } = useRouteManifests(activeRoute?.id ?? null, operatorId);
+  const { data: activeManifests = [], isPending: activeManifestsPending } = useRouteManifests(activeRoute?.id ?? null, operatorId);
   const startMut = useStartPickupRoute(operatorId);
   const addMut = useAddManifestToRoute(operatorId);
 
@@ -232,6 +232,8 @@ function PickupPageContent() {
           onToggleSelect={toggle}
           selectedManifests={selectedManifests}
           onOpenRouteManifest={(loadId) => { void handleRouteManifestOpen(loadId); }}
+          onOpenRescueManifest={(loadId) => router.push(`/app/pickup/review/${encodeURIComponent(loadId)}`)}
+          manifestsUnknown={isManifestsUnknown(!!activeRoute, activeManifestsPending)}
           operatorId={operatorId}
           role={role}
           currentUserId={userId}

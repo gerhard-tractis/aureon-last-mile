@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { todayLabel, matchesSearchTerm, pendingToRows } from './pickupPageHelpers';
+import { todayLabel, matchesSearchTerm, pendingToRows, isManifestsUnknown } from './pickupPageHelpers';
 import type { ManifestRow } from '@/components/pickup/ManifestTable';
 import type { PendingManifest } from '@/hooks/pickup/useManifests';
 
@@ -89,5 +89,23 @@ describe('pendingToRows', () => {
     expect(row.pickupWindowStart).toBeNull();
     expect(row.pickupWindowEnd).toBeNull();
     expect(row.pickupCutoffTime).toBeNull();
+  });
+});
+
+// spec-80 fase 2b — `?? []` on useRouteManifests' data collapses "still
+// loading / PAUSED with no network" and "genuinely zero manifests" into
+// the same empty array. `isManifestsUnknown` keeps that distinction alive
+// for PickupMobileActiveRoute's rescue banner (see page.tsx).
+describe('isManifestsUnknown', () => {
+  it('is true when there is an active route but the manifests query is pending/paused', () => {
+    expect(isManifestsUnknown(true, true)).toBe(true);
+  });
+
+  it('is false once the query resolves', () => {
+    expect(isManifestsUnknown(true, false)).toBe(false);
+  });
+
+  it('is false with no active route at all, regardless of query state', () => {
+    expect(isManifestsUnknown(false, true)).toBe(false);
   });
 });

@@ -50,6 +50,27 @@ function finishState(status: RouteManifestRow['status']): LoadFinishState {
   return 'unfinished';
 }
 
+/**
+ * spec-80 fase 2b — the H1 rescue (spec-80 fase 1) is a manifest
+ * `trg_route_receptions_status_sync` flipped to `status: 'completed'`
+ * WITHOUT ever routing the crew through the Firma screen, because the hub
+ * finished receiving the route before pickup closed the load itself. That
+ * manifest is `status: 'completed'` with `signature_operator: NULL` — the
+ * only place that distinction is recorded.
+ *
+ * Deliberately reads `undefined` (the caller never fetched the column) the
+ * same as "not needing rescue", never the same as an explicit `null` (the
+ * caller fetched it and it really is empty). Collapsing the two would flag
+ * every manifest from a caller that never asked about signatures — the
+ * exact "we don't know, so we drew it as empty/fine" bug this same spec's
+ * fase 2 review round already had to fix once for the review-gate query.
+ */
+export function needsSignatureRescue(
+  m: Pick<RouteManifestRow, 'status' | 'signature_operator'>,
+): boolean {
+  return m.status === 'completed' && m.signature_operator === null;
+}
+
 export interface SplitLoads {
   /** First not-yet-finished load in queue order, or null when every load
    *  is completed/cancelled (or the route has none) — never a completed
@@ -57,8 +78,15 @@ export interface SplitLoads {
   next: RouteManifestRow | null;
   /** Unfinished loads other than `next`, in queue order. */
   remaining: RouteManifestRow[];
-  /** Loads with status 'completed', in queue order. */
+  /** Loads with status 'completed' that DO carry a signature — genuinely
+   *  closed. A rescue load (see `rescueLoads`) is `status: 'completed'` too
+   *  but is excluded from here: it still needs the crew's attention. */
   completedLoads: RouteManifestRow[];
+  /** spec-80 fase 2b — `status: 'completed'` loads missing
+   *  `signature_operator` (see `needsSignatureRescue`). The mobile
+   *  equivalent of desktop's Completados → escanear → revisión → firma
+   *  rescue path (spec-80 fase 1), which mobile has no tab to reach. */
+  rescueLoads: RouteManifestRow[];
 }
 
 /**
@@ -76,11 +104,16 @@ export function splitLoads(manifests: RouteManifestRow[]): SplitLoads {
   let next: RouteManifestRow | null = null;
   const remaining: RouteManifestRow[] = [];
   const completedLoads: RouteManifestRow[] = [];
+  const rescueLoads: RouteManifestRow[] = [];
 
   for (const m of manifests) {
     const state = finishState(m.status);
     if (state === 'completed') {
-      completedLoads.push(m);
+      if (needsSignatureRescue(m)) {
+        rescueLoads.push(m);
+      } else {
+        completedLoads.push(m);
+      }
       continue;
     }
     if (state === 'unfinished' && next === null) {
@@ -90,5 +123,5 @@ export function splitLoads(manifests: RouteManifestRow[]): SplitLoads {
     remaining.push(m);
   }
 
-  return { next, remaining, completedLoads };
+  return { next, remaining, completedLoads, rescueLoads };
 }

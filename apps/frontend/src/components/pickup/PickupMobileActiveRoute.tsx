@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { PackageSearch, CheckCircle2 } from 'lucide-react';
+import { PackageSearch, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { EmptyState } from '@/components/EmptyState';
 import { StatTile } from '@/components/StatTile';
 import { PickupMobileHeader } from './PickupMobileHeader';
@@ -39,12 +39,36 @@ export function PickupMobileActiveRoute({
   activeRoute,
   activeManifests,
   onOpenRouteManifest,
+  onOpenRescueManifest,
+  manifestsUnknown = false,
   operatorId = null,
   canCancelRoute = false,
 }: {
   activeRoute: ActivePickupRoute;
   activeManifests: RouteManifestRow[];
   onOpenRouteManifest: (loadId: string) => void;
+  /**
+   * spec-80 fase 2b — opens a manifest `trg_route_receptions_status_sync`
+   * closed WITHOUT a signature (spec-80 fase 1's H1 rescue), straight at
+   * `review/[loadId]` (fase 2's `5e` gate — a pass-through when nothing is
+   * missing, which the mock builds for exactly this case). Optional and
+   * falls back to `onOpenRouteManifest` — the pre-fase-2b behaviour, which
+   * still reaches the same screen via `scan/[loadId]`'s "Continuar a
+   * revisión" but costs the crew an extra, pointless re-scan step.
+   */
+  onOpenRescueManifest?: (loadId: string) => void;
+  /**
+   * spec-80 fase 2b — true when `useRouteManifests` has not resolved real
+   * data yet (still loading, or PAUSED with no network under this repo's
+   * `networkMode: 'online'` default) rather than genuinely returning zero
+   * manifests. `page.tsx` collapses both into `activeManifests = []` for
+   * every OTHER consumer (KPI tiles, the hero card) because an empty route
+   * already renders sensibly either way — but a real signature-pending
+   * manifest going invisible during a network gap would read as "nothing
+   * to rescue" instead of "we don't know", so this screen needs the
+   * distinction kept alive just for that one banner.
+   */
+  manifestsUnknown?: boolean;
   operatorId?: string | null;
   /** spec-61 Task 5 — true only for the route's own leader. */
   canCancelRoute?: boolean;
@@ -52,7 +76,8 @@ export function PickupMobileActiveRoute({
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
 
-  const { next, remaining, completedLoads } = splitLoads(activeManifests);
+  const { next, remaining, completedLoads, rescueLoads } = splitLoads(activeManifests);
+  const openRescueManifest = onOpenRescueManifest ?? onOpenRouteManifest;
   const { knownExpectedSum, hasUnknownExpected } = sumExpected(activeManifests);
   // manifestProgress.ts: "Partial by definition when hasUnknownExpected is
   // true — never present it alone as 'the route's total' in that case."
@@ -73,6 +98,9 @@ export function PickupMobileActiveRoute({
   const filteredCompleted = searching
     ? completedLoads.filter((m) => matchesQuery(m, query))
     : completedLoads;
+  const filteredRescue = searching
+    ? rescueLoads.filter((m) => matchesQuery(m, query))
+    : rescueLoads;
   // N1 (review round 3): the hero card is exempt from filtering (it never
   // disappears — see above), but it must still count as a "result" for the
   // no-results check. Without this, searching for exactly the hero load
@@ -80,7 +108,11 @@ export function PickupMobileActiveRoute({
   // screen the whole time, so there were never zero results.
   const heroMatches = next != null && matchesQuery(next, query);
   const noSearchResults =
-    searching && !heroMatches && filteredRemaining.length === 0 && filteredCompleted.length === 0;
+    searching &&
+    !heroMatches &&
+    filteredRemaining.length === 0 &&
+    filteredCompleted.length === 0 &&
+    filteredRescue.length === 0;
 
   return (
     <div className="flex flex-col gap-4" data-testid="pickup-mobile-view">
@@ -103,7 +135,25 @@ export function PickupMobileActiveRoute({
         <StatTile label="CERRADAS" value={completedLoads.length} tone="success" />
       </div>
 
-      {activeManifests.length === 0 ? (
+      {manifestsUnknown ? (
+        // spec-80 fase 2b — "we don't know" must never render as the same
+        // thing as "the route genuinely has nothing" (see `manifestsUnknown`
+        // above). Shown instead of the empty-route state below, which would
+        // otherwise tell the crew there is nothing here — including nothing
+        // to rescue — while the real answer is "we couldn't check".
+        <div
+          role="status"
+          className="flex flex-col items-center gap-1 rounded-[10px] border border-status-warning-border bg-status-warning-bg px-4 py-5 text-center"
+        >
+          <AlertTriangle className="h-5 w-5 text-status-warning-text" aria-hidden="true" />
+          <p className="text-[13px] font-medium text-status-warning-text">
+            No pudimos comprobar tus cargas
+          </p>
+          <p className="text-[12px] text-status-warning-text">
+            Revisa tu conexión — puede haber cargas pendientes de firma.
+          </p>
+        </div>
+      ) : activeManifests.length === 0 ? (
         <EmptyState
           icon={PackageSearch}
           title="Sin manifiestos en la ruta"
@@ -152,6 +202,30 @@ export function PickupMobileActiveRoute({
         />
       ) : (
         <>
+          {/* spec-80 fase 2b — the mobile rescue entry. `trg_route_receptions_
+              status_sync` (spec-80 fase 1) can close a manifest without ever
+              routing the crew through Firma; desktop reaches it via
+              Completados → escanear → revisión → firma, a tab mobile does
+              not have. Rendered first (above "remaining") and unconditionally
+              visible whenever one exists — a rescue is not something the
+              crew should have to know to look for behind a tap, which is
+              the exact discoverability gap this fase closes. */}
+          {filteredRescue.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[.06em] text-status-error-text">
+                Pendientes de firma
+              </p>
+              {filteredRescue.map((m) => (
+                <PickupMobileCompactRow
+                  key={m.id}
+                  variant="needsSignature"
+                  manifest={m}
+                  onOpen={() => openRescueManifest(m.external_load_id)}
+                />
+              ))}
+            </div>
+          )}
+
           {filteredRemaining.length > 0 && (
             <div className="flex flex-col gap-2">
               {filteredRemaining.map((m) => (

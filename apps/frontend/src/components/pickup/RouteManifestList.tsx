@@ -52,6 +52,17 @@ export interface RouteManifestRow {
    *  callers that never fetch it (this list does not need it) — render
    *  `undefined` as unknown, never as a fabricated 0. */
   discrepancy_count?: number;
+  /** spec-80 fase 2b — `manifests.signature_operator`. Optional/undefined
+   *  for callers that never fetch it (unknown — never read as "needs
+   *  rescue"); `null` only when the caller DID fetch it and the column is
+   *  genuinely empty. That distinction is load-bearing: a manifest whose
+   *  `status` was flipped to `'completed'` by
+   *  `trg_route_receptions_status_sync` (spec-80 fase 1's H1 rescue) WITHOUT
+   *  ever going through the Firma screen has `signature_operator: null` —
+   *  that is the signal `needsSignatureRescue` (pickupMobileHelpers.ts)
+   *  uses to surface it on mobile. Reading `undefined` the same way would
+   *  wrongly flag every manifest a caller never asked about. */
+  signature_operator?: string | null;
 }
 
 interface RouteManifestListProps {
