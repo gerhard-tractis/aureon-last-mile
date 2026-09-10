@@ -578,6 +578,23 @@ describe('CompletionPage', () => {
     ).toBeInTheDocument();
   });
 
+  // Ronda 2 de review del PR #743 (moderado 1) — un mock que descarta los
+  // argumentos no detecta pasar `loadId` (el código externo, `CARGA-99814`)
+  // donde va `manifestId` (el UUID). `queuedManifestPhotoCount` filtra por
+  // `entry.manifestId === manifestId`: con el id equivocado no casa NINGUNA
+  // fila jamás, así que el bug se ve exactamente igual que "cola vacía" —
+  // "3 fotos" en vez de "5", o `—` en vez de "2 en cola, resto desconocido"
+  // con el servidor ilegible. El mismo agujero que la ronda 2 de #736 ya
+  // había encontrado en `ManifestPhotoStrip` (de ahí
+  // `mockManifestPhotoStripProps`, `:10-15`), sin cerrar en esta costura.
+  it('calls useManifestDocuments and useQueuedManifestPhotoCount with (operatorId, manifestId) — not loadId', async () => {
+    render(<CompletionPage />);
+    await screen.findByTestId('manifest-photo-strip');
+
+    expect(mockUseManifestDocuments).toHaveBeenCalledWith('op-1', 'm1');
+    expect(mockUseQueuedManifestPhotoCount).toHaveBeenCalledWith('op-1', 'm1');
+  });
+
   it('maps MANIFEST_NOT_CLOSABLE to a Spanish message', async () => {
     mockRpc.mockResolvedValueOnce({
       data: null,

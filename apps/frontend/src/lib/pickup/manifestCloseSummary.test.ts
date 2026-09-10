@@ -115,4 +115,11 @@ describe('backupPhotosLabel', () => {
   it('still says what it knows when the server is unreadable but the queue is not empty', () => {
     expect(backupPhotosLabel(null, 2)).toBe('2 en cola (resto desconocido)');
   });
+
+  // Ronda 2 de review del PR #743 (menor 5) — mismo criterio de
+  // concordancia que `pendingLoadsLabel` ya aplica ("1 carga pendiente",
+  // no "1 cargas pendientes").
+  it('uses the singular noun for exactly 1 known photo', () => {
+    expect(backupPhotosLabel(1, 0)).toBe('1 foto');
+  });
 });

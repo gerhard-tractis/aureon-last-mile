@@ -1722,3 +1722,77 @@ fase 4 (`5g`/`5h`) están **mergeadas**. Se puede tomar hoy.
   - [ ] Limpiar el prefijo de `queue.ts:75` (o decidir mantenerlo) — afecta
         tanto a `ManifestPhotoStrip` como a la firma del manifiesto.
 
+**Seguimiento del PR #736 (PR #743, 2026-09-10) — la deuda de la ronda 4 de
+arriba, cerrada; una decisión de producto nueva que no vivía en ningún
+sitio salvo comentarios de código.**
+
+La ronda 4 de review de #736 había corregido el `undefined` de
+`useManifestDocuments` (query en pausa por `networkMode:'online'` — un
+500/RLS transitorio al montar) en UN lector (`ManifestPhotoStrip`,
+`manifest-photo-count`). `ManifestClosedSummary` (`5i`, "Respaldo") leía la
+MISMA query con un `= []` de conveniencia y seguía convirtiendo ese
+`undefined` en "0 fotos" — con hojas ya confirmadas por el servidor, en la
+pantalla que cierra el traspaso de custodia. #726 había declarado esto
+mismo como deuda una fase antes; nadie volvió a mirarlo. Se corrige aquí,
+no se vuelve a declarar.
+
+- **Decisión de producto:** cuando el conteo del SERVIDOR es desconocido
+  (`serverPhotosCount: number | null`, `null` = no se sabe, nunca 0), la
+  fila "Respaldo" no afirma un número — pinta `—`, mismo símbolo que
+  `manifest-photo-count`. Lo encolado sin confirmar (`queuedPhotosCount`)
+  es aparte y SIEMPRE se conoce (sale de IndexedDB, no de la red): con
+  servidor ilegible y algo en cola, la fila dice "N en cola (resto
+  desconocido)" en vez de un `—` que ocultaría lo que sí consta.
+  Implementado en `backupPhotosLabel`
+  (`apps/frontend/src/lib/pickup/manifestCloseSummary.ts`) — tres estados
+  distinguibles, mutation-verificados por separado: servidor conocido,
+  servidor desconocido sin cola, servidor desconocido con cola.
+- **Cerrado también en esta ronda:** `useQueuedManifestPhotoCount` ya
+  limpiaba su `setInterval` al desmontar pero ningún test lo afirmaba
+  (riesgo concreto: trabajo que sobrevive al desmontaje termina enviando
+  con el JWT del siguiente conductor); y el mismo hook no tenía bandera de
+  cancelación para una lectura en vuelo del `manifestId` VIEJO cuando
+  "Sigue en PR-…" avanza al siguiente manifiesto de la ruta sin remontar
+  (mismo segmento de Next). Ambos, `let ignore` en el efecto, ambos
+  mutation-verificados por separado.
+- **Costura `page → hook` sin pinchar, encontrada en la ronda 2 de review
+  de este mismo PR (#743):** `page.test.tsx` mockeaba `useManifestDocuments`
+  y `useQueuedManifestPhotoCount` sin afirmar nunca sus argumentos — pasar
+  `loadId` (el código externo) donde va `manifestId` (el UUID) sobrevivía
+  30/30, y hubiera producido exactamente el síntoma que esta ronda existe
+  para cerrar (`queuedManifestPhotoCount` filtra por `manifestId`; con el
+  id equivocado no casa ninguna fila jamás). Cerrado con el mismo
+  tratamiento que `mockManifestPhotoStripProps` ya aplicaba a la tira.
+- **Discrepancia conocida y deliberada, documentada aquí porque no vivía en
+  ningún sitio con ese nombre:** `5f` (`manifest-photo-count`, la tira)
+  pinta SÓLO el conteo del servidor — decisión de la ronda 2 de #736,
+  para no arriesgar que ese contador y el de la cola discreparan
+  (`ManifestPhotoStrip.tsx:103-114`). `5i` ("Respaldo") SÍ suma la cola.
+  Con 3 hojas confirmadas + 2 encoladas, `5f` dice "3" y `5i` dice "5
+  fotos" — mismo manifiesto, números distintos, cada uno correcto para lo
+  que mide. No es un bug de esta ronda; es la consecuencia visible de dos
+  decisiones ya tomadas en fases distintas, dejada sin nombre hasta ahora.
+- **Ventana de sobreconteo, real pero menor, no cerrada aquí:**
+  `photos-send.ts` dispara `onManifestDocumentsChanged` justo tras el
+  `insert` en `manifest_documents` y ANTES de marcar la entrada local
+  `sent`. Si el poll de 2s de `useQueuedManifestPhotoCount` cae en esa
+  ventana, "Respaldo" cuenta la misma foto dos veces (una vez confirmada
+  por el servidor, una vez todavía en la cola local) — se autocorrige en
+  el siguiente tick (≤2s) y miente por EXCESO, la dirección menos
+  peligrosa de las dos (nunca hace parecer perdida una foto que no lo
+  está). No se cierra en esta ronda — el fix está en el orden de
+  `photos-send.ts`, fuera del alcance de esta fase.
+- **Hueco de test declarado, no cerrado:** ningún test del repo comprueba
+  la premisa sobre la que se apoyan tanto la ronda 4 de #736 como esta
+  ronda — que TanStack Query con `networkMode:'online'` (el default del
+  repo) devuelve de verdad `data: undefined`, y no `data: []` ni
+  `placeholderData`, cuando una query queda en pausa o falla. Los tests
+  existentes lo simulan a mano (`mockUseManifestDocuments.mockReturnValue({
+  data: undefined })`); si el comportamiento real de la librería cambiara,
+  esos tests seguirían en verde y la pantalla volvería a decir "0 fotos"
+  sin que ningún guard lo detectara. Es el cimiento de ambas fases — se
+  deja anotado, no se cierra aquí.
+- **Nit de concordancia, cerrado:** `backupPhotosLabel(1, 0)` devolvía
+  `"1 fotos"`; ahora `"1 foto"`, misma regla que `pendingLoadsLabel` ya
+  aplica para "1 carga pendiente".
+
