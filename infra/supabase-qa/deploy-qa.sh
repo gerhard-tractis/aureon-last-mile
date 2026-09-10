@@ -697,6 +697,61 @@ post_checks() {
 }
 
 # --------------------------------------------------------------------------
+# --------------------------------------------------------------------------
+# Records the last-FULLY-COMPLETED deploy for the next run's baseline. Called
+# as the final statement of main(), after post_checks() has passed — see the
+# call site and read_qa_prev_sha() for why the position matters.
+#
+# Best-effort ON PURPOSE. Ronda 6 wrote the marker as a bare
+# `printf ... > "$QA_STATE_FILE"` under `set -Eeuo pipefail`, which made an
+# unwritable marker abort a deploy in which every actual step had succeeded.
+# It did, five runs running (34397163949 → 34422244965, 2026-09-09): the
+# marker on the VPS was `root:root 0644` inside aureon's home, seeded by hand
+# over SSH during this same spec's catch-up, while the runner executes as
+# `aureon` — so the open got EACCES. Since spec-57 made a green QA sync
+# production's precondition, that unwritable note blocked every production
+# deploy for the day. Same class as #718's root-owned edge-functions dir.
+#
+# The marker is an OPTIMISATION of widen_changed_flags()' diff, not a
+# correctness guarantee. Losing it is self-healing in the safe direction:
+# read_qa_prev_sha() falls back to the checkout's HEAD (or, failing that, an
+# unusable baseline, which widens every CHANGED_* flag to true), so the next
+# run rebuilds MORE than it needs to. It can never leave QA under-deployed.
+# Failing a good deploy over it trades a real outage for a stale note.
+#
+# So: warn loudly enough that nobody mistakes the cause, and return 0.
+# Written to a temp file and renamed rather than redirected in place, so a
+# write that fails partway (ENOSPC) cannot leave read_qa_prev_sha() catting a
+# truncated sha — which would be read as a real baseline and diffed against
+# garbage, instead of falling back to "rebuild everything".
+record_deploy_marker() {
+  local sha="${QA_SYNCED_SHA:-${DEPLOY_SHA}}"
+  local tmp="${QA_STATE_FILE}.tmp.$$"
+  # The -d guard is not paranoia: `mv -f file dir` moves the file INSIDE dir
+  # and exits 0, so a marker path that some stray mkdir turned into a
+  # directory would report a recorded deploy while recording nothing, and
+  # read_qa_prev_sha()'s `cat` would then fail on it every run afterwards.
+  # `mv -T` would cover it but is GNU-only; a test for the path is not.
+  if [ ! -d "$QA_STATE_FILE" ] &&
+     printf '%s' "$sha" > "$tmp" 2>/dev/null &&
+     mv -f "$tmp" "$QA_STATE_FILE" 2>/dev/null; then
+    return 0
+  fi
+  rm -f "$tmp" 2>/dev/null || true
+  # ::warning:: so it surfaces in the run summary, not only in the log body.
+  printf '::warning::deploy-qa.sh could not write the deploy marker %s — the deploy itself SUCCEEDED.\n' \
+    "$QA_STATE_FILE" >&2
+  err "could not write the deploy marker ${QA_STATE_FILE}"
+  err "the deploy itself SUCCEEDED and QA is in sync at ${sha} — this is NOT a failed sync"
+  err "consequence: the next run has no completed-deploy baseline, so it widens its changed-file"
+  err "diff and rebuilds more of QA than it needs to. QA is never left under-deployed by this."
+  err "cause is almost always a marker owned by the wrong user — the runner runs as $(id -un 2>/dev/null || echo '?'):"
+  err "  $(ls -ld "$QA_STATE_FILE" 2>&1 || true)"
+  err "  $(ls -ld "$(dirname "$QA_STATE_FILE")" 2>&1 || true)"
+  err "fix on the VPS: sudo chown $(id -un 2>/dev/null || echo aureon) ${QA_STATE_FILE}"
+  return 0
+}
+
 main() {
   # Re-exec line-buffered so this script's log lines interleave with children's
   # stderr in the order they actually happened — see on_err() for the failure
@@ -744,7 +799,12 @@ main() {
   # is what makes a partial run (dies mid-main(), e.g. restart_functions'
   # #718 permission bug) leave the marker untouched — see sync_checkout's
   # comment on QA_PREV_SHA for what breaks otherwise.
-  printf '%s' "${QA_SYNCED_SHA:-${DEPLOY_SHA}}" > "$QA_STATE_FILE"
+  #
+  # Deliberately the last statement AND deliberately non-fatal: ronda 6 wrote
+  # it inline under `set -e` and an unwritable marker then failed five
+  # consecutive deploys whose every real step had passed. record_deploy_marker
+  # warns and returns 0 instead — the whole rationale is on the function.
+  record_deploy_marker
 }
 
 # Run only when executed, not when sourced (lets tests source the functions).
