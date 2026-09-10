@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import React from 'react';
 import { db } from '@/lib/db';
 import {
@@ -67,6 +67,26 @@ describe('useDownloadedManifestIds', () => {
     expect(result.current.fetchStatus).toBe('idle');
     expect(result.current.data).toBeUndefined();
   });
+
+  // M3, revisión de fase 2 — la tesis del diseño ("networkMode: 'always'
+  // porque esto es una lectura local, no de red") no estaba probada:
+  // borrar esa opción sobrevivía 14/14 porque ningún test ponía el
+  // dispositivo offline de verdad. `onlineManager.setOnline(false)` es la
+  // señal real que TanStack Query usa para pausar — no `navigator.onLine`.
+  describe('offline (onlineManager)', () => {
+    afterEach(() => {
+      onlineManager.setOnline(true);
+    });
+
+    it('still resolves while the device is offline (M3 — proves networkMode: always matters)', async () => {
+      onlineManager.setOnline(false);
+      const { result } = renderHook(() => useDownloadedManifestIds(OPERATOR_A), {
+        wrapper: createWrapper(),
+      });
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(result.current.data).toEqual([]);
+    });
+  });
 });
 
 describe('useDownloadManifest', () => {
@@ -125,6 +145,38 @@ describe('useDownloadManifest', () => {
       .first();
     expect(snapshot?.retailerName).toBe('Ripley');
     expect(snapshot?.orders).toHaveLength(1);
+  });
+
+  // M2, revisión de fase 2 — no-negociable del repo: operator_id en toda
+  // query. `mockOrdersChain` antes de esto no distinguía QUÉ columnas se
+  // filtraban (sólo que `.eq` se llamó dos veces), así que quitar el
+  // `.eq('operator_id', …)` de la query real sobrevivía sin que ningún
+  // test lo notara.
+  it('filters both manifests and orders by operator_id (M2 — multi-tenant isolation)', async () => {
+    const manifestChain = mockManifestChain({
+      id: 'manifest-1',
+      total_packages: 25,
+      pickup_route_id: 'route-1',
+      retailer_name: 'Ripley',
+      pickup_location: 'Parque Arauco',
+    });
+    const ordersChain = mockOrdersChain([]);
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'manifests') return manifestChain;
+      if (table === 'orders') return ordersChain;
+      throw new Error(`unexpected table ${table}`);
+    });
+
+    const { result } = renderHook(() => useDownloadManifest(OPERATOR_A), {
+      wrapper: createWrapper(),
+    });
+    await act(async () => {
+      await result.current.mutateAsync(LOAD_1);
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(manifestChain.eq).toHaveBeenCalledWith('operator_id', OPERATOR_A);
+    expect(ordersChain.eq).toHaveBeenCalledWith('operator_id', OPERATOR_A);
   });
 
   it('invalidates useDownloadedManifestIds after a successful download', async () => {
@@ -196,6 +248,25 @@ describe('useCachedManifestSnapshot', () => {
     );
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toBeNull();
+  });
+
+  // M3, revisión de fase 2 — mismo argumento que useDownloadedManifestIds:
+  // esta es una lectura local, así que debe resolver aunque el dispositivo
+  // esté "offline" según TanStack Query.
+  describe('offline (onlineManager)', () => {
+    afterEach(() => {
+      onlineManager.setOnline(true);
+    });
+
+    it('still resolves while the device is offline (proves networkMode: always)', async () => {
+      onlineManager.setOnline(false);
+      const { result } = renderHook(
+        () => useCachedManifestSnapshot(OPERATOR_A, 'CARGA-NUNCA'),
+        { wrapper: createWrapper() },
+      );
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(result.current.data).toBeNull();
+    });
   });
 
   it('is undefined ("todavía no lo sé") before resolving, never a fabricated null', () => {
