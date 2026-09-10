@@ -925,6 +925,62 @@ suites que tocan las 16 funciones o sus vecinas directas:
 `spec86_fase3_ops_control_discrepancies_view` — 106 aserciones/archivos,
 0 fallos.
 
+**Ronda 2 de review (PR #733) — mergeable con correcciones, todas cerradas
+aquí:**
+
+- **A — el failsafe del `DO` block sólo cubría `get_operator_id`, no
+  `get_current_user_role` ni las otras 14.** Reproducido: revocar
+  `authenticated` sobre `get_current_user_role` (simulando un prod donde
+  esa función sólo tuviera el `EXECUTE` implícito de PUBLIC) dejaba el
+  bloque decir "✓ complete" y `COMMIT`ear una caída total del RPC/guard.
+  Arreglado: el `DO` block ahora es un `FOREACH` sobre las 16, cada una
+  comprobada por `regprocedure` exacto (PUBLIC fuera, anon fuera,
+  authenticated dentro) — no sólo `get_operator_id`. Re-verificado
+  reproduciendo el mismo envenenamiento: la migración ahora aborta con
+  `ERROR: get_current_user_role() lost its authenticated EXECUTE grant`,
+  `ROLLBACK` limpio, `get_operator_id` sin tocar (confirmado con
+  `aclexplode` tras el intento fallido).
+- **B — "anon no tiene SELECT de tabla" era falso, medido.** `anon` tiene
+  `SELECT` explícito sobre 20 tablas de `public` (confirmado:
+  `information_schema.role_table_grants` → 20). Corregido el comentario de
+  la migración y de este spec: revocar `EXECUTE` sobre
+  `get_operator_id`/`get_current_user_role` sí cambia el comportamiento de
+  esas 20 tablas para `anon`/JWT expirado — de "0 rows silencioso" (la
+  política RLS obtenía NULL y filtraba todo) a "42501 permission denied"
+  (la función falla antes de que la política pueda evaluar nada). No es una
+  fuga; es un comportamiento distinto (500 en vez de lista vacía). Ningún
+  camino vivo depende de la respuesta silenciosa — confirmado por el
+  reviewer y no repetido aquí: el lector de `operators` en `apps/frontend`
+  está condicionado a `enabled: !!operatorId`, los escritores de
+  `audit_logs` corren como `service_role`, y no hay uso de la clave anónima
+  en `apps/worker`/`apps/agents`/edge functions.
+- **C — contrapartida del oráculo de `get_manifest_label_data` documentada,
+  no presentada como mejora gratis.** Añadido al comentario de la migración:
+  un `authenticated` de A ahora distingue "existe y es de B" (42501) de
+  "no existe" (0 rows), donde antes ambos casos eran indistinguibles.
+  Aceptado porque `p_manifest_id` es un UUIDv4 no enumerable.
+- **D — la aserción de MINA 1/2 era ciega a overloads.** Filtraba por
+  `proname` sin argumentos: un overload con su propio grant satisfaría el
+  check aunque la firma real lo hubiera perdido, y la aserción de
+  `search_path` reventaba con `more than one row returned by a subquery` en
+  cuanto existiera un segundo overload — mismo patrón que
+  `start_pickup_route` en fase 1. Arreglado: todas las 68 aserciones del
+  test (y el `DO` block de la migración) ahora filtran por
+  `p.oid = 'public.f(...)'::regprocedure`, nunca por `proname`. Mutation-
+  verificado creando un segundo overload real de `get_operator_id(uuid)`
+  en el contenedor: el test sigue en 68/68 verde (no revienta con
+  "more than one row"), y tras borrarlo sigue verde — confirma que la
+  reescritura no es sólo cosmética.
+
+Regresión tras las cuatro correcciones — mismo conjunto de suites que antes,
+mismo contenedor propio, rebuild limpio desde el archivo de migración real:
+`spec88_fase5_defense_in_depth` (68), `spec53_package_labels_rls` (1),
+`spec88_fase1_revoke_anon` (64), `spec88_fase2_assert_operator_access_service_role`,
+`spec88_fase3_custom_access_token_hook_acl`,
+`spec88_assert_operator_access_internal_guard`,
+`cross_tenant_definer_rpcs_test`, `spec45_module_activation_test` — 153
+aserciones/archivos, 0 fallos.
+
 **No cerrado.** Esta fase implementa y trae su propia evidencia de tests
 (arriba), pero no trae `> Implementado por:`/`> Review:`/`> QA:` — eso
 requiere una PR, un review de otra sesión, y confirmación de CI/deploy que
