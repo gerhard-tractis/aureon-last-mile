@@ -4,11 +4,14 @@ import { PickupMobileActiveRoute } from './PickupMobileActiveRoute';
 import { PickupMobileHeader } from './PickupMobileHeader';
 import { PickupMobileStartRoute } from './PickupMobileStartRoute';
 import { PickupMobileNoRoute } from './PickupMobileNoRoute';
+import { RescueManifestsSection } from './RescueManifestsSection';
+import { ManifestsAvailabilityNotice } from './ManifestsAvailabilityNotice';
 import { canLeadPickupRoute } from '@/lib/permissions';
 import { useCurrentUserName } from '@/hooks/useCurrentUserName';
 import type { ManifestRow } from './ManifestTable';
 import type { RouteManifestRow } from './RouteManifestList';
 import type { ActivePickupRoute } from '@/hooks/pickup/useActivePickupRoute';
+import type { ManifestsAvailability } from '@/lib/pickup/pickupPageHelpers';
 
 /**
  * spec-54 mocks 3h/3j — the mobile Recogida screen.
@@ -59,14 +62,21 @@ interface PickupMobileViewProps {
   onToggleSelect: (id: string) => void;
   selectedManifests: ManifestRow[];
   onOpenRouteManifest: (loadId: string) => void;
-  /** spec-80 fase 2b — see PickupMobileActiveRoute.tsx. Optional; falls
-   *  back to `onOpenRouteManifest` there when omitted. */
+  /**
+   * spec-80 fase 2b (ronda 2) — manifests `trg_route_receptions_status_sync`
+   * completed WITHOUT a signature, operator-wide (`get_completed_manifests`,
+   * mapped by `rescueRowsFromCompleted`). Rendered in the NO-ROUTE branch
+   * below, not inside `PickupMobileActiveRoute` — see that file's doc
+   * comment for why ronda 1's placement there was unreachable.
+   */
+  rescueManifests?: RouteManifestRow[];
+  /** spec-80 fase 2b (ronda 2) — see `manifestsAvailability`,
+   *  `pickupPageHelpers.ts`. Distinguishes an ordinary brief load from a
+   *  real network pause from a genuine failure, so none of the three gets
+   *  mistaken for "resolved, nothing to rescue". */
+  rescueAvailability?: ManifestsAvailability;
+  /** Opens a rescue manifest straight at `review/[loadId]` — see page.tsx. */
   onOpenRescueManifest?: (loadId: string) => void;
-  /** spec-80 fase 2b — true when `useRouteManifests` is PAUSED/loading
-   *  rather than genuinely returning zero manifests (see page.tsx). Passed
-   *  through so PickupMobileActiveRoute never reads "no data yet" as "no
-   *  manifest needs a rescue signature". */
-  manifestsUnknown?: boolean;
   operatorId: string | null;
   /** The JWT role claim (GlobalContext.tsx:53). Decides 3j vs the crew
    *  screen — a picker promoted to pickup_leader keeps seeing the crew
@@ -101,8 +111,9 @@ export function PickupMobileView({
   onToggleSelect,
   selectedManifests,
   onOpenRouteManifest,
+  rescueManifests = [],
+  rescueAvailability = 'known',
   onOpenRescueManifest,
-  manifestsUnknown = false,
   operatorId,
   role,
   currentUserId,
@@ -126,8 +137,6 @@ export function PickupMobileView({
         activeRoute={activeRoute}
         activeManifests={activeManifests}
         onOpenRouteManifest={onOpenRouteManifest}
-        onOpenRescueManifest={onOpenRescueManifest}
-        manifestsUnknown={manifestsUnknown}
         operatorId={operatorId}
         canCancelRoute={canCancelRoute}
       />
@@ -153,6 +162,19 @@ export function PickupMobileView({
           the name segment) for the brief window before that query
           resolves, rather than fabricating a name. */}
       <PickupMobileHeader driverName={currentUserName ?? null} routeCode={null} />
+
+      {/* spec-80 fase 2b (ronda 2) — the real rescue entry. Reachable here
+          regardless of role (leader/3j or crew/no-route) because
+          `get_completed_manifests` is operator-wide, unlike the route-
+          scoped attempt ronda 1 put inside PickupMobileActiveRoute (see
+          that file's doc comment for why it never could have shown). */}
+      <ManifestsAvailabilityNotice availability={rescueAvailability} />
+      {rescueAvailability === 'known' && (
+        <RescueManifestsSection
+          manifests={rescueManifests}
+          onOpen={onOpenRescueManifest ?? onOpenRouteManifest}
+        />
+      )}
 
       {/* spec-61 Task 5 — a FAILED lookup is not an empty one. After React
           Query exhausts its retries, `data` is undefined and this component

@@ -723,4 +723,124 @@ describe('PickupPage', () => {
       expect(screen.queryAllByTestId('draft-manifest')).toHaveLength(0);
     });
   });
+
+  /**
+   * spec-80 fase 2b (ronda 2) — M3 from the review: three mutants survived
+   * against this file because nothing here exercised the rescue wiring at
+   * the `app` layer (destination, and the loading/unknown/error passthrough)
+   * — every prior test for this fase lived in lib/components only. The
+   * scenario is deliberately the one B1 proved is the REAL one: no active
+   * route (trg_route_receptions_status_sync already flipped it to
+   * 'received'), rescue-shaped rows coming from useCompletedManifests
+   * (operator-wide), rendered on mobile in the no-route branch.
+   */
+  describe('spec-80 fase 2b (ronda 2) — el destino real de la entrada de rescate', () => {
+    const originalMatchMedia = window.matchMedia;
+    afterEach(() => {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    });
+    function mockBelowLg(isBelowLg: boolean) {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: vi.fn().mockImplementation((query: string) => ({
+          matches: query.includes('1023px') ? isBelowLg : false,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        })),
+      });
+    }
+
+    const rescueRow = {
+      id: 'c-rescue',
+      external_load_id: 'CARGA-RESCUE',
+      retailer_name: 'Falabella',
+      total_orders: 4,
+      total_packages: 8,
+      completed_at: new Date().toISOString(),
+      pickup_point: 'Bodega Norte',
+      signature_operator: null,
+    };
+
+    beforeEach(() => {
+      mockBelowLg(true);
+      mockUseOperatorId.mockReturnValue({
+        operatorId: 'op-1',
+        role: 'pickup_crew',
+        permissions: [],
+        userId: 'user-me',
+      });
+      // No active route — B1's real scenario. get_my_active_pickup_route
+      // does not return a route once trg_route_receptions_status_sync has
+      // flipped it to 'received'.
+      mockActiveRoute = null;
+    });
+
+    it('navigates to review/[loadId], NOT scan/[loadId], on tap', async () => {
+      mockUseCompletedManifests.mockReturnValue({
+        data: [rescueRow],
+        isPending: false,
+        isError: false,
+        fetchStatus: 'idle',
+      });
+      render(<PickupPage />);
+      await userEvent.click(screen.getByText('FALTA FIRMA').closest('button')!);
+      expect(mockPush).toHaveBeenCalledWith('/app/pickup/review/CARGA-RESCUE');
+      expect(mockPush).not.toHaveBeenCalledWith('/app/pickup/scan/CARGA-RESCUE');
+    });
+
+    it('shows the network-pause notice, not the rescue list, while genuinely paused with no signal', () => {
+      mockUseCompletedManifests.mockReturnValue({
+        data: [rescueRow],
+        isPending: true,
+        isError: false,
+        fetchStatus: 'paused',
+      });
+      render(<PickupPage />);
+      expect(screen.getByText(/no pudimos comprobar/i)).toBeInTheDocument();
+      expect(screen.queryByText('FALTA FIRMA')).toBeNull();
+    });
+
+    it('does not show the connection warning during an ordinary initial load', () => {
+      mockUseCompletedManifests.mockReturnValue({
+        data: undefined,
+        isPending: true,
+        isError: false,
+        fetchStatus: 'fetching',
+      });
+      render(<PickupPage />);
+      expect(screen.queryByText(/no pudimos comprobar/i)).toBeNull();
+    });
+
+    it('shows a distinct error notice once retries are exhausted, not "known, nothing to rescue"', () => {
+      mockUseCompletedManifests.mockReturnValue({
+        data: undefined,
+        isPending: false,
+        isError: true,
+        fetchStatus: 'idle',
+      });
+      render(<PickupPage />);
+      expect(screen.getByText(/no pudimos cargar/i)).toBeInTheDocument();
+      expect(screen.queryByText('FALTA FIRMA')).toBeNull();
+    });
+
+    it('shows nothing extra once resolved with no rescue-shaped manifest', () => {
+      mockUseCompletedManifests.mockReturnValue({
+        data: [{ ...rescueRow, signature_operator: 'M. Rojas' }],
+        isPending: false,
+        isError: false,
+        fetchStatus: 'idle',
+      });
+      render(<PickupPage />);
+      expect(screen.queryByText('FALTA FIRMA')).toBeNull();
+      expect(screen.queryByText(/no pudimos/i)).toBeNull();
+    });
+  });
 });

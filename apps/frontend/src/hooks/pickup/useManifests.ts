@@ -41,6 +41,13 @@ export interface CompletedManifest {
   /** spec-83 fase 1 — count of this manifest's open-or-resolved 'missing'
    * discrepancies (spec-85). 0 on a clean close. */
   missing_count: number;
+  /** spec-80 fase 2b (ronda 2) — `manifests.signature_operator`. NULL means
+   *  `trg_route_receptions_status_sync` completed this manifest WITHOUT
+   *  ever reaching Firma (the H1 rescue, spec-80 fase 1) — every OTHER row
+   *  here has a real value, since `close_manifest`'s guard 4
+   *  (`OPERATOR_SIGNATURE_REQUIRED`) cannot reach its own `UPDATE` without
+   *  one. See `needsRescueFromCompleted`, `pickupMobileHelpers.ts`. */
+  signature_operator: string | null;
 }
 
 export interface InTransitManifest {

@@ -3,7 +3,7 @@
 > **Related:** [spec-81](spec-81-recogida-cola-offline.md) (la cola que cumple el «SIN RED» que estas pantallas prometen), [spec-82](spec-82-recogida-movil-asignacion-y-ruta.md) (`5b`/`5c`, lo que precede a este cierre), [spec-83](spec-83-recogida-escritorio-datos-faltantes.md) (escritorio `5a`), [spec-54](spec-54-ui-rebrand.md) (rebranding; su fase 4.4 cubrió sólo el escritorio de Recogida), [spec-47](spec-47-pickup-route-and-consolidated-reception.md) (**introdujo la regresión que este spec cierra**), [spec-19](spec-19-pickup-visual-polish.md) (dueño actual de la pantalla de Firma), [spec-55](spec-55-carton-expansion.md) (bultos generados que cuentan como verificables)
 
 **Status:** in progress
-**Verify:** unit, e2e-qa
+**Verify:** unit, sql, e2e-qa
 **Downstream:** spec-81-recogida-cola-offline.md, spec-82-recogida-movil-asignacion-y-ruta.md, spec-83-recogida-escritorio-datos-faltantes.md, spec-84-movil-conductor-home-y-prueba-de-entrega.md, spec-86-discrepancias-de-recepcion.md
 
 > **Nota (2026-09-07).** La decisión de enum que la fase 1 tenía abierta
@@ -611,15 +611,22 @@ Con 0 faltantes la pantalla no bloquea: pasa directo a `5f`.
 
 **Depende de:** spec-80 fase 1, spec-80 fase 2
 
-**Archivos:** `apps/frontend/src/components/pickup/PickupMobileActiveRoute.tsx` + test nuevo,
+**Archivos:** (actualizado en la ronda 2 — ver la nota de esa ronda más abajo para el porqué del
+cambio de ubicación) `apps/frontend/src/components/pickup/PickupMobileView.tsx` (la entrada real,
+rama sin-ruta), `apps/frontend/src/components/pickup/RescueManifestsSection.tsx` + test (nuevo,
+extraído de la fila `needsSignature`), `apps/frontend/src/components/pickup/
+ManifestsAvailabilityNotice.tsx` + test (nuevo, estado loading/unknown/error/known),
 `apps/frontend/src/components/pickup/PickupMobileCompactRow.tsx` + test (variante `needsSignature`),
 `apps/frontend/src/components/pickup/RouteManifestList.tsx` (tipo `RouteManifestRow`, campo nuevo
-`signature_operator`), `apps/frontend/src/components/pickup/PickupMobileView.tsx` (passthrough),
-`apps/frontend/src/hooks/pickup/useRouteManifests.ts` + test (selecciona `signature_operator`),
+`signature_operator`), `apps/frontend/src/components/pickup/PickupMobileActiveRoute.tsx` + test
+(revertido a su forma pre-fase, con la exclusión de `rescueLoads` como defensa en profundidad),
+`apps/frontend/src/hooks/pickup/useManifests.ts` (`CompletedManifest.signature_operator`),
 `apps/frontend/src/lib/pickup/pickupMobileHelpers.ts` + test (`needsSignatureRescue`, `rescueLoads`
-en `splitLoads`), `apps/frontend/src/lib/pickup/pickupPageHelpers.ts` + test (`isManifestsUnknown`),
-`apps/frontend/src/app/app/pickup/page.tsx` (wiring: nuevo handler `onOpenRescueManifest`, prop
-`manifestsUnknown`). Más ficheros que los originalmente listados — ver la nota de alcance abajo.
+en `splitLoads`), `apps/frontend/src/lib/pickup/pickupPageHelpers.ts` + test
+(`manifestsAvailability`, `rescueRowsFromCompleted`), `apps/frontend/src/app/app/pickup/page.tsx` +
+test (wiring: `onOpenRescueManifest` → `review/[loadId]`, `rescueManifests`, `rescueAvailability`),
+migración `packages/database/supabase/migrations/20261002000001_spec80_fase2b_completed_manifests_signature.sql`
++ test pgTAP (`get_completed_manifests` gana `signature_operator`).
 
 > El PR #682 (spec-82 fase 1) ya mergeó (`2026-09-08T17:16:39Z`) — la única dependencia que
 > tenía esta fase ya no bloquea. Toca la misma familia de componentes (`PickupMobileActiveRoute.tsx`
@@ -694,6 +701,95 @@ render).
       decisión arriba.
 - [x] Tests primero (TDD real, salida roja confirmada antes de cada implementación).
 - [x] Cablear a `review/[loadId]` (fase 2, ya construida) como destino final.
+
+> **Ronda 2 de review (PR #737, 2026-09-10) — la decisión de arriba era falsa, y el error es del
+> orquestador, no de quien la ejecutó.** No se borra el texto de la decisión original: queda arriba
+> como fue escrita, y esto es la corrección sobre ella, con la razón.
+>
+> **B1 — la pantalla donde se puso la entrada deja de existir en el instante en que nace el
+> rescate.** `trg_route_receptions_status_sync` (`20260812000006:181-193`) hace, en el MISMO
+> bloque: `UPDATE manifests SET status='completed' WHERE pickup_route_id = NEW.pickup_route_id` Y
+> `UPDATE pickup_routes SET status='received' WHERE id = NEW.pickup_route_id`. Y
+> `get_my_active_pickup_route` (`20260820000005:49`) sólo devuelve rutas `status='in_progress'`.
+> Es decir: en el momento exacto en que un manifiesto queda `completed` sin firma, la ruta entera
+> pasa a `received`, `useActivePickupRoute` deja de devolverla, `PickupMobileActiveRoute` no se
+> monta, y la sección «Pendientes de firma» que la ronda 1 puso ahí **no existe** cuando hace
+> falta. El bug que esta fase existía para arreglar seguía sin arreglarse, con tests verdes encima.
+>
+> El argumento que motivó la decisión original — *«la cuadrilla ya está dentro de la ruta activa
+> cuando descubre que le falta firmar»* — es falso contra el esquema real, y no se verificó antes
+> de escribirlo. Y la alternativa que se descartó (pantalla hermana, rechazada por «necesitaría su
+> propio punto de entrada») resulta que **ya tiene uno**: `PickupMobileView.tsx`, rama sin-ruta
+> (antes de esta ronda, línea ~147) — exactamente donde cae la cuadrilla una vez que su ruta pasó a
+> `received`. Igual que hace escritorio: su pestaña Completados lee `get_completed_manifests`, de
+> **ámbito operador**, no de la ruta — nunca depende de que una ruta siga abierta.
+>
+> **Corrección aplicada:** la entrada se movió de `PickupMobileActiveRoute.tsx` (revertido a su
+> forma anterior a esta fase, salvo que `splitLoads` sigue excluyendo un rescate de `completedLoads`
+> como defensa en profundidad barata — ver el doc-comment del archivo) a `PickupMobileView.tsx`,
+> en la rama sin-ruta, visible tanto a un líder sin ruta (3j) como a un picker (no-route), porque
+> `get_completed_manifests` (ahora con `signature_operator` añadido, migración
+> `20261002000001_spec80_fase2b_completed_manifests_signature.sql`, `CREATE OR REPLACE` sobre la
+> última definición vigente — `20260917000002`, spec-83) es de ámbito operador y no depende de qué
+> ruta esté abierta. `rescueRowsFromCompleted` (`pickupPageHelpers.ts`) filtra y mapea esas filas a
+> la forma `RouteManifestRow` que `PickupMobileCompactRow`/`RescueManifestsSection` ya sabían
+> renderizar — la variante `needsSignature` y el chip `FALTA FIRMA` de la ronda 1 se conservan
+> intactos, sólo cambió de dónde vienen los datos.
+>
+> **B2 + M4 — la señal de "no lo sabemos" tenía dos huecos, no uno.** `isManifestsUnknown` de la
+> ronda 1 sólo miraba `isPending`, que también es `true` durante una carga inicial ORDINARIA
+> (`fetchStatus: 'fetching'`) y **no** captura un `isError` real (reintentos agotados, `data:
+> undefined`, `isPending: false`) — probado contra TanStack Query 5.90.21. Consecuencia: (a) cada
+> apertura normal de la pantalla mostraba «revisa tu conexión» during 200-800ms, entrenando a la
+> cuadrilla a ignorar exactamente el aviso que sí importa; (b) un fallo real después de agotar
+> reintentos se leía como «conocido, nada que rescatar» — lo opuesto de lo que pasó. Reemplazado por
+> `manifestsAvailability({isPending, isError, fetchStatus})` → `'loading' | 'unknown' | 'error' |
+> 'known'`, con `ManifestsAvailabilityNotice.tsx` renderizando las tres primeras de forma distinta
+> (skeleton silencioso / aviso de red / error con reintentar) y nada para `'known'`.
+>
+> **M3 — el cableado en `page.tsx` no tenía ni un test que lo alcanzara.** Los 8 mutantes de la
+> ronda 1 caían todos en `lib`/componentes; tres mutaciones en la costura `app→components`
+> sobrevivían contra las 30 pruebas de entonces: el destino `review/`↔`scan/`, la prop
+> `rescueAvailability` fijada a `'known'`, y `onOpenRescueManifest` re-apuntado al handler de
+> `scan/`. `page.test.tsx` gana un describe dedicado (`el destino real de la entrada de rescate`)
+> que ejercita las tres cosas contra un fixture sin ruta activa (el escenario real de B1); los tres
+> mutantes de arriba, reproducidos a mano después, mueren todos.
+>
+> **M5 — quedó resuelto por construcción, no parcheado.** El escenario que lo motivaba (ruta con un
+> manifiesto en curso Y uno rescatable a la vez) es imposible: el mismo `UPDATE` de
+> `trg_route_receptions_status_sync` cierra TODOS los manifiestos de la ruta a la vez que la marca
+> `received` — no puede quedar uno "en curso" junto a uno "rescatable" en la misma ruta viva. Al
+> mover la entrada fuera de `PickupMobileActiveRoute`, la contradicción que M5 señalaba en `5i` deja
+> de tener un caso real que la dispare.
+>
+> **Hallazgo menor, declarado y no cerrado en esta ronda:** saltarse `scan/` para ir directo a
+> `review/[loadId]` es correcto (el manifiesto ya está `completed`, no queda nada que escanear),
+> pero un manifiesto que el trigger cerró típicamente tiene **0 `pickup_scans`** — la cuadrilla
+> nunca lo escaneó porque el hub ya terminó de recibirlo. `reviewCloseGate.ts` calcularía
+> `missingCount` sobre esa base y el CTA «Cerrar con N faltantes» registraría como discrepancias
+> bultos que el hub **ya recibió físicamente**. El diseño empuja en la dirección correcta (el CTA
+> primario dorado sigue siendo «Seguir escaneando», no el de cerrar), pero no impide el error. No se
+> resuelve aquí — requeriría que `review/[loadId]` supiera distinguir «nunca se escaneó porque nadie
+> lo intentó» de «nunca se escaneó porque el hub ya lo recibió sin pasar por aquí», una decisión de
+> producto fuera del alcance de esta fase.
+>
+> Archivos nuevos/tocados en esta ronda, además de los ya listados arriba:
+> `packages/database/supabase/migrations/20261002000001_spec80_fase2b_completed_manifests_signature.sql`,
+> `packages/database/supabase/tests/spec80_fase2b_completed_manifests_signature.test.sql`,
+> `apps/frontend/src/hooks/pickup/useManifests.ts` (`CompletedManifest.signature_operator`),
+> `apps/frontend/src/components/pickup/RescueManifestsSection.tsx` + test (nuevo, extraído de la
+> JSX de la ronda 1),
+> `apps/frontend/src/components/pickup/ManifestsAvailabilityNotice.tsx` + test (nuevo).
+> pgTAP: `spec80_fase2b_completed_manifests_signature.test.sql` 4/4 vía `pgtap-local.sh`
+> (contenedor compartido `spec52-pg`) — mutado a mano reemplazando `m.signature_operator` por
+> `NULL::TEXT` en el `SELECT` (ejecutado directo contra el contenedor, sin pasar por el bookkeeping
+> de `schema_migrations`, que de otro modo salta el archivo por nombre ya "aplicado" y da un falso
+> verde); mata 1/4. Vitest: 946/946 en
+> `src/lib/pickup src/components/pickup src/app/app/pickup src/hooks/pickup` (101 archivos).
+> `tsc --noEmit` y `eslint` limpios. Mutation-testing adicional de esta ronda: 6 mutantes sobre
+> `manifestsAvailability`/`rescueRowsFromCompleted` (orden de guard `isError`, colapso
+> `paused`→`unknown` fijo, filtro `!== null` invertido, `pickup_location` a `null`), los 6 mueren;
+> 3 mutantes sobre el cableado de `page.tsx` (los de M3), los 3 mueren.
 
 ### Fase 3 — `5f` firma y fotos `[done]`
 

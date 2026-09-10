@@ -663,4 +663,121 @@ describe('PickupMobileView', () => {
       });
     });
   });
+
+  // spec-80 fase 2b (ronda 2) — the rescue entry lives HERE (the no-route
+  // branch), not inside PickupMobileActiveRoute: `trg_route_receptions_
+  // status_sync` flips the whole route to `status: 'received'` in the same
+  // statement that completes a manifest without a signature, so the moment
+  // a rescue exists, `useActivePickupRoute` no longer returns it and this
+  // is the branch the crew lands on regardless of role.
+  describe('spec-80 fase 2b — rescate de firma (sin ruta activa)', () => {
+    function rescueManifest(): RouteManifestRow {
+      return {
+        id: 'r1',
+        external_load_id: 'CARGA-RESCUE',
+        retailer_name: 'Falabella',
+        pickup_location: 'Bodega Norte',
+        total_orders: 4,
+        total_packages: 8,
+        verified_count: 0,
+        status: 'completed',
+        signature_operator: null,
+      };
+    }
+
+    it('shows the rescue section to crew with no active route', () => {
+      render(
+        <PickupMobileView
+          {...baseProps()}
+          role="pickup_crew"
+          rescueManifests={[rescueManifest()]}
+          rescueAvailability="known"
+        />,
+      );
+      expect(screen.getByText('FALTA FIRMA')).toBeInTheDocument();
+    });
+
+    it('shows the rescue section to a leader with no active route too (3j)', () => {
+      render(
+        <PickupMobileView
+          {...baseProps()}
+          role="pickup_leader"
+          rescueManifests={[rescueManifest()]}
+          rescueAvailability="known"
+        />,
+      );
+      expect(screen.getByText('FALTA FIRMA')).toBeInTheDocument();
+      // 3j's own content is still there — the rescue section is additive.
+      expect(screen.getByTestId('pickup-mobile-start-route')).toBeInTheDocument();
+    });
+
+    it('opens the rescue manifest via onOpenRescueManifest on tap', async () => {
+      const onOpenRescueManifest = vi.fn();
+      render(
+        <PickupMobileView
+          {...baseProps()}
+          role="pickup_crew"
+          rescueManifests={[rescueManifest()]}
+          rescueAvailability="known"
+          onOpenRescueManifest={onOpenRescueManifest}
+        />,
+      );
+      await userEvent.click(screen.getByText('FALTA FIRMA').closest('button')!);
+      expect(onOpenRescueManifest).toHaveBeenCalledWith('CARGA-RESCUE');
+    });
+
+    it('renders nothing extra when there is nothing to rescue', () => {
+      render(
+        <PickupMobileView
+          {...baseProps()}
+          role="pickup_crew"
+          rescueManifests={[]}
+          rescueAvailability="known"
+        />,
+      );
+      expect(screen.queryByText('FALTA FIRMA')).toBeNull();
+      expect(screen.queryByText(/no pudimos/i)).toBeNull();
+    });
+
+    // M4 — an ordinary initial load must not accuse the connection.
+    it('shows a silent skeleton, not the connection warning, while merely loading', () => {
+      render(
+        <PickupMobileView
+          {...baseProps()}
+          role="pickup_crew"
+          rescueManifests={[]}
+          rescueAvailability="loading"
+        />,
+      );
+      expect(screen.queryByText(/revisa tu conexión/i)).toBeNull();
+      expect(screen.queryByText(/no pudimos cargar/i)).toBeNull();
+    });
+
+    it('shows the network-pause notice, not silence, when genuinely unknown', () => {
+      render(
+        <PickupMobileView
+          {...baseProps()}
+          role="pickup_crew"
+          rescueManifests={[]}
+          rescueAvailability="unknown"
+        />,
+      );
+      expect(screen.getByText(/revisa tu conexión/i)).toBeInTheDocument();
+    });
+
+    // B2 — a real failure (retries exhausted) must read as failure, not as
+    // "known, nothing to rescue".
+    it('shows a distinct error notice, not the connection copy, once retries are exhausted', () => {
+      render(
+        <PickupMobileView
+          {...baseProps()}
+          role="pickup_crew"
+          rescueManifests={[]}
+          rescueAvailability="error"
+        />,
+      );
+      expect(screen.getByText(/no pudimos cargar/i)).toBeInTheDocument();
+      expect(screen.queryByText(/revisa tu conexión/i)).toBeNull();
+    });
+  });
 });
