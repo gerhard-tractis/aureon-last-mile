@@ -1115,6 +1115,37 @@ El bloque «Guardado en el teléfono — N registros y N fotos esperan señal» 
 > activa de ruta (fuera del alcance de esta fase); queda como hallazgo para quien toque
 > cualquiera de las dos definiciones a continuación.
 
+> **Seguimiento (2026-09-09, PR corto tras la ronda 2) — tres puntos más, dos en código, uno
+> declarado.**
+>
+> **En código:** `unexpectedCount`, `photosCount` y `signaturesCount` no tenían ninguna
+> aserción anclada a nivel de página — sólo `verified`/`missing` la ganaron en la ronda 2 (B1).
+> Sustituir los tres por constantes en `page.tsx` dejaba las 24/24 pruebas del archivo en
+> verde. Test nuevo con valores todos distintos entre sí (1 ajeno, 3 fotos, 2 firmas —
+> firma del cliente incluida, para no confundir el default de 1 firma con una constante).
+> Mutado uno por uno: cada constante muere contra su propia aserción.
+>
+> Además, `verifiedCount` (B2, ronda 2) tenía una divergencia de paridad con el `RPC`: SQL's
+> `COUNT(DISTINCT ps.package_id)` descarta los `NULL`; el `Set` de JS de la ronda 2 los cuenta
+> como miembro propio. No alcanzable hoy (`pickup_scans` sólo escribe `package_id` sobre un
+> match real), pero el propio precedente que ese código cita —`useRouteManifests.ts:139`—
+> filtra `!s.package_id` antes de sumarlo, y la versión de la ronda 2 no. Igualado.
+>
+> **Declarado, no resuelto — la consecuencia de producto de la nota sobre la caché sin
+> invalidar (ronda 2, corrección del comentario en `manifestCloseSummary.ts`).** El comentario
+> ya no miente, pero no decía la consecuencia real: `useRouteManifests` (`routeManifests`,
+> consumida tanto por `summarizePendingRouteManifests` en `5i` como por `/app/pickup/route/
+> active`) tiene `staleTime: 10_000`. Nada en `close_manifest` ni en `page.tsx` invalida esa
+> query al cerrar. Si el operario pulsa «Volver a mis recogidas» y vuelve a `5c` en menos de
+> 10 segundos, esa pantalla puede seguir viendo la carga recién cerrada como si no lo estuviera
+> — «Siguiente manifiesto · Verificar» sobre una carga que el mismo operario acaba de firmar.
+> Pasados los 10 segundos, el síntoma se cura solo (la próxima lectura de la query ya no está
+> "stale" y refleja el estado real). No es un bug de esta fase por sí solo — es el mismo
+> `staleTime` que ya gobierna esa pantalla para cualquier otro escritor — pero esta fase es la
+> primera que hace plausible volver a `5c` en ese margen (antes se navegaba a `/app/pickup`,
+> una pantalla distinta). Candidato de arreglo si algún día importa:
+> `queryClient.invalidateQueries(['pickup', 'route-manifests', routeId])` en `onClosed`.
+
 ---
 
 ## Impacto downstream de la fase 3
