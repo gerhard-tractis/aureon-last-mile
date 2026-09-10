@@ -184,18 +184,34 @@ export default function ActiveRoutePage() {
     setDownloadingIds((prev) => new Set(prev).add(manifestId));
     downloadMut
       .mutateAsync(externalLoadId)
-      .then(() => toast.success(`${externalLoadId} descargada para trabajar sin red`))
-      // Menor, revisión de fase 2 — no repetir el mensaje crudo de
-      // PostgREST (códigos, nombres de columna/constraint) al operario;
-      // no le ayuda a decidir nada y expone detalles internos.
-      .catch(() => toast.error(`No se pudo descargar ${externalLoadId}. Inténtalo de nuevo.`))
+      // Nit, ronda 6 de review del PR #727 — `.then(onSuccess, onError)`
+      // (dos argumentos), no `.then(onSuccess).catch(onError)`: con
+      // `.catch` encadenado, una excepción LANZADA DENTRO de `onSuccess`
+      // (p. ej. si `toast.success` fallara) caería en el mismo `onError` y
+      // mostraría "No se pudo descargar" sobre una descarga que sí quedó
+      // en IndexedDB. La forma de dos argumentos sólo invoca `onError`
+      // cuando la promesa de `mutateAsync` RECHAZA — misma exclusividad
+      // que tenía `mutate(id, { onSuccess, onError })`.
+      .then(
+        () => toast.success(`${externalLoadId} descargada para trabajar sin red`),
+        // Menor, revisión de fase 2 — no repetir el mensaje crudo de
+        // PostgREST (códigos, nombres de columna/constraint) al operario;
+        // no le ayuda a decidir nada y expone detalles internos.
+        () => toast.error(`No se pudo descargar ${externalLoadId}. Inténtalo de nuevo.`),
+      )
       .finally(() => {
         setDownloadingIds((prev) => {
           const next = new Set(prev);
           next.delete(manifestId);
           return next;
         });
-      });
+      })
+      // Si el propio `toast.success`/`toast.error` de arriba lanzara, esa
+      // rama de `.then` rechaza y `.finally` reenvía el rechazo — sin este
+      // `.catch` final, quedaría como una promesa no manejada. El chip ya
+      // se liberó (el `.finally` de arriba corre siempre); aquí no queda
+      // nada más que hacer con ese error.
+      .catch(() => {});
   };
 
   const handleClose = () => {

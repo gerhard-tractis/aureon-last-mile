@@ -466,13 +466,28 @@ mecanismos de librería: mockear la frontera hace el test ciego a esa
 frontera.
 
 **Menores declarados, no resueltos en esta fase:**
-- **Regla de 300 líneas — cuatro ficheros sobre presupuesto, no dos.**
-  `scan/[loadId]/page.tsx` (438), `page.offline.test.tsx` (462, creado
-  "sólo por la regla de 300 líneas" y ya la incumple él mismo),
-  `route/active/page.tsx` (350, cruzó el umbral en ronda 4) y
-  `useManifestDownload.test.ts` (389, mismo cruce). Diferida la extracción
-  de los cuatro — no hay decisión de producto que resolver, es trabajo de
-  refactor puro que esta ronda no absorbió.
+- **Regla de 300 líneas — siete ficheros sobre presupuesto, no cuatro (ni
+  dos).** Ronda 4 declaró dos, ronda 5 declaró cuatro; ambas veces la
+  cuenta era de memoria, no medida. `wc -l` real sobre los 34 ficheros que
+  toca este PR (base `1ab41eb`, comparado contra el HEAD de ronda 5,
+  `b13b663` — ronda 6 le sumó comentarios a `route/active/page.tsx`
+  arreglando la costura `.then`/`.catch`, así que su cifra de la tabla ya
+  está actualizada a la que dejó ronda 6, 366, no a la de ronda 5):
+
+  | Fichero | líneas ahora | líneas en base | ¿lo cruzó este PR? |
+  |---|---|---|---|
+  | `lib/db.ts` | 466 | 382 | ya estaba sobre 300; el PR le sumó 84 |
+  | `scan/[loadId]/page.offline.test.tsx` | 462 | — (fichero nuevo) | sí |
+  | `scan/[loadId]/page.tsx` | 438 | — (creció desde la base de la fase) | sí |
+  | `hooks/pickup/useManifestDownload.test.ts` | 389 | — (creció) | sí |
+  | `route/active/page.tsx` | 366 | 326 (inicio fase) | sí |
+  | `components/pickup/PickupFlowHeader.test.tsx` | 349 | 330 | sí |
+  | `scan/[loadId]/page.test.tsx` | 303 | 296 | sí — cruzó el umbral en este PR |
+
+  Ningún caso es una decisión de producto pendiente: es refactor de
+  extracción puro que ninguna ronda de esta fase absorbió. Queda diferido
+  para quien toque cada fichero después — no hay ticket propio abierto
+  para esto, es deuda declarada aquí.
 - **`effectiveManifestFields.ts:24` (`totalPackages ?? 0`) — preexistente
   y simétrico, no una contradicción nueva de esta fase.** El camino ONLINE
   ya hace lo mismo en `scan/[loadId]/page.tsx:83`
@@ -480,16 +495,21 @@ frontera.
   conteo dice "3 de 0 paquetes" con red y "— de 0 paquetes" sin red — las
   dos mienten, y la de la red es anterior a esta fase. Cerrarlo bien exige
   cambiar `PickupFlowHeader.total` de `number` a `number | null` (y su
-  cálculo de porcentaje/denominador), que toca más que esta pantalla.
-  Ítem a abrir: el `?? 0` de `scan/[loadId]/page.tsx:83`, no el de
-  `effectiveManifestFields.ts`.
-- **Dos fuentes de verdad para "hay red" en la misma feature.**
-  `scansUnknown` sale de `useSyncQueue` (lee `navigator.onLine`);
-  `route/active/page.tsx` lee `onlineManager` (TanStack). Coinciden hoy
-  porque `Providers.tsx` refleja los mismos eventos del `window` hacia
-  `onlineManager`, pero divergen en cuanto algo llame a
-  `onlineManager.setOnline()` a mano — patrón que `review/[loadId]/
-  page.tsx:87` ya usa en otra pantalla de este mismo flujo.
+  cálculo de porcentaje/denominador), que toca más que esta pantalla. El
+  `?? 0` de `scan/[loadId]/page.tsx:83` es el que habría que tocar primero
+  — esto queda como deuda declarada, sin ticket propio, no como "ítem
+  abierto en otro sitio".
+- **Dos fuentes de verdad para "hay red" en la misma feature — el fondo
+  se sostiene, la cita de ronda 5 no.** `scansUnknown` sale de
+  `useSyncQueue` (lee `navigator.onLine`); `route/active/page.tsx` lee
+  `onlineManager` (TanStack). Coinciden hoy porque `Providers.tsx:26-27`
+  refleja los eventos del `window` hacia `onlineManager` — ese es el
+  único call site real de `setOnline()` fuera de tests. La cita anterior
+  a `review/[loadId]/page.tsx:87` era un comentario que menciona a
+  `Providers.tsx`, no un segundo call site — el riesgo de divergencia
+  sigue siendo real (basta con que algo llame a `onlineManager
+  .setOnline()` a mano, como ya hacen varios tests de este mismo PR) pero
+  hoy es teórico en producción, no concreto como se afirmó.
 
 ### Fase 3 — Asignación `[pending]`
 

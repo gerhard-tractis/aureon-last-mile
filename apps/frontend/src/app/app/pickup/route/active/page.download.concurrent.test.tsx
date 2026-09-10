@@ -194,4 +194,39 @@ describe('ActiveRoutePage — dos DESCARGAR concurrentes, useMutation real (B1/B
     });
     await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
   });
+
+  // Nit, ronda 6 de review del PR #727 — la dirección contraria del test de
+  // arriba: la PRIMERA descarga tiene éxito mientras la SEGUNDA sigue en
+  // vuelo. No debe tocar el chip de B, que sigue deshabilitado por su
+  // propia entrada en el `Set` hasta que su propia promesa se asiente.
+  it('un éxito en la PRIMERA descarga no toca el chip de la segunda que sigue en vuelo', async () => {
+    wrap(<Page />);
+    await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Ver los 2 manifiestos' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /descargar carga-a/i }));
+    fireEvent.click(screen.getByRole('button', { name: /descargar carga-b/i }));
+
+    manifestDeferreds['CARGA-A'].resolve({
+      data: {
+        id: 'manifest-a',
+        total_packages: 2,
+        pickup_route_id: 'route-1',
+        retailer_name: 'A',
+        pickup_location: null,
+      },
+      error: null,
+    });
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+    // A ya está descargada — el chip DESCARGAR desaparece (queda
+    // DESCARGADA); B sigue volando, su chip sigue deshabilitado.
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /descargar carga-a/i })).toBeNull(),
+    );
+    expect(screen.getByRole('button', { name: /descargar carga-b/i })).toBeDisabled();
+
+    manifestDeferreds['CARGA-B'].resolve({ data: null, error: { message: 'network down' } });
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+  });
 });

@@ -97,7 +97,13 @@ vi.mock('@/hooks/pickup/useManifestDownload', () => ({
 }));
 
 const toastError = vi.fn();
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: (...args: unknown[]) => toastError(...args) } }));
+const toastSuccess = vi.fn();
+vi.mock('sonner', () => ({
+  toast: {
+    success: (...args: unknown[]) => toastSuccess(...args),
+    error: (...args: unknown[]) => toastError(...args),
+  },
+}));
 
 import Page from './page';
 
@@ -128,6 +134,8 @@ describe('ActiveRoutePage — DESCARGAR wiring', () => {
     downloadMutateAsync.mockReset();
     downloadMutateAsync.mockResolvedValue(undefined);
     useDownloadManifestArgsMock.mockReset();
+    toastSuccess.mockReset();
+    toastError.mockReset();
   });
 
   it('shows DESCARGAR for a manifest not yet downloaded', async () => {
@@ -259,5 +267,26 @@ describe('ActiveRoutePage — DESCARGAR wiring', () => {
       expect(downloadMutateAsync).not.toHaveBeenCalled();
       expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/sin conexión/i));
     });
+  });
+
+  // Nit, ronda 6 de review del PR #727 — costura de la cadena de
+  // promesas: `.then(onSuccess).catch(onError)` hace que una excepción
+  // LANZADA DENTRO de `onSuccess` caiga en el mismo `.catch`. Con
+  // `mutate(id, { onSuccess, onError })` eran ramas exclusivas —
+  // `.then(onSuccess, onError)` (dos argumentos) restaura esa exclusividad:
+  // `onError` sólo corre si la promesa de `mutateAsync` RECHAZA, nunca si
+  // `onSuccess` lanza.
+  it('does not show the error toast when the success toast itself throws (then/catch seam)', async () => {
+    downloadedIdsMock.mockReturnValue({ data: new Set<string>() });
+    toastSuccess.mockImplementationOnce(() => {
+      throw new Error('toast library exploded');
+    });
+    wrap(<Page />);
+    await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Ver el manifiesto' }));
+    fireEvent.click(screen.getByRole('button', { name: /descargar load-1/i }));
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+    expect(toastError).not.toHaveBeenCalled();
   });
 });
