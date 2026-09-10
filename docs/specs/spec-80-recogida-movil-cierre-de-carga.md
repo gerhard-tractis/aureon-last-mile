@@ -607,7 +607,18 @@ Con 0 faltantes la pantalla no bloquea: pasa directo a `5f`.
 > origen. Queda para una fase nueva o para spec-85/86; no se abre número aquí
 > por decisión del orquestador — anotado para que no se pierda.
 
-### Fase 2b — entrada de rescate para móvil (Completados sin escritorio) `[in_progress]`
+### Fase 2b — entrada de rescate para móvil (Completados sin escritorio) `[done]`
+
+> Implementado por: `implementer` — rama `feat/spec-80-fase-2b-rescate-movil`, SHA `622c603`, PR #737 (mergeado como `4e81eaa`).
+> Review: `reviewer` adversarial, **cuatro rondas**. El hallazgo que cambió el diseño entero fue de la ronda 2: la entrada NO podía vivir en `PickupMobileActiveRoute`, porque `trg_route_receptions_status_sync` (`20260812000006:181-193`) pone `manifests.status='completed'` **y** `pickup_routes.status='received'` en el mismo bloque, mientras `get_my_active_pickup_route` filtra por `status='in_progress'` — la pantalla donde se había decidido colgarla **no existe en el momento en que nace el rescate**. Se movió a la rama sin-ruta. La ronda 4 cerró dos aserciones vacuas: la de aislamiento por operador (el fixture M9 nunca tuvo `pickup_route_id`, así que el `JOIN` lo descartaba antes de llegar a la cláusula de operador — demostrado aplicando `WHERE (m.operator_id = me.op OR TRUE)` contra el `prosrc` vivo y obteniendo 6/6 en verde) y la del tile `CERRADAS`.
+> QA: PR #737 merged 2026-09-10T09:23:50Z, CI verde en ambos jobs de Lint/Type-Check/Test/Build. pgTAP local 52/52 sobre las dos suites nuevas más las cuatro hermanas de `close_manifest` y spec-83. **`e2e-qa` no ejercita esta pantalla** — es la rama sin-ruta del móvil, que el fixture de e2e no alcanza; la comprobación contra la base de QA queda abierta.
+> Downstream: revisado spec-81, spec-82, spec-83 y spec-86 — **sin cambios**. La nueva RPC `get_signature_rescue_manifests()` se acotó por pertenencia a la cuadrilla más una ventana de 30 días, y es `SECURITY INVOKER` con `REVOKE ... FROM anon` — más estricta que sus hermanas, alineada con lo que spec-88 fase 5 dejó escrito.
+
+**Dos cosas que este trabajo dejó medidas y valen fuera de la fase:**
+
+1. **Renumerar migraciones tiene coste invisible en local.** Las dos de esta rama chocaron en prefijo con spec-88 fase 5 y spec-83 fase 2 al rebasar (`20261002000001` y `20261003000001`), y CI lo cazó — `schema_migrations.version` es PRIMARY KEY, así que un duplicado aborta **todo** deploy. Renumeradas a `20261004000001` y `20261005000001`. Pero el contenedor pgTAP local **no** lo caza: quedaron dos filas huérfanas bajo los prefijos viejos, y como `apply` salta por versión, las migraciones legítimas de las otras ramas se declaraban `skipped` sin haberse aplicado nunca. Verde sobre nada. Al renumerar hay que borrar las filas viejas y confirmar `applied=N` con los nombres nuevos.
+2. **Una aserción de aislamiento multi-tenant puede ser vacua sin que se note.** La forma de comprobarlo no es leer el test: es relajar la cláusula que dice proteger (`OR TRUE`) contra la definición viva de la función y ver si el test sigue en verde. Si sigue, la fila que creías estar excluyendo ya la descartaba otra cosa antes.
+
 
 **Depende de:** spec-80 fase 1, spec-80 fase 2
 
