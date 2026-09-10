@@ -159,23 +159,55 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -yqq postgresql-client
 
-      - name: Resolve Supabase pooler host (IPv4)
+      - name: Resolve the pooler connection from the Management API
         id: resolve-pooler
+        # Se pregunta el endpoint del pooler en vez de construir el host desde
+        # la region. `scripts/resolve-supabase-pooler-host.sh` monta
+        # `aws-0-${region}.pooler.supabase.com`, y ese prefijo no es correcto
+        # para este proyecto: el pooler responde
+        # `FATAL: (ENOTFOUND) tenant/user postgres.<ref> not found`.
+        #
+        # Esta misma correccion se hizo ya en measure-prod-surfaces.yml (#763).
+        # Aqui hacia falta otra vez porque este workflow nacio de una rama
+        # anterior a ese merge: la PRIMERA corrida real de este guardarrail
+        # (34544230110) fallo con las SIETE superficies de produccion via psql
+        # a cero hechos. El arreglo de fondo del script compartido sigue en el
+        # PR #753, sin mergear; no se duplica aqui — este paso simplemente no
+        # lo usa.
+        #
+        # El puerto y el usuario tambien se LEEN: estaban hardcodeados a 6543 y
+        # `postgres.<ref>` en scripts/measure-prod-surfaces.sh.
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: |
           set -euo pipefail
-          HTTP_STATUS=$(curl -sS -o project.json -w '%{http_code}' \
+          HTTP_STATUS=$(curl -sS -o pooler.json -w '%{http_code}' \
             -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
-            "https://api.supabase.com/v1/projects/${{ secrets.SUPABASE_PROJECT_REF }}")
+            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/config/database/pooler")
           if [ "$HTTP_STATUS" != "200" ]; then
-            echo "::error::Management API returned HTTP ${HTTP_STATUS} while resolving the project region"
-            rm -f project.json
+            echo "::error::/config/database/pooler devolvio HTTP ${HTTP_STATUS}"
+            rm -f pooler.json
             exit 1
           fi
-          POOLER_HOST=$(bash "$GITHUB_WORKSPACE/scripts/resolve-supabase-pooler-host.sh" < project.json)
-          rm -f project.json
+          CONN=$(jq -r '([.[] | select(.database_type == "PRIMARY")] | .[0]) // .[0]
+                        | .connection_string // empty' pooler.json)
+          rm -f pooler.json
+          if [ -z "$CONN" ]; then
+            echo "::error::la respuesta del pooler no traia connection_string — no se adivina un host"
+            exit 1
+          fi
+          POOLER_USER=$(printf '%s' "$CONN" | sed -E 's#^postgres(ql)?://([^:]+):.*#\2#')
+          POOLER_HOST=$(printf '%s' "$CONN" | sed -E 's#^.*@([^:/]+):.*#\1#')
+          POOLER_PORT=$(printf '%s' "$CONN" | sed -E 's#^.*@[^:/]+:([0-9]+).*#\1#')
+          if [ -z "$POOLER_HOST" ] || [ -z "$POOLER_PORT" ] || [ -z "$POOLER_USER" ]; then
+            echo "::error::no se pudo descomponer el connection_string del pooler"
+            exit 1
+          fi
           echo "pooler_host=${POOLER_HOST}" >> "$GITHUB_OUTPUT"
+          echo "pooler_port=${POOLER_PORT}" >> "$GITHUB_OUTPUT"
+          echo "pooler_user=${POOLER_USER}" >> "$GITHUB_OUTPUT"
+          echo "Pooler resuelto: ${POOLER_USER}@${POOLER_HOST}:${POOLER_PORT}"
 
       - name: Measure production
         env:
@@ -183,6 +215,8 @@ jobs:
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
+          POOLER_PORT: ${{ steps.resolve-pooler.outputs.pooler_port }}
+          POOLER_USER: ${{ steps.resolve-pooler.outputs.pooler_user }}
         run: |
           set -euo pipefail
           mkdir -p "${{ runner.temp }}/parity"
