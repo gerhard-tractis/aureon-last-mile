@@ -221,7 +221,30 @@ jobs:
             | tee -a "$GITHUB_STEP_SUMMARY"
 
       # ---------------------------------------------------------------
-      # SUPERFICIE 7 — Storage: buckets y sus politicas
+      # SUPERFICIE 7 — Realtime: publicaciones y sus tablas
+      # ---------------------------------------------------------------
+      - name: 'Surface: realtime publications'
+        # `supabase_realtime` es la lista de tablas que emiten cambios por
+        # websocket. Es configuracion, no datos: una tabla que esta en la
+        # publicacion de produccion y no en la de QA emite en un entorno y
+        # calla en el otro, y ninguna prueba de QA lo notaria.
+        # Se excluye realtime.messages_* — son particiones diarias, su nombre
+        # cambia cada dia y compararlas seria ruido puro.
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
+        run: |
+          set -euo pipefail
+          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
+            -At -c "
+              SELECT pubname || ' -> ' || schemaname || '.' || tablename
+                FROM pg_publication_tables
+               WHERE NOT (schemaname = 'realtime' AND tablename LIKE 'messages\_%')
+               ORDER BY pubname, schemaname, tablename;" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # ---------------------------------------------------------------
+      # SUPERFICIE 8 — Storage: buckets y sus politicas
       # ---------------------------------------------------------------
       - name: 'Surface: storage buckets and policies'
         env:
