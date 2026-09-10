@@ -2,83 +2,48 @@
 -- spec-88 fase 5 — Defensa en profundidad del resto: REVOKE sobre 16
 -- funciones SECURITY DEFINER con guard efectivo pero cuyo ACL nunca fue
 -- revocado de PUBLIC/anon, más dos correcciones de "mina" y dos guards que
--- no hacían lo que decían, encontrados en la re-auditoría de esta fase.
--- Auditoría completa: docs/specs/spec-88-anon-security-definer-audit.md.
+-- no hacían lo que decían. Razonamiento completo, recuento re-medido (16,
+-- no 17 — comando y resultado), y la corrección de ronda 2 de review sobre
+-- el riesgo real de anon (20 tablas con SELECT propio, no cero): ver
+-- docs/specs/spec-88-anon-security-definer-audit.md, fase 5.
 -- =============================================================================
--- Recuento re-medido (no heredado sin verificar) contra un contenedor pgTAP
--- propio (PGTAP_LOCAL_CONTAINER=spec88f5-pg, NO spec52-pg — compartido),
--- levantado desde origin/main con las fases 1-3 de este spec ya aplicadas:
+-- ⚠️ MINA 1 — get_operator_id()/get_current_user_role() son el guard de 61
+-- políticas RLS sobre 38 tablas. Revocar `authenticated` sobre cualquiera
+-- tumba TODO SELECT de la aplicación con "permission denied", no cero filas
+-- — medido. Estas dos se revocan SOLO de PUBLIC y anon; el `DO` block de
+-- verificación al final comprueba esto para las 16, no sólo estas dos
+-- (ronda 2 de review: la primera versión sólo comprobaba get_operator_id).
 --
---   SELECT count(*) FROM pg_proc p
---   JOIN pg_namespace n ON n.oid = p.pronamespace
---   WHERE n.nspname = 'public'
---     AND p.prosecdef
---     AND p.prorettype <> 'trigger'::regtype
---     AND has_function_privilege('anon', p.oid, 'EXECUTE')
---     AND has_schema_privilege('anon', n.nspname, 'USAGE')
---     AND NOT EXISTS (
---       SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid = d.refobjid
---       WHERE d.objid = p.oid AND d.deptype = 'e'
---     );
---   -- => 16
--- Confirma la medición baja de las dos que el spec dejó sin reconciliar
--- (16, no 17). La discrepancia se explica: `complete_route_reception` tiene
--- hoy una tercera firma en vivo, `(uuid,text,jsonb)`, con ACL ya cerrado
--- (postgres/authenticated/service_role — sin PUBLIC ni anon); no pertenece a
--- este conjunto. El recuento de 17 usaba la firma vieja `(uuid,text)` de la
--- tabla estática del spec, no el ACL real — el mismo tipo de cifra
--- propagada sin verificar que este spec ya corrigió dos veces (34→39, 13→10).
--- ⚠️ MINA 1 — get_operator_id() y get_current_user_role() son el guard de
--- 61 políticas RLS sobre 38 tablas (USING/WITH CHECK las invocan). Revocar
--- `authenticated` sobre cualquiera de las dos tumba TODO SELECT de la
--- aplicación con "permission denied for function get_operator_id" — no cero
--- filas, un fallo total, medido. Estas dos se revocan SOLO de PUBLIC y anon.
--- anon no corre riesgo simétrico: no tiene SELECT de tabla, así que ninguna
--- política llega nunca a invocar la función para ese rol.
--- ⚠️ MINA 2 — get_operator_id() era la única de las 16 sin SET search_path,
--- pese a ser el guard de 10 de ellas y de las 61 políticas de arriba. No es
--- explotable hoy (anon/authenticated no tienen CREATE sobre public, medido;
--- el cuerpo cualifica public.users/auth.uid()), pero queda a una migración
--- futura de distancia de un bypass de autenticación completo si algún
--- esquema llegara a preceder a public en el search_path resuelto. Plantilla:
--- 20260216170542_create_users_table_with_rbac.sql (última CREATE OR REPLACE
--- de esta función — no 20260209000001_auth_function.sql, la original). El
--- cuerpo no cambia, sólo se añade el SET search_path.
--- Dos guards que no hacían lo que decían (auditoría de esta fase):
---   - get_enabled_modules_for_operator(NULL) esquivaba su propio RAISE:
---     `NULL IS DISTINCT FROM NULL` es FALSE, así que devolvía '{}' en vez de
---     "access denied". Ningún consumidor real pasa NULL — los dos hooks del
---     frontend (apps/frontend/src/lib/modules/enabled.ts,
---     apps/frontend/src/hooks/modules/useEnabledModules.ts) cortan antes de
---     llamar al RPC si no hay operator_id en la sesión — así que esto no
---     filtraba nada hoy, pero es el patrón que alguien copiaría mal. Se
---     añade `p_operator_id IS NULL` a la condición. Plantilla:
---     20260616000004_spec45_module_activation_rpcs.sql (única definición).
+-- ⚠️ MINA 2 — get_operator_id() era la única sin SET search_path, pese a
+-- ser el guard de 10 de las 16 y de las 61 políticas de arriba. Plantilla:
+-- 20260216170542_create_users_table_with_rbac.sql (última CREATE OR
+-- REPLACE — no 20260209000001_auth_function.sql, la original). Cuerpo sin
+-- cambios, sólo se añade el SET search_path.
+--
+-- Dos guards corregidos (cuerpo cambia, plantilla = última CREATE OR
+-- REPLACE real en cada caso):
+--   - get_enabled_modules_for_operator(NULL) esquivaba su propio RAISE
+--     (`NULL IS DISTINCT FROM NULL` es FALSE) — se añade
+--     `p_operator_id IS NULL` a la condición. Ningún consumidor real pasa
+--     NULL (los dos hooks del frontend cortan antes de llamar al RPC si no
+--     hay operator_id en la sesión).
 --   - get_manifest_label_data devolvía 0 rows para un manifest de otro
---     operador en vez de 42501 — un 0 rows no distingue "bloqueado" de "no
---     hay datos", la misma trampa que este spec ya documentó con
---     map_comuna_alias (fase 1). Se añade una comprobación explícita que
---     lanza 42501 cuando el manifest EXISTE pero pertenece a otro operador;
---     si no existe en absoluto, sigue devolviendo 0 rows — eso sí es
---     "no hay datos", no un bloqueo. Plantilla:
---     20260813000002_fix_spec53_label_rpc_types.sql (última CREATE OR
---     REPLACE — corrigió los casts VARCHAR→TEXT, no toca la lógica de
---     acceso que esta migración añade ahora).
+--     operador en vez de 42501 (misma trampa que map_comuna_alias, fase 1)
+--     — RAISE explícito cuando el manifest EXISTE y es de otro operador; si
+--     no existe en absoluto, sigue devolviendo 0 rows. Contrapartida: esto
+--     es un oráculo de existencia deliberado (un authenticated de A ahora
+--     distingue "existe y es de B" de "no existe"), aceptado porque
+--     p_manifest_id es un UUIDv4 no enumerable.
 --
 -- Los 16 tienen consumidores exclusivamente bajo apps/frontend/src/app/app/**
--- (área autenticada tras el middleware) — verificado por grep, no asumido —
--- así que el REVOKE de PUBLIC/anon no rompe ningún camino vivo. Ninguna de
--- las 16 depende de la RLS que SECURITY DEFINER desactiva: las que tocan
--- datos filtran por operator_id explícitamente y fallan con RAISE antes de
--- leer nada — el REVOKE es higiene (ACL coherente con la intención), no el
--- cierre de un incidente activo.
+-- (autenticado, verificado por grep) — el REVOKE de PUBLIC/anon no rompe
+-- ningún camino vivo. Ninguna depende de la RLS que SECURITY DEFINER
+-- desactiva — el REVOKE es higiene, no el cierre de un incidente activo.
 -- =============================================================================
 
 BEGIN;
 
--- -----------------------------------------------------------------------------
 -- get_operator_id() — MINA 1 (sólo PUBLIC/anon) + MINA 2 (SET search_path).
--- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_operator_id()
 RETURNS UUID
 LANGUAGE sql STABLE SECURITY DEFINER
@@ -97,18 +62,14 @@ REVOKE ALL ON FUNCTION public.get_operator_id() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_operator_id() FROM anon;
 -- authenticated NOT touched — 61 políticas RLS la invocan en USING/WITH CHECK.
 
--- -----------------------------------------------------------------------------
 -- get_current_user_role() — MINA 1 (sólo PUBLIC/anon). Ya traía
 -- SET search_path=public; sin cambio de cuerpo, sólo ACL.
--- -----------------------------------------------------------------------------
 REVOKE ALL ON FUNCTION public.get_current_user_role() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_current_user_role() FROM anon;
 -- authenticated NOT touched — mismo motivo que arriba.
 
--- -----------------------------------------------------------------------------
 -- Guard fix — get_enabled_modules_for_operator(NULL) esquivaba su propio
 -- RAISE. Plantilla: 20260616000004_spec45_module_activation_rpcs.sql.
--- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_enabled_modules_for_operator(
   p_operator_id UUID
 ) RETURNS TEXT[]
@@ -135,10 +96,8 @@ END $$;
 REVOKE ALL ON FUNCTION public.get_enabled_modules_for_operator(UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_enabled_modules_for_operator(UUID) FROM anon;
 
--- -----------------------------------------------------------------------------
 -- Guard fix — get_manifest_label_data devolvía 0 rows cross-tenant en vez de
 -- 42501. Plantilla: 20260813000002_fix_spec53_label_rpc_types.sql (última).
--- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_manifest_label_data(
   p_manifest_id UUID,
   p_package_id  UUID DEFAULT NULL
@@ -223,75 +182,101 @@ instead of silently returning 0 rows; a nonexistent manifest still returns
 REVOKE ALL ON FUNCTION public.get_manifest_label_data(UUID, UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_manifest_label_data(UUID, UUID) FROM anon;
 
--- -----------------------------------------------------------------------------
 -- Resto de las 16 — sólo ACL, ningún cuerpo cambia.
--- -----------------------------------------------------------------------------
 REVOKE ALL ON FUNCTION public.enable_module_for_operator(UUID, TEXT, TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.enable_module_for_operator(UUID, TEXT, TEXT) FROM anon;
-
 REVOKE ALL ON FUNCTION public.disable_module_for_operator(UUID, TEXT, TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.disable_module_for_operator(UUID, TEXT, TEXT) FROM anon;
-
 REVOKE ALL ON FUNCTION public.list_operators_with_module_state() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.list_operators_with_module_state() FROM anon;
-
 REVOKE ALL ON FUNCTION public.get_module_audit_for_operator(UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_module_audit_for_operator(UUID) FROM anon;
-
 REVOKE ALL ON FUNCTION public.add_manifest_to_route(UUID, UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.add_manifest_to_route(UUID, UUID) FROM anon;
-
 REVOKE ALL ON FUNCTION public.close_pickup_route(UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.close_pickup_route(UUID) FROM anon;
-
 REVOKE ALL ON FUNCTION public.cancel_pickup_route(UUID, TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.cancel_pickup_route(UUID, TEXT) FROM anon;
-
 REVOKE ALL ON FUNCTION public.get_route_reception_snapshot(UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_route_reception_snapshot(UUID) FROM anon;
-
 REVOKE ALL ON FUNCTION public.mark_manifest_labels_printed(UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.mark_manifest_labels_printed(UUID) FROM anon;
-
 REVOKE ALL ON FUNCTION public.expand_carton(UUID, INT, TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.expand_carton(UUID, INT, TEXT) FROM anon;
-
 REVOKE ALL ON FUNCTION public.delete_minted_carton(UUID, TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.delete_minted_carton(UUID, TEXT) FROM anon;
-
 REVOKE ALL ON FUNCTION public.remove_manifest_from_route(UUID, UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.remove_manifest_from_route(UUID, UUID) FROM anon;
 
--- -----------------------------------------------------------------------------
--- Verification
--- -----------------------------------------------------------------------------
+-- Verification — loops over all 16 by exact regprocedure (not proname: an
+-- overload with its own grant would satisfy a proname-only check even if the
+-- live signature lost it — start_pickup_route in fase 1 tripped on exactly
+-- this). Checked for EVERY one of the 16, not just get_operator_id: ronda 2
+-- of review found the original block only checked get_operator_id, so a
+-- missing `authenticated` grant on any of the other 15 in a real
+-- environment (get_current_user_role included — same MINA 1 risk) would
+-- COMMIT a total outage for that RPC/RLS guard while reporting "complete".
 DO $$
+DECLARE
+  fn regprocedure;
+  fns regprocedure[] := ARRAY[
+    'public.get_operator_id()',
+    'public.get_current_user_role()',
+    'public.get_enabled_modules_for_operator(uuid)',
+    'public.enable_module_for_operator(uuid,text,text)',
+    'public.disable_module_for_operator(uuid,text,text)',
+    'public.list_operators_with_module_state()',
+    'public.get_module_audit_for_operator(uuid)',
+    'public.add_manifest_to_route(uuid,uuid)',
+    'public.close_pickup_route(uuid)',
+    'public.cancel_pickup_route(uuid,text)',
+    'public.get_route_reception_snapshot(uuid)',
+    'public.mark_manifest_labels_printed(uuid)',
+    'public.get_manifest_label_data(uuid,uuid)',
+    'public.expand_carton(uuid,int,text)',
+    'public.delete_minted_carton(uuid,text)',
+    'public.remove_manifest_from_route(uuid,uuid)'
+  ]::regprocedure[];
 BEGIN
+  FOREACH fn IN ARRAY fns LOOP
+    IF EXISTS (
+      SELECT 1 FROM pg_proc p WHERE p.oid = fn
+        AND EXISTS (SELECT 1 FROM aclexplode(p.proacl) a
+                     WHERE a.grantee = 0 AND a.privilege_type = 'EXECUTE')
+    ) THEN
+      RAISE EXCEPTION '% still grants PUBLIC EXECUTE — REVOKE failed', fn;
+    END IF;
+
+    IF EXISTS (
+      SELECT 1 FROM pg_proc p
+      JOIN aclexplode(p.proacl) a ON a.privilege_type = 'EXECUTE'
+      JOIN pg_roles r ON r.oid = a.grantee AND r.rolname = 'anon'
+      WHERE p.oid = fn
+    ) THEN
+      RAISE EXCEPTION '% still grants anon EXECUTE — REVOKE failed', fn;
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_proc p
+      JOIN aclexplode(p.proacl) a ON a.privilege_type = 'EXECUTE'
+      JOIN pg_roles r ON r.oid = a.grantee AND r.rolname = 'authenticated'
+      WHERE p.oid = fn
+    ) THEN
+      RAISE EXCEPTION '% lost its authenticated EXECUTE grant — this breaks its real caller outright (get_operator_id/get_current_user_role: 61 RLS policies)', fn;
+    END IF;
+  END LOOP;
+
+  -- MINA 2, checked by oid too — a future overload of get_operator_id
+  -- wouldn't share this proconfig, and this check must not silently pass it.
   IF NOT EXISTS (
-    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_operator_id'
+    SELECT 1 FROM pg_proc p
+    WHERE p.oid = 'public.get_operator_id()'::regprocedure
+      AND 'search_path=public, pg_temp' = ANY(p.proconfig)
   ) THEN
-    RAISE EXCEPTION 'get_operator_id not found — migration template mismatch';
+    RAISE EXCEPTION 'get_operator_id is missing SET search_path = public, pg_temp — MINA 2 not closed';
   END IF;
 
-  IF EXISTS (
-    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_operator_id'
-      AND EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee = 0 AND a.privilege_type = 'EXECUTE')
-  ) THEN
-    RAISE EXCEPTION 'get_operator_id still grants PUBLIC EXECUTE — REVOKE failed';
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    JOIN aclexplode(p.proacl) a ON a.privilege_type = 'EXECUTE'
-    JOIN pg_roles r ON r.oid = a.grantee AND r.rolname = 'authenticated'
-    WHERE n.nspname = 'public' AND p.proname = 'get_operator_id'
-  ) THEN
-    RAISE EXCEPTION 'get_operator_id lost its authenticated EXECUTE grant — this would break 61 RLS policies';
-  END IF;
-
-  RAISE NOTICE '✓ spec-88 fase 5 defensa en profundidad complete — 16 functions closed, 2 guard fixes applied';
+  RAISE NOTICE '✓ spec-88 fase 5 defensa en profundidad complete — 16 functions verified by exact regprocedure (PUBLIC/anon revoked, authenticated intact), MINA 2 confirmed';
 END $$;
 
 COMMIT;
