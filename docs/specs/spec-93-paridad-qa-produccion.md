@@ -474,9 +474,15 @@ los dos entornos difieren.
 Eso es también lo que conecta con la fase 5: cada entrada de ese fichero es
 una clase de cambio que no puede auto-aprobarse en spec-92.
 
-### Fase 5 — Realimentar spec-92 `[pending]`
+### Fase 5 — Realimentar spec-92 `[in_progress]`
 
-**Archivos:** el fichero de spec-92 en `docs/specs/`, `docs/specs/spec-93-paridad-qa-produccion.md`
+**Depende de:** ninguna — la fase 1 midió ya lo suficiente para realimentar; la fila que sigue a medias (realtime) va declarada como tal, no omitida.
+
+**Archivos:** `docs/specs/spec-92-gate-produccion-diferenciado.md` (vive en la rama `feat/spec-92-gate-prod-diferenciado`, PR #716 — no está en `main`), `docs/specs/spec-93-paridad-qa-produccion.md`
+
+> Realimentada en el **PR #761**, abierto contra `feat/spec-92-gate-prod-diferenciado`
+> y no contra `main` a propósito: el fichero de spec-92 sólo existe en esa rama.
+> Se prefirió un PR revisable a comitear directamente sobre la rama de otra sesión.
 
 La tabla «clase de cambio → cobertura exigida» de spec-92 se escribió
 asumiendo que QA ejercita lo que producción ejecuta. Cada divergencia
