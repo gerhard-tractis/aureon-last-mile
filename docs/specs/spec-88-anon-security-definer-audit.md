@@ -309,7 +309,38 @@ Implementa la distinción `service_role` real vs. `anon`/ausencia de sesión, pr
 > Downstream: ninguno declarado para este spec (`**Downstream:** ninguno
 > todavía`, cabecera).
 
-### Fase 3 — `custom_access_token_hook` `[in_progress]`
+### Fase 3 — `custom_access_token_hook` `[done]`
+
+> Implementado por: implementer — rama `feat/spec-88-fase-3-auth-hook`, SHA `76efe83` (PR #710, mergeado como `2d18739`), más la ronda 6 en `feat/spec-88-fase-3-ronda-6-qa-state-marker`, SHA `1ab41eb` (PR #721).
+> Review: reviewer — **seis rondas**, todos los hallazgos cerrados. Los dos que cambiaron el resultado: el assert original leía `app_metadata.claims`, que el trigger `sync_claims_to_auth_metadata` rellena **idéntico** con el hook apagado (medido: JWT con y sin hook, byte a byte iguales ahí), y `deploy-qa.sh` sólo recreaba el contenedor `functions`, así que las variables `GOTRUE_HOOK_*` nunca llegaban a `auth`.
+> QA: PR #710 merged 2026-09-09T18:16Z. **`e2e-qa` verde en el run `34395854405`** (`41ea770`), con el assert de claims en la raíz del JWT ejecutándose contra QA real.
+> Downstream: revisado spec-93 — su fase 2 (registrar el hook en QA + assert de JWT en e2e) **queda cerrada por esta fase**; el orquestador que tome spec-93 arranca por la fase 1. Revisado spec-92 — la divergencia de auth deja de ser un hueco de su tabla.
+
+**Cómo se cerró, porque la historia importa más que el diff.** El primer deploy
+tras mergear **falló**, y falló en el sitio correcto: el assert nuevo recibió
+`claims.operator_id === undefined`. Los otros 16 tests pasaron y **el login
+funcionaba** — o sea, GoTrue emitía un token sin los claims del hook y la
+aplicación no se enteraba. **Ese es el gate funcionando en su primera
+ejecución**: con el assert anterior habría salido verde y `approve-production`
+se habría abierto.
+
+La causa raíz no era el hook: **`QA_PREV_SHA` medía la posición de git del
+checkout, no si un deploy anterior había terminado.** Como `sync_checkout()`
+hace `git reset --hard` al principio, la corrida que murió a mitad (por un
+problema ajeno de permisos en el directorio de edge-functions) dejó el HEAD ya
+en el commit nuevo; la siguiente lo heredó como «previo», el compose ya no
+aparecía en el diff, y **`restart_auth` nunca se llamó**. La prueba
+definitiva: `docker inspect` mostraba el contenedor `auth` **vivo desde el 11
+de agosto**, un mes antes de este PR, sin las variables del hook. No se
+degradó — **nunca se recreó**. Eso lo arregla la ronda 6 (PR #721) con un
+marcador escrito **sólo tras un `post_checks()` exitoso**, y generaliza: ese
+fallo envenenaba **todas** las banderas `CHANGED_*`, no sólo la del compose.
+
+**Hueco declarado, no cerrado:** el arreglo del marcador está probado en
+unitarios y razonado contra el incidente real, pero **nadie lo ha visto
+aguantar una muerte a mitad de verdad** — eso sólo se demuestra la próxima vez
+que ocurra.
+
 
 > Implementado por: implementer — rama `feat/spec-88-fase-3-auth-hook`,
 > SHA `63d20f7` (ronda 1), más ronda 2 tras review (ver abajo). Migración
