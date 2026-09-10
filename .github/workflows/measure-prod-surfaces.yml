@@ -51,8 +51,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check out the repo
-        # scripts/resolve-supabase-pooler-host.sh vive en este repo. Sin
-        # checkout el paso que lo invoca muere con exit 127 (ver #750).
+        # Ya no hace falta para resolver el pooler —ese paso pregunta a la
+        # Management API y no ejecuta nada del repo— pero se conserva a
+        # proposito: es barato, y el dia que un paso vuelva a invocar algo de
+        # `scripts/` su ausencia se manifiesta como un exit 127 confuso en vez
+        # de como lo que es (ver #750, que costo una corrida entera).
         uses: actions/checkout@v4
 
       - name: Install postgresql-client
@@ -61,24 +64,72 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -yqq postgresql-client
 
-      - name: Resolve Supabase pooler host (IPv4 — ver cabecera)
+      - name: Resolve the pooler connection from the Management API
         id: resolve-pooler
+        # POR QUE ESTE PASO YA NO LLAMA A scripts/resolve-supabase-pooler-host.sh
+        # ------------------------------------------------------------------
+        # Ese script CONSTRUYE el host desde la region
+        # (`aws-0-${region}.pooler.supabase.com`) en vez de leerlo, y el
+        # prefijo `aws-0-` no es correcto para este proyecto: el pooler
+        # contesta `FATAL: (ENOTFOUND) tenant/user postgres.<ref> not found`.
+        # Con eso fallaron las CINCO superficies via psql de la corrida
+        # 34536145238, y tambien las tres corridas de
+        # prod-backfill-loaded-route-id.yml del 2026-09-10. La via psql contra
+        # produccion no ha funcionado NUNCA en este repo.
+        #
+        # El arreglo de fondo —que ese script lea la config en vez de
+        # plantillarla— vive en el PR #753, sin mergear, y toca el script mas
+        # los otros dos workflows de produccion. **No se duplica aqui**: este
+        # paso simplemente deja de llamarlo y pregunta el mismo endpoint por su
+        # cuenta, asi que spec-93 no bloquea sobre #753 ni le crea un conflicto
+        # sobre el fichero que #753 esta reescribiendo. Cuando #753 entre, este
+        # paso puede volver al script compartido.
+        #
+        # `GET /v1/projects/{ref}/config/database/pooler` devuelve un array de
+        # configuraciones con un `connection_string` ya montado — el mismo
+        # endpoint que usa el propio CLI de Supabase para enlazar el pooler. De
+        # ahi salen host, PUERTO y USUARIO en vez de suponerlos: el usuario del
+        # pooler es `postgres.<ref>` y no `postgres`. Leerlos en vez de
+        # construirlos es justo la leccion que costo esas cuatro corridas.
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: |
           set -euo pipefail
-          HTTP_STATUS=$(curl -sS -o project.json -w '%{http_code}' \
+          HTTP_STATUS=$(curl -sS -o pooler.json -w '%{http_code}' \
             -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
-            "https://api.supabase.com/v1/projects/${{ secrets.SUPABASE_PROJECT_REF }}")
+            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/config/database/pooler")
           if [ "$HTTP_STATUS" != "200" ]; then
-            echo "::error::Management API returned HTTP ${HTTP_STATUS} while resolving the project region"
-            rm -f project.json
+            echo "::error::/config/database/pooler devolvio HTTP ${HTTP_STATUS}"
+            rm -f pooler.json
             exit 1
           fi
-          POOLER_HOST=$(bash "$GITHUB_WORKSPACE/scripts/resolve-supabase-pooler-host.sh" < project.json)
-          rm -f project.json
-          echo "pooler_host=${POOLER_HOST}" >> "$GITHUB_OUTPUT"
 
+          # El `connection_string` trae la password como marcador
+          # (`[YOUR-PASSWORD]`), no la real. Aun asi no se hace eco del string
+          # entero: se extraen host/puerto/usuario y solo eso se imprime.
+          CONN=$(jq -r '([.[] | select(.database_type == "PRIMARY")] | .[0]) // .[0]
+                        | .connection_string // empty' pooler.json)
+          rm -f pooler.json
+
+          if [ -z "$CONN" ]; then
+            echo "::error::la respuesta del pooler no traia connection_string — no se adivina un host"
+            exit 1
+          fi
+
+          POOLER_USER=$(printf '%s' "$CONN" | sed -E 's#^postgres(ql)?://([^:]+):.*#\2#')
+          POOLER_HOST=$(printf '%s' "$CONN" | sed -E 's#^.*@([^:/]+):.*#\1#')
+          POOLER_PORT=$(printf '%s' "$CONN" | sed -E 's#^.*@[^:/]+:([0-9]+).*#\1#')
+
+          if [ -z "$POOLER_HOST" ] || [ -z "$POOLER_PORT" ] || [ -z "$POOLER_USER" ]; then
+            echo "::error::no se pudo descomponer el connection_string del pooler"
+            exit 1
+          fi
+
+          echo "pooler_host=${POOLER_HOST}" >> "$GITHUB_OUTPUT"
+          echo "pooler_port=${POOLER_PORT}" >> "$GITHUB_OUTPUT"
+          echo "pooler_user=${POOLER_USER}" >> "$GITHUB_OUTPUT"
+          echo "Pooler resuelto: ${POOLER_USER}@${POOLER_HOST}:${POOLER_PORT}"
       # ---------------------------------------------------------------
       # SUPERFICIE 1 — Auth (GoTrue): hooks, proveedores, expiracion JWT
       # ---------------------------------------------------------------
@@ -177,9 +228,11 @@ jobs:
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
+          POOLER_PORT: ${{ steps.resolve-pooler.outputs.pooler_port }}
+          POOLER_USER: ${{ steps.resolve-pooler.outputs.pooler_user }}
         run: |
           set -euo pipefail
-          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
+          psql "sslmode=require host=$POOLER_HOST port=$POOLER_PORT dbname=postgres user=$POOLER_USER" \
             -At -c "SELECT extname || ' ' || extversion FROM pg_extension ORDER BY 1;" \
             | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -192,9 +245,11 @@ jobs:
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
+          POOLER_PORT: ${{ steps.resolve-pooler.outputs.pooler_port }}
+          POOLER_USER: ${{ steps.resolve-pooler.outputs.pooler_user }}
         run: |
           set -euo pipefail
-          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
+          psql "sslmode=require host=$POOLER_HOST port=$POOLER_PORT dbname=postgres user=$POOLER_USER" \
             -At -c "
               SELECT r.rolname || ' | super=' || r.rolsuper
                      || ' | login=' || r.rolcanlogin
@@ -217,11 +272,13 @@ jobs:
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
+          POOLER_PORT: ${{ steps.resolve-pooler.outputs.pooler_port }}
+          POOLER_USER: ${{ steps.resolve-pooler.outputs.pooler_user }}
         run: |
           set -euo pipefail
           echo '--- GUCs (pg_db_role_setting) ---' | tee -a "$GITHUB_STEP_SUMMARY"
           # regexp_replace: se compara si el ajuste EXISTE, no su valor.
-          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
+          psql "sslmode=require host=$POOLER_HOST port=$POOLER_PORT dbname=postgres user=$POOLER_USER" \
             -At -c "
               SELECT coalesce(d.datname, '<cluster>') || ' :: '
                      || regexp_replace(unnest(s.setconfig), '(secret|password)=.*', '\1=<redacted>')
@@ -230,7 +287,7 @@ jobs:
                ORDER BY 1;" \
             | tee -a "$GITHUB_STEP_SUMMARY"
           echo '--- cron.job ---' | tee -a "$GITHUB_STEP_SUMMARY"
-          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
+          psql "sslmode=require host=$POOLER_HOST port=$POOLER_PORT dbname=postgres user=$POOLER_USER" \
             -At -c "
               SELECT jobid || ' | ' || jobname || ' | ' || username
                      || ' | ' || schedule || ' | active=' || active
@@ -252,9 +309,11 @@ jobs:
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
+          POOLER_PORT: ${{ steps.resolve-pooler.outputs.pooler_port }}
+          POOLER_USER: ${{ steps.resolve-pooler.outputs.pooler_user }}
         run: |
           set -euo pipefail
-          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
+          psql "sslmode=require host=$POOLER_HOST port=$POOLER_PORT dbname=postgres user=$POOLER_USER" \
             -At -c "
               SELECT pubname || ' -> ' || schemaname || '.' || tablename
                 FROM pg_publication_tables
@@ -271,10 +330,12 @@ jobs:
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
+          POOLER_PORT: ${{ steps.resolve-pooler.outputs.pooler_port }}
+          POOLER_USER: ${{ steps.resolve-pooler.outputs.pooler_user }}
         run: |
           set -euo pipefail
           echo '--- storage.buckets ---' | tee -a "$GITHUB_STEP_SUMMARY"
-          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
+          psql "sslmode=require host=$POOLER_HOST port=$POOLER_PORT dbname=postgres user=$POOLER_USER" \
             -At -c "
               SELECT id || ' | public=' || public
                      || ' | limit=' || coalesce(file_size_limit::text, '-')
@@ -282,7 +343,7 @@ jobs:
                 FROM storage.buckets ORDER BY id;" \
             | tee -a "$GITHUB_STEP_SUMMARY"
           echo '--- storage policies ---' | tee -a "$GITHUB_STEP_SUMMARY"
-          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
+          psql "sslmode=require host=$POOLER_HOST port=$POOLER_PORT dbname=postgres user=$POOLER_USER" \
             -At -c "
               SELECT tablename || ' | ' || policyname || ' | ' || cmd
                      || ' | roles=' || array_to_string(roles, ',')
