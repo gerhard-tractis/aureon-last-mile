@@ -8,169 +8,127 @@
 --
 -- Pattern (spec88_fase1_revoke_anon.test.sql): has_function() first (a
 -- typo'd/dropped function must fail loudly, not vacuously pass an empty
--- aclexplode()), then aclexplode(proacl) directly — never
--- has_function_privilege(), which always returns true for the postgres
--- superuser regardless of the real ACL.
---
--- Excepción declarada al límite de 300 líneas: 16 funciones x ~3 aserciones
--- de ACL casi idénticas (PUBLIC, anon, authenticated) más las pruebas de
--- comportamiento de las dos correcciones de guard, todas bajo un único
--- plan() por transacción — partirlo rompería esa cuenta única, igual que
--- spec88_fase1_revoke_anon.test.sql (misma excepción, mismo motivo).
+-- aclexplode()), then aclexplode(proacl) directly by exact
+-- p.oid = 'public.f(...)'::regprocedure — NUNCA por proname (ronda 2 de
+-- review de PR #733: proname-only deja pasar un futuro overload con su
+-- propio grant aunque la firma real lo haya perdido, y la aserción de
+-- search_path reventaba con "more than one row returned by a subquery" en
+-- cuanto existiera un segundo overload — el mismo tipo de bug que
+-- start_pickup_route ya causó en fase 1).
 
 BEGIN;
 SELECT plan(68);
-
 -- =============================================================================
--- MINA 1 — get_operator_id() / get_current_user_role(): PUBLIC y anon fuera,
--- authenticated debe SOBREVIVIR (61 políticas RLS la invocan).
+-- Las 16 — PUBLIC y anon fuera, authenticated SOBREVIVE (61 políticas RLS
+-- invocan get_operator_id/get_current_user_role en USING/WITH CHECK; el
+-- resto las necesita como su único llamante real). Filtrado por
+-- p.oid = 'public.f(...)'::regprocedure, NUNCA por proname (ronda 2 de
+-- review: proname-only permite que un futuro overload con grant propio
+-- oculte que la firma real lo perdió, y rompe con "more than one row
+-- returned by a subquery" en cuanto exista un segundo overload).
 -- =============================================================================
 
 SELECT has_function('public', 'get_operator_id', ARRAY[]::text[],
   'get_operator_id() exists');
-SELECT is(
-  (SELECT EXISTS (
-     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-     WHERE n.nspname = 'public' AND p.proname = 'get_operator_id'
-       AND (p.proacl IS NULL OR EXISTS (
-             SELECT 1 FROM aclexplode(p.proacl) a
-              WHERE a.grantee = 0 AND a.privilege_type = 'EXECUTE')))),
-  false, 'get_operator_id: no PUBLIC EXECUTE grant survives');
-SELECT is(
-  (SELECT EXISTS (
-     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-     JOIN aclexplode(p.proacl) a ON a.privilege_type = 'EXECUTE'
-     JOIN pg_roles r ON r.oid = a.grantee AND r.rolname = 'anon'
-     WHERE n.nspname = 'public' AND p.proname = 'get_operator_id'
-       AND p.proacl IS NOT NULL)),
-  false, 'get_operator_id: anon has no EXECUTE grant');
-SELECT is(
-  (SELECT EXISTS (
-     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-     JOIN aclexplode(p.proacl) a ON a.privilege_type = 'EXECUTE'
-     JOIN pg_roles r ON r.oid = a.grantee AND r.rolname = 'authenticated'
-     WHERE n.nspname = 'public' AND p.proname = 'get_operator_id')),
-  true, 'get_operator_id: authenticated KEEPS EXECUTE (61 RLS policies depend on this)');
--- MINA 2 — SET search_path added (last CREATE OR REPLACE had none).
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'public.get_operator_id()'::regprocedure AND EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE'))), false, 'get_operator_id(): no PUBLIC EXECUTE grant survives');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE p.oid = 'public.get_operator_id()'::regprocedure)), false, 'get_operator_id(): anon has no EXECUTE grant');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE p.oid = 'public.get_operator_id()'::regprocedure)), true, 'get_operator_id(): authenticated keeps EXECUTE');
+-- MINA 2 — SET search_path added. By exact oid, not proname: a future
+-- overload wouldn't share this proconfig, and this must not silently pass it.
 SELECT is(
   (SELECT 'search_path=public, pg_temp' = ANY(p.proconfig)
-     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_operator_id'),
+     FROM pg_proc p WHERE p.oid = 'public.get_operator_id()'::regprocedure),
   true, 'get_operator_id: SET search_path = public, pg_temp added');
 
 SELECT has_function('public', 'get_current_user_role', ARRAY[]::text[],
   'get_current_user_role() exists');
-SELECT is(
-  (SELECT EXISTS (
-     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-     WHERE n.nspname = 'public' AND p.proname = 'get_current_user_role'
-       AND (p.proacl IS NULL OR EXISTS (
-             SELECT 1 FROM aclexplode(p.proacl) a
-              WHERE a.grantee = 0 AND a.privilege_type = 'EXECUTE')))),
-  false, 'get_current_user_role: no PUBLIC EXECUTE grant survives');
-SELECT is(
-  (SELECT EXISTS (
-     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-     JOIN aclexplode(p.proacl) a ON a.privilege_type = 'EXECUTE'
-     JOIN pg_roles r ON r.oid = a.grantee AND r.rolname = 'anon'
-     WHERE n.nspname = 'public' AND p.proname = 'get_current_user_role'
-       AND p.proacl IS NOT NULL)),
-  false, 'get_current_user_role: anon has no EXECUTE grant');
-SELECT is(
-  (SELECT EXISTS (
-     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-     JOIN aclexplode(p.proacl) a ON a.privilege_type = 'EXECUTE'
-     JOIN pg_roles r ON r.oid = a.grantee AND r.rolname = 'authenticated'
-     WHERE n.nspname = 'public' AND p.proname = 'get_current_user_role')),
-  true, 'get_current_user_role: authenticated KEEPS EXECUTE');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'public.get_current_user_role()'::regprocedure AND EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE'))), false, 'get_current_user_role(): no PUBLIC EXECUTE grant survives');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE p.oid = 'public.get_current_user_role()'::regprocedure)), false, 'get_current_user_role(): anon has no EXECUTE grant');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE p.oid = 'public.get_current_user_role()'::regprocedure)), true, 'get_current_user_role(): authenticated keeps EXECUTE');
 
--- =============================================================================
--- Resto de las 14 — PUBLIC/anon fuera, authenticated sobrevive (nunca tocado).
--- =============================================================================
-
-SELECT has_function('public', 'get_enabled_modules_for_operator', ARRAY['uuid'],
+SELECT has_function('public', 'get_enabled_modules_for_operator', ARRAY['uuid']::text[],
   'get_enabled_modules_for_operator(uuid) exists');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='get_enabled_modules_for_operator' AND (p.proacl IS NULL OR EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')))), false, 'get_enabled_modules_for_operator: no PUBLIC EXECUTE grant survives');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE n.nspname='public' AND p.proname='get_enabled_modules_for_operator' AND p.proacl IS NOT NULL)), false, 'get_enabled_modules_for_operator: anon has no EXECUTE grant');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE n.nspname='public' AND p.proname='get_enabled_modules_for_operator')), true, 'get_enabled_modules_for_operator: authenticated keeps EXECUTE');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'public.get_enabled_modules_for_operator(uuid)'::regprocedure AND EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE'))), false, 'get_enabled_modules_for_operator(uuid): no PUBLIC EXECUTE grant survives');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE p.oid = 'public.get_enabled_modules_for_operator(uuid)'::regprocedure)), false, 'get_enabled_modules_for_operator(uuid): anon has no EXECUTE grant');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE p.oid = 'public.get_enabled_modules_for_operator(uuid)'::regprocedure)), true, 'get_enabled_modules_for_operator(uuid): authenticated keeps EXECUTE');
 
-SELECT has_function('public', 'enable_module_for_operator', ARRAY['uuid','text','text'],
+SELECT has_function('public', 'enable_module_for_operator', ARRAY['uuid','text','text']::text[],
   'enable_module_for_operator(uuid,text,text) exists');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='enable_module_for_operator' AND (p.proacl IS NULL OR EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')))), false, 'enable_module_for_operator: no PUBLIC EXECUTE grant survives');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE n.nspname='public' AND p.proname='enable_module_for_operator' AND p.proacl IS NOT NULL)), false, 'enable_module_for_operator: anon has no EXECUTE grant');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE n.nspname='public' AND p.proname='enable_module_for_operator')), true, 'enable_module_for_operator: authenticated keeps EXECUTE');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'public.enable_module_for_operator(uuid,text,text)'::regprocedure AND EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE'))), false, 'enable_module_for_operator(uuid,text,text): no PUBLIC EXECUTE grant survives');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE p.oid = 'public.enable_module_for_operator(uuid,text,text)'::regprocedure)), false, 'enable_module_for_operator(uuid,text,text): anon has no EXECUTE grant');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE p.oid = 'public.enable_module_for_operator(uuid,text,text)'::regprocedure)), true, 'enable_module_for_operator(uuid,text,text): authenticated keeps EXECUTE');
 
-SELECT has_function('public', 'disable_module_for_operator', ARRAY['uuid','text','text'],
+SELECT has_function('public', 'disable_module_for_operator', ARRAY['uuid','text','text']::text[],
   'disable_module_for_operator(uuid,text,text) exists');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='disable_module_for_operator' AND (p.proacl IS NULL OR EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')))), false, 'disable_module_for_operator: no PUBLIC EXECUTE grant survives');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE n.nspname='public' AND p.proname='disable_module_for_operator' AND p.proacl IS NOT NULL)), false, 'disable_module_for_operator: anon has no EXECUTE grant');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE n.nspname='public' AND p.proname='disable_module_for_operator')), true, 'disable_module_for_operator: authenticated keeps EXECUTE');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'public.disable_module_for_operator(uuid,text,text)'::regprocedure AND EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE'))), false, 'disable_module_for_operator(uuid,text,text): no PUBLIC EXECUTE grant survives');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE p.oid = 'public.disable_module_for_operator(uuid,text,text)'::regprocedure)), false, 'disable_module_for_operator(uuid,text,text): anon has no EXECUTE grant');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE p.oid = 'public.disable_module_for_operator(uuid,text,text)'::regprocedure)), true, 'disable_module_for_operator(uuid,text,text): authenticated keeps EXECUTE');
 
 SELECT has_function('public', 'list_operators_with_module_state', ARRAY[]::text[],
   'list_operators_with_module_state() exists');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='list_operators_with_module_state' AND (p.proacl IS NULL OR EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')))), false, 'list_operators_with_module_state: no PUBLIC EXECUTE grant survives');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE n.nspname='public' AND p.proname='list_operators_with_module_state' AND p.proacl IS NOT NULL)), false, 'list_operators_with_module_state: anon has no EXECUTE grant');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE n.nspname='public' AND p.proname='list_operators_with_module_state')), true, 'list_operators_with_module_state: authenticated keeps EXECUTE');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'public.list_operators_with_module_state()'::regprocedure AND EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE'))), false, 'list_operators_with_module_state(): no PUBLIC EXECUTE grant survives');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE p.oid = 'public.list_operators_with_module_state()'::regprocedure)), false, 'list_operators_with_module_state(): anon has no EXECUTE grant');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE p.oid = 'public.list_operators_with_module_state()'::regprocedure)), true, 'list_operators_with_module_state(): authenticated keeps EXECUTE');
 
-SELECT has_function('public', 'get_module_audit_for_operator', ARRAY['uuid'],
+SELECT has_function('public', 'get_module_audit_for_operator', ARRAY['uuid']::text[],
   'get_module_audit_for_operator(uuid) exists');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='get_module_audit_for_operator' AND (p.proacl IS NULL OR EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')))), false, 'get_module_audit_for_operator: no PUBLIC EXECUTE grant survives');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE n.nspname='public' AND p.proname='get_module_audit_for_operator' AND p.proacl IS NOT NULL)), false, 'get_module_audit_for_operator: anon has no EXECUTE grant');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE n.nspname='public' AND p.proname='get_module_audit_for_operator')), true, 'get_module_audit_for_operator: authenticated keeps EXECUTE');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'public.get_module_audit_for_operator(uuid)'::regprocedure AND EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE'))), false, 'get_module_audit_for_operator(uuid): no PUBLIC EXECUTE grant survives');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE p.oid = 'public.get_module_audit_for_operator(uuid)'::regprocedure)), false, 'get_module_audit_for_operator(uuid): anon has no EXECUTE grant');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE p.oid = 'public.get_module_audit_for_operator(uuid)'::regprocedure)), true, 'get_module_audit_for_operator(uuid): authenticated keeps EXECUTE');
 
-SELECT has_function('public', 'add_manifest_to_route', ARRAY['uuid','uuid'],
+SELECT has_function('public', 'add_manifest_to_route', ARRAY['uuid','uuid']::text[],
   'add_manifest_to_route(uuid,uuid) exists');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='add_manifest_to_route' AND (p.proacl IS NULL OR EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')))), false, 'add_manifest_to_route: no PUBLIC EXECUTE grant survives');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE n.nspname='public' AND p.proname='add_manifest_to_route' AND p.proacl IS NOT NULL)), false, 'add_manifest_to_route: anon has no EXECUTE grant');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE n.nspname='public' AND p.proname='add_manifest_to_route')), true, 'add_manifest_to_route: authenticated keeps EXECUTE');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'public.add_manifest_to_route(uuid,uuid)'::regprocedure AND EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE'))), false, 'add_manifest_to_route(uuid,uuid): no PUBLIC EXECUTE grant survives');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE p.oid = 'public.add_manifest_to_route(uuid,uuid)'::regprocedure)), false, 'add_manifest_to_route(uuid,uuid): anon has no EXECUTE grant');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE p.oid = 'public.add_manifest_to_route(uuid,uuid)'::regprocedure)), true, 'add_manifest_to_route(uuid,uuid): authenticated keeps EXECUTE');
 
-SELECT has_function('public', 'close_pickup_route', ARRAY['uuid'],
+SELECT has_function('public', 'close_pickup_route', ARRAY['uuid']::text[],
   'close_pickup_route(uuid) exists');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='close_pickup_route' AND (p.proacl IS NULL OR EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')))), false, 'close_pickup_route: no PUBLIC EXECUTE grant survives');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE n.nspname='public' AND p.proname='close_pickup_route' AND p.proacl IS NOT NULL)), false, 'close_pickup_route: anon has no EXECUTE grant');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE n.nspname='public' AND p.proname='close_pickup_route')), true, 'close_pickup_route: authenticated keeps EXECUTE');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'public.close_pickup_route(uuid)'::regprocedure AND EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE'))), false, 'close_pickup_route(uuid): no PUBLIC EXECUTE grant survives');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE p.oid = 'public.close_pickup_route(uuid)'::regprocedure)), false, 'close_pickup_route(uuid): anon has no EXECUTE grant');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE p.oid = 'public.close_pickup_route(uuid)'::regprocedure)), true, 'close_pickup_route(uuid): authenticated keeps EXECUTE');
 
-SELECT has_function('public', 'cancel_pickup_route', ARRAY['uuid','text'],
+SELECT has_function('public', 'cancel_pickup_route', ARRAY['uuid','text']::text[],
   'cancel_pickup_route(uuid,text) exists');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='cancel_pickup_route' AND (p.proacl IS NULL OR EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')))), false, 'cancel_pickup_route: no PUBLIC EXECUTE grant survives');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE n.nspname='public' AND p.proname='cancel_pickup_route' AND p.proacl IS NOT NULL)), false, 'cancel_pickup_route: anon has no EXECUTE grant');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE n.nspname='public' AND p.proname='cancel_pickup_route')), true, 'cancel_pickup_route: authenticated keeps EXECUTE');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'public.cancel_pickup_route(uuid,text)'::regprocedure AND EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE'))), false, 'cancel_pickup_route(uuid,text): no PUBLIC EXECUTE grant survives');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE p.oid = 'public.cancel_pickup_route(uuid,text)'::regprocedure)), false, 'cancel_pickup_route(uuid,text): anon has no EXECUTE grant');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE p.oid = 'public.cancel_pickup_route(uuid,text)'::regprocedure)), true, 'cancel_pickup_route(uuid,text): authenticated keeps EXECUTE');
 
-SELECT has_function('public', 'get_route_reception_snapshot', ARRAY['uuid'],
+SELECT has_function('public', 'get_route_reception_snapshot', ARRAY['uuid']::text[],
   'get_route_reception_snapshot(uuid) exists');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='get_route_reception_snapshot' AND (p.proacl IS NULL OR EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')))), false, 'get_route_reception_snapshot: no PUBLIC EXECUTE grant survives');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE n.nspname='public' AND p.proname='get_route_reception_snapshot' AND p.proacl IS NOT NULL)), false, 'get_route_reception_snapshot: anon has no EXECUTE grant');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE n.nspname='public' AND p.proname='get_route_reception_snapshot')), true, 'get_route_reception_snapshot: authenticated keeps EXECUTE');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'public.get_route_reception_snapshot(uuid)'::regprocedure AND EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE'))), false, 'get_route_reception_snapshot(uuid): no PUBLIC EXECUTE grant survives');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE p.oid = 'public.get_route_reception_snapshot(uuid)'::regprocedure)), false, 'get_route_reception_snapshot(uuid): anon has no EXECUTE grant');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE p.oid = 'public.get_route_reception_snapshot(uuid)'::regprocedure)), true, 'get_route_reception_snapshot(uuid): authenticated keeps EXECUTE');
 
-SELECT has_function('public', 'mark_manifest_labels_printed', ARRAY['uuid'],
+SELECT has_function('public', 'mark_manifest_labels_printed', ARRAY['uuid']::text[],
   'mark_manifest_labels_printed(uuid) exists');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='mark_manifest_labels_printed' AND (p.proacl IS NULL OR EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')))), false, 'mark_manifest_labels_printed: no PUBLIC EXECUTE grant survives');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE n.nspname='public' AND p.proname='mark_manifest_labels_printed' AND p.proacl IS NOT NULL)), false, 'mark_manifest_labels_printed: anon has no EXECUTE grant');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE n.nspname='public' AND p.proname='mark_manifest_labels_printed')), true, 'mark_manifest_labels_printed: authenticated keeps EXECUTE');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'public.mark_manifest_labels_printed(uuid)'::regprocedure AND EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE'))), false, 'mark_manifest_labels_printed(uuid): no PUBLIC EXECUTE grant survives');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE p.oid = 'public.mark_manifest_labels_printed(uuid)'::regprocedure)), false, 'mark_manifest_labels_printed(uuid): anon has no EXECUTE grant');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE p.oid = 'public.mark_manifest_labels_printed(uuid)'::regprocedure)), true, 'mark_manifest_labels_printed(uuid): authenticated keeps EXECUTE');
 
-SELECT has_function('public', 'get_manifest_label_data', ARRAY['uuid','uuid'],
+SELECT has_function('public', 'get_manifest_label_data', ARRAY['uuid','uuid']::text[],
   'get_manifest_label_data(uuid,uuid) exists');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='get_manifest_label_data' AND (p.proacl IS NULL OR EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')))), false, 'get_manifest_label_data: no PUBLIC EXECUTE grant survives');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE n.nspname='public' AND p.proname='get_manifest_label_data' AND p.proacl IS NOT NULL)), false, 'get_manifest_label_data: anon has no EXECUTE grant');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE n.nspname='public' AND p.proname='get_manifest_label_data')), true, 'get_manifest_label_data: authenticated keeps EXECUTE');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'public.get_manifest_label_data(uuid,uuid)'::regprocedure AND EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE'))), false, 'get_manifest_label_data(uuid,uuid): no PUBLIC EXECUTE grant survives');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE p.oid = 'public.get_manifest_label_data(uuid,uuid)'::regprocedure)), false, 'get_manifest_label_data(uuid,uuid): anon has no EXECUTE grant');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE p.oid = 'public.get_manifest_label_data(uuid,uuid)'::regprocedure)), true, 'get_manifest_label_data(uuid,uuid): authenticated keeps EXECUTE');
 
-SELECT has_function('public', 'expand_carton', ARRAY['uuid','int4','text'],
+SELECT has_function('public', 'expand_carton', ARRAY['uuid','int4','text']::text[],
   'expand_carton(uuid,int,text) exists');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='expand_carton' AND (p.proacl IS NULL OR EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')))), false, 'expand_carton: no PUBLIC EXECUTE grant survives');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE n.nspname='public' AND p.proname='expand_carton' AND p.proacl IS NOT NULL)), false, 'expand_carton: anon has no EXECUTE grant');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE n.nspname='public' AND p.proname='expand_carton')), true, 'expand_carton: authenticated keeps EXECUTE');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'public.expand_carton(uuid,int,text)'::regprocedure AND EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE'))), false, 'expand_carton(uuid,int,text): no PUBLIC EXECUTE grant survives');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE p.oid = 'public.expand_carton(uuid,int,text)'::regprocedure)), false, 'expand_carton(uuid,int,text): anon has no EXECUTE grant');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE p.oid = 'public.expand_carton(uuid,int,text)'::regprocedure)), true, 'expand_carton(uuid,int,text): authenticated keeps EXECUTE');
 
-SELECT has_function('public', 'delete_minted_carton', ARRAY['uuid','text'],
+SELECT has_function('public', 'delete_minted_carton', ARRAY['uuid','text']::text[],
   'delete_minted_carton(uuid,text) exists');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='delete_minted_carton' AND (p.proacl IS NULL OR EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')))), false, 'delete_minted_carton: no PUBLIC EXECUTE grant survives');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE n.nspname='public' AND p.proname='delete_minted_carton' AND p.proacl IS NOT NULL)), false, 'delete_minted_carton: anon has no EXECUTE grant');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE n.nspname='public' AND p.proname='delete_minted_carton')), true, 'delete_minted_carton: authenticated keeps EXECUTE');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'public.delete_minted_carton(uuid,text)'::regprocedure AND EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE'))), false, 'delete_minted_carton(uuid,text): no PUBLIC EXECUTE grant survives');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE p.oid = 'public.delete_minted_carton(uuid,text)'::regprocedure)), false, 'delete_minted_carton(uuid,text): anon has no EXECUTE grant');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE p.oid = 'public.delete_minted_carton(uuid,text)'::regprocedure)), true, 'delete_minted_carton(uuid,text): authenticated keeps EXECUTE');
 
-SELECT has_function('public', 'remove_manifest_from_route', ARRAY['uuid','uuid'],
+SELECT has_function('public', 'remove_manifest_from_route', ARRAY['uuid','uuid']::text[],
   'remove_manifest_from_route(uuid,uuid) exists');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='remove_manifest_from_route' AND (p.proacl IS NULL OR EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')))), false, 'remove_manifest_from_route: no PUBLIC EXECUTE grant survives');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE n.nspname='public' AND p.proname='remove_manifest_from_route' AND p.proacl IS NOT NULL)), false, 'remove_manifest_from_route: anon has no EXECUTE grant');
-SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE n.nspname='public' AND p.proname='remove_manifest_from_route')), true, 'remove_manifest_from_route: authenticated keeps EXECUTE');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'public.remove_manifest_from_route(uuid,uuid)'::regprocedure AND EXISTS (SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE'))), false, 'remove_manifest_from_route(uuid,uuid): no PUBLIC EXECUTE grant survives');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='anon' WHERE p.oid = 'public.remove_manifest_from_route(uuid,uuid)'::regprocedure)), false, 'remove_manifest_from_route(uuid,uuid): anon has no EXECUTE grant');
+SELECT is((SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN aclexplode(p.proacl) a ON a.privilege_type='EXECUTE' JOIN pg_roles r ON r.oid=a.grantee AND r.rolname='authenticated' WHERE p.oid = 'public.remove_manifest_from_route(uuid,uuid)'::regprocedure)), true, 'remove_manifest_from_route(uuid,uuid): authenticated keeps EXECUTE');
 
 -- =============================================================================
 -- Behavioral fix #1 — get_enabled_modules_for_operator(NULL) must now RAISE
