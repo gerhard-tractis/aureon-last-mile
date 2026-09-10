@@ -48,9 +48,25 @@ interface ManifestPhotoStripProps {
  * directo, no envuelto en una mutación de TanStack Query: no hay camino que
  * pueda quedar en pausa por `networkMode`, mismo patrón que
  * `useCloseManifest.ts` ya usa para su propio `enqueue` offline.
+ *
+ * Ronda 4 de review del PR #736 (bloqueante 1) — esa afirmación es cierta
+ * para la ESCRITURA de arriba y falsa para la LECTURA: `useManifestDocuments`
+ * SÍ puede quedar en pausa (`networkMode:'online'`, el default del repo —
+ * `isLoading`/`isError` leen `false`, `data` se queda `undefined`). Un
+ * `= []` en la desestructuración convertía ese `undefined` en un "0"
+ * convincente — la tira pintaba badge "0" tras un remount sin señal (volver
+ * de `scan` y regresar, o relanzar la PWA) aunque el servidor ya tuviera
+ * hojas confirmadas de esta misma sesión, y `nextSheetNumber` volvía a
+ * proponer la hoja 1, colisionando contra una ya subida al drenar (23505 →
+ * renumera y gasta un reintento). Mismo patrón que
+ * `review/[loadId]/page.tsx` ya aplica (su propio Bloqueante 1, PR #686):
+ * gatear sobre PRESENCIA de datos, no sobre `isLoading`/`isFetching` — si no
+ * se puede ver el servidor, no se pinta un número como si se pudiera.
  */
 export function ManifestPhotoStrip({ operatorId, manifestId, userId, externalLoadId }: ManifestPhotoStripProps) {
-  const { data: documents = [], isFetching } = useManifestDocuments(operatorId, manifestId);
+  const { data: documents, isFetching } = useManifestDocuments(operatorId, manifestId);
+  const documentsUnknown = documents === undefined;
+  const knownDocuments = documents ?? [];
   const [cameraOpen, setCameraOpen] = useState(false);
   const [reviewPhoto, setReviewPhoto] = useState<File | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -62,10 +78,14 @@ export function ManifestPhotoStrip({ operatorId, manifestId, userId, externalLoa
   // `enqueueManifestPhoto` además desambigua contra la cola LOCAL
   // (`nextAvailableSheetNumber`, ver su propio docstring) — este número es
   // sólo el punto de partida que ese desempate recibe.
-  const nextSheetNumber = documents.reduce((max, doc) => Math.max(max, doc.sheet_number), 0) + 1;
+  const nextSheetNumber = knownDocuments.reduce((max, doc) => Math.max(max, doc.sheet_number), 0) + 1;
 
   const disabled = !operatorId || !manifestId || !userId;
-  const addDisabled = disabled || isFetching || isSaving;
+  // Bloqueante 1 — `documentsUnknown` bloquea "Agregar" mientras no se sabe
+  // cuántas hojas existen ya: abrir la cámara con `nextSheetNumber` calculado
+  // sobre `knownDocuments = []` (el único valor posible sin servidor) es
+  // exactamente el camino que colisiona al drenar.
+  const addDisabled = disabled || documentsUnknown || isFetching || isSaving;
 
   const handleUsePhoto = async (file: File) => {
     if (!operatorId || !manifestId || !userId) return;
@@ -128,7 +148,7 @@ export function ManifestPhotoStrip({ operatorId, manifestId, userId, externalLoa
           data-testid="manifest-photo-count"
           className="ml-auto text-xs font-semibold text-status-success-text"
         >
-          {documents.length}
+          {documentsUnknown ? '—' : knownDocuments.length}
         </span>
       </div>
       <p className="text-sm text-text-secondary">
@@ -136,7 +156,7 @@ export function ManifestPhotoStrip({ operatorId, manifestId, userId, externalLoa
       </p>
 
       <div className="grid grid-cols-3 gap-2">
-        {documents.map((doc) => (
+        {knownDocuments.map((doc) => (
           <div
             key={doc.id}
             className="aspect-[3/4] rounded-xl bg-surface-secondary border border-border flex flex-col items-center justify-center gap-1.5"
@@ -165,7 +185,7 @@ export function ManifestPhotoStrip({ operatorId, manifestId, userId, externalLoa
         open={cameraOpen}
         loadLabel={externalLoadId ?? manifestId ?? ''}
         sheetNumber={nextSheetNumber}
-        capturedCount={documents.length}
+        capturedCount={knownDocuments.length}
         onClose={() => setCameraOpen(false)}
         onCapture={(file) => {
           setCameraOpen(false);

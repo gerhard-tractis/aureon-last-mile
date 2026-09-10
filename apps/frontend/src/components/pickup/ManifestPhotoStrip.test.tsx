@@ -132,6 +132,24 @@ describe('ManifestPhotoStrip', () => {
     expect(screen.getByText('hoja 2')).toBeInTheDocument();
   });
 
+  // Ronda 4 de review del PR #736 (bloqueante 1) — `networkMode: 'online'`
+  // (el default del repo) deja una query en PAUSA cuando no hay señal:
+  // `isLoading` y `isError` leen `false`, y `data` se queda `undefined`. El
+  // `= []` de la desestructuración convertía ese `undefined` en un "0"
+  // convincente — la tira pintaba badge "0" y ningún tile aunque el
+  // servidor ya tuviera hojas confirmadas de una sesión anterior, y
+  // `nextSheetNumber` volvía a proponer la hoja 1, colisionando contra una
+  // ya subida. Mismo patrón que `review/[loadId]/page.tsx` ya aplica
+  // (Bloqueante 1, PR #686): gatear sobre PRESENCIA de datos, no sobre
+  // `isLoading`/`isFetching`.
+  it('does not claim zero photos and disables Agregar when the query is paused (data: undefined, not loading)', () => {
+    mockUseManifestDocuments.mockReturnValue({ data: undefined, isFetching: false });
+    render(<ManifestPhotoStrip operatorId="op-1" manifestId="manifest-1" userId="user-1" />);
+
+    expect(screen.getByTestId('manifest-photo-count')).not.toHaveTextContent('0');
+    expect(screen.getByRole('button', { name: /agregar/i })).toBeDisabled();
+  });
+
   it('does not render an Agregar tile the operator can act on when manifestId is missing', () => {
     mockUseManifestDocuments.mockReturnValue({ data: [], isFetching: false });
     render(<ManifestPhotoStrip operatorId="op-1" manifestId={null} userId="user-1" />);
