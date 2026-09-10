@@ -23,7 +23,7 @@ PSQL=(psql -U postgres -d postgres)
 # introduced by this PR, not something `apply` can fix, and not new.
 #
 # Round 4 review (B1): matching by filename ALONE — no check on the error
-# itself — meant a real, new, unrelated breakage inside one of these three
+# itself — meant a real, new, unrelated breakage inside one of these
 # files (a typo, a dropped dependency) was waved through as "known gap,
 # not blocking" too. Measured: injected a syntax error into
 # spec30_dashboard_rpcs.sql and it still reported rc=0. Each entry is now
@@ -31,18 +31,60 @@ PSQL=(psql -U postgres -d postgres)
 # allowed to fail, the substring narrows WHAT failure is allowed; either
 # one not matching makes it count as unexpected, still `test`/`grep -F`
 # (no globbing, no pattern) so nothing here can accidentally widen.
+#
+# Round 5 review (B1): a THIRD entry for spec30_dashboard_rpcs.sql was
+# here, and it was wrong on two counts. First, its failure wasn't a
+# base-image gap at all — the file opens with `SET LOCAL check_function_bodies
+# = off;`, a no-op outside an explicit transaction, and `psql -f` without
+# `-1` never opens one, so the deferred body check that line exists to
+# skip ran anyway. Second, and worse: that migration's error TEXT isn't
+# stable between runs of `apply` on the SAME container — on a fresh `up`,
+# public.dashboard_monthly_rollup doesn't exist yet (a later migration
+# creates it) and the file dies at line 79; on the very next `apply`
+# against that same container, the table now exists, psql gets further,
+# and it dies at a DIFFERENT line with a different error. One entry can
+# only encode one text, so the second `apply` reported a real
+# fail_unexpected and rc=1 — the round-3 bug back, with zero mutation,
+# just from running `apply` twice on a clean container (the review found
+# this; two more `apply` runs in a row reproduced it identically). Fixed
+# at the actual cause below (`-1`), which makes the file apply cleanly —
+# its allowlist entry is gone, not patched.
 KNOWN_BASE_IMAGE_FAILURES=(
   '20250130165844_example_storage.sql|column "public" of relation "buckets" does not exist'
-  '20260409000003_spec30_dashboard_rpcs.sql|relation "public.dashboard_monthly_rollup" does not exist'
   '20260430000001_create_manifests_storage_bucket.sql|column "public" of relation "buckets" does not exist'
 )
 # Round 4 review (item 7): a self-test must never write/delete a REAL
 # migration filename or version, even pointed at the wrong container by
 # accident. One extra throwaway "name|substring" entry, set only by the
 # self-test, exercises this exact mechanism without touching the real list.
+# Round 5 review (minor): this env var reaches production `apply`, not
+# only the self-test — nothing stops someone from setting it by accident.
+# Requires deliberate action either way; make that action loud instead of
+# silently widening the allowlist.
 if [ -n "${PGTAP_APPLY_TEST_ALLOWLIST_ENTRY:-}" ]; then
+  echo "WARNING: PGTAP_APPLY_TEST_ALLOWLIST_ENTRY is set — appending a throwaway allowlist entry: $PGTAP_APPLY_TEST_ALLOWLIST_ENTRY" >&2
   KNOWN_BASE_IMAGE_FAILURES+=("$PGTAP_APPLY_TEST_ALLOWLIST_ENTRY")
 fi
+# Round 5 review (medium): a malformed entry — no '|' separator, or an
+# empty expected-error text — silently degrades this whole guard back to
+# filename-only matching. `expect="${entry#*|}"` with no '|' in $entry
+# leaves $expect equal to $entry itself (the filename, with its .sql
+# extension) — and the line `apply` greps that against ALWAYS contains the
+# full path, so it always matches. Reject any malformed entry loudly, up
+# front, rather than let it match everything.
+for entry in "${KNOWN_BASE_IMAGE_FAILURES[@]}"; do
+  case "$entry" in
+    *'|'*) ;;
+    *)
+      echo "ERROR: malformed KNOWN_BASE_IMAGE_FAILURES entry (no '|' separator between filename and expected error text): $entry" >&2
+      exit 1
+      ;;
+  esac
+  if [ -z "${entry#*|}" ]; then
+    echo "ERROR: malformed KNOWN_BASE_IMAGE_FAILURES entry (empty expected error text): $entry" >&2
+    exit 1
+  fi
+done
 ALLOWLIST_MATCHED=()  # round 4 review, item 5: which entries actually fired this run
 is_known_failure() { # $1 = basename, $2 = the captured ERROR: line
   local b="$1" errline="$2" entry name expect
@@ -130,7 +172,21 @@ for f in $(ls /supabase/migrations/*.sql | sort); do
     esac
   fi
   if [ "$do_apply" = "1" ]; then
-    if "${PSQL[@]}" -v ON_ERROR_STOP=1 -q -f "$f" >/tmp/o.log 2>&1; then
+    # -1: one transaction per file, matching the Supabase CLI and
+    # infra/supabase-qa/apply-migrations.sh — without it, a file that
+    # relies on transaction-scoped behavior (e.g. `SET LOCAL
+    # check_function_bodies = off;`, a no-op outside an explicit
+    # transaction) runs as a bare sequence of statements instead. Round 5
+    # review measured this: spec30_dashboard_rpcs.sql only "failed" for
+    # that reason, not a real base-image gap. Same exception
+    # apply-migrations.sh already carries: a file with its OWN top-level
+    # BEGIN manages its own transaction — nesting psql's implicit one
+    # around it is the wrong move, not the fix.
+    txn_flags=(-1)
+    if grep -Eqi '^[[:space:]]*BEGIN[[:space:]]*;' "$f"; then
+      txn_flags=()
+    fi
+    if "${PSQL[@]}" -v ON_ERROR_STOP=1 -q "${txn_flags[@]}" -f "$f" >/tmp/o.log 2>&1; then
       "${PSQL[@]}" -q -c \
         "insert into supabase_migrations.schema_migrations(version,name,content_sha256) values ('$ver', '$base', '$hash')
          on conflict (version) do update set name = excluded.name, content_sha256 = excluded.content_sha256"

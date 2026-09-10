@@ -285,6 +285,26 @@ else
 fi
 
 # =====================================================================
+# Round 5 review, medium: a malformed allowlist entry — no '|' separator,
+# or an empty expected-error text — must be REJECTED loudly, not silently
+# degrade the whole guard back to filename-only matching (that's the B1
+# vulnerability again, reachable through a typo instead of a mutant).
+# =====================================================================
+out6e=$(PGTAP_APPLY_TEST_ALLOWLIST_ENTRY="malformed_no_pipe.sql" bash "$WRAPPER" apply 2>&1); rc6e=$?
+if [ "$rc6e" -ne 0 ] && printf '%s\n' "$out6e" | grep -qF "no '|' separator"; then
+  ok "a malformed allowlist entry with no '|' separator is rejected loudly (round 5 review, medium)"
+else
+  notok "a malformed allowlist entry with no '|' separator is rejected loudly (rc=$rc6e, output: $out6e)"
+fi
+
+out6f=$(PGTAP_APPLY_TEST_ALLOWLIST_ENTRY="malformed_empty_expect.sql|" bash "$WRAPPER" apply 2>&1); rc6f=$?
+if [ "$rc6f" -ne 0 ] && printf '%s\n' "$out6f" | grep -qF "empty expected error text"; then
+  ok "a malformed allowlist entry with empty expected error text is rejected loudly (round 5 review, medium)"
+else
+  notok "a malformed allowlist entry with empty expected error text is rejected loudly (rc=$rc6f, output: $out6f)"
+fi
+
+# =====================================================================
 # C-3: a ledger row whose migration file was renamed/deleted must be
 # surfaced (ledger -> file direction), not just file -> ledger.
 # =====================================================================
@@ -326,6 +346,42 @@ if [ "$rc9" -ne 0 ] && printf '%s\n' "$out9" | grep -qF "run 'sync' first"; then
   ok "apply against an unsynced (empty migrations dir) container fails loud (round 2 review, C-4)"
 else
   notok "apply against an unsynced container fails loud (rc=$rc9, output: $out9)"
+fi
+
+# =====================================================================
+# Round 5 review: apply must be STABLE across repeated invocations against
+# the REAL migration set, on the SAME container — no mutation needed. This
+# was reachable on a pristine repo with zero mutant involved: a real
+# migration's error text (not its pass/fail status — its actual wording)
+# depended on migration-APPLICATION ORDER, which a `-c`-only allowlist
+# comparison can't express with one static string. Neither CI (which only
+# exercises isolated fixtures, never the real migrations) nor the earlier
+# rounds of this test caught it — this is the seam that bit twice.
+# Rebuilds THIS container from scratch via `up` (so it's fully bootstrapped
+# — auth shims, pgtap — not just pgtap, which is all the rest of this file
+# needs), which is also the very first `apply` invocation, then applies
+# twice more and requires all three runs agree.
+# =====================================================================
+out_u=$(bash "$WRAPPER" up 2>&1); rc_u=$?
+out_a2=$(bash "$WRAPPER" apply 2>&1); rc_a2=$?
+out_a3=$(bash "$WRAPPER" apply 2>&1); rc_a3=$?
+if [ "$rc_u" -eq "$rc_a2" ] && [ "$rc_a2" -eq "$rc_a3" ]; then
+  ok "apply against the REAL migration set gives the SAME exit code across repeated runs on one container (round 5 review)"
+else
+  notok "apply is stable across repeated runs on the real migration set (rc(up)=$rc_u rc(apply#2)=$rc_a2 rc(apply#3)=$rc_a3; up output: $out_u; #2: $out_a2; #3: $out_a3)"
+fi
+if [ "$rc_u" -eq 0 ]; then
+  ok "...and that stable exit code is 0 (no unexpected failures, no drift, nothing unverified)"
+else
+  notok "...and that stable exit code is 0 (rc=$rc_u, up output: $out_u)"
+fi
+# Round 5 review: catches a DEAD real allowlist entry too — e.g. an entry
+# for a migration that now applies cleanly (as spec30_dashboard_rpcs.sql
+# does after the -1 fix) left in KNOWN_BASE_IMAGE_FAILURES by mistake.
+if ! printf '%s\n' "$out_u" | grep -q "NOTE:"; then
+  ok "...and every real KNOWN_BASE_IMAGE_FAILURES entry actually fires — none are dead"
+else
+  notok "...and every real allowlist entry fires (output: $out_u)"
 fi
 
 if [ "$fails" -eq 0 ]; then
