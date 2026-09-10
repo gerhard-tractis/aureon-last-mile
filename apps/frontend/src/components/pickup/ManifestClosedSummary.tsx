@@ -1,6 +1,6 @@
 import { CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { pendingLoadsLabel } from '@/lib/pickup/manifestCloseSummary';
+import { backupPhotosLabel, pendingLoadsLabel } from '@/lib/pickup/manifestCloseSummary';
 
 export interface ManifestClosedSummaryProps {
   loadId: string;
@@ -8,7 +8,16 @@ export interface ManifestClosedSummaryProps {
   verifiedCount: number;
   missingCount: number;
   unexpectedCount: number;
-  photosCount: number;
+  /**
+   * Seguimiento de spec-80 fase 6 (PR #736) — antes `photosCount: number`,
+   * que no podía expresar "no lo sé". `null` es el conteo del SERVIDOR
+   * cuando `useManifestDocuments` queda en pausa (networkMode:'online')
+   * — nunca 0 por un `= []` de conveniencia en el caller. `queuedPhotosCount`
+   * (abajo) es aparte porque siempre se conoce (IndexedDB, no red) — ver
+   * `backupPhotosLabel`.
+   */
+  serverPhotosCount: number | null;
+  queuedPhotosCount: number;
   signaturesCount: number;
   routeExternalId: string | null;
   pendingRouteCount: number;
@@ -57,7 +66,8 @@ export function ManifestClosedSummary({
   verifiedCount,
   missingCount,
   unexpectedCount,
-  photosCount,
+  serverPhotosCount,
+  queuedPhotosCount,
   signaturesCount,
   routeExternalId,
   pendingRouteCount,
@@ -102,7 +112,7 @@ export function ManifestClosedSummary({
         <SummaryRow
           testId="summary-row-backup"
           label="Respaldo"
-          value={`${photosCount} fotos · ${signaturesCount} firmas`}
+          value={`${backupPhotosLabel(serverPhotosCount, queuedPhotosCount)} · ${signaturesCount} firmas`}
           last
         />
       </div>

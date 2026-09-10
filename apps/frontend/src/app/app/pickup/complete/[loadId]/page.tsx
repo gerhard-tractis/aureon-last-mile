@@ -94,16 +94,13 @@ export default function CompletionPage() {
   );
   // 5i — same document count ManifestPhotoStrip already renders, read again
   // here for the "Respaldo" row; react-query dedupes by query key.
-  const { data: documents = [] } = useManifestDocuments(operatorId, manifestId);
-  // Ronda 4 de review del PR #736 (bloqueante 2) — `documents.length` sólo
-  // cuenta lo que el SERVIDOR ya confirmó. Desde esta fase
-  // `enqueueManifestPhoto` tiene su primer llamador de producción
-  // (`ManifestPhotoStrip`), así que una foto recién capturada — encolada
-  // pero todavía sin confirmar — podía leer "0 fotos" en la pantalla que
-  // existe para tranquilizar al operario de que el respaldo está a salvo.
-  // `photosCount` (más abajo) suma esto a `documents.length`: un número
-  // honesto, no dos que el operario tenga que sumar él mismo — ver
-  // `queuedManifestPhotoCount` para el porqué de qué estados cuentan.
+  //
+  // Seguimiento de spec-80 fase 6 (PR #736) — sin `= []`, a propósito: ese
+  // default convertía un `data: undefined` (query en pausa) en "0 fotos"
+  // pese a hojas ya confirmadas por el servidor. `null` = no se sabe; ver
+  // `backupPhotosLabel` (`lib/pickup/manifestCloseSummary.ts`).
+  const { data: documents } = useManifestDocuments(operatorId, manifestId);
+  const serverPhotosCount = documents === undefined ? null : documents.length;
   const queuedPhotoCount = useQueuedManifestPhotoCount(operatorId, manifestId);
   // 5i — "Sigue en PR-…": the OTHER manifests on this same route, so this
   // screen can say how many are still pending and which is next.
@@ -209,7 +206,8 @@ export default function CompletionPage() {
         verifiedCount={verifiedCount}
         missingCount={missingPackages.length}
         unexpectedCount={unexpectedCount}
-        photosCount={documents.length + queuedPhotoCount}
+        serverPhotosCount={serverPhotosCount}
+        queuedPhotosCount={queuedPhotoCount}
         signaturesCount={clientSignature ? 2 : 1}
         routeExternalId={routeExternalId}
         pendingRouteCount={routeSummary?.pendingCount ?? 0}

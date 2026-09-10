@@ -51,6 +51,51 @@ export function pendingLoadsLabel(n: number): string {
   return n === 1 ? '1 carga pendiente' : `${n} cargas pendientes`;
 }
 
+/**
+ * Seguimiento de spec-80 fase 6 (PR #736) — la fila "Respaldo" de `5i`
+ * (`ManifestClosedSummary`) leía `documents.length` con un `= []` de
+ * respaldo en `complete/[loadId]/page.tsx`: cuando `useManifestDocuments`
+ * queda en pausa (`networkMode:'online'`, el default del repo — un 500 o
+ * un RLS transitorio al montar, o simplemente sin señal), `documents` es
+ * `undefined` y ese `= []` lo convertía en "0 fotos" — una afirmación falsa
+ * sobre la custodia de la prueba, en la pantalla que existe para
+ * garantizarla. Mismo defecto que la ronda 4 del PR #736 ya corrigió en
+ * `ManifestPhotoStrip` (su propio `manifest-photo-count`); esto es el
+ * mismo `undefined`, leído por el OTRO consumidor de la misma query.
+ *
+ * `serverPhotosCount: number | null` — `null` es "no se sabe", nunca 0.
+ * `queuedPhotosCount` no puede colapsar al mismo `null`: sale de
+ * IndexedDB (`queuedManifestPhotoCount`, `lib/offline/photos.ts`), no de
+ * la red, así que siempre se conoce. Con servidor ilegible pero algo en
+ * cola, la pantalla dice lo que sabe en vez de un guion a secas.
+ *
+ * Ronda 2 de review del PR #743 — dos huecos conocidos, ninguno cerrado
+ * aquí:
+ * - Este número puede diferir del `manifest-photo-count` de `5f`
+ *   (`ManifestPhotoStrip`), que a propósito pinta SÓLO el conteo del
+ *   servidor (decisión de la ronda 2 de #736, `ManifestPhotoStrip.tsx`) —
+ *   con 3 confirmadas + 2 encoladas, `5f` dice "3" y esto suma "5". Cada
+ *   uno correcto para lo que mide; ver spec-80 fase 6 para la nota
+ *   completa.
+ * - `photos-send.ts` dispara `onManifestDocumentsChanged` justo tras el
+ *   `insert` en `manifest_documents`, ANTES de marcar la entrada local
+ *   `sent`: si el poll de `queuedManifestPhotoCount` cae ahí, esta suma
+ *   cuenta la misma foto dos veces durante ≤2s. Miente por exceso, no por
+ *   defecto — se autocorrige en el siguiente tick.
+ */
+export function backupPhotosLabel(
+  serverPhotosCount: number | null,
+  queuedPhotosCount: number,
+): string {
+  if (serverPhotosCount === null) {
+    return queuedPhotosCount > 0
+      ? `${queuedPhotosCount} en cola (resto desconocido)`
+      : '—';
+  }
+  const total = serverPhotosCount + queuedPhotosCount;
+  return total === 1 ? '1 foto' : `${total} fotos`;
+}
+
 export function summarizePendingRouteManifests(
   manifests: PendingRouteManifest[],
   closedManifestId: string,

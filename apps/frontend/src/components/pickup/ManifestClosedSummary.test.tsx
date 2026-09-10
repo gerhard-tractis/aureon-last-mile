@@ -22,7 +22,8 @@ const baseProps = {
   verifiedCount: 39,
   missingCount: 3,
   unexpectedCount: 1,
-  photosCount: 2,
+  serverPhotosCount: 2 as number | null,
+  queuedPhotosCount: 0,
   signaturesCount: 2,
   routeExternalId: null as string | null,
   pendingRouteCount: 0,
@@ -98,6 +99,29 @@ describe('ManifestClosedSummary', () => {
       />,
     );
     expect(screen.getByText('2 cargas pendientes')).toBeInTheDocument();
+  });
+
+  // Seguimiento de spec-80 fase 6 (PR #736) — el mismo `undefined` de
+  // `useManifestDocuments` que la ronda 4 ya corrigió en
+  // `ManifestPhotoStrip` (`manifest-photo-count`) seguía mintiendo aquí, en
+  // el otro consumidor de la misma query: `serverPhotosCount: number`
+  // (antes `photosCount`) no podía expresar "no lo sé" y un `= []` en el
+  // caller lo convertía en "0 fotos" — ver `backupPhotosLabel`
+  // (`lib/pickup/manifestCloseSummary.ts`) para el porqué de cada rama.
+  it('shows a dash, not "0 fotos", when the server photo count is unknown and nothing is queued', () => {
+    render(<ManifestClosedSummary {...baseProps} serverPhotosCount={null} queuedPhotosCount={0} />);
+
+    const backup = screen.getByTestId('summary-row-backup');
+    expect(within(backup).getByText('— · 2 firmas')).toBeInTheDocument();
+  });
+
+  it('states what it knows — the queued count — when the server is unreadable but the queue is not empty', () => {
+    render(<ManifestClosedSummary {...baseProps} serverPhotosCount={null} queuedPhotosCount={2} />);
+
+    const backup = screen.getByTestId('summary-row-backup');
+    expect(
+      within(backup).getByText('2 en cola (resto desconocido) · 2 firmas'),
+    ).toBeInTheDocument();
   });
 
   it('the primary CTA calls onBackToRoute', async () => {

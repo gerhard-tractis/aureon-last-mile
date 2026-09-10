@@ -67,4 +67,62 @@ describe('useQueuedManifestPhotoCount', () => {
     });
     expect(result.current).toBe(1);
   });
+
+  // Seguimiento de spec-80 fase 6 (PR #736) — `return () => clearInterval(id)`
+  // ya estaba en el código, pero ningún test afirmaba que el intervalo
+  // parara al desmontar. El antecedente concreto: trabajo que sobrevive al
+  // desmontaje acaba enviando con el JWT del SIGUIENTE conductor, porque el
+  // cliente resuelve la sesión al momento de la petición y `AppLayout` se
+  // desmonta al cerrar sesión. Mutar `return () => clearInterval(id)` a
+  // `return;` no debe dejar ningún test en verde.
+  it('stops polling after unmount — no read survives for the next driver', async () => {
+    vi.useFakeTimers();
+    mockQueuedManifestPhotoCount.mockResolvedValue(0);
+
+    const { unmount } = renderHook(() => useQueuedManifestPhotoCount('op-1', 'manifest-1'));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    mockQueuedManifestPhotoCount.mockClear();
+
+    unmount();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
+
+    expect(mockQueuedManifestPhotoCount).not.toHaveBeenCalled();
+  });
+
+  // Seguimiento de spec-80 fase 6 (PR #736) — `5i` lleva "Sigue en PR-…" al
+  // siguiente manifiesto de la misma ruta dentro del MISMO segmento de
+  // Next, así que `manifestId` cambia sin remontar este hook. Sin bandera
+  // de cancelación, una lectura en vuelo del manifiesto VIEJO que resuelve
+  // después de la del nuevo puede pisar el count correcto con el de la
+  // cola de otro manifiesto — se autocorrige en el siguiente tick de 2s,
+  // pero mientras tanto la pantalla miente.
+  it('ignores a stale read from the previous manifestId if it resolves after the new one, without remounting', async () => {
+    let resolveOld!: (value: number) => void;
+    const oldRead = new Promise<number>((resolve) => {
+      resolveOld = resolve;
+    });
+    mockQueuedManifestPhotoCount.mockImplementationOnce(() => oldRead);
+    mockQueuedManifestPhotoCount.mockResolvedValueOnce(5);
+
+    const { result, rerender } = renderHook(
+      ({ manifestId }: { manifestId: string }) => useQueuedManifestPhotoCount('op-1', manifestId),
+      { initialProps: { manifestId: 'manifest-old' } }
+    );
+
+    rerender({ manifestId: 'manifest-new' });
+    await waitFor(() => expect(result.current).toBe(5));
+
+    await act(async () => {
+      resolveOld(1);
+      await oldRead;
+    });
+
+    expect(result.current).toBe(5);
+  });
 });
