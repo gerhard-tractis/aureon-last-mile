@@ -20,7 +20,11 @@ export function ManifestNotDownloadedNotice({
   onBack,
 }: ManifestNotDownloadedNoticeProps) {
   return (
-    <div className="p-6 max-w-md mx-auto space-y-4 text-center">
+    /* `w-full`: mismo motivo que en `scan/[loadId]/page.tsx` — este aviso
+       se devuelve como hijo directo del `<main>` flex de AppLayout, y sin
+       él `mx-auto` lo dejaba en sus 448px intrínsecos sobre una pantalla
+       de 375px. */
+    <div className="w-full p-6 max-w-md mx-auto space-y-4 text-center">
       <WifiOff className="h-10 w-10 text-text-muted mx-auto" />
       <p className="text-text font-semibold">{externalLoadId} no está descargada</p>
       {/* spec-82 fase 2, revisión B1 — el texto anterior decía "…antes de

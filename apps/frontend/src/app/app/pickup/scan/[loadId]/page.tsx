@@ -271,7 +271,7 @@ export default function ScanningPage() {
   // texto, sin botón, sin salida.
   if (offline.error) {
     return (
-      <div className="p-6 max-w-md mx-auto space-y-4 text-center">
+      <div className="w-full p-6 max-w-md mx-auto space-y-4 text-center">
         <p className="text-text">No pudimos leer los datos guardados en este dispositivo.</p>
         <Button onClick={offline.retry}>Reintentar</Button>
       </div>
@@ -288,7 +288,18 @@ export default function ScanningPage() {
 
   return (
     <>
-      <div className="space-y-4 p-4 sm:p-6 pb-28 max-w-2xl mx-auto">
+      {/* `w-full` es LOAD-BEARING, no decorativo (hotfix móvil 2026-09-10).
+          Este div es hijo directo de `<main className="flex min-h-0 flex-1
+          flex-col">` (AppLayout). Un item flex con márgenes AUTO en el eje
+          transversal (`mx-auto`) deja de estirarse y pasa a medir su tamaño
+          intrínseco, que `max-w-2xl` fija en 672px — también en un teléfono
+          de 375px, donde maquetaba la pantalla entera fuera de la
+          pantalla. `body { overflow-x: hidden }` (globals.css) no salva
+          nada aquí: recorta, así que el tercio derecho del escaneo
+          simplemente no existía para el operario. Con `w-full` el ancho
+          vuelve a ser el del contenedor y `max-w-2xl` es sólo un techo en
+          escritorio. */}
+      <div className="w-full space-y-4 p-4 sm:p-6 pb-28 max-w-2xl mx-auto">
         <ScanResultPopup
           visible={showNotFoundPopup}
           onDismiss={() => setShowNotFoundPopup(false)}

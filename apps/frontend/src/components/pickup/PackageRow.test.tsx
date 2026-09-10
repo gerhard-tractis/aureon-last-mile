@@ -56,6 +56,32 @@ describe('PackageRow', () => {
     expect(screen.getByRole('button', { name: /mark verified/i })).toBeInTheDocument();
   });
 
+  // Hotfix móvil 2026-09-10 — esta fila apila etiqueta, nº de bulto,
+  // conteo de SKUs, peso y dos botones (`whitespace-nowrap` por el
+  // `buttonVariants` base) en una sola línea que no podía encoger:
+  // ~600px medidos en navegador, contra ~293px disponibles en un
+  // teléfono de 375px. Envolver es la única salida que no esconde datos:
+  // truncar una etiqueta de bulto sería mentir sobre la identidad del
+  // bulto que el operario tiene en la mano.
+  //
+  // Contrato sobre clases y no sobre geometría por la misma razón que en
+  // `scan/[loadId]/page.test.tsx`: jsdom no maqueta. La medición real se
+  // hizo en navegador a 375px y a 320px — cero elementos desbordados.
+  describe('cabe en la pantalla de un teléfono', () => {
+    it('la fila puede envolverse en varias líneas', () => {
+      render(<PackageRow {...defaultProps} />);
+      const row = screen.getByText('CTN001').parentElement!;
+      expect(row.className).toContain('flex-wrap');
+    });
+
+    it('el grupo de acciones también puede envolverse y no bloquea el encogido', () => {
+      render(<PackageRow {...defaultProps} />);
+      const actions = screen.getByRole('button', { name: /mark verified/i }).parentElement!;
+      expect(actions.className).toContain('flex-wrap');
+      expect(actions.className).not.toContain('flex-shrink-0');
+    });
+  });
+
   // spec-82 fase 2 revisión B1 — sin red, un escaneo/verificación manual
   // queda pausado en memoria (useScanMutation no tiene cola offline en
   // esta pantalla) y desaparece sin rastro si la PWA se cierra antes de
