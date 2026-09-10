@@ -285,9 +285,10 @@ describe('ManifestPhotoStrip', () => {
     // no cambia entre la primera y la segunda captura (cuenta sólo lo que el
     // servidor confirmó): este toast es la única confirmación que el
     // operario recibe de que la hoja anterior no se perdió.
-    expect(mockToastSuccess).toHaveBeenCalledWith(
-      'Foto guardada en el dispositivo. Se sube al recuperar señal.'
-    );
+    // Ronda 3 de review del PR #736 — el mensaje ya no se gatea por
+    // conectividad (ver el spec): "Foto guardada" es cierto en los dos
+    // caminos, porque `enqueueManifestPhoto` es hoy la única ruta.
+    expect(mockToastSuccess).toHaveBeenCalledWith('Foto guardada. Se sube sola.');
 
     // Ronda 2 de review del PR #736 (M2a, bloqueante) — sin
     // `setIsSaving(false)` en el `finally`, "Agregar" quedaba deshabilitado
@@ -344,5 +345,13 @@ describe('ManifestPhotoStrip', () => {
     await waitFor(() => expect(mockToastError).toHaveBeenCalledOnce());
     expect(mockToastError.mock.calls[0][0]).toContain('la foto supera el tamaño máximo');
     expect(screen.getByTestId('review-sheet')).toBeInTheDocument();
+    // Ronda 3 de review del PR #736 — no bastaba con comprobar el
+    // `toast.error`: sin esta línea, mover `toast.success(...)` a la
+    // PRIMERA sentencia del `catch` (en vez de dejarlo sólo en el camino de
+    // éxito) seguía en verde. Hoy el `throw` salta esa línea porque nunca
+    // llega a ejecutarse — pero nada lo afirmaba. Falsa confirmación de
+    // "foto guardada" sobre una foto rechazada por tamaño sería justo el
+    // tipo de fallo que esta fase existe para no repetir.
+    expect(mockToastSuccess).not.toHaveBeenCalled();
   });
 });

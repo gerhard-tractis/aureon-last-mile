@@ -145,8 +145,12 @@ describe('captura → encolar → drenar (spec-80 fase 6, costura con spec-81 fa
   // `sheetNumber` (1: es lo que `ManifestPhotoStrip` calcularía dos veces
   // seguidas contra la misma lista `documents`, sin señal para refrescarla
   // — ver B3 en `photos.ts`). El desempate ocurre DENTRO de
-  // `enqueueManifestPhoto`, a través del llamador nuevo de esta fase, no
-  // sólo en la suite propia de `photos.ts`.
+  // `enqueueManifestPhoto` — este test llama a esa función directo, no a
+  // través de `ManifestPhotoStrip` (ese caller sí queda cubierto, por
+  // separado, en `ManifestPhotoStrip.test.tsx`, el mutante del hueco en
+  // `sheetNumber`). No repite la suite propia de `photos.ts` (B3): mide
+  // específicamente que el resultado sobrevive dos llamadas reales
+  // seguidas contra la misma `db`.
   it('dos capturas offline seguidas del mismo manifiesto no colisionan: dos filas, hojas [1,2], externalLoadId en ambas', async () => {
     const first = await enqueueManifestPhoto(db, {
       operatorId: OPERATOR_A,

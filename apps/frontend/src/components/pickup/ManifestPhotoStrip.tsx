@@ -92,7 +92,18 @@ export function ManifestPhotoStrip({ operatorId, manifestId, userId, externalLoa
       // componente y arriesgaría que ese contador y el del servidor
       // discreparan (mismo problema que costó una ronda en spec-81 fase 5) —
       // ver el spec.
-      toast.success('Foto guardada en el dispositivo. Se sube al recuperar señal.');
+      //
+      // Ronda 3 de review del PR #736 — el usuario pidió primero que este
+      // toast saliera SÓLO sin señal; lo retiró él mismo al ver que
+      // `enqueueManifestPhoto` es hoy la ÚNICA ruta (ya no hay subida online
+      // directa): el encolado ocurre siempre, así que "guardada" nunca
+      // miente en ningún camino. Gatear el texto con `navigator.onLine`
+      // habría sido dos redacciones que mantener sincronizadas y una rama
+      // más que probar, por una diferencia que al operario no le importa —
+      // ver el spec para el razonamiento completo. "Se sube al recuperar
+      // señal" sí mentía con señal (el drenador la sube un segundo después,
+      // no "al recuperar" nada) — de ahí la redacción sin promesa de espera.
+      toast.success('Foto guardada. Se sube sola.');
     } catch (err) {
       // `enqueueManifestPhoto` lanza mensajes ya redactados en español y
       // accionables (tamaño máximo, cuota de fotos sin confirmar) — mismo
