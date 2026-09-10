@@ -189,7 +189,7 @@ con actor y momento.
 > «N faltantes de 0». Viene de spec-54 y está igual en la rama de cierre
 > limpio — va a un barrido de copy, no a esta fase.
 
-### Fase 2 — Ventana `[pending]`
+### Fase 2 — Ventana `[in_progress]`
 
 **Desbloqueada (2026-09-09). El usuario delegó la decisión: «haz lo que creas
 que debas hacer». La tomo yo y queda escrita aquí, no en la cabeza de nadie.**
