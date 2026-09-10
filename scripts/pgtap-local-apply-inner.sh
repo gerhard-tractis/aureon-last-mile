@@ -20,18 +20,44 @@ PSQL=(psql -U postgres -d postgres)
 # supabase/postgres image for base-image fidelity gaps unrelated to this
 # repo (a buckets.public column the image never creates; a
 # dashboard_monthly_rollup relation this local harness never creates) — not
-# introduced by this PR, not something `apply` can fix, and not new. Only
-# literal filenames, never a pattern: a real NEW failure must never
-# silently match this list and get waved through.
+# introduced by this PR, not something `apply` can fix, and not new.
+#
+# Round 4 review (B1): matching by filename ALONE — no check on the error
+# itself — meant a real, new, unrelated breakage inside one of these three
+# files (a typo, a dropped dependency) was waved through as "known gap,
+# not blocking" too. Measured: injected a syntax error into
+# spec30_dashboard_rpcs.sql and it still reported rc=0. Each entry is now
+# "filename|expected error substring" — the filename narrows WHICH file is
+# allowed to fail, the substring narrows WHAT failure is allowed; either
+# one not matching makes it count as unexpected, still `test`/`grep -F`
+# (no globbing, no pattern) so nothing here can accidentally widen.
 KNOWN_BASE_IMAGE_FAILURES=(
-  "20250130165844_example_storage.sql"                   # buckets.public column absent from the stock image
-  "20260409000003_spec30_dashboard_rpcs.sql"              # depends on dashboard_monthly_rollup, never created by this harness
-  "20260430000001_create_manifests_storage_bucket.sql"    # same buckets.public gap as above
+  '20250130165844_example_storage.sql|column "public" of relation "buckets" does not exist'
+  '20260409000003_spec30_dashboard_rpcs.sql|relation "public.dashboard_monthly_rollup" does not exist'
+  '20260430000001_create_manifests_storage_bucket.sql|column "public" of relation "buckets" does not exist'
 )
-is_known_failure() {
-  local b="$1" k
-  for k in "${KNOWN_BASE_IMAGE_FAILURES[@]}"; do
-    [ "$b" = "$k" ] && return 0
+# Round 4 review (item 7): a self-test must never write/delete a REAL
+# migration filename or version, even pointed at the wrong container by
+# accident. One extra throwaway "name|substring" entry, set only by the
+# self-test, exercises this exact mechanism without touching the real list.
+if [ -n "${PGTAP_APPLY_TEST_ALLOWLIST_ENTRY:-}" ]; then
+  KNOWN_BASE_IMAGE_FAILURES+=("$PGTAP_APPLY_TEST_ALLOWLIST_ENTRY")
+fi
+ALLOWLIST_MATCHED=()  # round 4 review, item 5: which entries actually fired this run
+is_known_failure() { # $1 = basename, $2 = the captured ERROR: line
+  local b="$1" errline="$2" entry name expect
+  local i=0
+  for entry in "${KNOWN_BASE_IMAGE_FAILURES[@]}"; do
+    name="${entry%%|*}"
+    expect="${entry#*|}"
+    if [ "$b" = "$name" ]; then
+      if printf '%s' "$errline" | grep -qF -- "$expect"; then
+        ALLOWLIST_MATCHED+=("$i")
+        return 0
+      fi
+      return 1  # filename matches, error text doesn't — NOT known, real failure
+    fi
+    i=$((i+1))
   done
   return 1
 }
@@ -74,11 +100,24 @@ for f in $(ls /supabase/migrations/*.sql | sort); do
         # "unverified:" prefix instead: it stays noisy on every future run
         # until `up` gives it a real baseline (see the elif right below).
         "${PSQL[@]}" -q -c "update supabase_migrations.schema_migrations set content_sha256 = 'unverified:$hash' where version = '$ver'" >/dev/null
-        echo "WARNING: $base has no recorded content hash (pre-existing row, applied before this guard existed) — cannot verify the live database matches this file. Marked UNVERIFIED, persistently: this keeps warning on every future run, it does not go quiet after one backfill. The only fully trustworthy baseline is './scripts/pgtap-local.sh up' (rebuild the container from scratch)." >&2
+        # Round 4 review (B2, documentation): DON'T claim there's no local
+        # fix — 'apply --force <version>' genuinely resolves one row (it
+        # re-runs the file and records a real, non-prefixed hash), verified
+        # against a live object. 'up' resolves the whole container at once
+        # but is NOT free on a container others share — see the runbook.
+        echo "WARNING: $base has no recorded content hash (pre-existing row, applied before this guard existed) — cannot verify the live database matches this file. Marked UNVERIFIED, persistently: this keeps warning on every future run, it does not go quiet after one backfill. Resolve THIS row with 'apply --force $ver' (re-applies and re-verifies just this migration — see docs/runbooks/pgtap-mutation-testing.md on why that isn't free), or rebuild everything with './scripts/pgtap-local.sh up' if you're the only one using this container." >&2
         unverified=$((unverified+1)); continue
         ;;
       unverified:*)
-        echo "WARNING: $base is still UNVERIFIED (marked by a previous run, no confirmed baseline exists) — run './scripts/pgtap-local.sh up' to get a trustworthy baseline. Not treated as a match just because a run has gone by." >&2
+        # Round 4 review, item 6: a plain "still unverified" message loses
+        # the more specific "and it ALSO changed" signal — compare the
+        # hash recorded alongside the marker, not just detect the prefix.
+        prior_hash="${stored#unverified:}"
+        if [ "$prior_hash" != "$hash" ]; then
+          echo "WARNING: $base is still UNVERIFIED, AND changed again since being marked unverified — run './scripts/pgtap-local.sh apply --force $ver' to resolve it, or 'up' if you're the only user of this container." >&2
+        else
+          echo "WARNING: $base is still UNVERIFIED (marked by a previous run, no confirmed baseline exists) — run './scripts/pgtap-local.sh apply --force $ver' to resolve it, or 'up' if you're the only user of this container. Not treated as a match just because a run has gone by." >&2
+        fi
         unverified=$((unverified+1)); continue
         ;;
       "$hash")
@@ -98,13 +137,14 @@ for f in $(ls /supabase/migrations/*.sql | sort); do
       applied=$((applied+1))
     else
       fail=$((fail+1))
-      if is_known_failure "$base"; then
+      errline=$(grep -m1 "ERROR:" /tmp/o.log)
+      if is_known_failure "$base" "$errline"; then
         echo "FAIL (known base-image gap, not blocking — see KNOWN_BASE_IMAGE_FAILURES) $base"
       else
         fail_unexpected=$((fail_unexpected+1))
         echo "FAIL $base"
       fi
-      grep -m1 "ERROR:" /tmp/o.log | sed "s/^/     /"
+      printf '%s\n' "$errline" | sed "s/^/     /"
     fi
   fi
 done
@@ -130,6 +170,20 @@ while IFS='|' read -r ov on; do
   fi
 done <<< "$ledger_dump"
 rm -f "$KNOWN"
+
+# Round 4 review (item 5): an allowlist entry nobody's SEEN fire this run is
+# either fixed upstream (remove it) or the error text drifted (update it) —
+# either way it's silently still covering that filename, and with the B1
+# fix above, a wrong/stale entry means a real new failure in that exact
+# file would be waved through. Say so every time one goes unused, not just
+# when it's convenient to notice.
+i=0
+for entry in "${KNOWN_BASE_IMAGE_FAILURES[@]}"; do
+  if ! printf '%s\n' "${ALLOWLIST_MATCHED[@]:-}" | grep -qFx -- "$i"; then
+    echo "NOTE: KNOWN_BASE_IMAGE_FAILURES entry never matched this run: ${entry%%|*} — either the underlying gap is gone (remove the entry) or its error text drifted (update it). It is still silently covering that filename." >&2
+  fi
+  i=$((i+1))
+done
 
 echo "migrations: applied=$applied skipped=$skipped changed=$changed unverified=$unverified orphaned=$orphaned failed=$fail"
 # Round 2/3 review (B1/B2): the three exit codes are not equal in risk.

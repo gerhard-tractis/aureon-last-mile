@@ -377,10 +377,12 @@ that reason.
 
 Before starting: `./scripts/pgtap-local.sh up` (once), then `./scripts/pgtap-local.sh sync`
 and `./scripts/pgtap-local.sh apply`. Expect `migrations: applied=N skipped=M changed=0
-unverified=0 orphaned=0 failed=3` and exit 0 — the 3 failures are known base-image fidelity
-gaps (`KNOWN_BASE_IMAGE_FAILURES` in `scripts/pgtap-local-apply-inner.sh`), not migration bugs,
-and don't fail the command. A nonzero `changed=` or `unverified=` does fail it — see
-`docs/runbooks/pgtap-mutation-testing.md`.
+unverified=0 orphaned=0 failed=3` and exit 0 **on a container freshly built by `up`** — the 3
+failures are known base-image fidelity gaps (`KNOWN_BASE_IMAGE_FAILURES` in
+`scripts/pgtap-local-apply-inner.sh`), not migration bugs, and don't fail the command. On a
+pre-existing container (e.g. the shared `spec52-pg`) `unverified` may be nonzero instead —
+that's not this spec's bug, see "Landing note" in `docs/runbooks/pgtap-mutation-testing.md`
+for how to resolve it. A nonzero `changed=` or unresolved `unverified=` does fail the command.
 
 ### Task 1.1: `pickup_leader` on the `user_role` enum, alone in its own migration
 

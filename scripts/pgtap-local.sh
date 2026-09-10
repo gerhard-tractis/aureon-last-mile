@@ -16,14 +16,14 @@
 #
 # MUTATION-TESTING A MIGRATION: read docs/runbooks/pgtap-mutation-testing.md
 # BEFORE trusting a green result — two agents got a perfect false-green on
-# 2026-09-10 by skipping it. Short version: `up` first (not optional — a
-# pre-existing container's backfilled hash only proves today's file matches
-# itself, never what was actually applied in the past), mutate, then
-# `apply --force <version>` (never a hand-rolled `docker exec ... psql -f`
-# — see the runbook for why), then verify the LIVE OBJECT changed (e.g.
-# `psql -tAc "select md5(prosrc) from pg_proc where proname = '...'"` for a
-# function — other object kinds need a different query, see the runbook),
-# before trusting `run`'s red/green.
+# 2026-09-10 by skipping it. Short version: mutate via `apply --force
+# <version>` (never a hand-rolled `docker exec ... psql -f` — see the
+# runbook for why), verify the LIVE OBJECT changed (e.g. `psql -tAc
+# "select md5(prosrc) from pg_proc where proname = '...'"` for a function
+# — other kinds need a different query, see the runbook), THEN trust
+# `run`'s red/green — and restore + re-`apply --force` afterward, or the
+# mutant stays live in the database. `up` (rebuild from scratch) is the
+# safer default on a container only you use; see the runbook for why.
 set -uo pipefail
 
 # Overridable so CI (and this wrapper's own self-test) can point at a
@@ -166,14 +166,15 @@ case "${1:-}" in
         exit 1
       fi
     fi
-    # Round 3 review (item 6): unchecked, same trap `sync` already guards
-    # against three lines above its own docker cp — a failed copy leaves
-    # whatever apply-inner.sh the container already had (stale, or none),
-    # and apply would silently run OLD logic believing it's running this
-    # fix.
+    # Round 3 review (item 6): same trap `sync` already guards against a
+    # few lines above its own docker cp — an unchecked failed copy leaves
+    # whatever apply-inner.sh the container already had, and apply would
+    # silently run OLD logic believing it's running this fix.
     ( cd "$ROOT" && docker cp scripts/pgtap-local-apply-inner.sh "$C:/supabase/apply-inner.sh" >/dev/null ) \
       || { echo "apply: failed to copy apply-inner.sh into $C — refusing to run possibly-stale logic" >&2; exit 1; }
-    dex env FORCE_VERSION="$force_version" bash /supabase/apply-inner.sh
+    dex env FORCE_VERSION="$force_version" \
+        PGTAP_APPLY_TEST_ALLOWLIST_ENTRY="${PGTAP_APPLY_TEST_ALLOWLIST_ENTRY:-}" \
+        bash /supabase/apply-inner.sh
     ;;
   run)
     shift

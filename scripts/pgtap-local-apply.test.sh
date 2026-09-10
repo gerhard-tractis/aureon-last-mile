@@ -34,13 +34,21 @@ VER2="99999999999902"; FUNC2="public.pgtap_apply_selftest_widget2"  # B1: unveri
 VER4="99999999999904"; FUNC4="public.pgtap_apply_selftest_broken"   # B2: failed=N -> rc!=0
 VER5="99999999999905"                                               # C-3: orphaned ledger row
 VER6="99999999999910"                                               # C-5: --force regex metachar
-VER_ALLOWLISTED="20250130165844"                                    # B1: a real KNOWN_BASE_IMAGE_FAILURES entry
+# Round 4 review, item 7: never a real migration filename/version, even if
+# this test is pointed at the wrong container by mistake — the allowlist
+# guard is exercised through PGTAP_APPLY_TEST_ALLOWLIST_ENTRY (round 4
+# review, B1/item 7), a throwaway entry appended only when this env var is
+# set, never touching KNOWN_BASE_IMAGE_FAILURES itself.
+VER_ALLOW="99999999999920"
 
 MIGFILE="${VER}_pgtap_apply_selftest.sql"
 MIGFILE2="${VER2}_pgtap_apply_selftest_unverified.sql"
 MIGFILE4="${VER4}_pgtap_apply_selftest_broken.sql"
 MIGFILE6="${VER6}_pgtap_apply_selftest.sql"
-MIGFILE_ALLOWLISTED="${VER_ALLOWLISTED}_example_storage.sql"        # must match pgtap-local-apply-inner.sh exactly
+MIGFILE_ALLOW="${VER_ALLOW}_pgtap_apply_selftest_allowlist.sql"
+ALLOWLIST_MARKER='pgtap apply selftest allowlist marker'
+ALLOWLIST_ENTRY_GOOD="${MIGFILE_ALLOW}|${ALLOWLIST_MARKER}"
+ALLOWLIST_ENTRY_MISMATCHED="${MIGFILE_ALLOW}|this text will never appear in the real error"
 
 docker exec "$C" psql -U postgres -d postgres -tAc "select 1" >/dev/null 2>&1 || {
   echo "SKIP: container '$C' not reachable" >&2
@@ -50,9 +58,9 @@ docker exec "$C" mkdir -p /supabase/migrations /supabase/tests
 
 cleanup() {
   docker exec "$C" rm -f "/supabase/migrations/$MIGFILE" "/supabase/migrations/$MIGFILE2" \
-    "/supabase/migrations/$MIGFILE4" "/supabase/migrations/$MIGFILE6" "/supabase/migrations/$MIGFILE_ALLOWLISTED" >/dev/null 2>&1
+    "/supabase/migrations/$MIGFILE4" "/supabase/migrations/$MIGFILE6" "/supabase/migrations/$MIGFILE_ALLOW" >/dev/null 2>&1
   docker exec "$C" psql -U postgres -d postgres -q -c \
-    "delete from supabase_migrations.schema_migrations where version in ('$VER','$VER2','$VER4','$VER5','$VER6','$VER_ALLOWLISTED');
+    "delete from supabase_migrations.schema_migrations where version in ('$VER','$VER2','$VER4','$VER5','$VER6','$VER_ALLOW');
      drop function if exists $FUNC(); drop function if exists $FUNC2(); drop function if exists $FUNC4();" >/dev/null 2>&1
 }
 trap cleanup EXIT
@@ -188,6 +196,27 @@ if [ "$v5b" = "7" ]; then
 else
   notok "...and the live object is still untouched two runs later (live='$v5b')"
 fi
+
+# Round 4 review, item 6: an unverified row that changes AGAIN (a third
+# version of the file, still never applied) must say so specifically, not
+# just repeat the generic "still UNVERIFIED" message — the comparison
+# against the hash recorded alongside the "unverified:" marker must
+# actually run, not just detect the prefix and stop looking.
+( cd "$ROOT" && docker cp "scripts/pgtap-local-fixtures/apply_selftest_unverified_v2.sql" "$C:/supabase/migrations/$MIGFILE2" >/dev/null ) \
+  || { echo "not ok - fixture unverified v2 failed to copy into $C"; exit 1; }
+out5c=$(bash "$WRAPPER" apply 2>&1)
+v5c=$(live_value "$FUNC2")
+if printf '%s\n' "$out5c" | grep -qF "AND changed again"; then
+  ok "an unverified row that changes again gets a MORE specific message, not the generic one (round 4 review, item 6)"
+else
+  notok "an unverified row that changes again gets a more specific message (output: $out5c)"
+fi
+if [ "$v5c" = "7" ]; then
+  ok "...and it is still not applied (live still 7)"
+else
+  notok "...and it is still not applied (live='$v5c')"
+fi
+
 # This row is now PERSISTENTLY unverified by design — every apply on this
 # container from here on would otherwise report unverified=1 and rc!=0,
 # unrelated to whatever the rest of this script is testing. Clean it up so
@@ -212,22 +241,47 @@ fi
 docker exec "$C" rm -f "/supabase/migrations/$MIGFILE4"  # stop it failing every subsequent apply in this run
 
 # =====================================================================
-# Round 3 review, B1: a failure ON THE LITERAL ALLOWLIST
-# (KNOWN_BASE_IMAGE_FAILURES in pgtap-local-apply-inner.sh) must NOT make
-# apply exit nonzero — forcing `up` (which ends with `apply`) to fail on
-# every machine, forever, for base-image gaps nobody can fix teaches
-# everyone to bolt on `|| true`, which cancels this whole guard. Uses one
-# of the three real allowlisted filenames directly, with broken content —
-# exercises the actual allowlist, not a simulation of it.
+# Round 3/4 review, B1: a failure on the allowlist must NOT make apply
+# exit nonzero — forcing `up` (which ends with `apply`) to fail on every
+# machine, forever, for base-image gaps nobody can fix teaches everyone to
+# bolt on `|| true`, which cancels this whole guard. Exercised through
+# PGTAP_APPLY_TEST_ALLOWLIST_ENTRY, never a real KNOWN_BASE_IMAGE_FAILURES
+# entry or a real migration filename.
 # =====================================================================
-( cd "$ROOT" && docker cp "scripts/pgtap-local-fixtures/apply_selftest_broken.sql" "$C:/supabase/migrations/$MIGFILE_ALLOWLISTED" >/dev/null ) \
-  || { echo "not ok - fixture broken (allowlisted name) failed to copy into $C"; exit 1; }
-out6b=$(bash "$WRAPPER" apply 2>&1); rc6b=$?
-docker exec "$C" rm -f "/supabase/migrations/$MIGFILE_ALLOWLISTED"
+( cd "$ROOT" && docker cp "scripts/pgtap-local-fixtures/apply_selftest_allowlist_marker.sql" "$C:/supabase/migrations/$MIGFILE_ALLOW" >/dev/null ) \
+  || { echo "not ok - fixture allowlist_marker failed to copy into $C"; exit 1; }
+out6b=$(PGTAP_APPLY_TEST_ALLOWLIST_ENTRY="$ALLOWLIST_ENTRY_GOOD" bash "$WRAPPER" apply 2>&1); rc6b=$?
 if [ "$rc6b" -eq 0 ] && printf '%s\n' "$out6b" | grep -qF "known base-image gap"; then
-  ok "a failure on the literal KNOWN_BASE_IMAGE_FAILURES allowlist does NOT make apply exit nonzero (round 3 review, B1)"
+  ok "a failure matching BOTH filename and error text on the allowlist does NOT fail the run (round 3/4 review, B1)"
 else
-  notok "an allowlisted failure does not fail the run (rc=$rc6b, output: $out6b)"
+  notok "an allowlisted failure (name+text match) does not fail the run (rc=$rc6b, output: $out6b)"
+fi
+docker exec "$C" psql -U postgres -d postgres -q -c \
+  "delete from supabase_migrations.schema_migrations where version = '$VER_ALLOW';" >/dev/null
+
+# Round 4 review, B1: the allowlist matches on filename AND error text —
+# same filename, DIFFERENT (unexpected) error text must NOT be silently
+# waved through. This is the exact vulnerability the review measured:
+# injecting an unrelated new failure into an allowlisted file and getting
+# rc=0 anyway.
+out6c=$(PGTAP_APPLY_TEST_ALLOWLIST_ENTRY="$ALLOWLIST_ENTRY_MISMATCHED" bash "$WRAPPER" apply 2>&1); rc6c=$?
+docker exec "$C" rm -f "/supabase/migrations/$MIGFILE_ALLOW"
+docker exec "$C" psql -U postgres -d postgres -q -c \
+  "delete from supabase_migrations.schema_migrations where version = '$VER_ALLOW';" >/dev/null
+if [ "$rc6c" -ne 0 ] && printf '%s\n' "$out6c" | grep -qE '^FAIL 99999999999920' ; then
+  ok "a filename match with DIFFERENT error text is NOT allowlisted — still a real failure (round 4 review, B1)"
+else
+  notok "a filename match with different error text still fails the run (rc=$rc6c, output: $out6c)"
+fi
+
+# Round 4 review, item 5: an allowlist entry that never gets a chance to
+# match this run (no file with that name present at all) must be named in
+# a NOTE — a stale/dead entry is still silently covering that filename.
+out6d=$(PGTAP_APPLY_TEST_ALLOWLIST_ENTRY="$ALLOWLIST_ENTRY_GOOD" bash "$WRAPPER" apply 2>&1)
+if printf '%s\n' "$out6d" | grep -qF "NOTE: KNOWN_BASE_IMAGE_FAILURES entry never matched this run: $MIGFILE_ALLOW"; then
+  ok "an allowlist entry that never fires this run is named in a NOTE (round 4 review, item 5)"
+else
+  notok "an unmatched allowlist entry is named in a NOTE (output: $out6d)"
 fi
 
 # =====================================================================
