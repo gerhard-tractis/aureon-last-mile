@@ -1,0 +1,198 @@
+name: QA <-> production config parity
+
+# spec-93 fase 4 — the deterministic guardrail. Compares the config surfaces
+# fase 1 inventoried between QA and production and fails when it finds a
+# divergence docs/qa-prod-parity-baseline.yml does not declare.
+#
+# WHY ITS OWN WORKFLOW, NOT A JOB INSIDE deploy.yml
+# ---------------------------------------------------
+# Two reasons, both from the spec:
+#   1. Half of this check needs QA ALREADY DEPLOYED and its containers
+#      running with today's config — that only exists after deploy-qa has
+#      finished, so wiring this into deploy.yml's critical path would put a
+#      slow, network-heavy comparison between the production gate and the
+#      thing it's gating, making every deploy slower and more fragile for a
+#      check that is about configuration DRIFT over time, not about this
+#      one commit.
+#   2. This check answers "has QA silently stopped matching production"
+#      which is a question worth asking even on a day nobody merges
+#      anything — a scheduled run catches a divergence introduced by a
+#      manual change on either side (a dashboard toggle in production, a
+#      hand-edited container on the VPS) that no deploy would ever surface.
+#
+# `workflow_dispatch` for on-demand checks (e.g. right after fase 3 closes a
+# divergence, to confirm the baseline is now accurate) and a daily `schedule`
+# so an unnoticed drift surfaces within 24h instead of at the next accidental
+# review — the same reasoning spec-93's own opening incident argues for.
+#
+# TWO JOBS, ONE ARTIFACT — NEVER ONE JOB WITH BOTH CREDENTIALS
+# -----------------------------------------------------------------
+# No runner can read both environments. QA lives on the VPS and is only
+# reachable from the `[self-hosted, vps]` runner (docker inspect/exec, no
+# SSH — it IS the VPS). Production is Supabase-managed and is read from any
+# `ubuntu-latest` runner via the Management API and a pooler `psql` session,
+# using secrets that must never land on the VPS: today no job holds both
+# environments' credentials at once, and this workflow keeps it that way —
+# putting SUPABASE_DB_PASSWORD for PRODUCTION on a VPS that hosts QA (a far
+# less isolated box than an ephemeral GitHub runner) would be a strictly
+# worse security posture than what exists today, for zero benefit.
+#
+# measure-qa (job A, self-hosted) uploads its measurement as an artifact.
+# compare (job B, ubuntu-latest) downloads it, measures production itself,
+# and runs the comparator.
+#
+# THE ARTIFACT CAN BE MISSING, AND THAT MUST BREAK THE BUILD, NOT PASS IT
+# ---------------------------------------------------------------------------
+# job A's runner has been offline before in this pipeline (see deploy.yml's
+# QA job comments). Two distinct failure shapes, handled differently:
+#
+#   (a) job A STARTS and then fails, is cancelled, or is itself terminated by
+#       GitHub for sitting queued too long. In every one of these cases job A
+#       reaches a terminal state (failure/cancelled), and `if: always()` on
+#       job B (below) is what makes GitHub Actions run job B anyway instead
+#       of skipping it — this is documented `always()` behavior: it runs
+#       regardless of whether upstream `needs:` jobs succeeded, failed, or
+#       were cancelled, and is only itself skipped if the WHOLE WORKFLOW RUN
+#       is cancelled (a human cancelling the run), not just one job in it.
+#       `continue-on-error: true` on the artifact-download step then means a
+#       missing artifact does NOT abort job B before the comparator gets to
+#       say why — it reaches the comparator, which refuses to treat a
+#       missing/empty QA measurement as "no divergences" (exit 3, explicit
+#       "could not measure" message — see that script's mutation tests).
+#
+#   (b) job A never starts at all — no runner ever picks it up. This is the
+#       one case NOT empirically verified against a live run in this
+#       implementation session (doing so would mean deliberately taking the
+#       VPS runner offline against a real dispatch, which this session has
+#       neither the access nor the standing to do without deploying).
+#       Reasoned, not measured: GitHub's own limit on how long a job may sit
+#       queued before being force-failed would still land job A in a
+#       terminal state and trigger case (a) above — but that is a citation
+#       from memory of GitHub's documented behavior, not something this PR
+#       confirmed against this actual workflow. Worst case if that reasoning
+#       is wrong: the run stays queued indefinitely, which is a stuck run,
+#       visible in the Actions tab and by the daily `schedule` never
+#       producing a result — NOT a false green. The non-negotiable this
+#       phase exists to guarantee ("absent measurement never reads as no
+#       divergence") still holds either way; what's unverified is only
+#       whether the failure surfaces within the same run or requires someone
+#       to notice a scheduled run stopped completing. Recommend the
+#       orchestrator confirm case (b) against a real dispatch once this is
+#       merged (e.g. briefly stop the VPS runner before dispatching).
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * *' # once daily; 06:17 UTC to avoid the top-of-hour pile-up
+
+permissions:
+  contents: read
+
+jobs:
+  # ─── Job A — measure QA (must run on the VPS itself) ────────────────────
+  measure-qa:
+    name: Measure QA config surfaces
+    runs-on: [self-hosted, vps]
+    timeout-minutes: 15
+    steps:
+      # Plain git, not actions/checkout — same reasoning as deploy-qa's own
+      # checkout step in deploy.yml: actions/checkout downloads itself from
+      # codeload.github.com, and this VPS's IP has hit that host's rate
+      # limit before (502 then 429, 2026-08-17). This only needs one script
+      # file, so a shallow scratch clone is enough.
+      - name: Sync repo to the tip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          WORKDIR="$HOME/qa-prod-parity-src"
+          [ -d "$WORKDIR/.git" ] || git init -q "$WORKDIR"
+          cd "$WORKDIR"
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+          git fetch -q --depth 1 origin "${{ github.sha }}" || git fetch -q origin main
+          git reset -q --hard "${{ github.sha }}"
+          git remote set-url origin "https://github.com/${{ github.repository }}.git"
+
+      - name: Measure QA and upload
+        run: |
+          set -euo pipefail
+          bash "$HOME/qa-prod-parity-src/scripts/measure-qa-surfaces.sh" > "$RUNNER_TEMP/qa-surfaces.tsv"
+          echo "Measured $(wc -l < "$RUNNER_TEMP/qa-surfaces.tsv") QA config facts."
+
+      - name: Upload QA measurement
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-surfaces
+          path: ${{ runner.temp }}/qa-surfaces.tsv
+          retention-days: 7
+          if-no-files-found: error
+
+  # ─── Job B — measure production, compare against the baseline ──────────
+  compare:
+    name: Measure production and compare
+    needs: [measure-qa]
+    # always(): a run where job A failed, was cancelled, or never started
+    # must still land here and FAIL LOUDLY via the missing-artifact guard —
+    # not be silently skipped, which GitHub would otherwise report as
+    # "neutral" rather than red.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Download QA measurement
+        id: download-qa
+        uses: actions/download-artifact@v4
+        # Deliberately not fatal here — a missing artifact must produce the
+        # comparator's own clear message ("could not measure QA"), not
+        # actions/download-artifact's generic "artifact not found" error.
+        continue-on-error: true
+        with:
+          name: qa-surfaces
+          path: ${{ runner.temp }}/parity
+
+      - name: Install postgresql-client
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -yqq postgresql-client
+
+      - name: Resolve Supabase pooler host (IPv4)
+        id: resolve-pooler
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          HTTP_STATUS=$(curl -sS -o project.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            "https://api.supabase.com/v1/projects/${{ secrets.SUPABASE_PROJECT_REF }}")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "::error::Management API returned HTTP ${HTTP_STATUS} while resolving the project region"
+            rm -f project.json
+            exit 1
+          fi
+          POOLER_HOST=$(bash "$GITHUB_WORKSPACE/scripts/resolve-supabase-pooler-host.sh" < project.json)
+          rm -f project.json
+          echo "pooler_host=${POOLER_HOST}" >> "$GITHUB_OUTPUT"
+
+      - name: Measure production
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${{ runner.temp }}/parity"
+          bash scripts/measure-prod-surfaces.sh > "${{ runner.temp }}/parity/prod-surfaces.tsv"
+          echo "Measured $(wc -l < "${{ runner.temp }}/parity/prod-surfaces.tsv") production config facts."
+
+      - name: Compare QA against production, against the baseline
+        run: |
+          set -euo pipefail
+          node scripts/qa-prod-parity-compare.mjs \
+            --qa "${{ runner.temp }}/parity/qa-surfaces.tsv" \
+            --prod "${{ runner.temp }}/parity/prod-surfaces.tsv" \
+            --baseline docs/qa-prod-parity-baseline.yml

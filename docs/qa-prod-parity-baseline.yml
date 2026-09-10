@@ -1,0 +1,93 @@
+# spec-93 fase 4 — línea base de divergencias QA <-> producción.
+#
+# Este fichero es el contrato del guardarraíl determinista
+# (.github/workflows/qa-prod-parity.yml + scripts/qa-prod-parity-compare.mjs):
+# una divergencia entre QA y producción SÓLO se deja pasar si está declarada
+# aquí, con su motivo y con qué clase de cambio queda sin cobertura. Cualquier
+# otra divergencia rompe el check.
+#
+# Formato (leído por scripts/qa-prod-parity-baseline.mjs — no es YAML
+# genérico, ver el comentario de cabecera de ese fichero. En particular: NO
+# admite bloques `|`/`>` multilínea — cada valor va en una sola línea
+# entrecomillada, aunque quede larga):
+#
+#   excluded_surfaces:
+#     - id: <identificador de la superficie>
+#       reason: "por qué no es comparable en absoluto"
+#   accepted_divergences:
+#     - surface: <superficie>
+#       key: <clave dentro de la superficie>
+#       qa: "<valor medido en QA>"
+#       production: "<valor medido en producción>"
+#       reason: "por qué se acepta"
+#       uncovered_change_class: "qué clase de cambio pasa por este agujero sin ejercitarse"
+#
+# Un valor "qa" o "production" de "<absent>" significa que esa superficie no
+# declaró nada en absoluto en ese lado (no una cadena vacía) — ver la
+# convención ABSENT de qa-prod-parity-compare.mjs.
+#
+# Cerrar o aceptar una divergencia nueva es decisión de la fase 3 de spec-93,
+# NUNCA de quien construyó este guardarraíl (fase 4) — este fichero sólo
+# aplica lo que la fase 3 ya decidió.
+
+# NOTA sobre las particiones diarias de realtime.messages_* (fila 12 del
+# inventario de fase 1): NO están aquí como excluded_surfaces. Cada fila que
+# el comparador ve tiene surface="realtime_publication" — igual que todas las
+# demás filas de esa superficie — así que una exclusión a nivel de superficie
+# no podría filtrar SÓLO las particiones sin apagar realtime_publication
+# entera. El filtro real vive en el SQL de scripts/measure-qa-surfaces.sh y
+# scripts/measure-prod-surfaces.sh (WHERE NOT (schemaname = 'realtime' AND
+# tablename LIKE 'messages\_%')), a los dos lados. Una entrada aquí habría
+# sido decorativa — no silencia nada porque nunca hay nada que filtrar
+# (review round 1, Menores).
+excluded_surfaces:
+  # La fase 1 lo midió explícitamente: producción es el gateway gestionado de
+  # Supabase, no Kong. No hay ningún endpoint de producción con el que
+  # comparar las rutas — la fila entera es no-comparable, no ausente. QA SÍ
+  # mide sus rutas de Kong (measure-qa-surfaces.sh) precisamente para que
+  # esta exclusión silencie hechos reales en vez de ser decorativa — el
+  # reporte del comparador dice cuántos.
+  - id: kong_routes
+    reason: "producción es el gateway gestionado de Supabase, no Kong — no existe un endpoint de producción con el que comparar (spec-93 fase 1, fila 11)"
+
+accepted_divergences:
+  # Las cinco filas de abajo son las medidas el 2026-09-10 y listadas en el
+  # cuerpo de spec-93 fase 4 ("Divergencias ya medidas que la línea base
+  # inicial tendrá que contemplar"). Se aceptan aquí tal cual se midieron —
+  # decidir si se CIERRAN en vez de aceptarse es trabajo de la fase 3, no de
+  # esta fase, y este fichero no prejuzga esa decisión: sólo la hace visible
+  # y exigible en CI mientras siga vigente.
+  - surface: auth
+    key: disable_signup
+    qa: "true"
+    production: "false"
+    reason: "QA bloquea el alta libre a propósito, para no ensuciar Musan con cuentas creadas por accidente durante pruebas manuales; producción sí permite alta libre (medido 2026-09-10)"
+    uncovered_change_class: "un cambio en la política de alta de cuentas de producción (activar o desactivar el self-signup) no se ejercita nunca contra QA, porque QA corre con el valor contrario fijo"
+
+  - surface: auth
+    key: mailer_autoconfirm
+    qa: "true"
+    production: "false"
+    reason: "QA auto-confirma el email para no depender de un servidor de correo real en las pruebas E2E; producción exige confirmación real (medido 2026-09-10)"
+    uncovered_change_class: "el flujo real de confirmación de email (el enlace, su expiración, un email que nunca llega) no lo ejercita nunca e2e-qa — el login post-signup en QA nunca pasa por ese paso"
+
+  - surface: auth
+    key: mfa_totp_enroll_enabled
+    qa: "<absent>"
+    production: "true"
+    reason: "QA nunca declaró esta variable — no está apagada a propósito, nadie la configuró; producción la tiene activada (medido 2026-09-10)"
+    uncovered_change_class: "cualquier cambio en la política de enrolamiento MFA de producción (o un bug en custom_access_token_hook que dependa de si MFA está activo) no tiene ninguna prueba en QA que lo toque"
+
+  - surface: auth
+    key: mfa_totp_verify_enabled
+    qa: "<absent>"
+    production: "true"
+    reason: "mismo caso que mfa_totp_enroll_enabled — variable nunca declarada en QA, activa en producción (medido 2026-09-10)"
+    uncovered_change_class: "la verificación TOTP en el login (el segundo factor en sí) no se ejercita nunca en QA"
+
+  - surface: auth
+    key: refresh_token_rotation_enabled
+    qa: "<absent>"
+    production: "true"
+    reason: "mismo patrón — variable nunca declarada en QA, activa en producción (medido 2026-09-10)"
+    uncovered_change_class: "la rotación de refresh tokens (y cualquier regresión que invalide una sesión de más, o que deje uno reutilizable cuando no debería) no la ejercita ninguna prueba en QA — las sesiones de e2e-qa nunca rotan un refresh token porque la rotación está apagada ahí"

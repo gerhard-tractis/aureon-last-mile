@@ -447,3 +447,64 @@ builds, using `sudo -n -l systemctl restart <unit>` — which asks whether that
 exact command is permitted without running it. Probing with a different verb
 (`is-active`) would report a failure that is not real once a command-scoped
 rule exists.
+
+## QA <-> production config parity guardrail (spec-93 fase 4)
+
+Config drift between QA and production is exactly the class of bug a green
+`e2e-qa` can't catch: QA passing tells you QA's own configuration works, not
+that QA's configuration matches what production actually runs. spec-93 fase 1
+found `custom_access_token_hook` registered nowhere in QA while production
+depended on it in every login — and it was found by accident, in a code
+review, not by any check. This guardrail exists so that never has to happen
+again by luck.
+
+**What it compares.** `.github/workflows/qa-prod-parity.yml` runs
+`scripts/measure-qa-surfaces.sh` on the VPS (docker inspect/exec against the
+live containers — never `docker-compose.yml`, which has drifted from the
+running container before) and `scripts/measure-prod-surfaces.sh` from a
+`ubuntu-latest` runner (Supabase Management API + a pooler `psql` session),
+across ten surfaces: auth (GoTrue hooks/providers/JWT expiry), PostgREST
+config, deployed edge functions, Postgres extensions, roles and their
+memberships, `app.settings.*` GUCs, `cron.job`, realtime publications,
+storage buckets, and storage policies. `scripts/qa-prod-parity-compare.mjs`
+diffs the two.
+
+**How a divergence is declared.** `docs/qa-prod-parity-baseline.yml` lists
+every divergence between QA and production that's been reviewed and
+accepted, each with a `reason` and an `uncovered_change_class` — what kind of
+production change would sail through without QA ever exercising it. A
+divergence NOT in that file fails the check (exit 1). A surface that isn't
+comparable at all (Kong's routes — production is the managed gateway, not
+Kong) is declared in `excluded_surfaces` instead, with a reason; the report
+always states how many facts that exclusion silenced, so an exclusion that
+silences nothing stays visible as inert rather than hiding as if it were
+doing something.
+
+**Reading a red run.**
+- Exit 1, "UNDECLARED divergences": a real, new gap between QA and prod.
+  Either close it (bring QA's config in line) or add it to
+  `docs/qa-prod-parity-baseline.yml` with a reason and
+  `uncovered_change_class` — that decision is a fase-3-of-spec-93-style
+  review, not something to wave through in this workflow.
+- Exit 3, "could not measure": the check didn't actually compare anything —
+  either a measurement file was missing/empty, or an expected surface (see
+  `EXPECTED_SURFACES` in `scripts/qa-prod-parity-coverage.mjs`) produced zero
+  facts on one side. This is a failure of the CHECK ITSELF, never read as "no
+  divergence" — investigate the measurement scripts/workflow run, not the
+  baseline.
+- `::warning::` about a stale baseline entry: a previously-accepted
+  divergence no longer reproduces (its measured values no longer match what
+  was declared). Not a failure — prune the entry from the baseline when
+  convenient.
+
+**Known gap, declared rather than faked: edge function runtime variables**
+(fase 1 inventory row 16). QA's env vars for the shared edge-functions
+container are readable via `docker inspect`; production's per-function
+secrets are deliberately NOT exposed by the Supabase Management API (only
+`slug`/`status`/`verify_jwt`/`version` are). There is no tool available today
+to compare the two sides for this surface, so it is not measured on either
+side and not declared in `excluded_surfaces` either — an exclusion entry
+would be exactly as inert as the ones review round 1 flagged, since nothing
+ever emits facts under that surface name to begin with. A change to a
+function's runtime variables passes through this guardrail unchecked until a
+comparable production-side reading exists.
