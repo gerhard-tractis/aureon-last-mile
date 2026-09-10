@@ -166,8 +166,17 @@ describe('ActiveRoutePage — dos DESCARGAR concurrentes, useMutation real (B1/B
     await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Ver los 2 manifiestos' }));
 
-    fireEvent.click(screen.getByRole('button', { name: /descargar carga-a/i }));
-    fireEvent.click(screen.getByRole('button', { name: /descargar carga-b/i }));
+    // `findByRole` (no `getByRole`) — el chip DESCARGAR sólo aparece una vez
+    // que `useDownloadedManifestIds` resuelve su lectura real de Dexie
+    // (`downloadedIds` empieza `undefined`, "todavía no lo sé", y
+    // `RouteManifestList` no pinta el chip hasta que deja de serlo). Bajo
+    // contención de CPU (toda la suite corriendo en paralelo) esa lectura
+    // puede tardar más que el resto del render; `getByRole` síncrono
+    // encontraba el chip por coincidencia de timing, no porque el test
+    // esperara la condición real — ver `docs/specs/CLAUDE.md` sobre no
+    // depender de temporización implícita.
+    fireEvent.click(await screen.findByRole('button', { name: /descargar carga-a/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /descargar carga-b/i }));
 
     expect(screen.getByRole('button', { name: /descargar carga-a/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /descargar carga-b/i })).toBeDisabled();
@@ -204,8 +213,10 @@ describe('ActiveRoutePage — dos DESCARGAR concurrentes, useMutation real (B1/B
     await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Ver los 2 manifiestos' }));
 
-    fireEvent.click(screen.getByRole('button', { name: /descargar carga-a/i }));
-    fireEvent.click(screen.getByRole('button', { name: /descargar carga-b/i }));
+    // Ver el comentario del test de arriba — `findByRole` espera a que
+    // `downloadedIds` resuelva antes de tocar el chip.
+    fireEvent.click(await screen.findByRole('button', { name: /descargar carga-a/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /descargar carga-b/i }));
 
     manifestDeferreds['CARGA-A'].resolve({
       data: {
