@@ -31,34 +31,44 @@ Las tres pestañas de escritorio **no particionan** el espacio de estados:
 - `get_pending_manifests` (`20261003000001`) excluye toda carga cuyo manifiesto
   tenga `status='completed' OR reception_status IS NOT NULL OR pickup_route_id
   IS NOT NULL` — la exclusión de spec-61.
-- `get_in_transit_manifests` exige `reception_status IS NOT NULL`, que sólo se
-  escribe cuando la ruta pasa a `in_transit`
-  (`trg_pickup_routes_set_manifest_reception_status`).
+- `get_in_transit_manifests` (`20260813000001`) exige `reception_status IS NOT
+  NULL` **y** `status != 'completed'`. La segunda cláusula es la que hoy evita
+  el solape con Completados; sin ella las dos pestañas mostrarían las mismas
+  filas.
 - `get_completed_manifests` exige `status = 'completed'`.
 
 Un manifiesto **enganchado a una ruta pero todavía no entregado** no cumple
 ninguna de las tres. Su única superficie es el panel de ruta activa, y ése lee
-`get_my_active_pickup_route()`, que está acotado al usuario firmado (líder **o**
-tripulación activa). Con `admin@musan.com` — que no es ninguno de los dos — la
-carga no existe en la pantalla. Tampoco llega al panel Recogida de Ops Control,
-que exige ≥1 bulto `verificado` y ésta tiene cero.
+`get_my_active_pickup_route()` (`20260820000005:47-60`), acotado al usuario
+firmado (líder **o** tripulación activa, ruta `in_progress`). Con
+`admin@musan.com` — que no es ninguno de los dos — la carga no existe en la
+pantalla. Tampoco llega al panel Recogida de Ops Control, que exige ≥1 bulto
+`verificado` (`20260912000001`) y ésta tiene cero.
 
 Segunda cara del mismo agujero: `CancelRouteButton` sólo se renderiza cuando
-`activeRoute.driver_id === userId`, así que un admin tampoco puede liberar la
-ruta desde la UI — aunque `cancel_pickup_route` sí le autoriza por rol.
+`activeRoute.driver_id === userId` (`page.tsx:243`, `route/active/page.tsx:355`),
+así que un admin tampoco puede liberar la ruta desde la UI — aunque
+`cancel_pickup_route` sí le autoriza por rol.
 
 ## El modelo de estados
 
-La base de datos ya distingue los dos tramos del viaje; lo que faltaba eran las
-etiquetas y la cuarta pestaña. Cuatro cubos mutuamente excluyentes, sin solape
-y sin hueco:
+Los cubos miran **dónde están los bultos** (`reception_status` y
+`pickup_route_id`), no en qué punto del papeleo va la carga (`status`). Es una
+corrección deliberada sobre el primer borrador de este spec, y la razón está en
+la sección siguiente.
 
-| Pestaña | Predicado sobre `manifests` | Significado |
+| Pestaña | Predicado sobre `manifests` (vivas: `deleted_at IS NULL AND status <> 'cancelled'`) | Significado |
 |---|---|---|
-| **Por retirar** | sin fila de manifiesto, o `pickup_route_id IS NULL AND reception_status IS NULL AND status <> 'completed'` | sigue en el punto de recogida, sin cuadrilla asignada |
-| **En punto de retiro** | `pickup_route_id IS NOT NULL AND reception_status IS NULL AND status <> 'completed'` | cuadrilla asignada: yendo o escaneando |
-| **Camino a bodega** | `reception_status IS NOT NULL AND status <> 'completed'` | retiro verificado, el camión vuelve al hub |
-| **En bodega** | `status = 'completed'` | recibida / cerrada |
+| **Por retirar** | `pickup_route_id IS NULL AND reception_status IS NULL AND status <> 'completed'` | sigue en el punto de recogida, sin cuadrilla asignada |
+| **En punto de retiro** | `pickup_route_id IS NOT NULL AND reception_status IS NULL` | cuadrilla asignada: yendo, escaneando, o ya cerrada con el camión todavía allí |
+| **Camino a bodega** | `reception_status IN ('awaiting_reception','reception_in_progress')` | retiro verificado, el camión vuelve al hub |
+| **En bodega** | `reception_status = 'received'`, **o** `status='completed' AND pickup_route_id IS NULL AND reception_status IS NULL` | recibida en el hub, o cerrada sin ruta (flujo viejo) |
+
+**Exhaustivo y disjunto**, y se comprueba así: con `reception_status` no nulo,
+su valor decide entre el cubo 3 y el 4; con `reception_status` nulo, decide
+`pickup_route_id` (cubo 2 si lo hay); sin ninguno de los dos, decide `status`
+(cubo 4 si `completed`, cubo 1 si no). Ningún estado vivo queda fuera y ninguno
+cae en dos.
 
 Las claves internas siguen siendo `pending` / `routed` / `in_transit` /
 `completed`: **sólo cambian las etiquetas en castellano**, así que ni los tests
@@ -69,6 +79,48 @@ punto: `get_my_active_pickup_route()` es por usuario a propósito — responde
 «¿en qué estoy trabajando yo?» — y esta pestaña responde otra pregunta
 distinta, «¿dónde está cada carga ahora mismo?». Heredar aquel alcance
 reproduciría el agujero.
+
+## Por qué los cubos no miran `status`
+
+`close_manifest` (`20260916000001:107-109`) escribe `status='completed'` y **no
+toca `pickup_route_id` ni `reception_status`** — verificado contra la función
+viva en QA, no deducido del fichero. Así que una carga cerrada y firmada en el
+andén del retailer, con la ruta todavía `in_progress`, queda `completed` con
+`reception_status IS NULL`: los bultos están en el camión, en el punto de
+retiro, y pueden estarlo durante horas.
+
+Un modelo que mandara esa carga a «En bodega» por su `status` afirmaría algo
+falso sobre dónde están los bultos — y nombrar el lugar físico es justamente la
+regla que elegimos. La etiqueta vieja («Completados») nunca afirmó una
+ubicación, así que nunca se equivocó; la nueva sí lo haría. Ejemplo del mismo
+camión, al mismo tiempo, con el modelo corregido:
+
+| | CARGA-A (cerrada en el andén 09:00) | CARGA-B (sin cerrar) |
+|---|---|---|
+| 09:00–11:00, camión parado en el andén | En punto de retiro, con chip «cerrada 09:00» | En punto de retiro |
+| 11:00–13:00, en la carretera | Camino a bodega | Camino a bodega |
+
+`reopen_pickup_route` (`20260812000005:250-262`) llega al mismo estado por el
+otro lado: devuelve la ruta a `in_progress` y limpia `reception_status`, pero
+no revierte `manifests.status`. Con cubos que miran ubicación, esa carga vuelve
+sola a «En punto de retiro», que es donde está.
+
+**Coste aceptado:** el cubo 2 mezcla «por escanear» con «ya cerrada». Se
+distinguen por un chip en la fila, no por pestaña. Es el precio de que la
+pestaña signifique un lugar y no un trámite.
+
+## `'cancelled'`, y por qué se nombra
+
+`manifest_status_enum` incluye `'cancelled'` (`20260310100000:33`) y el frontend
+lo modela como estado terminal (`pickupMobileHelpers.ts:45,49`). **Hoy no lo
+escribe nadie**: ni una migración ni el código de la app — verificado con grep
+sobre ambos. Es un valor definido y sin productor.
+
+Aun así los cuatro predicados lo excluyen explícitamente, por una razón
+concreta y no por simetría: `remove_manifest_from_route` termina con
+`status = 'pending'`, así que el botón de la fase 3, sobre una carga cancelada,
+la **des-cancelaría** en silencio. Excluirlo cuesta una cláusula; descubrirlo
+en producción, no.
 
 ## Vocabulario
 
@@ -85,65 +137,115 @@ Recogida, que es donde hay dos tramos que nombrar. Queda anotado como lo que
 es: dos nombres para un mismo estado, en dos pantallas que rara vez se miran
 juntas.
 
-## Fase 1 — `get_routed_manifests` `[pending]`
+## Fase 1 — `get_routed_manifests` y la partición demostrada `[pending]`
 
 **Depende de:** ninguna
 
 **Archivos:** migración nueva en `packages/database/supabase/migrations/`, test pgTAP nuevo en `packages/database/supabase/tests/`
 
-RPC nueva, `LANGUAGE sql STABLE SECURITY INVOKER`, misma forma que sus tres
-hermanas (`get_pending_manifests`, `get_in_transit_manifests`,
-`get_completed_manifests`), acotada por `public.get_operator_id()` y
-`deleted_at IS NULL`.
+### La RPC nueva
 
-Predicado: `pickup_route_id IS NOT NULL AND reception_status IS NULL AND status
-<> 'completed'`.
+`LANGUAGE sql STABLE SECURITY INVOKER`, misma forma que sus tres hermanas,
+acotada por `public.get_operator_id()` y `deleted_at IS NULL`. Predicado del
+cubo 2: `pickup_route_id IS NOT NULL AND reception_status IS NULL AND status <>
+'cancelled'`.
 
-Devuelve las columnas de manifiesto que ya devuelven sus hermanas, más lo que
-la fila necesita para ser accionable:
+Devuelve lo que ya devuelven sus hermanas, más lo que la fila necesita para ser
+accionable:
 
 - `route_id`, `route_code`, `route_started_at`, `driver_name` — JOIN a
-  `pickup_routes` y de ahí a `users`.
-- `verified_count` — **no es decorativo**: la guarda 7 de
-  `remove_manifest_from_route` rechaza cualquier manifiesto que ya tenga un
-  escaneo `verified`. Sin esta columna la UI ofrecería un botón que siempre
-  lanza excepción.
+  `pickup_routes` **con `deleted_at IS NULL`** y de ahí a `users`. No es
+  adorno: una ruta soft-deleted no vacía `manifests.pickup_route_id` (el único
+  camino que lo hace es `status='cancelled'` vía trigger,
+  `20260625000001:201-206`), así que sin esa cláusula la fila aparecería con la
+  ruta muerta detrás y la guarda 2 del RPC de quitar la rechazaría.
+- `route_status` — para que la fila sepa que la **guarda 3** de
+  `remove_manifest_from_route` exige `in_progress`. No encontré un camino
+  alcanzable desde la app que deje una fila de este cubo con la ruta fuera de
+  `in_progress` (`in_transit` y `received` escriben `reception_status`,
+  `cancelled` desengancha, `reopen` vuelve a `in_progress`), pero por psql sí se
+  llega, y la fila no debe ofrecer un botón que lanza excepción.
+- `closed_at` — `completed_at` cuando `status='completed'`, para el chip
+  «cerrada HH:MM» del cubo 2.
+- `verified_count` — la **guarda 7** rechaza cualquier manifiesto con un
+  escaneo `verified`. Se cuenta con `scan_result='verified' AND package_id IS
+  NOT NULL AND deleted_at IS NULL`: el `package_id IS NOT NULL` es el que hace
+  que este número signifique **exactamente** lo que la guarda mira. La subquery
+  de `get_pending_manifests` no lo lleva, así que no vale copiarla tal cual.
 
-`get_pending_manifests` **no se modifica**. Su cláusula de exclusión ya deja
-fuera exactamente lo que esta RPC recoge, así que ningún comportamiento
-existente se mueve. Si en el futuro hubiera que tocarla, se re-templa desde
-`20261003000001_spec83_fase2_pending_manifests_pickup_window.sql`, la última
-definición — la regla de `CLAUDE.md`.
+### Los dos arreglos a `get_pending_manifests`
 
-Tampoco hace falta trabajo de autorización nuevo: `remove_manifest_from_route`
-ya admite `operations_manager` / `admin` / `super_admin` sobre una ruta ajena,
-y ya deja el manifiesto en forma limpia de `pending` (limpiando `completed_at`
-y las cuatro columnas de firma — importa, porque una carga cerrada por la vía
-de todo-discrepancias puede llegar a este estado).
+El primer borrador de este spec decía que no había que tocarla. Es falso, y la
+revisión lo encontró:
 
-**Verificación:** pgTAP con las cuatro cargas del fixture en los cuatro
-estados, comprobando que **cada una aparece en exactamente una** de las cuatro
-RPC. Ésa es la prueba que no existía: hoy ninguna afirma la partición, y por
-eso el hueco pasó desapercibido. `scripts/pgtap-local.sh` (los tests SQL no
-corren en CI).
+1. **No excluye `'cancelled'`.** Su cláusula sólo mira `completed` /
+   `reception_status` / `pickup_route_id`, así que una carga cancelada se
+   presenta hoy como pendiente de retiro.
+2. **Parte de `orders`, no de `manifests`.** El CTE `pending` arranca en
+   `orders` con `o.deleted_at IS NULL` y agrupa por `(external_load_id,
+   retailer_name)` — tiene que ser así, porque una carga puede no tener fila en
+   `manifests` todavía (se crea al abrir el flujo de escaneo). Pero eso abre
+   exactamente el mismo agujero que este spec cierra: **un manifiesto vivo del
+   cubo 1 cuyas órdenes estén todas soft-deleted no lo devuelve ninguna de las
+   cuatro RPC**. Se cierra con un brazo `UNION` sobre las filas de `manifests`
+   del cubo 1 que no tengan ninguna orden viva.
+
+Se re-templa desde `20261003000001_spec83_fase2_pending_manifests_pickup_window.sql`,
+la última definición — la regla de `CLAUDE.md`. Sobrevive la exclusión de
+spec-61 (`pickup_route_id IS NOT NULL`) y sobreviven las columnas de ventana de
+spec-83.
+
+### La verificación
+
+**La aserción es la inversa de la obvia, y ésa es la corrección.** «Cuatro
+cargas del fixture, cada una en exactamente una RPC» pasaría en verde con el
+agujero de las órdenes soft-deleted intacto — un test que no puede fallar no es
+un test. La aserción que vale:
+
+> para **toda** fila viva de `manifests` del operador, la unión de las cuatro
+> RPC la contiene **exactamente una vez**.
+
+Sobre el conjunto real de la tabla, no sobre cuatro filas elegidas, y con el
+fixture ampliado a los casos que el hallazgo enseñó: carga cerrada en el andén
+con ruta `in_progress`, carga con todas sus órdenes soft-deleted, carga
+`cancelled`, ruta soft-deleted. `scripts/pgtap-local.sh` (los tests SQL no
+corren en CI — ver `project_sql_tests_local_harness`).
 
 ## Fase 2 — la pestaña «En punto de retiro» y el renombrado `[pending]`
 
 **Depende de:** spec-94 fase 1
 
-**Archivos:** `apps/frontend/src/hooks/pickup/useRoutedManifests.ts`, `apps/frontend/src/hooks/pickup/usePickupManifestTabs.ts`, `apps/frontend/src/components/pickup/RoutedManifestTable.tsx`, `apps/frontend/src/components/pickup/PickupDesktopView.tsx`, `apps/frontend/src/app/app/pickup/page.tsx`, `apps/frontend/src/components/pickup/PickupManifestTabs.tsx`, `apps/frontend/src/components/pickup/PickupManifestTabs.test.tsx`
+**Archivos:** `apps/frontend/src/hooks/pickup/useRoutedManifests.ts`, `apps/frontend/src/hooks/pickup/usePickupManifestTabs.ts`, `apps/frontend/src/hooks/pickup/useManifests.ts`, `apps/frontend/src/components/pickup/RoutedManifestTable.tsx`, `apps/frontend/src/components/pickup/PickupDesktopView.tsx`, `apps/frontend/src/app/app/pickup/page.tsx`, `apps/frontend/src/lib/pickup/pickupPageHelpers.ts`, `apps/frontend/src/components/pickup/PickupManifestTabs.tsx`, `apps/frontend/src/components/pickup/PickupManifestTabs.test.tsx`
 
-- `useRoutedManifests.ts` — hook nuevo, junto a los otros tres, mismas
-  `PICKUP_QUERY_OPTIONS`.
-- `RoutedManifestTable.tsx` — tabla propia, con su juego de columnas (ruta ·
-  líder · abierta hace · bultos · acciones). **No** una novena columna en
+- `useRoutedManifests.ts` — hook nuevo. `PICKUP_QUERY_OPTIONS` está declarado
+  **sin `export`** (`useManifests.ts:67`), así que hay que exportarlo — por eso
+  `useManifests.ts` está en la lista de archivos.
+- `RoutedManifestTable.tsx` — tabla propia (ruta · líder · abierta hace ·
+  bultos · chip de cierre · acciones). **No** una novena columna en
   `ManifestTable`, cuyo grid de píxeles fijo ya va por ocho y el fichero por
   232 líneas.
 - `usePickupManifestTabs.ts` — `page.tsx` está hoy en **exactamente 300
-  líneas**, el límite de `CLAUDE.md`. Las cuatro consultas y el mapeo a filas
-  se extraen aquí, así que la pestaña nueva entra sin que el fichero crezca.
-- Renombrado de etiquetas en `PickupDesktopView.tsx` (`TABS` y los tres
-  `emptyMessage`), claves internas intactas.
+  líneas**, el límite de `CLAUDE.md`. Se extraen las **cinco** consultas de
+  manifiestos que monta hoy (`usePendingManifests`, `useInTransitManifests`,
+  `useCompletedManifests`, `useSignatureRescueManifests` y la nueva) con su
+  mapeo a filas. No son cuatro: la de rescate también produce filas vía
+  `rescueRowsFromCompleted`.
+- **Nada de ternarios.** Hay cuatro sitios donde un `TabKey` nuevo cae al
+  `else` de `'completed'` sin que `tsc` diga nada: el contador
+  (`PickupDesktopView.tsx:155-160`), el `emptyMessage` (`:191-197`), la
+  elección de tabla (`:184`) y `rowsForTab` (`page.tsx:118-119`) — este último
+  haría que **la pestaña nueva mostrara Completados** bajo la etiqueta nueva.
+  Los cuatro pasan a un mapa indexado por `TabKey` o a un `switch` exhaustivo,
+  que es lo que convierte el olvido en error de compilación. Son cuatro
+  `emptyMessage`, no tres.
+- Renombrado de etiquetas en `TABS` (`PickupDesktopView.tsx:36-40`), que son
+  literales y no claves i18n; claves internas intactas.
+- **Buscador y `ClientFilter`** se renderizan encima de las pestañas y
+  `clients` sale sólo de las pendientes (`page.tsx:112`). Si todas las cargas de
+  un retailer están ruteadas, su chip desaparece justo cuando hace falta. La
+  lista de clientes pasa a salir de la unión de los cuatro conjuntos, y
+  `matchesSearchTerm` (`pickupPageHelpers.ts`) gana código de ruta y nombre de
+  líder para que el buscador signifique algo en la pestaña nueva.
 - Móvil sin cambios: sigue con sus tres secciones. Es la pantalla de inicio de
   turno de la cuadrilla, no una superficie de supervisión.
 - **Limpieza en alcance:** `PickupManifestTabs.tsx` está muerto — sólo lo
@@ -156,17 +258,35 @@ corren en CI).
 
 **Depende de:** spec-94 fase 2
 
-**Archivos:** `apps/frontend/src/components/pickup/RoutedManifestTable.tsx`, `apps/frontend/src/hooks/pickup/useRemoveManifestFromRoute.ts`
+**Archivos:** `apps/frontend/src/components/pickup/RoutedManifestTable.tsx`, `apps/frontend/src/components/pickup/RoutedManifestTable.test.tsx`
 
-Cada fila ofrece «Ver ruta» y «Quitar de la ruta». La segunda llama a
-`remove_manifest_from_route(p_route_id, p_manifest_id)`, que ya existe
-(spec-64) y ya autoriza al rol: deja `pickup_route_id = NULL` y la carga vuelve
-a «Por retirar», con la ruta viva para las demás cargas.
+Cada fila ofrece «Ver ruta» y «Quitar de la ruta». La segunda **reutiliza
+`useRemoveManifestFromRoute`**, que ya existe con su test y ya lo usa
+`route/active/page.tsx:56` — no se crea nada nuevo. Detrás está
+`remove_manifest_from_route(p_route_id, p_manifest_id)` (spec-64,
+`20260824000004`), que ya autoriza a `operations_manager` / `admin` /
+`super_admin` sobre una ruta ajena (guarda 4) y deja el manifiesto en forma
+limpia de `pending`, limpiando `completed_at` y las cuatro columnas de firma.
+La única re-emisión posterior de esa función (`20261002000001:214-215`) es un
+`REVOKE`, no un cambio de cuerpo.
 
-**La acción se deshabilita cuando `verified_count > 0`**, con la razón escrita
-en la fila — «ya tiene N bultos verificados; debe cerrarse desde la ruta». Es
-la semántica real de la guarda 7, dicha por delante en vez de descubierta como
-un toast de error.
+La acción se **deshabilita, con la razón escrita en la propia fila**, en tres
+casos — cada uno es una guarda del RPC dicha por delante en vez de descubierta
+como un toast:
+
+| Condición | Guarda | Razón mostrada |
+|---|---|---|
+| `verified_count > 0` | 7 | ya tiene N bultos verificados; debe cerrarse desde la ruta |
+| `status = 'completed'` | ninguna | la carga ya está cerrada y firmada: quitarla borraría la firma |
+| `route_status <> 'in_progress'` | 3 | la ruta ya no admite cambios |
+
+El segundo no lo cubre ninguna guarda del RPC, y es el que más duele: una carga
+cerrada por la vía de todo-discrepancias tiene **cero** escaneos `verified`, así
+que la guarda 7 la deja pasar y el `UPDATE` borra la firma del cliente. El
+`UPDATE` limpia esas columnas a propósito (`20260824000004`, nota del final:
+sin eso la carga volvería a «pendiente» arrastrando `completed_at` y una firma
+de una entrega que se acaba de deshacer), y `audit_logs` conserva los valores —
+pero eso no es motivo para ofrecer el botón.
 
 ## No incluido, y por qué
 
@@ -176,3 +296,12 @@ pestaña la mostrará indefinidamente como «abierta hace N h». Es una decisió
 política con riesgo real —una cuadrilla tarda horas de forma legítima— y no una
 consecuencia de este hallazgo. Se nombra aquí para que no se lea como olvido;
 si se construye, será en un spec propio.
+
+**`useUnassignedManifests` (`useRouteManifests.ts:205-227`).** Es una quinta
+vista sobre el mismo espacio — el picker de «Agregar carga a la ruta» — con
+predicado `pickup_route_id IS NULL AND deleted_at IS NULL AND status <>
+'completed'`, al que le falta `reception_status IS NULL` respecto del cubo 1.
+Tras el renombrado, el picker y «Por retirar» pueden mostrar conjuntos
+distintos sin que nada lo explique. No se alinea aquí porque tocar el picker
+arrastra el flujo de armado de ruta, que este spec no abre; queda nombrado para
+que el siguiente que lo vea sepa que es conocido y no un descubrimiento.
