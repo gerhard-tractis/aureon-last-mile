@@ -93,6 +93,42 @@ describe('getPickupWindowStatus', () => {
     );
     expect(status).toBe('sin_datos');
   });
+
+  // Review round 2, B1: an empty-string cutoff (the most likely production
+  // shape — a new pickup point form saved with the field left blank) must
+  // fall back to the window end, not be treated as "configured but blank".
+  // A `??` on the raw column value does NOT catch this: '' is not
+  // null/undefined, so `'' ?? windowEnd` evaluates to ''.
+  it('falls back to the window end when the cutoff is an empty string, not sin_datos', () => {
+    const now = new Date('2026-09-10T09:30:00');
+    const status = getPickupWindowStatus(
+      { pickupWindowStart: '09:00', pickupWindowEnd: '13:00', pickupCutoffTime: '' },
+      now,
+    );
+    expect(status).toBe('dentro_de_plazo');
+  });
+
+  it('falls back to the window end when the cutoff is whitespace-only', () => {
+    const now = new Date('2026-09-10T09:30:00');
+    const status = getPickupWindowStatus(
+      { pickupWindowStart: '09:00', pickupWindowEnd: '13:00', pickupCutoffTime: '   ' },
+      now,
+    );
+    expect(status).toBe('dentro_de_plazo');
+  });
+
+  // Read-side tolerance: a value populated directly via SQL (backfill, QA
+  // seed) is far more likely to be "HH:MM:SS" (Postgres's own text cast of
+  // a TIME column) than the exact "HH:MM" this UI's form always saves. This
+  // must not paint gray just because the write path is stricter.
+  it('tolerates a trailing :SS component (the natural shape of a SQL-populated time)', () => {
+    const now = new Date('2026-09-10T09:30:00');
+    const status = getPickupWindowStatus(
+      { pickupWindowStart: '09:00:00', pickupWindowEnd: '13:00:00', pickupCutoffTime: null },
+      now,
+    );
+    expect(status).toBe('dentro_de_plazo');
+  });
 });
 
 describe('formatPickupWindowLabel', () => {
@@ -117,6 +153,15 @@ describe('formatPickupWindowLabel', () => {
   it('shows "Sin datos" when nothing is configured', () => {
     expect(
       formatPickupWindowLabel({ pickupWindowStart: null, pickupWindowEnd: null, pickupCutoffTime: null }),
+    ).toBe('Sin datos');
+  });
+
+  // Review round 2, B1 (label side): a whitespace-only cutoff is truthy in
+  // JS (`'   '` is not falsy), so a naive `if (cutoff)` check printed
+  // "Cierra    " — a label with nothing legible in it.
+  it('shows "Sin datos" for a whitespace-only cutoff, not "Cierra" with a blank', () => {
+    expect(
+      formatPickupWindowLabel({ pickupWindowStart: null, pickupWindowEnd: null, pickupCutoffTime: '   ' }),
     ).toBe('Sin datos');
   });
 });
