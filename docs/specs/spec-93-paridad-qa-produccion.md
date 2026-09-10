@@ -316,14 +316,28 @@ Lo que tiene que quedar cierto, venga de donde venga:
   `operator_id`, `role` y `permissions`. Sin esto, el `EXCEPTION WHEN OTHERS`
   del hook hace que la prueba pase con un token vacío.
 
-### Fase 3 — El resto del inventario `[pending]`
+### Fase 3 — El resto del inventario `[in_progress]`
 
-**Archivos:** por determinar en la fase 1 — depende de qué superficies aparezcan. `docs/specs/spec-93-paridad-qa-produccion.md` y `docs/qa-environment.md` en todo caso.
+**Depende de:** ninguna — los dos hallazgos que esta fase cierra se midieron enteros contra QA y no esperan la columna de producción.
+
+**Archivos:** `infra/supabase-qa/deploy-qa.sh`, `infra/supabase-qa/setup-qa.sh`, `scripts/` (los tests de bash de los dos guards), `docs/specs/spec-93-paridad-qa-produccion.md`, `docs/qa-environment.md`
 
 Cerrar las divergencias que la fase 1 encuentre, **o declararlas
 explícitamente como aceptadas**, cada una con su motivo y con qué clase de
 cambio queda sin cobertura. Una divergencia aceptada y escrita es un riesgo
 gestionado; una no escrita es una trampa.
+
+**Despachada en dos tandas, a propósito.** La primera cierra los hallazgos 1 y
+3 de la fase 1 — `pgtap` ausente y el mecanismo de recreación que sólo cubre
+dos de seis servicios — porque los dos se midieron enteros contra QA y no
+dependen de la columna de producción. La segunda espera al dispatch de
+`measure-prod-surfaces.yml`: hasta saber qué tiene producción no se puede
+decidir si una fila se cierra o se acepta, y aceptar una divergencia sin haber
+medido el otro lado sería exactamente lo que el spec prohíbe en «Lo que NO hay
+que hacer».
+
+Los dos hallazgos van en **un solo implementer, no dos en paralelo**: ambos
+tocan `deploy-qa.sh` y el guard de solapamiento los rechazaría con razón.
 
 ### Fase 4 — Guardarraíl determinista `[pending]`
 
