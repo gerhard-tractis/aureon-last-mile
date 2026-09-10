@@ -147,6 +147,70 @@ describe('useDownloadManifest', () => {
     expect(snapshot?.orders).toHaveLength(1);
   });
 
+  // Menor, revisión de fase 2 — antes, el snapshot perdía parent_label e
+  // is_generated_label: offline, las cajas hijas de una expansión (spec-55)
+  // se dispersaban por orden alfabético en vez de agruparse bajo su padre
+  // (OrderCard las agrupa por `parent_label ?? label`), el badge "Aureon"
+  // (`is_generated_label`) desaparecía, y "Agregar bultos" reaparecía sobre
+  // un bulto ya generado. La misma carga se veía distinta con y sin red.
+  it('preserves parent_label and is_generated_label in the snapshot', async () => {
+    const manifestChain = mockManifestChain({
+      id: 'manifest-1',
+      total_packages: 2,
+      pickup_route_id: 'route-1',
+      retailer_name: 'Ripley',
+      pickup_location: 'Parque Arauco',
+    });
+    const ordersChain = mockOrdersChain([
+      {
+        id: 'order-1',
+        order_number: 'ORD-1',
+        customer_name: 'Juan Pérez',
+        comuna: 'Ñuñoa',
+        delivery_address: 'Calle Falsa 123',
+        packages: [
+          {
+            id: 'pkg-2',
+            label: 'CTN001-2',
+            package_number: null,
+            sku_items: [],
+            declared_weight_kg: null,
+            deleted_at: null,
+            is_generated_label: true,
+            parent_label: 'CTN001',
+          },
+        ],
+      },
+    ]);
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'manifests') return manifestChain;
+      return ordersChain;
+    });
+
+    const { result } = renderHook(() => useDownloadManifest(OPERATOR_A), {
+      wrapper: createWrapper(),
+    });
+    await act(async () => {
+      await result.current.mutateAsync(LOAD_1);
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    // La comprobación real: el `select()` de Supabase tiene que PEDIR estas
+    // columnas — sin esto, un mock que ignora el string de `.select()`
+    // (como el de este mismo archivo) deja pasar el test aunque la query
+    // real nunca hubiera traído el dato de producción.
+    const selectArg = ordersChain.select.mock.calls[0][0] as string;
+    expect(selectArg).toContain('is_generated_label');
+    expect(selectArg).toContain('parent_label');
+
+    const snapshot = await db.manifest_cache
+      .where('[operatorId+externalLoadId]')
+      .equals([OPERATOR_A, LOAD_1])
+      .first();
+    expect(snapshot?.orders[0].packages[0].is_generated_label).toBe(true);
+    expect(snapshot?.orders[0].packages[0].parent_label).toBe('CTN001');
+  });
+
   // M2, revisión de fase 2 — no-negociable del repo: operator_id en toda
   // query. `mockOrdersChain` antes de esto no distinguía QUÉ columnas se
   // filtraban (sólo que `.eq` se llamó dos veces), así que quitar el

@@ -138,6 +138,13 @@ export interface CachedManifestOrder {
     package_number: string | null;
     sku_items: Array<{ sku: string; description: string; quantity: number }>;
     declared_weight_kg: number | null;
+    /** spec-55 — menor, revisión de fase 2: sin estos dos, `OrderCard`
+     * dispersaba las cajas hijas de una expansión en vez de agruparlas bajo
+     * su padre, el badge "Aureon" desaparecía, y "Agregar bultos"
+     * reaparecía sobre un bulto ya generado — la misma carga se veía
+     * distinta con y sin red. */
+    is_generated_label?: boolean;
+    parent_label?: string | null;
   }>;
 }
 

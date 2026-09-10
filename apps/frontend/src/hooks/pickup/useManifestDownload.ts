@@ -76,7 +76,7 @@ export function useDownloadManifest(operatorId: string | null) {
       const { data: orders, error: ordersError } = await supabase
         .from('orders')
         .select(
-          'id, order_number, customer_name, comuna, delivery_address, packages(id, label, package_number, sku_items, declared_weight_kg, deleted_at)',
+          'id, order_number, customer_name, comuna, delivery_address, packages(id, label, package_number, sku_items, declared_weight_kg, is_generated_label, parent_label, deleted_at)',
         )
         .eq('operator_id', operatorId)
         .eq('external_load_id', externalLoadId)
