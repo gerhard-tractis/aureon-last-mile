@@ -559,6 +559,56 @@ container_health_check() { # $1 label, $2 container name
 }
 
 # --------------------------------------------------------------------------
+# pgtap — spec-93 fase 3. Measured against QA 2026-09-10:
+#   SELECT count(*) FROM pg_extension WHERE extname='pgtap'          -> 0
+#   SELECT default_version FROM pg_available_extensions
+#     WHERE name='pgtap'                                             -> 1.3.3
+# The extension is available in the image but nothing ever created it, so
+# sql_tests_check()'s own SKIPPED-NO-PGTAP path has been silently skipping
+# all 20 packages/database/supabase/tests/*.sql files that use plan()/
+# finish() since they were written — a green check that never ran them.
+#
+# Three places could own `CREATE EXTENSION pgtap`; this one does, and here
+# is why the other two don't:
+#   - packages/database/supabase/migrations/ — apply_migrations() replays
+#     this same ledger against PRODUCTION (see apps/worker/scripts/
+#     deploy.sh), so a migration here would install a testing-only extension
+#     in prod, which is exactly the parity gap this spec is about closing in
+#     the OTHER direction. Ruled out.
+#   - infra/supabase-qa/setup-qa.sh — the one-time bootstrap. It only runs
+#     when QA is first provisioned, not on docs/qa-environment.md's "DB
+#     reset — full clean rebuild" (data dir wiped, migrations replayed).
+#     An extension created only there would be lost on the very reset this
+#     fix has to survive.
+#   - HERE, deploy-qa.sh — runs on every green merge, same as
+#     apply_migrations/apply_seed above, and `CREATE EXTENSION IF NOT
+#     EXISTS` is idempotent — a no-op once installed, and self-healing after
+#     a DB reset without anyone re-running a bootstrap script by hand.
+#
+# ADVISORY, same pattern as sql_tests_check() right below (record_advisory,
+# never touches RESULT): installing a test-only extension must not be able
+# to fail a QA deploy whose real steps all passed. Must run BEFORE
+# sql_tests_check — see the call site in post_checks().
+# --------------------------------------------------------------------------
+ensure_pgtap() {
+  local pw; pw="$(env_get POSTGRES_PASSWORD)"
+  if [ -z "$pw" ]; then
+    record_advisory "pgtap extension" SKIP "POSTGRES_PASSWORD missing"
+    return 0
+  fi
+
+  log "ensuring pgtap extension exists (localhost:5433)"
+  local out
+  if out="$(PGPASSWORD="$pw" psql -h localhost -p 5433 -U postgres -d postgres \
+       -v ON_ERROR_STOP=1 -q -c 'CREATE EXTENSION IF NOT EXISTS pgtap;' 2>&1)"; then
+    record_advisory "pgtap extension" ok "installed"
+  else
+    err "could not create pgtap extension: $out"
+    record_advisory "pgtap extension" FAIL "CREATE EXTENSION failed — see deploy log"
+  fi
+}
+
+# --------------------------------------------------------------------------
 # SQL tests — packages/database/supabase/tests/*.sql, run against QA's live
 # Postgres after migrations+seed. ADVISORY ONLY, always, no exceptions:
 #
@@ -698,6 +748,11 @@ post_checks() {
   # without a single deploy noticing — every merge in between reported QA
   # healthy while the beetrack webhook was dead.
   container_health_check "edge functions" supabase-qa-edge-functions
+  # MUST run before sql_tests_check(): that function decides per-pgTAP-file
+  # whether to SKIP by querying pg_extension itself. Creating the extension
+  # after it would leave this very deploy — the one that installs pgtap —
+  # still reporting SKIPPED-NO-PGTAP for all 20 plan()/finish() files.
+  ensure_pgtap
   sql_tests_check
   if is_true "${CHANGED_FRONTEND:-}"; then
     http_check "frontend (3200)" "http://localhost:3200/" success
