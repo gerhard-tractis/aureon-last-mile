@@ -134,6 +134,17 @@ exec 3>&2
 trap 'harness_abort $?' ERR
 
 harness_abort() { # $1 exit status of the command that tripped errexit
+  # `set -eE` propagates this trap into command substitutions too, not only
+  # into record_deploy_marker's own call. A command used merely to build an
+  # assert's "actual" value — e.g. `$(cat "$TMP/persist/marker")` when a
+  # mutant deletes that file — can trip it there, inside a CHILD subshell.
+  # Reporting from there prints "record_deploy_marker aborted the deploy",
+  # which never touched record_deploy_marker, and does so WITHOUT
+  # incrementing $fail — that counter lives in this (unaffected) parent
+  # shell, so the misattributed FAIL is invisible to the pass/fail tally.
+  # Measured with the `rm -f "$path"` mutant. Only the real top-level shell
+  # — the one invoke() actually runs record_deploy_marker in — may report.
+  [ "$BASHPID" = "$$" ] || exit "$1"
   {
     echo "  FAIL record_deploy_marker aborted the deploy (exit $1) — it must never do that"
     echo "  --- what it had written before dying ---"
@@ -522,9 +533,10 @@ echo "the failure message the operator reads (deploy.yml)"
 # ── A correct red with a false reason is still two hours lost ──────────────
 # Hitting the streak limit exits 78, and deploy.yml's generic failure step
 # would otherwise print "QA is now drifted from main" — which is false. QA is
-# in sync; only the note failed, and every degraded run that led here rebuilt
-# EVERY app rather than trust a diff. The operator reads the LAST ::error::,
-# so the accurate one has to be the only one printed on this path.
+# in sync; only the note failed, and every degraded run that led here fell
+# back to whatever marker was already on disk, or rebuilt every app only if
+# there was none. The operator reads the LAST ::error::, so the accurate one
+# has to be the only one printed on this path.
 YML="$HERE/../../.github/workflows/deploy.yml"
 # NOT a skip. The chmod skips above are real environments (Git Bash, root);
 # a checkout without .github/workflows/deploy.yml is not one. When the file
@@ -553,6 +565,12 @@ else
     "::error::QA is in sync" "$yml"
   check_contains "and points at a file permission rather than a QA drift" \
     "FILE PERMISSION on the VPS, not a QA drift" "$yml"
+  # This is the wording the OPERATOR reads first, in the run summary — the
+  # copy that got fixed in deploy-qa.sh's own log had a twin here that was
+  # never pinned. Measured: reverting just this phrase in deploy.yml left
+  # the suite at 43 passed, 0 failed.
+  check_contains "and promises the last recorded marker as the fallback here too" \
+    "fell back to the last recorded marker" "$yml"
   # The generic drift message must still exist for every OTHER failure.
   check_contains "the real drift message survives for every other failure" \
     "QA is now drifted from main" "$yml"

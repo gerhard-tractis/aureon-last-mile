@@ -800,10 +800,11 @@ guarda `-d`), y `record_deploy_marker` llamado dentro de `$(...) || rc=$?`
 **desactiva `errexit` y el trap ERR**, así que la red del test no mordía en
 los cuatro casos de fallo — se llaman en pelado.
 
-##### Los tres verdes falsos de esta ronda, y por qué se escriben aquí
+##### Los cuatro verdes falsos de esta ronda, y por qué se escriben aquí
 
-Ninguno lo encontró un review: los tres los produjo **medir**, y los tres eran
-verdes que no probaban nada. Van al spec porque el patrón se repite, no el bug.
+Ninguno lo encontró un review: los cuatro los produjo **medir**, y los cuatro
+eran verdes que no probaban nada. Van al spec porque el patrón se repite, no
+el bug.
 
 1. **Baseline en rojo, mutantes «todos muertos».** La primera pasada de
    mutación usaba `rc != 0` como criterio de muerte, con la suite ya en rojo en
@@ -867,10 +868,13 @@ Nit de la misma ronda: el barrido de temporales vive ahora **dentro de
 (`<marcador>.degraded.tmp.<pid>`), que el glob anclado al nombre del marcador
 no casaba — un byte huérfano para siempre tras un SIGKILL.
 
-Deuda anotada, no pagada: `deploy-qa.sh` está en **898 líneas** y la regla del
+Deuda anotada, no pagada: `deploy-qa.sh` está en **900 líneas** y la regla del
 repo son 300. Ya estaba en 813 antes de este incidente; las rondas han sumado
-85, casi todo comentario que explica por qué existe cada guarda — que es justo
-lo que evitó reintroducir el bug de #718 dos veces.
+87, casi todo comentario que explica por qué existe cada guarda — que es justo
+lo que evitó reintroducir el bug de #718 dos veces. `deploy-qa.marker.test.sh`
+creció en paralelo y está en **582 líneas**; es un fichero de test, no de
+producción, así que no cuenta contra la regla de 300 — se anota aquí por la
+misma razón que la deuda de arriba: que quede medido, no asumido.
 
 **La razón que escribí para no partirlo era falsa y la corrijo**, porque un
 motivo equivocado en el spec se convierte en el precedente que bloquea la
@@ -888,6 +892,52 @@ El motivo real para aplazarlo es más simple: son 85 líneas de forensia de tres
 incidentes, añadidas en caliente, y no hay ninguna razón para reestructurar el
 script de deploy durante el seguimiento de un corte. Merece su propia tarea —
 y ahora se puede hacer con red, que antes no había.
+
+##### Seguimiento (PR #739, ronda 4) — el mensaje mentía sobre STALE vs ABSENT
+
+`record_deploy_marker()` ya distinguía correctamente STALE de ABSENT en
+`read_qa_prev_sha()` (comentario de diseño desde ronda 6), pero el mensaje que
+lee el operador cuando la escritura falla **no** — decía «the next run has NO
+baseline, so it rebuilds every app» sin condición, en tres sitios: el
+`::warning::` del propio script, el mensaje de escalada a rojo, y el paso
+`Report failure` de `deploy.yml`. Es falso en el caso real que más importa:
+`write_atomic()` sólo puede fallar **antes** del `rename(2)`, así que un
+marker escrito por un run anterior sobrevive intacto a un run cuya escritura
+falla, y el siguiente run lo lee y difunde desde ahí — un diff seguro, nunca
+un rebuild completo. Reescrito a «falls back to the last recorded marker, or
+to a full rebuild if there is none — never to the checkout's HEAD» en los
+tres sitios, con un test que fuerza el escenario exacto (bloqueando el path
+temporal de `write_atomic` con un directorio, sin depender de `chmod`, que
+Git Bash no aplica igual en directorios) y verifica tanto el contenido del
+marker como el texto del mensaje — en el propio script y en `deploy.yml`.
+
+Dos verdes falsos más de la misma ronda, ambos en el arnés de test, no en el
+código bajo prueba:
+
+- El `grep '^exec 3>&2$' "$0"` que reconstruye el hijo del self-check corría
+  bajo `errexit` sin `|| true`: al borrar esa línea, `grep` salía 1 y la
+  suite moría **antes** de imprimir ningún `FAIL` — mudo, la misma forma que
+  `on_err()` existe para abolir, reproducida dentro del propio arnés que la
+  detecta en el código bajo prueba.
+- La línea que generaba el `trap` del hijo (`echo "trap '\'harness_abort
+  \$?\' ERR"`) no escapaba nada dentro de comillas dobles: emitía un texto
+  que bash tokeniza como un signal spec inválido junto a uno válido que SÍ se
+  instalaba, pero atado a `harness_abort` sin ningún argumento. El hijo
+  reportaba `(exit )` en vez del código real, y un mutante que quitaba `$?`
+  del trap **de verdad** sobrevivía porque el hijo ya estaba roto igual.
+
+Y un tercero en el propio arnés nuevo: `set -eE` propaga el trap ERR a las
+sustituciones de comando, no sólo a la llamada directa de
+`record_deploy_marker()`. Un `$(cat "$TMP/persist/marker")` que falla porque
+un mutante borró ese fichero disparaba `harness_abort` **dentro del subshell**
+de la sustitución, imprimiendo «record_deploy_marker aborted the deploy» —
+que nunca abortó nada — **sin incrementar `$fail`**, porque ese contador vive
+en el shell padre, no tocado por el subshell. Rojo con razón falsa, aplicado
+a quien mutation-testee esta misma suite. `harness_abort()` ahora comprueba
+`[ "$BASHPID" = "$$" ]` antes de reportar: sólo el shell de nivel superior,
+el que `invoke()` usa de verdad, puede imprimir y salir.
+
+Cada uno de estos cuatro arreglos se mutation-testeó de uno en uno.
 
 ### Fase 4 — Check automático de ACL huérfana `[pending]`
 

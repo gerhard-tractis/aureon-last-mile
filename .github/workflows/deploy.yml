@@ -546,12 +546,9 @@ jobs:
           # Written to a file rather than $GITHUB_ENV: this step exits
           # non-zero right after, and a plain file needs no assumption about
           # whether the env file is still processed for a failed step.
-          #
-          # Cleared here for the same reason the file is used at all — no
-          # assumptions. $RUNNER_TEMP persists for the whole job, so a stale
-          # file from an earlier attempt on the same runner would otherwise
-          # let the failure step read a code this run never produced.
-          rm -f "$RUNNER_TEMP/qa-deploy-rc"
+          # $RUNNER_TEMP is cleared by the runner at the start and end of
+          # every job, and this step runs exactly once per job, so there is
+          # no stale-file case to guard against here — no `rm -f` needed.
           rc=0
           bash infra/supabase-qa/deploy-qa.sh || rc=$?
           echo "$rc" > "$RUNNER_TEMP/qa-deploy-rc"
