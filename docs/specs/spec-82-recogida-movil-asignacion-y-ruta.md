@@ -2,7 +2,7 @@
 
 > **Related:** [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (el cierre al que estas pantallas conducen), [spec-81](spec-81-recogida-cola-offline.md) (`DESCARGAR` depende de su almacén), [spec-83](spec-83-recogida-escritorio-datos-faltantes.md) (escritorio `5a`), [spec-61](spec-61-pickup-route-crew.md) (construyó estas dos pantallas contra el mock `3j`), [spec-64](spec-64-remove-manifest-from-open-route.md) (quitar una carga de una ruta abierta), [spec-54](spec-54-ui-rebrand.md) (mock `1i`, ruta activa)
 
-**Status:** in progress
+**Status:** awaiting_user_test — fases 1 y 2 `[done]`, fases 3 y 4 `[parked]` por decisión del usuario; queda probar DESCARGAR en dispositivo real
 **Verify:** unit, e2e-qa
 **Downstream:** spec-83-recogida-escritorio-datos-faltantes.md
 
@@ -293,7 +293,22 @@ línea contra el HTML real de cada artboard.
 > (fase 2, en paralelo) y spec-81 (fase 3, en paralelo) — confirmado sin
 > solape de archivos (ver "Coordinación con trabajo paralelo" en el PR).
 
-### Fase 2 — `DESCARGAR` `[in_progress]`
+### Fase 2 — `DESCARGAR` `[done]`
+
+> Implementado por: `implementer` — rama `feat/spec-82-fase-2-descargar`, SHA `4aaf3ee`, PR #727 (mergeado como `7a1f1d9`).
+> Review: `reviewer` adversarial, **seis rondas**. Dos hallazgos cambiaron el diseño: (1) tras descargar, `useCachedManifestSnapshot` seguía sirviendo el `null` cacheado —`staleTime: Infinity`, sólo se invalidaba la otra clave— y `5d` declaraba la carga «no descargada» **hasta cinco minutos**, rompiendo el criterio de aceptación central de la fase; (2) el chip «descargando» colgaba de callbacks pasados a `mutate()`, y `MutationObserver.mutate()` **desengancha el observer previo** en cada llamada, así que con dos descargas solapadas la primera fallaba **en silencio total** —sin toast y sin liberar el chip— hasta desmontar la página.
+> QA: PR #727 merged, CI verde en ambos jobs. **`e2e-qa` no ejercita esta pantalla** — es la ruta activa del móvil sin cobertura; la comprobación en dispositivo real queda abierta.
+> Downstream: revisado spec-80, spec-81 y spec-83 — sin cambios.
+
+**Decisión de producto (mía, delegada): sin cobertura, DESCARGAR se niega con un mensaje, no se pausa.** Con `networkMode:'online'` una mutación se pausa **antes** de ejecutarse: `onError` no corre nunca, el chip queda deshabilitado indefinidamente sin spinner ni explicación, y si el conductor cierra la PWA antes de recuperar señal la descarga se evapora sin rastro mientras la interfaz decía que algo estaba en curso. Una negativa clara es mejor: el conductor puede decidir caminar a donde hay señal.
+
+**Lo que esta fase deja medido y vale fuera de ella:**
+
+1. **Mockear la frontera hace el test ciego a esa frontera.** Apareció tres veces seguidas en el mismo PR: un mock de página que devolvía siempre `isPending: false`, un `onSettled` invocado a mano, y un mock que nunca miraba los argumentos. Las tres veces el test probaba **el contrato, no si la librería lo cumple**. Mutar el componente no prueba el cableado de la página.
+2. **La deuda de tamaño se contó de memoria y creció al medirla**: 2 → 4 → **7** ficheros sobre 300 líneas, uno de ellos cruzando el umbral en el propio PR. Se cierra la fase con la tabla medida con `wc -l`, no con la lista recordada.
+
+**Deuda declarada, con dueño:** el `?? 0` de `effectiveManifestFields.ts` convierte un denominador **desconocido** en 0, pero es **preexistente y simétrico** al del camino online (`scan/[loadId]/page.tsx:83`) — el ítem a cerrar es ése, no el de esta fase. Y las siete violaciones de 300 líneas quedan listadas arriba, sin resolver.
+
 
 **Decisión técnica (2026-09-09), tomada al implementar — ver corrección de
 arriba, esto no era del usuario.**
