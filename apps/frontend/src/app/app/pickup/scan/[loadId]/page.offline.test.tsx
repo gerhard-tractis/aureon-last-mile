@@ -55,7 +55,9 @@ vi.mock('@/hooks/pickup/useOfflineScanSource', () => ({
 }));
 
 vi.mock('@/components/pickup/ScannerInput', () => ({
-  ScannerInput: () => <div data-testid="scanner-input" />,
+  ScannerInput: (props: { disabled?: boolean }) => (
+    <div data-testid="scanner-input" data-disabled={String(!!props.disabled)} />
+  ),
 }));
 vi.mock('@/components/pickup/ScanHistoryList', () => ({
   ScanHistoryList: () => <div data-testid="scan-history" />,
@@ -65,8 +67,12 @@ vi.mock('@/components/pickup/ScanResultCard', () => ({
   ScanResultCard: () => <div data-testid="scan-result-card" />,
 }));
 vi.mock('@/components/pickup/ManifestDetailList', () => ({
-  ManifestDetailList: (props: { orders: unknown[] }) => (
-    <div data-testid="manifest-detail" data-order-count={props.orders.length} />
+  ManifestDetailList: (props: { orders: unknown[]; isError: boolean }) => (
+    <div
+      data-testid="manifest-detail"
+      data-order-count={props.orders.length}
+      data-error={String(props.isError)}
+    />
   ),
 }));
 vi.mock('@/components/pickup/PickupFlowHeader', () => ({
@@ -155,5 +161,106 @@ describe('ScanningPage offline (spec-82 fase 2)', () => {
     expect(screen.getByTestId('flow-header')).toHaveAttribute('data-total', '25');
     expect(screen.getByTestId('manifest-detail')).toHaveAttribute('data-order-count', '1');
     expect(mockSupabaseFrom).not.toHaveBeenCalled();
+  });
+
+  // spec-82 fase 2, revisión B1 — antes de este fix, la pantalla se veía
+  // "perfecta" sin red (cabecera, punto de retiro, lista) y dejaba
+  // escanear igual: useScanMutation queda pausada por TanStack Query
+  // (`networkMode: 'online'` por defecto) sin avisar, ScannerInput sigue
+  // habilitado, y un "escaneo" que el operario cree registrado desaparece
+  // sin rastro si cierra la pestaña antes de recuperar señal. Un
+  // manifiesto descargado sin red debe dejar VER, nunca escanear.
+  it('disables the scanner and explains why when downloaded but offline (B1)', () => {
+    mockUseSyncQueue.mockReturnValue(offlineSync());
+    mockOfflineScanSource.mockReturnValue({
+      unknown: false,
+      blocked: false,
+      snapshot: {
+        operatorId: 'op-1',
+        externalLoadId: 'CARGA-99817',
+        manifestId: 'manifest-1',
+        totalPackages: 25,
+        pickupRouteId: 'route-1',
+        retailerName: 'Ripley',
+        pickupLocation: 'Parque Arauco',
+        orders: [],
+        downloadedAt: new Date().toISOString(),
+      },
+    });
+
+    render(<ScanningPage />);
+
+    expect(screen.getByTestId('scanner-input')).toHaveAttribute('data-disabled', 'true');
+    expect(screen.getByText(/sin conexión/i)).toBeInTheDocument();
+  });
+
+  // spec-82 fase 2, revisión B2 — sin este aviso, un operario que verificó
+  // 18/25 con señal y vuelve a abrir `5d` sin red ve "0/25" y una lista sin
+  // ningún check verde: exactamente lo mismo que "nada verificado todavía",
+  // sin decir en ningún sitio que es porque no hay red para confirmarlo.
+  it('warns that verified progress cannot be confirmed offline (B2)', () => {
+    mockUseSyncQueue.mockReturnValue(offlineSync());
+    mockOfflineScanSource.mockReturnValue({
+      unknown: false,
+      blocked: false,
+      snapshot: {
+        operatorId: 'op-1',
+        externalLoadId: 'CARGA-99817',
+        manifestId: 'manifest-1',
+        totalPackages: 25,
+        pickupRouteId: 'route-1',
+        retailerName: 'Ripley',
+        pickupLocation: 'Parque Arauco',
+        orders: [],
+        downloadedAt: new Date().toISOString(),
+      },
+    });
+
+    render(<ScanningPage />);
+
+    expect(
+      screen.getByText(/no se puede (confirmar|mostrar) (lo|cuántos)/i),
+    ).toBeInTheDocument();
+  });
+
+  // spec-82 fase 2, revisión M6 — un fallo de red ANTERIOR (mientras había
+  // señal) deja `ordersError` pegado en la caché de React Query; al perder
+  // señal después, con un snapshot válido, ese error viejo no puede seguir
+  // tapando las órdenes ya descargadas con un cartel rojo y un Retry inútil.
+  it('does not show the network error card when a valid snapshot exists, even if a stale ordersError lingers (M6)', () => {
+    mockUseSyncQueue.mockReturnValue(offlineSync());
+    mockUseManifestOrders.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: true,
+      refetch: vi.fn(),
+    });
+    mockOfflineScanSource.mockReturnValue({
+      unknown: false,
+      blocked: false,
+      snapshot: {
+        operatorId: 'op-1',
+        externalLoadId: 'CARGA-99817',
+        manifestId: 'manifest-1',
+        totalPackages: 25,
+        pickupRouteId: 'route-1',
+        retailerName: 'Ripley',
+        pickupLocation: 'Parque Arauco',
+        orders: [{
+          id: 'order-1',
+          order_number: 'ORD-1',
+          customer_name: 'Juan',
+          comuna: 'Ñuñoa',
+          delivery_address: 'Calle 123',
+          packages: [],
+        }],
+        downloadedAt: new Date().toISOString(),
+      },
+    });
+
+    render(<ScanningPage />);
+
+    expect(screen.getByTestId('manifest-detail')).toHaveAttribute('data-order-count', '1');
+    expect(screen.getByTestId('manifest-detail')).toHaveAttribute('data-error', 'false');
   });
 });

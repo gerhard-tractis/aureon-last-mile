@@ -125,6 +125,14 @@ export function PackageRow({ pkg, isVerified, onManualVerify, existingBoxCount =
               size="sm"
               variant="outline"
               onClick={() => onManualVerify(pkg.label)}
+              disabled={!isOnline}
+              // spec-82 fase 2 revisión B1 — sin cola offline en esta
+              // pantalla (eso es spec-81), un escaneo/verificación
+              // manual offline queda pausado sólo en memoria y
+              // desaparece sin rastro si la pestaña se cierra antes de
+              // recuperar señal. Prometer el registro sería la misma
+              // mentira que ManifestNotDownloadedNotice ya no dice.
+              title={!isOnline ? 'Sin conexión — no se puede registrar el escaneo' : undefined}
               aria-label="Mark verified"
             >
               Mark Verified

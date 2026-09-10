@@ -325,7 +325,37 @@ export default function ScanningPage() {
           onRetryBlocked={effectiveManifestId && operatorId ? handleRetryBlocked : undefined}
         />
 
-        <ScannerInput onScan={handleScan} disabled={scanMutation.isPending} />
+        {/* spec-82 fase 2, revisión B1 — descargar sólo habilita VER el
+            manifiesto sin red, nunca escanear: `useScanMutation` sigue
+            yendo directo a Supabase, sin cola offline en esta pantalla
+            (eso es spec-81). Sin este aviso, la pantalla se veía "perfecta"
+            sin red y el operario escaneaba contra una mutación pausada en
+            memoria que TanStack Query nunca ejecuta ni informa — sin toast,
+            sin beep, y el trabajo desaparece si cierra la pestaña antes de
+            recuperar señal. */}
+        {sync.status === 'offline' && (
+          <div className="space-y-2">
+            <p className="text-sm text-status-warning-text bg-status-warning-bg border border-status-warning-border rounded-lg px-3 py-2">
+              Sin conexión: no se puede escanear ahora. Vuelve a tener señal
+              para registrar bultos.
+            </p>
+            {/* spec-82 fase 2, revisión B2 — `usePickupScans` es una query
+                de red (por defecto pausada sin señal): sin este aviso, un
+                operario que verificó 18/25 con señal y reabre `5d` sin red
+                ve "0/25" y ningún check verde, indistinguible de "nada
+                verificado todavía". El progreso no se perdió — no se puede
+                LEER sin red — y la pantalla tiene que decirlo. */}
+            <p className="text-xs text-text-muted">
+              No se puede confirmar cuántos bultos ya se verificaron mientras
+              no haya red. Lo que ves abajo puede no reflejar el progreso real.
+            </p>
+          </div>
+        )}
+
+        <ScannerInput
+          onScan={handleScan}
+          disabled={scanMutation.isPending || sync.status === 'offline'}
+        />
 
         {/* Not-found counter */}
         {notFoundCount > 0 && (
@@ -351,7 +381,13 @@ export default function ScanningPage() {
           scans={scans}
           onManualVerify={handleManualVerify}
           isLoading={ordersLoading}
-          isError={ordersError}
+          // M6, revisión de fase 2 — un fallo de red ANTERIOR (con señal)
+          // deja `ordersError` pegado en la caché de React Query incluso
+          // tras perder señal después. Con un snapshot local válido, ese
+          // error viejo no puede seguir tapando órdenes que sí están
+          // disponibles con un cartel rojo y un "Retry" que de todos modos
+          // no puede hacer nada sin red.
+          isError={offline.snapshot ? false : ordersError}
           onRetry={() => refetchOrders()}
         />
       </div>
