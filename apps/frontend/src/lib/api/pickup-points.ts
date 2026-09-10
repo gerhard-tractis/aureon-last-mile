@@ -5,6 +5,15 @@ export interface PickupLocation {
   comuna?: string;
   contact_name?: string;
   contact_phone?: string;
+  /** spec-83 fase 2 — the pickup point's own opening/closing time. Read by
+   * get_pending_manifests as pickup_window_start/end. */
+  operating_hours?: { start?: string; end?: string };
+}
+
+/** spec-83 fase 2 — sla_config.pickup_cutoff_time, the operator-wide "no
+ * more pickups after this" line, stricter than a single point's own window. */
+export interface PickupPointSlaConfig {
+  pickup_cutoff_time?: string;
 }
 
 export interface PickupPoint {
@@ -17,6 +26,7 @@ export interface PickupPoint {
   code: string | null;
   intake_method: string;
   pickup_locations: PickupLocation[];
+  sla_config?: PickupPointSlaConfig;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -29,6 +39,7 @@ export interface CreatePickupPointInput {
   code?: string;
   tenant_client_id?: string;
   pickup_locations?: PickupLocation[];
+  sla_config?: PickupPointSlaConfig;
 }
 
 export interface UpdatePickupPointInput {
@@ -36,6 +47,7 @@ export interface UpdatePickupPointInput {
   code?: string;
   tenant_client_id?: string;
   pickup_locations?: PickupLocation[];
+  sla_config?: PickupPointSlaConfig;
   is_active?: boolean;
 }
 

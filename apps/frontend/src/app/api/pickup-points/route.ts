@@ -5,12 +5,24 @@ import { z } from 'zod';
 // RF-2: Zod schemas. All fields optional — operators may save partial
 // records and fill in the rest later. DB constraints were relaxed in
 // 20260428000005.
+const operatingHoursSchema = z.object({
+  start: z.string().optional(),
+  end: z.string().optional(),
+});
+
 const pickupLocationSchema = z.object({
   name: z.string().optional(),
   address: z.string().optional(),
   comuna: z.string().optional(),
   contact_name: z.string().optional(),
   contact_phone: z.string().optional(),
+  // spec-83 fase 2
+  operating_hours: operatingHoursSchema.optional(),
+});
+
+// spec-83 fase 2 — sla_config.pickup_cutoff_time.
+const slaConfigSchema = z.object({
+  pickup_cutoff_time: z.string().optional(),
 });
 
 const createPickupPointSchema = z.object({
@@ -18,6 +30,7 @@ const createPickupPointSchema = z.object({
   code: z.string().optional(),
   tenant_client_id: z.string().uuid('Invalid client ID').optional(),
   pickup_locations: z.array(pickupLocationSchema).optional(),
+  sla_config: slaConfigSchema.optional(),
 });
 
 export async function GET() {
@@ -102,7 +115,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { name, code, tenant_client_id, pickup_locations } = validation.data;
+    const { name, code, tenant_client_id, pickup_locations, sla_config } = validation.data;
     const operatorId = session.user.app_metadata?.claims?.operator_id;
 
     // Trim to a non-empty string or undefined — empty/whitespace-only values
@@ -144,6 +157,7 @@ export async function POST(request: NextRequest) {
       tenant_client_id: tenant_client_id ?? null,
       intake_method: 'manual',
       pickup_locations: pickup_locations ?? [],
+      sla_config: sla_config ?? {},
       is_active: true,
     };
     const { data: point, error } = await supabase

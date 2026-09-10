@@ -68,4 +68,44 @@ describe('PickupPointForm', () => {
       pickup_locations: [{ comuna: 'Maipú' }],
     });
   });
+
+  describe('ventana de retiro (spec-83 fase 2)', () => {
+    // This is the write path spec-83 fase 2 requires: nobody can populate
+    // operating_hours/pickup_cutoff_time today, and get_pending_manifests
+    // can only surface what someone actually saved here.
+    it('renders the window and cutoff fields', () => {
+      render(<PickupPointForm mode="create" />);
+      expect(screen.getByLabelText('Apertura')).toBeDefined();
+      expect(screen.getByLabelText('Cierre')).toBeDefined();
+      expect(screen.getByLabelText(/Cierre de retiros/i)).toBeDefined();
+    });
+
+    it('folds the window into pickup_locations[0].operating_hours, and the cutoff into sla_config — not two copies of the same shape', async () => {
+      createMutate.mockClear();
+      const user = userEvent.setup();
+      render(<PickupPointForm mode="create" />);
+      await user.type(screen.getByLabelText('Apertura'), '09:00');
+      await user.type(screen.getByLabelText('Cierre'), '13:00');
+      await user.type(screen.getByLabelText(/Cierre de retiros/i), '18:00');
+      await user.click(screen.getByRole('button', { name: /guardar/i }));
+
+      expect(createMutate).toHaveBeenCalledTimes(1);
+      const [payload] = createMutate.mock.calls[0];
+      expect(payload).toMatchObject({
+        pickup_locations: [{ operating_hours: { start: '09:00', end: '13:00' } }],
+        sla_config: { pickup_cutoff_time: '18:00' },
+      });
+    });
+
+    it('omits both when neither is filled in, rather than sending empty objects', async () => {
+      createMutate.mockClear();
+      const user = userEvent.setup();
+      render(<PickupPointForm mode="create" />);
+      await user.click(screen.getByRole('button', { name: /guardar/i }));
+
+      const [payload] = createMutate.mock.calls[0];
+      expect(payload.pickup_locations).toEqual([]);
+      expect(payload.sla_config).toBeUndefined();
+    });
+  });
 });

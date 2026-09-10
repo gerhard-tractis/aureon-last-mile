@@ -4,12 +4,24 @@ import { z } from 'zod';
 
 // RF-2: Zod schemas. All fields optional — see /api/pickup-points/route.ts
 // for the full rationale (DB constraints relaxed in 20260428000005).
+const operatingHoursSchema = z.object({
+  start: z.string().optional(),
+  end: z.string().optional(),
+});
+
 const pickupLocationSchema = z.object({
   name: z.string().optional(),
   address: z.string().optional(),
   comuna: z.string().optional(),
   contact_name: z.string().optional(),
   contact_phone: z.string().optional(),
+  // spec-83 fase 2
+  operating_hours: operatingHoursSchema.optional(),
+});
+
+// spec-83 fase 2 — sla_config.pickup_cutoff_time.
+const slaConfigSchema = z.object({
+  pickup_cutoff_time: z.string().optional(),
 });
 
 const updatePickupPointSchema = z.object({
@@ -17,6 +29,7 @@ const updatePickupPointSchema = z.object({
   code: z.string().optional(),
   tenant_client_id: z.string().uuid().optional(),
   pickup_locations: z.array(pickupLocationSchema).optional(),
+  sla_config: slaConfigSchema.optional(),
   is_active: z.boolean().optional(),
 });
 
@@ -110,6 +123,7 @@ export async function PUT(
     if (validation.data.code !== undefined) updates.code = trimToNull(validation.data.code);
     if (validation.data.tenant_client_id !== undefined) updates.tenant_client_id = validation.data.tenant_client_id || null;
     if (validation.data.pickup_locations !== undefined) updates.pickup_locations = validation.data.pickup_locations;
+    if (validation.data.sla_config !== undefined) updates.sla_config = validation.data.sla_config;
     if (validation.data.is_active !== undefined) updates.is_active = validation.data.is_active;
 
     const { data: point, error } = await supabase
