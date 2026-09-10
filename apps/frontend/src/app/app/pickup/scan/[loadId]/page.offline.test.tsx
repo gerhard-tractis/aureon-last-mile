@@ -284,4 +284,41 @@ describe('ScanningPage offline (spec-82 fase 2)', () => {
     expect(screen.getByTestId('manifest-detail')).toHaveAttribute('data-order-count', '1');
     expect(screen.getByTestId('manifest-detail')).toHaveAttribute('data-error', 'false');
   });
+
+  // M4, revisión de fase 2 — el seam real: `page.tsx` tiene que pasar
+  // `sync.status === 'offline'` de verdad como tercer argumento, no un
+  // valor fijo. Un mutante que pasara `false` ahí desactivaría la fase
+  // entera (siempre "en línea" para el hook) sin romper ningún test de
+  // este archivo, porque el mock respondía igual sin mirar qué le llegó.
+  it('passes operatorId, loadId and the real offline flag to useOfflineScanSource (M4)', () => {
+    mockUseSyncQueue.mockReturnValue(offlineSync());
+    mockOfflineScanSource.mockReturnValue({ unknown: true, blocked: false, snapshot: null });
+    render(<ScanningPage />);
+    expect(mockOfflineScanSource).toHaveBeenCalledWith('op-1', 'CARGA-99817', true);
+  });
+
+  it('passes offline: false to useOfflineScanSource while online (M4)', () => {
+    mockUseSyncQueue.mockReturnValue({
+      status: 'online',
+      queuedCount: 0,
+      blockedCount: 0,
+      recent: [],
+      retryNow: vi.fn(),
+      isRetrying: false,
+    });
+    // Online, page.tsx's own network effect fires — give it a chain that
+    // resolves instead of throwing on an un-mocked `.select()`.
+    mockSupabaseFrom.mockReturnValue({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            is: () => ({ single: () => Promise.resolve({ data: null }) }),
+          }),
+        }),
+      }),
+    });
+    mockOfflineScanSource.mockReturnValue({ unknown: false, blocked: false, snapshot: null });
+    render(<ScanningPage />);
+    expect(mockOfflineScanSource).toHaveBeenCalledWith('op-1', 'CARGA-99817', false);
+  });
 });
