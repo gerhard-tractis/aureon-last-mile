@@ -661,6 +661,23 @@ jobs:
             echo "NOTE: this blocks the production deploy (spec-57), deliberately."
             exit 1
           fi
+          # spec-93 fase 3, review round — QA_EXIT_PGTAP_STREAK, a DISTINCT
+          # code from 78 for the same shape of problem: QA itself is fine,
+          # only CREATE EXTENSION pgtap has failed QA_PGTAP_DEGRADED_MAX runs
+          # in a row (see ensure_pgtap() in deploy-qa.sh). Likely cause: the
+          # QA Postgres role lacks the privilege — pgtap is NOT trusted and
+          # needs a superuser.
+          if [ "${QA_DEPLOY_RC:-}" = "79" ]; then
+            echo "::error::QA is in sync — but CREATE EXTENSION pgtap has failed repeatedly and is now failing the deploy on purpose."
+            echo "QA itself is fine: migrations, seed and every app restart succeeded. Only pgtap testing"
+            echo "is broken — every pgTAP file under packages/database/supabase/tests will keep reporting"
+            echo "SKIPPED-NO-PGTAP until this is fixed."
+            echo "Likely cause: the role in POSTGRES_PASSWORD lacks the privilege to create the extension —"
+            echo "pgtap is NOT trusted and needs a superuser (supabase_admin in the Supabase images, not"
+            echo "postgres). Fix on the VPS: grant the privilege, or point ensure_pgtap at a superuser role."
+            echo "NOTE: this blocks the production deploy (spec-57), deliberately."
+            exit 1
+          fi
           echo "::error::QA environment sync failed — QA is now drifted from main."
           echo "To debug: run infra/supabase-qa/deploy-qa.sh on the VPS, or check"
           echo "journalctl -u aureon-frontend-qa/-agents-qa/-worker-qa -n 50."

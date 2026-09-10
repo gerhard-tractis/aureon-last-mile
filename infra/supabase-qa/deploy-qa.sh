@@ -3,6 +3,19 @@
 # (spec-48). Invoked by the deploy-qa job in .github/workflows/deploy.yml on the
 # self-hosted VPS runner.
 #
+# DELIBERATE exception to the repo's 300-line-file guideline (m4, spec-93
+# fase 3 review). This file is one orchestration script with a single
+# responsibility — one main() calling a sequence of guard/sync/restart/
+# check functions — not a module whose growth signals it should be split
+# into smaller units with their own responsibilities. Every prior addition
+# (spec-88's auth/functions restart helpers, this fase's pgtap/generic
+# compose-recreate helpers) followed the SAME pattern already established
+# here rather than inventing a new one, which is what the reviewer
+# confirmed as defensible; splitting it would scatter one deploy's control
+# flow across files for no isolation benefit, since every function here
+# runs in the same process against the same QA host in the same order.
+#
+
 # Inputs (environment variables, set by the workflow):
 #   DEPLOY_SHA               the commit whose CI went green (required). QA is
 #                            synced to main's TIP, which is normally the same
@@ -29,11 +42,13 @@
 #     never fail the deploy. See sql_tests_check for why.
 #
 # Test-only overrides (never set these on the VPS):
-#   QA_CHECKOUT_DIR=<path>   QA checkout location (default /home/aureon/aureon-qa)
-#   QA_ENV_FILE=<path>       QA env file (default /home/aureon/.env.qa)
-#   QA_STATE_FILE=<path>     last-completed-deploy marker (default /home/aureon/.qa-last-deployed-sha)
-#   QA_DEGRADED_FILE=<path>  consecutive-degraded-run counter (default <marker>.degraded)
-#   QA_DEGRADED_MAX=<n>      degraded runs in a row before the deploy goes red (default 3)
+#   QA_CHECKOUT_DIR=<path>        QA checkout location (default /home/aureon/aureon-qa)
+#   QA_ENV_FILE=<path>            QA env file (default /home/aureon/.env.qa)
+#   QA_STATE_FILE=<path>          last-completed-deploy marker (default /home/aureon/.qa-last-deployed-sha)
+#   QA_DEGRADED_FILE=<path>       consecutive-degraded-run counter (default <marker>.degraded)
+#   QA_DEGRADED_MAX=<n>           degraded runs in a row before the deploy goes red (default 3)
+#   QA_PGTAP_DEGRADED_FILE=<path> consecutive CREATE-EXTENSION-pgtap failures (default <marker>.pgtap-degraded)
+#   QA_PGTAP_DEGRADED_MAX=<n>     failures in a row before the deploy goes red (default 3)
 # The script can also be `source`d: functions are defined but nothing runs.
 
 set -Eeuo pipefail   # -E: the ERR trap main() installs must fire inside functions too
@@ -43,10 +58,18 @@ QA_ENV_FILE="${QA_ENV_FILE:-/home/aureon/.env.qa}"
 QA_STATE_FILE="${QA_STATE_FILE:-/home/aureon/.qa-last-deployed-sha}"
 QA_DEGRADED_FILE="${QA_DEGRADED_FILE:-${QA_STATE_FILE}.degraded}"
 QA_DEGRADED_MAX="${QA_DEGRADED_MAX:-3}"
+QA_PGTAP_DEGRADED_FILE="${QA_PGTAP_DEGRADED_FILE:-${QA_STATE_FILE}.pgtap-degraded}"
+QA_PGTAP_DEGRADED_MAX="${QA_PGTAP_DEGRADED_MAX:-3}"
 # Exit code for "the deploy worked, the marker did not, and it has been that
 # way too long". deploy.yml keys its failure message off this — see the
 # escalation in record_deploy_marker().
 QA_EXIT_MARKER_STREAK=78
+# spec-93 fase 3, review round — same escalation pattern as
+# QA_EXIT_MARKER_STREAK, for CREATE EXTENSION pgtap failing repeatedly. A
+# DISTINCT code from 78: the marker's 78 means "QA is fine, only a note
+# failed"; this one means "QA is fine, only pgtap testing is broken" — a
+# different diagnosis deploy.yml's failure step must be able to tell apart.
+QA_EXIT_PGTAP_STREAK=79
 
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
 err() { log "ERROR: $*" >&2; }
@@ -479,9 +502,25 @@ compose_changed_services() { # $1 prev sha, $2 target sha -> one service per lin
   local rel="infra/supabase-qa/docker-compose.yml"
   local compose_file="${QA_CHECKOUT_DIR}/${rel}"
   [ -f "$compose_file" ] || return 0
-  [ -n "$prev" ] || return 0
+
+  # No usable baseline (absent marker, or a sha the checkout no longer has —
+  # same two cases widen_changed_flags:210-220 already names). Review round:
+  # the first cut of this function returned NOTHING here, the opposite of
+  # widen_changed_flags' own doctrine ("no baseline -> rebuild everything;
+  # slow is fine, silently stale is not"). Concretely unsafe: if the deploy
+  # marker degrades (record_deploy_marker's documented non-fatal path) for
+  # even one run, and THAT run's compose diff includes an edit to, say,
+  # `rest`, returning nothing here means `rest` never recreates — and once
+  # the marker recovers, that same commit is now behind QA_PREV_SHA and can
+  # never appear in a future diff again. `rest` would run stale config
+  # forever, silently. Recreating every entry in RECREATABLE_QA_SERVICES
+  # costs one slow run; not recreating them risks exactly that permanently.
+  if [ -z "$prev" ] || ! git -C "$QA_CHECKOUT_DIR" rev-parse -q --verify "${prev}^{commit}" >/dev/null 2>&1; then
+    printf '%s\n' ${RECREATABLE_QA_SERVICES}
+    return 0
+  fi
+
   [ "$prev" != "$target" ] || return 0
-  git -C "$QA_CHECKOUT_DIR" rev-parse -q --verify "${prev}^{commit}" >/dev/null 2>&1 || return 0
 
   local diff_out
   diff_out="$(git -C "$QA_CHECKOUT_DIR" diff --unified=0 "$prev" "$target" -- "$rel" 2>/dev/null || true)"
@@ -531,20 +570,25 @@ compose_changed_services() { # $1 prev sha, $2 target sha -> one service per lin
   done <<< "$hunks" | sort -u
 }
 
-# Only the services it is safe to blind-recreate on a compose edit:
-#   - NOT `db` — stateful (carries Musan's data). A block change to `db`
-#     itself is a deliberate, reviewed operational decision, not something
-#     that should auto-recreate the container and cut every live connection
-#     as a side effect of a green merge. The same hazard restart_auth()'s
-#     --no-deps already guards against as a DEPENDENCY is a different,
-#     smaller risk than recreating it directly.
-#   - NOT `functions`/`auth` — already covered by restart_functions()/
+# Every service it is safe to blind-recreate on a compose edit. Review
+# round: the first cut of this excluded studio/imgproxy/meta with "nothing
+# was measured drifting on them" — the exact reasoning that left this same
+# fase's kong/rest/realtime/storage gap open in the first place (nothing was
+# measured drifting on THEM either, until it was). Risk, not measurement, is
+# what should decide membership, so all three are IN: none carries state,
+# none has a dependent whose connections would be cut (imgproxy/meta have no
+# other service `depends_on` them; studio has none at all).
+#
+# Only two kinds of exclusion remain, both for reasons that don't evaporate
+# just because nothing has drifted yet:
+#   - `db` — stateful (carries Musan's data). A block change to `db` itself
+#     is a deliberate, reviewed operational decision, not something that
+#     should auto-recreate the container and cut every live connection as a
+#     side effect of a green merge.
+#   - `functions`/`auth` — already covered by restart_functions()/
 #     restart_auth() via CHANGED_EDGE_FUNCTIONS/CHANGED_QA_COMPOSE; adding
 #     them here too would just recreate the same container twice.
-#   - NOT `studio`/`imgproxy`/`meta` — out of scope for this phase; nothing
-#     was measured drifting on them and QA's own dashboards/health don't
-#     depend on studio being fresh the way auth/functions/kong do.
-RECREATABLE_QA_SERVICES="kong rest realtime storage"
+RECREATABLE_QA_SERVICES="kong rest realtime storage imgproxy meta studio"
 
 # `up -d --no-deps`, not `restart`, for the same reason as
 # restart_functions()/restart_auth() above: `restart` reuses the container's
@@ -560,6 +604,24 @@ recreate_qa_service() { # $1 compose service name
   log "recreating ${1} (compose block changed)"
   docker compose -f "${infra_dir}/docker-compose.yml" \
     --env-file "$QA_ENV_FILE" up -d --no-deps "$1"
+}
+
+# Ties compose_changed_services() to RECREATABLE_QA_SERVICES and
+# recreate_qa_service(). Split out of main() (review round): the allow-list
+# filter here — which services this fase's fix actually reaches — was the
+# one piece of this mechanism no test exercised end to end. A test asserting
+# only that "kong" gets recreated, or grepping the RECREATABLE_QA_SERVICES
+# string, cannot tell a filter that also lets `db` through from one that
+# doesn't, or a filter that silently covers only `kong` from one that covers
+# all seven. Pulling this into its own function makes that filter callable
+# in isolation against a stubbed `docker`.
+recreate_changed_qa_services() { # $1 prev sha, $2 target sha
+  local svc
+  for svc in $(compose_changed_services "$1" "$2"); do
+    case " ${RECREATABLE_QA_SERVICES} " in
+      *" ${svc} "*) recreate_qa_service "$svc" ;;
+    esac
+  done
 }
 
 # Restarting the QA units needs passwordless sudo. The prod units have a
@@ -704,11 +766,25 @@ container_health_check() { # $1 label, $2 container name
 #     EXISTS` is idempotent — a no-op once installed, and self-healing after
 #     a DB reset without anyone re-running a bootstrap script by hand.
 #
-# ADVISORY, same pattern as sql_tests_check() right below (record_advisory,
-# never touches RESULT): installing a test-only extension must not be able
-# to fail a QA deploy whose real steps all passed. Must run BEFORE
-# sql_tests_check — see the call site in post_checks().
-# --------------------------------------------------------------------------
+# ADVISORY for a single run, same pattern as sql_tests_check() right below
+# (record_advisory, never touches RESULT): installing a test-only extension
+# must not be able to fail a QA deploy whose real steps all passed on the
+# FIRST run it happens to fail. Must run BEFORE sql_tests_check — see the
+# call site in post_checks().
+#
+# NOT advisory forever, though — review round on this fase caught that a
+# permanent CREATE EXTENSION failure (e.g. the QA role lacking the
+# privilege — pgtap is NOT trusted and needs a superuser) would sit as a
+# FAIL row on an otherwise-green run indefinitely: `sql_tests_check` would
+# keep reporting SKIPPED-NO-PGTAP for all 20 pgTAP files forever, functionally
+# identical to the bug this fase exists to close, just with a FAIL row
+# nobody reads. Same escalation record_deploy_marker() already uses for
+# exactly this shape of problem (a real, harmless-today failure that must
+# not be allowed to degrade silently forever): count consecutive failures in
+# QA_PGTAP_DEGRADED_FILE, and once the streak reaches QA_PGTAP_DEGRADED_MAX,
+# fail the deploy on purpose with a DISTINCT exit code (QA_EXIT_PGTAP_STREAK,
+# not QA_EXIT_MARKER_STREAK) so deploy.yml's failure step can print the
+# right diagnosis instead of "QA is drifted".
 ensure_pgtap() {
   local pw; pw="$(env_get POSTGRES_PASSWORD)"
   if [ -z "$pw" ]; then
@@ -721,10 +797,38 @@ ensure_pgtap() {
   if out="$(PGPASSWORD="$pw" psql -h localhost -p 5433 -U postgres -d postgres \
        -v ON_ERROR_STOP=1 -q -c 'CREATE EXTENSION IF NOT EXISTS pgtap;' 2>&1)"; then
     record_advisory "pgtap extension" ok "installed"
-  else
-    err "could not create pgtap extension: $out"
-    record_advisory "pgtap extension" FAIL "CREATE EXTENSION failed — see deploy log"
+    rm -f "$QA_PGTAP_DEGRADED_FILE" 2>/dev/null || true
+    return 0
   fi
+
+  err "could not create pgtap extension: $out"
+  record_advisory "pgtap extension" FAIL "CREATE EXTENSION failed — see deploy log"
+  # ::warning:: so it surfaces in the run summary, not only in the log body —
+  # same reasoning as record_deploy_marker()'s warning: a FAIL row inside the
+  # post-checks table is easy to scroll past on an otherwise-green deploy.
+  printf '::warning::deploy-qa.sh could not create the pgtap extension — sql_tests_check will keep SKIPPING every pgTAP file until this is fixed.\n' >&2
+
+  local streak
+  streak="$(cat "$QA_PGTAP_DEGRADED_FILE" 2>/dev/null || echo 0)"
+  case "$streak" in ''|*[!0-9]*) streak=0 ;; esac
+  streak=$((streak + 1))
+  if ! write_atomic "$QA_PGTAP_DEGRADED_FILE" "$streak"; then
+    err "the pgtap degraded-run counter ${QA_PGTAP_DEGRADED_FILE} is unwritable too, so this cannot escalate on its own"
+    return 0
+  fi
+
+  if [ "$streak" -ge "$QA_PGTAP_DEGRADED_MAX" ]; then
+    printf '::error::deploy-qa.sh has failed to create the pgtap extension %s times in a row.\n' "$streak" >&2
+    err "FAILING THE DEPLOY on purpose: ${streak} consecutive runs could not CREATE EXTENSION pgtap."
+    err "every other QA step this run attempted still succeeded — this is not a drifted QA,"
+    err "only pgtap testing is broken."
+    err "likely cause: the role in POSTGRES_PASSWORD lacks the privilege — pgtap is NOT trusted"
+    err "and needs a superuser, which in the Supabase images is supabase_admin, not postgres."
+    err "fix on the VPS: either grant the privilege or point ensure_pgtap at a superuser role."
+    exit "$QA_EXIT_PGTAP_STREAK"
+  fi
+  log "pgtap degraded run ${streak}/${QA_PGTAP_DEGRADED_MAX} — the deploy stays green until the streak reaches the limit"
+  return 0
 }
 
 # --------------------------------------------------------------------------
@@ -1050,16 +1154,11 @@ main() {
   apply_qa_users
   if is_true "${CHANGED_EDGE_FUNCTIONS:-}"; then restart_functions; fi
   if is_true "${CHANGED_QA_COMPOSE:-}"; then restart_auth; fi
-  # spec-93 fase 3 — the other four recreatable services (kong/rest/
-  # realtime/storage), scoped to only the ones whose OWN compose block
-  # actually changed. Must follow sync_checkout/widen_changed_flags: it
-  # reads QA_PREV_SHA/QA_SYNCED_SHA, the same #721-safe baseline those set.
-  qa_svc=""
-  for qa_svc in $(compose_changed_services "${QA_PREV_SHA:-}" "${QA_SYNCED_SHA:-${DEPLOY_SHA}}"); do
-    case " ${RECREATABLE_QA_SERVICES} " in
-      *" ${qa_svc} "*) recreate_qa_service "$qa_svc" ;;
-    esac
-  done
+  # spec-93 fase 3 — the other RECREATABLE_QA_SERVICES, scoped to only the
+  # ones whose OWN compose block actually changed. Must follow
+  # sync_checkout/widen_changed_flags: it reads QA_PREV_SHA/QA_SYNCED_SHA,
+  # the same #721-safe baseline those set.
+  recreate_changed_qa_services "${QA_PREV_SHA:-}" "${QA_SYNCED_SHA:-${DEPLOY_SHA}}"
   if is_true "${CHANGED_FRONTEND:-}"; then deploy_frontend; fi
   if is_true "${CHANGED_AGENTS:-}"; then deploy_node_app agents; fi
   if is_true "${CHANGED_WORKER:-}"; then deploy_node_app worker; fi

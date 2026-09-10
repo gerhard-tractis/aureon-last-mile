@@ -56,17 +56,24 @@ export PATH="$STUB_DIR:$PATH"
 export QA_ENV_FILE="$STUB_DIR/.env.qa"
 printf 'POSTGRES_PASSWORD=s3cret\n' > "$QA_ENV_FILE"
 
+export QA_PGTAP_DEGRADED_FILE="$STUB_DIR/pgtap-degraded"
+export QA_PGTAP_DEGRADED_MAX=3
+
 extract() { sed -n "/^$1() {/,/^}/p" "$HERE/deploy-qa.sh"; }
 build_harness() {
   {
     echo "set -uo pipefail"
     echo "QA_ENV_FILE=\"$QA_ENV_FILE\""
+    echo "QA_PGTAP_DEGRADED_FILE=\"$QA_PGTAP_DEGRADED_FILE\""
+    echo "QA_PGTAP_DEGRADED_MAX=\"$QA_PGTAP_DEGRADED_MAX\""
+    echo "QA_EXIT_PGTAP_STREAK=79"
     echo "CHECKS=()"
     echo "RESULT=0"
     extract log
     extract err
     extract env_get
     extract record_advisory
+    extract write_atomic
     extract ensure_pgtap
   } > "$STUB_DIR/harness.sh"
 }
@@ -81,21 +88,58 @@ rc=$?
 check_true "runs to completion" $rc
 check "issues CREATE EXTENSION IF NOT EXISTS pgtap" \
   "true" "$(grep -qi 'CREATE EXTENSION IF NOT EXISTS pgtap' "$PSQL_CALLS" && echo true)"
+# m1 (review round) — the connection TARGET wasn't asserted at all: mutating
+# `-p 5433` to `-p 5432`, or `-d postgres` to `-d template1`, left this
+# suite green. QA's real Postgres only ever listens on localhost:5433/db
+# postgres — the same invocation apply_migrations/db_check/sql_tests_check
+# already use.
+check "targets QA's own Postgres (localhost:5433/postgres), not some other port/db" \
+  "true" "$(grep -qE -- '-h localhost -p 5433 -U postgres -d postgres' "$PSQL_CALLS" && echo true)"
 check "records ok" \
   "pgtap extension|ok|installed" \
   "$(printf '%s\n' "$output1" | grep '^pgtap extension')"
 check "RESULT stays 0" \
   "RESULT=0" "$(printf '%s\n' "$output1" | grep '^RESULT=')"
 
-# ── psql fails outright — advisory, must not flip RESULT or propagate ──────
+# ── psql fails outright — advisory ON THE FIRST FAILURE, must not flip
+#    RESULT or propagate ───────────────────────────────────────────────────
+rm -f "$QA_PGTAP_DEGRADED_FILE"
 PSQL_CALLS="$STUB_DIR/calls2"; export PSQL_CALLS; : > "$PSQL_CALLS"
 output2="$(set -e; PSQL_FAIL=1 bash -c '. "'"$STUB_DIR"'/harness.sh"; ensure_pgtap; printf "%s\n" "${CHECKS[@]}"; echo "RESULT=$RESULT"' 2>&1)"
 rc=$?
-check_true "a hard psql failure does not propagate under set -e" $rc
+check_true "a single hard psql failure does not propagate under set -e" $rc
 check "records FAIL rather than pretending success" \
   "true" "$(printf '%s\n' "$output2" | grep -q '^pgtap extension|FAIL|' && echo true)"
-check "RESULT still stays 0 (advisory, same as sql_tests_check)" \
+check "RESULT still stays 0 on the first failure (advisory, same as sql_tests_check)" \
   "RESULT=0" "$(printf '%s\n' "$output2" | grep '^RESULT=')"
+check "records the failure streak so it can escalate" \
+  "1" "$(cat "$QA_PGTAP_DEGRADED_FILE" 2>/dev/null)"
+
+# ── A success after a failure resets the streak — same reset behaviour as
+#    record_deploy_marker()'s QA_DEGRADED_FILE ──────────────────────────────
+PSQL_CALLS="$STUB_DIR/calls2b"; export PSQL_CALLS; : > "$PSQL_CALLS"
+bash -c '. "'"$STUB_DIR"'/harness.sh"; ensure_pgtap' >/dev/null 2>&1
+check "a subsequent success clears the streak file" \
+  "false" "$([ -f "$QA_PGTAP_DEGRADED_FILE" ] && echo true || echo false)"
+
+# ── review round — the whole point of B4: CREATE EXTENSION failing
+#    REPEATEDLY (e.g. the role genuinely lacks the privilege) must eventually
+#    fail the deploy instead of degrading to a silent FAIL row forever, same
+#    escalation shape as record_deploy_marker()'s QA_DEGRADED_MAX ──────────
+rm -f "$QA_PGTAP_DEGRADED_FILE"
+PSQL_CALLS="$STUB_DIR/calls_streak"; export PSQL_CALLS; : > "$PSQL_CALLS"
+run=1
+while [ "$run" -le "$QA_PGTAP_DEGRADED_MAX" ]; do
+  PSQL_FAIL=1 bash -c '. "'"$STUB_DIR"'/harness.sh"; ensure_pgtap' >"$STUB_DIR/streak_out_$run" 2>&1
+  streak_rc[$run]=$?
+  run=$((run + 1))
+done
+check "runs before the streak limit stay green (exit 0)" \
+  "0" "${streak_rc[$((QA_PGTAP_DEGRADED_MAX - 1))]}"
+check "the run that reaches QA_PGTAP_DEGRADED_MAX fails the deploy on purpose" \
+  "79" "${streak_rc[$QA_PGTAP_DEGRADED_MAX]}"
+check "the escalating run names a DISTINCT exit code from the marker's 78" \
+  "true" "$(grep -q 'QA_EXIT_PGTAP_STREAK\|pgtap extension.*times in a row\|failed to create the pgtap extension' "$STUB_DIR/streak_out_$QA_PGTAP_DEGRADED_MAX" && echo true)"
 
 # ── Missing POSTGRES_PASSWORD: skip cleanly, never invoke psql ─────────────
 BAD_ENV="$STUB_DIR/.env.qa.blank"
@@ -119,9 +163,18 @@ echo "post_checks() ordering"
 # ensure_pgtap must run BEFORE sql_tests_check — otherwise the very deploy
 # that installs pgtap still reports the 20 pgTAP files SKIPPED-NO-PGTAP,
 # because sql_tests_check's own `pg_extension` check would have already run.
-# Matched as whole-line calls (`^  ensure_pgtap$`), not a substring grep —
-# the comment right above the call also mentions "sql_tests_check" by name,
-# which a substring match would see first and report a false pass.
+#
+# m2 (review round) — this is a TEXTUAL check on the call-site order inside
+# post_checks()'s source, not an execution-order check (it never actually
+# runs post_checks()). It reliably catches the realistic mutations —
+# reordering the two calls, or deleting the ensure_pgtap call entirely (both
+# verified above by mutation-testing the implementation) — but it does NOT
+# catch, say, an extra unrelated `sql_tests_check` call inserted earlier in
+# the function while both real calls stay in the right relative order; that
+# residual gap was measured and accepted as non-blocking. Matched as
+# whole-line calls (`^  ensure_pgtap$`), not a substring grep — the comment
+# right above the real call also mentions "sql_tests_check" by name, which a
+# substring match would see first and report a false pass.
 check "post_checks calls ensure_pgtap before sql_tests_check" \
   "ensure_pgtap
 sql_tests_check" \
