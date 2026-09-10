@@ -83,18 +83,28 @@ ON CONFLICT (id) DO NOTHING;
 
 UPDATE public.packages SET deleted_at = NOW() WHERE id = '44444444-4444-4000-a000-000000000053';
 
--- ─── get_manifest_label_data returns nothing for a manifest belonging to
--- ─── another operator ──────────────────────────────────────────────────────
+-- ─── get_manifest_label_data raises 42501 for a manifest belonging to
+-- ─── another operator (spec-88 fase 5: was a silent 0-row return, which
+-- ─── doesn't distinguish "blocked" from "no data") ─────────────────────────
 DO $$
-DECLARE c INT;
+DECLARE raised BOOLEAN := false; sqlstate_got TEXT := 'none';
 BEGIN
   PERFORM set_config('request.jwt.claims',
     '{"sub":"aaaaaaaa-0000-4000-a000-000000000153","operator_id":"aaaaaaaa-0000-4000-a000-000000000053","role":"authenticated"}', true);
   SET LOCAL role = 'authenticated';
 
-  SELECT COUNT(*) INTO c FROM public.get_manifest_label_data('dddddddd-0000-4000-d000-000000000053');
-  IF c <> 0 THEN
-    RAISE EXCEPTION 'get_manifest_label_data leaked operator B manifest to operator A, got % rows', c;
+  BEGIN
+    PERFORM public.get_manifest_label_data('dddddddd-0000-4000-d000-000000000053');
+  EXCEPTION WHEN OTHERS THEN
+    raised := true;
+    GET STACKED DIAGNOSTICS sqlstate_got = RETURNED_SQLSTATE;
+  END;
+
+  IF NOT raised THEN
+    RAISE EXCEPTION 'get_manifest_label_data leaked operator B manifest to operator A instead of raising';
+  END IF;
+  IF sqlstate_got <> '42501' THEN
+    RAISE EXCEPTION 'get_manifest_label_data raised %, expected 42501', sqlstate_got;
   END IF;
   RESET role;
 END $$;
