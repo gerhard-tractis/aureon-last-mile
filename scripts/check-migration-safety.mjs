@@ -22,13 +22,20 @@
  *      start_pickup_route(uuid, uuid[]) bug (spec-88). See
  *      check-migration-safety-acl.mjs.
  *   5. REJECT (exit 1) a migration that CREATEs/CREATE OR REPLACEs a
- *      SECURITY DEFINER function with no REVOKE {ALL|EXECUTE} ... FROM
- *      PUBLIC for that exact signature anywhere in the same migration —
- *      the close_manifest / add_dock_zone_adjacency_pair bug (spec-80 fase
- *      1b, spec-88 fase 1). Redesigned in review round 2 (PR #723, B1/B2) —
- *      GRANT statements are irrelevant to this rule; only a REVOKE
- *      targeting PUBLIC closes Postgres's default EXECUTE-to-PUBLIC grant.
- *      See check-migration-safety-acl.mjs.
+ *      SECURITY DEFINER function whose PUBLIC EXECUTE grant is OPEN,
+ *      considering the CUMULATIVE REVOKE/GRANT history of the whole
+ *      migrations corpus up to and including that file — not just the text
+ *      of that one file — the close_manifest / add_dock_zone_adjacency_pair
+ *      bug (spec-80 fase 1b, spec-88 fase 1). Redesigned twice under
+ *      adversarial review (PR #723): round 2 (B1/B2/B3) moved away from
+ *      "GRANT EXECUTE ... TO authenticated present" as the trigger — GRANT
+ *      statements are irrelevant; only a REVOKE targeting PUBLIC closes
+ *      Postgres's default EXECUTE-to-PUBLIC grant. Round 3 found that even
+ *      round 2's per-FILE view was wrong: `CREATE OR REPLACE` PRESERVES the
+ *      existing ACL, so the question is cumulative corpus STATE, not one
+ *      file's text — see check-migration-safety-acl.mjs's module doc for
+ *      the full history (this repo's own `20260913000008` already asserts
+ *      the CREATE-OR-REPLACE-preserves-ACL fact against the live database).
  *
  * A warning never fails the build. Turning rules 2/3/4 into rejections
  * would block CI on a legitimate CREATE INDEX / overload and teach someone
@@ -63,6 +70,7 @@ import {
 import { listSqlFiles, changedFilesSince, newViolationsSinceBase } from './check-migration-safety-git.mjs';
 import {
   buildRevokeIndex,
+  buildAclTimeline,
   findOrphanedOverloadWarnings,
   findGrantWithoutRevokeViolations,
   lineNumberAt,
@@ -78,7 +86,7 @@ export function usageError(msg) {
   process.exit(2);
 }
 
-function checkFile(filePath, revokeIndex) {
+function checkFile(filePath, revokeIndex, timeline, fileIdx) {
   const rawSql = readFileSync(filePath, 'utf8');
   const rejectReason = checkDdlBackfillMix(rawSql);
   // B3: the BLOCKING (not M6-downgraded) violations, kept per-statement so
@@ -88,7 +96,11 @@ function checkFile(filePath, revokeIndex) {
   // Rule 5 (spec-88 fase 4): its own reject list, separate from rule 1's —
   // it has no base-diff pre-existing-violation downgrade (a migration that
   // newly enters the diff with this shape is never "pre-existing" for it).
-  const aclRejections = findGrantWithoutRevokeViolations(rawSql);
+  // `fileIdx` is this file's position in the SAME corpus order `timeline`
+  // was built from (review round 3) — the cumulative ACL state as of this
+  // file must not be affected by migrations that come chronologically
+  // AFTER it, even though `timeline` covers the whole corpus.
+  const aclRejections = findGrantWithoutRevokeViolations(rawSql, timeline, fileIdx);
   const warnings = [...findRule1Warnings(rawSql), ...checkIndexConcurrency(rawSql), ...checkUniqueIndexGuard(rawSql)];
   // Rule 4's warnings carry a character offset so main() can annotate them
   // with file=/line= (review round 2, low finding) — kept separate from the
@@ -136,12 +148,26 @@ function main(argv) {
     return 0;
   }
 
-  // Rule 4 needs the REVOKE history of the WHOLE corpus, not just the files
+  // Rules 4/5 need the ACL history of the WHOLE corpus, not just the files
   // changed by this PR — with --base, `positional[0]` is still the full
   // migrations directory, so `listSqlFiles` there returns every migration,
-  // exactly like the non---base path already does via `files`.
+  // exactly like the non---base path already does via `files`. `corpusFiles`
+  // is filename-sorted (see listSqlFiles) — i.e. chronological, since this
+  // repo's migrations are timestamp-prefixed — which is what makes a
+  // "state as of file F" cumulative reading meaningful (review round 3).
   const corpusFiles = base ? listSqlFiles(positional[0]) : files;
   const revokeIndex = buildRevokeIndex(corpusFiles);
+  const timeline = buildAclTimeline(corpusFiles);
+  // Maps a normalized (forward-slash) path to its position in `corpusFiles`
+  // — normalized because `git diff --name-status` (which `files` is built
+  // from, under --base) always uses `/`, while `listSqlFiles`'s
+  // `path.join` uses the platform separator (`\` on Windows). A file not
+  // found here (should not happen — every checked file is on disk and
+  // `corpusFiles` lists the whole directory) falls back to "newest",
+  // the safe default for "as of right now".
+  const normalizePath = (p) => p.replace(/\\/g, '/');
+  const corpusIndex = new Map(corpusFiles.map((f, i) => [normalizePath(f), i]));
+  const fileIdxOf = (f) => corpusIndex.get(normalizePath(f)) ?? corpusFiles.length;
 
   let rejected = false;
   // Tracked separately (review round 2, medium finding) so the rule-1
@@ -153,7 +179,7 @@ function main(argv) {
   for (const f of files) {
     let result;
     try {
-      result = checkFile(f, revokeIndex);
+      result = checkFile(f, revokeIndex, timeline, fileIdxOf(f));
     } catch (e) {
       usageError(`could not read ${f}: ${e.message}`);
     }

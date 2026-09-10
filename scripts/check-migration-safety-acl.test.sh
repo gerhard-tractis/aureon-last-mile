@@ -414,5 +414,240 @@ else
 fi
 
 echo ""
+echo "-- round 3 (review adversarial against the live database, PR #723) --"
+
+# ── B1 (round 3): CREATE OR REPLACE PRESERVES the ACL — it does NOT reset to
+# the default PUBLIC grant. Measured against the live database (ROLLBACK):
+# a REVOKE FROM PUBLIC in an EARLIER migration, with no GRANT TO PUBLIC
+# since, stays closed across a later CREATE OR REPLACE that touches no ACL
+# at all — exactly 20260913000008 (spec-88 fase 2)'s own pattern, which
+# that migration's own assertion (:169-175) proves against the live DB.
+write_file b1-hardened-earlier-stays-closed 0000000001_harden <<'SQL'
+CREATE OR REPLACE FUNCTION public.assert_operator_access(p_operator_id UUID)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.assert_operator_access(UUID) FROM PUBLIC;
+SQL
+write_file b1-hardened-earlier-stays-closed 0000000002_replace_no_acl_touch <<'SQL'
+CREATE OR REPLACE FUNCTION public.assert_operator_access(p_operator_id UUID)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+assert_exit 0 "B1 (round 3): a CREATE OR REPLACE of an already-hardened function, with no ACL statements of its own, does not reject" b1-hardened-earlier-stays-closed
+
+# ── B2 (round 3, the CI-red bug): a trigger function (RETURNS TRIGGER) is
+# never directly invocable via PostgREST/RPC the way an ordinary RPC is —
+# fase 0 of this spec explicitly excluded trigger functions from the
+# invocable-functions count. Real precedent: 20261001000001 (spec-86),
+# whose own comment says "no REVOKE/GRANT needed" for exactly this reason.
+write_file b2-trigger-function-out-of-scope 0000000001_fixture <<'SQL'
+CREATE OR REPLACE FUNCTION public.trg_advance_status()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $function$
+BEGIN
+  RETURN NEW;
+END;
+$function$;
+SQL
+assert_exit 0 "round 3: a RETURNS TRIGGER function is out of scope for rule 5 (real CI-red precedent: 20261001000001)" b2-trigger-function-out-of-scope
+assert_not_contains "an earlier REVOKE exists" "round 3: a RETURNS TRIGGER function is out of scope for rule 4 too" b2-trigger-function-out-of-scope
+
+# ── Rule 4's own trigger exclusion, tested where it can actually fire: an
+# earlier REVOKE for a DIFFERENT signature of the same name exists (the
+# shape rule 4 warns about), and the trigger function being (re)created
+# must stay silent anyway — the fixture above never reaches rule 4's
+# trigger check at all (no REVOKE history exists for that name), so it
+# cannot catch a mutant that drops the trigger filter from rule 4.
+write_file rule4-trigger-exclusion-with-history 0000000001_revoke_other_signature <<'SQL'
+REVOKE ALL ON FUNCTION public.trg_advance_status(TEXT) FROM PUBLIC;
+SQL
+write_file rule4-trigger-exclusion-with-history 0000000002_trigger_zero_arg <<'SQL'
+CREATE OR REPLACE FUNCTION public.trg_advance_status()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $function$
+BEGIN
+  RETURN NEW;
+END;
+$function$;
+SQL
+assert_not_contains "an earlier REVOKE exists" "rule 4's trigger exclusion holds even when REVOKE history for the name exists" rule4-trigger-exclusion-with-history
+
+# ── Point 4a (round 3): REVOKE FROM PUBLIC followed by GRANT TO PUBLIC (same
+# file, that order) undoes the REVOKE — measured against the live database:
+# anon_exec becomes true again. The rule must reflect the LAST ACL
+# statement's effect, not "does a REVOKE exist anywhere in the file".
+write_file point4a-grant-public-after-revoke-reopens 0000000001_fixture <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.internal_helper() TO PUBLIC;
+SQL
+assert_exit 1 "point 4a (round 3): REVOKE FROM PUBLIC then GRANT TO PUBLIC reopens it — rejects" point4a-grant-public-after-revoke-reopens
+
+# ── Point 4b (round 3): a schema-wide GRANT ... ON ALL FUNCTIONS IN SCHEMA
+# reopens PUBLIC for every function it covers, even ones it never names —
+# a later CREATE OR REPLACE with no ACL statements of its own must still
+# reject, because the cumulative corpus state is open.
+write_file point4b-schema-wide-grant-reopens 0000000001_harden <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC;
+SQL
+write_file point4b-schema-wide-grant-reopens 0000000002_schema_wide_grant <<'SQL'
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO PUBLIC;
+SQL
+write_file point4b-schema-wide-grant-reopens 0000000003_replace_no_acl_touch <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+assert_exit 1 "point 4b (round 3): a schema-wide GRANT ... ON ALL FUNCTIONS IN SCHEMA reopens PUBLIC — the later CREATE OR REPLACE rejects" point4b-schema-wide-grant-reopens
+
+# ── Menor (round 3): REVOKE ... FROM PUBLIC CASCADE — CASCADE is a trailing
+# keyword, not a role name. splitRoleList must not turn PUBLIC into the
+# literal string "public cascade".
+write_file cascade-keyword-not-a-role 0000000001_fixture <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC CASCADE;
+SQL
+assert_exit 0 "menor (round 3): REVOKE ... FROM PUBLIC CASCADE still counts as revoking PUBLIC" cascade-keyword-not-a-role
+
+# ── Menor (round 3): REVOKE ON FUNCTION with NO argument list at all is
+# legal in PG14+ when the function name is unambiguous — must not be
+# invisible to the parser (which would falsely leave the function looking
+# never-revoked).
+write_file revoke-no-arg-list 0000000001_fixture <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper FROM PUBLIC;
+SQL
+assert_exit 0 "menor (round 3): REVOKE ON FUNCTION with no argument list still counts (PG14+, unambiguous name)" revoke-no-arg-list
+
+# ── B2 coverage gap (round 3): a REVOKE covering ONE overload of a name
+# must not be mistaken for covering a DIFFERENT overload of the SAME name —
+# kills the mutant that drops the `r.signature === fn.signature` check.
+write_file b2-coverage-different-overload-same-name 0000000001_fixture <<'SQL'
+CREATE OR REPLACE FUNCTION public.overloaded_fn(p_id UUID) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.overloaded_fn(p_id UUID, p_extra TEXT) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.overloaded_fn(UUID) FROM PUBLIC;
+SQL
+assert_exit 1 "B2 coverage (round 3): a REVOKE on one overload does not cover a DIFFERENT overload of the same name" b2-coverage-different-overload-same-name
+assert_contains "overloaded_fn(uuid,text)" "B2 coverage: error names the uncovered 2-arg overload" b2-coverage-different-overload-same-name
+
+# ── SECURITY DEFINER window-bound coverage (round 3): a SECURITY INVOKER
+# function whose BODY happens to contain the literal string "SECURITY
+# DEFINER" (not a comment — comments are already stripped project-wide)
+# must not be misread as SECURITY DEFINER — kills the mutant that
+# unbounds the option-clause search window into the function body.
+write_file security-definer-window-bound 0000000001_fixture <<'SQL'
+CREATE OR REPLACE FUNCTION public.pure_helper() RETURNS void
+LANGUAGE plpgsql SECURITY INVOKER
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'this operation requires SECURITY DEFINER privilege, which this function does not have';
+END;
+$function$;
+SQL
+assert_exit 0 "window-bound (round 3): SECURITY DEFINER text inside the BODY of an INVOKER function does not count" security-definer-window-bound
+assert_not_contains "an earlier REVOKE exists" "window-bound: rule 4 also does not misread the body text" security-definer-window-bound
+
+# ── Timeline direction (round 3): a GRANT ... TO PUBLIC that reopens a
+# function must NOT affect files that come chronologically BEFORE it — a
+# migration's ACL state depends only on what has already applied by the
+# time it runs, never on the future. Three files: #1 hardens (CREATE +
+# REVOKE FROM PUBLIC), #2 replaces with no ACL touch of its own (must stay
+# closed — the future reopening in #3 must not leak backward), #3 reopens.
+write_file timeline-future-events-do-not-leak-backward 0000000001_harden <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC;
+SQL
+write_file timeline-future-events-do-not-leak-backward 0000000002_replace_no_acl_touch <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+write_file timeline-future-events-do-not-leak-backward 0000000003_reopen_later <<'SQL'
+GRANT EXECUTE ON FUNCTION public.internal_helper() TO PUBLIC;
+SQL
+output=$(bash "$SCRIPT" "$TMP/timeline-future-events-do-not-leak-backward" 2>&1 || true)
+if printf '%s' "$output" | grep "::error::" | grep -q "0000000002_replace_no_acl_touch"; then
+  fail=$((fail + 1))
+  echo "  FAIL timeline direction: file #2 was flagged even though it stays closed as of its own position — a later GRANT leaked backward"
+  printf '%s\n' "$output" | sed 's/^/         /'
+else
+  pass=$((pass + 1))
+  echo "  ok   timeline direction: a later GRANT ... TO PUBLIC (file #3) does not leak backward onto file #2, which stays closed as of its own position"
+fi
+
+echo ""
 echo "check-migration-safety.sh (rules 4/5): $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

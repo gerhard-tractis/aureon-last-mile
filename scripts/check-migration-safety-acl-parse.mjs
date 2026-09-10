@@ -1,14 +1,16 @@
 /**
- * check-migration-safety-acl-parse.mjs (spec-88 fase 4, review round 2)
+ * check-migration-safety-acl-parse.mjs (spec-88 fase 4, review rounds 2-3)
  *
  * Low-level SQL parsing shared by check-migration-safety-acl.mjs's two ACL
  * rules — split out to keep both files under the repo's 300-line limit,
  * same reason rule 1 was already split into check-migration-safety-rule1.mjs.
  *
  * Extracts, from raw migration SQL: every `CREATE [OR REPLACE] FUNCTION`
- * (name, normalized signature, SECURITY DEFINER/INVOKER), every `REVOKE
- * {ALL|EXECUTE} ON FUNCTION` (name, signature, full role list), and every
- * `GRANT EXECUTE ON FUNCTION` (name, signature, full role list).
+ * (name, normalized signature, SECURITY DEFINER/INVOKER, RETURNS TRIGGER),
+ * every `REVOKE {ALL|EXECUTE} ON FUNCTION` (name, signature or null for a
+ * bare no-arg-list statement, full role list), every `GRANT EXECUTE ON
+ * FUNCTION` (same shape), and every schema-wide `GRANT EXECUTE ON ALL
+ * FUNCTIONS IN SCHEMA` (role list only — it has no single function name).
  */
 
 /** Strips `-- ...` line comments so comment text never matches a rule
@@ -93,12 +95,20 @@ export function normalizeSignature(paramsRaw) {
   return splitTopLevelCommas(paramsRaw).map(extractTypeToken).join(',');
 }
 
-/** Splits a `FROM ...`/`TO ...` role list on commas into lowercase role
- * names — B3 (review round 2): a naive `\s+(\w+)` capture only grabs the
- * FIRST role in `FROM anon, PUBLIC` / `TO anon, authenticated`, silently
- * missing every role after the first comma. */
+/**
+ * Splits a `FROM ...`/`TO ...` role list on commas into lowercase role
+ * names. Two fixes from review round 2/3:
+ *  - B3 (round 2): a naive `\s+(\w+)` capture only grabs the FIRST role in
+ *    `FROM anon, PUBLIC` / `TO anon, authenticated`, silently missing
+ *    every role after the first comma.
+ *  - CASCADE/RESTRICT (round 3, menor): `REVOKE ... FROM PUBLIC CASCADE` is
+ *    valid Postgres — CASCADE/RESTRICT is a trailing keyword of the REVOKE
+ *    statement, not a role name, and must be stripped before splitting or
+ *    it corrupts the last role into the literal string "public cascade".
+ */
 function splitRoleList(roleListRaw) {
-  return roleListRaw
+  const withoutTrailingKeyword = roleListRaw.replace(/\s+(CASCADE|RESTRICT)\s*$/i, '');
+  return withoutTrailingKeyword
     .split(',')
     .map((r) => r.trim().toLowerCase())
     .filter(Boolean);
@@ -108,32 +118,48 @@ const CREATE_FN_RE = /CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\s+(?:"?public"?\.)?"?(
 // REVOKE ALL [PRIVILEGES] or REVOKE EXECUTE — both close the default PUBLIC
 // grant equally; requiring only "ALL" (medium finding, review round 2)
 // rejected a migration that correctly used the narrower, equally valid form.
-const REVOKE_RE = /REVOKE\s+(?:ALL(?:\s+PRIVILEGES)?|EXECUTE)\s+ON\s+FUNCTION\s+(?:"?public"?\.)?"?(\w+)"?\s*\(/gi;
-const GRANT_RE = /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+(?:"?public"?\.)?"?(\w+)"?\s*\(/gi;
+// No trailing `\(` requirement (round 3, menor): `REVOKE ... ON FUNCTION
+// name FROM role` with NO argument list is legal Postgres (PG14+) when the
+// name is unambiguous — the paren group, if present, is parsed separately
+// below.
+const REVOKE_HEADER_RE = /REVOKE\s+(?:ALL(?:\s+PRIVILEGES)?|EXECUTE)\s+ON\s+FUNCTION\s+(?:"?public"?\.)?"?(\w+)"?/gi;
+const GRANT_HEADER_RE = /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+(?:"?public"?\.)?"?(\w+)"?/gi;
+const SCHEMA_WIDE_GRANT_RE =
+  /GRANT\s+EXECUTE\s+ON\s+ALL\s+FUNCTIONS\s+IN\s+SCHEMA\s+(?:"?public"?)\s+TO\s+([^;]+)/gi;
 
 // Marks the start of a dollar-quoted function body ($$, $function$, etc.) —
-// used to bound the search window for SECURITY DEFINER/INVOKER so it never
-// reads into the body itself (a body that happens to mention the words
-// would otherwise produce a false match).
+// used to bound the search window for SECURITY DEFINER/INVOKER and RETURNS
+// TRIGGER so it never reads into the body itself (a body that happens to
+// mention those words in a string literal would otherwise produce a false
+// match — see the window-bound test in check-migration-safety-acl.test.sh).
 const DOLLAR_TAG_RE = /\$([A-Za-z_][A-Za-z0-9_]*)?\$/;
 
-/** Whether the CREATE FUNCTION whose parameter list ends at `afterParensIdx`
- * declares SECURITY DEFINER. Searches only the option-clause window between
- * the closing `)` of the parameter list and the start of the function body
- * (or a 1000-char cap, for the rare body that isn't dollar-quoted) — never
- * the body itself. Defaults to INVOKER (Postgres's own default when the
- * clause is omitted) when neither keyword appears. */
-function isSecurityDefinerClause(sql, afterParensIdx) {
+/** Returns { isSecurityDefiner, returnsTrigger } for the CREATE FUNCTION
+ * whose parameter list ends at `afterParensIdx`. Searches only the
+ * option-clause window between the closing `)` of the parameter list and
+ * the start of the function body (or a 1000-char cap, for the rare body
+ * that isn't dollar-quoted) — never the body itself. Defaults
+ * isSecurityDefiner to false (INVOKER, Postgres's own default) when neither
+ * keyword appears. */
+function parseFunctionOptionsWindow(sql, afterParensIdx) {
   const dollarMatch = DOLLAR_TAG_RE.exec(sql.slice(afterParensIdx));
   const windowEnd = dollarMatch
     ? afterParensIdx + dollarMatch.index
     : Math.min(sql.length, afterParensIdx + 1000);
   const window = sql.slice(afterParensIdx, windowEnd);
-  return /\bSECURITY\s+DEFINER\b/i.test(window);
+  return {
+    isSecurityDefiner: /\bSECURITY\s+DEFINER\b/i.test(window),
+    returnsTrigger: /\bRETURNS\s+TRIGGER\b/i.test(window),
+  };
 }
 
 /** Every `CREATE [OR REPLACE] FUNCTION public.name(...)` in `rawSql`, with
- * its normalized signature and whether it is SECURITY DEFINER. */
+ * its normalized signature, whether it is SECURITY DEFINER, and whether it
+ * `RETURNS TRIGGER` (trigger functions are never directly invocable via
+ * PostgREST/RPC the way an ordinary RPC is — fase 0 of this spec excluded
+ * them from the invocable-functions count for the same reason; real
+ * precedent for the exclusion mattering: 20261001000001, whose own comment
+ * says "no REVOKE/GRANT needed" for exactly this class of function). */
 export function findCreateFunctionSignatures(rawSql) {
   const sql = stripLineComments(rawSql);
   const results = [];
@@ -143,10 +169,12 @@ export function findCreateFunctionSignatures(rawSql) {
     const openParenIdx = m.index + m[0].length - 1;
     const group = extractParenGroup(sql, openParenIdx);
     if (!group) continue;
+    const opts = parseFunctionOptionsWindow(sql, group.endIdx + 1);
     results.push({
       name: m[2],
       signature: normalizeSignature(group.params),
-      isSecurityDefiner: isSecurityDefinerClause(sql, group.endIdx + 1),
+      isSecurityDefiner: opts.isSecurityDefiner,
+      returnsTrigger: opts.returnsTrigger,
       index: m.index,
     });
     re.lastIndex = group.endIdx + 1;
@@ -154,50 +182,64 @@ export function findCreateFunctionSignatures(rawSql) {
   return results;
 }
 
-/** Every `REVOKE {ALL|EXECUTE} ON FUNCTION public.name(...) FROM <roles>`
- * in `rawSql`, `roles` being the FULL comma-split role list (B3). */
+/** Shared by findRevokeSignatures/findGrantExecuteSignatures: given a
+ * regex matching up through `ON FUNCTION name` (name captured), parses the
+ * optional `(...)` argument list (or null when absent — a bare, unambiguous
+ * reference, PG14+) and the `FROM`/`TO` role list that follows. */
+function findOnFunctionStatements(rawSql, headerRe, roleKeyword) {
+  const sql = stripLineComments(rawSql);
+  const results = [];
+  const re = new RegExp(headerRe.source, headerRe.flags);
+  let m;
+  while ((m = re.exec(sql))) {
+    const name = m[1];
+    let i = m.index + m[0].length;
+    while (i < sql.length && /\s/.test(sql[i])) i++;
+    let signature = null;
+    let nextIdx = i;
+    if (sql[i] === '(') {
+      const group = extractParenGroup(sql, i);
+      if (!group) continue;
+      signature = normalizeSignature(group.params);
+      nextIdx = group.endIdx + 1;
+    }
+    const roleRe = new RegExp(`${roleKeyword}\\s+([^;]+)`, 'i');
+    const roleMatch = sql.slice(nextIdx, nextIdx + 200).match(roleRe);
+    results.push({
+      name,
+      signature, // null = bare reference, applies to every overload of `name`
+      roles: roleMatch ? splitRoleList(roleMatch[1]) : [],
+      index: m.index,
+    });
+    re.lastIndex = nextIdx;
+  }
+  return results;
+}
+
+/** Every `REVOKE {ALL|EXECUTE} ON FUNCTION public.name[(...)] FROM <roles>`
+ * in `rawSql`. `signature` is `null` for a bare (no argument list)
+ * reference — legal Postgres (PG14+) when the name is unambiguous. */
 export function findRevokeSignatures(rawSql) {
-  const sql = stripLineComments(rawSql);
-  const results = [];
-  const re = new RegExp(REVOKE_RE.source, REVOKE_RE.flags);
-  let m;
-  while ((m = re.exec(sql))) {
-    const openParenIdx = m.index + m[0].length - 1;
-    const group = extractParenGroup(sql, openParenIdx);
-    if (!group) continue;
-    const after = sql.slice(group.endIdx + 1, group.endIdx + 200);
-    const fromMatch = after.match(/FROM\s+([^;]+)/i);
-    results.push({
-      name: m[1],
-      signature: normalizeSignature(group.params),
-      roles: fromMatch ? splitRoleList(fromMatch[1]) : [],
-      index: m.index,
-    });
-    re.lastIndex = group.endIdx + 1;
-  }
-  return results;
+  return findOnFunctionStatements(rawSql, REVOKE_HEADER_RE, 'FROM');
 }
 
-/** Every `GRANT EXECUTE ON FUNCTION public.name(...) TO <roles>` in
- * `rawSql`, `roles` being the FULL comma-split role list (B3). */
+/** Every `GRANT EXECUTE ON FUNCTION public.name[(...)] TO <roles>` in
+ * `rawSql`. Same `signature: null` convention as findRevokeSignatures. */
 export function findGrantExecuteSignatures(rawSql) {
+  return findOnFunctionStatements(rawSql, GRANT_HEADER_RE, 'TO');
+}
+
+/** Every `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO <roles>` in
+ * `rawSql` — a schema-wide grant that reopens PUBLIC for every function it
+ * covers, even ones the statement never names by function name (round 3,
+ * point 4b). */
+export function findSchemaWideGrants(rawSql) {
   const sql = stripLineComments(rawSql);
   const results = [];
-  const re = new RegExp(GRANT_RE.source, GRANT_RE.flags);
+  const re = new RegExp(SCHEMA_WIDE_GRANT_RE.source, SCHEMA_WIDE_GRANT_RE.flags);
   let m;
   while ((m = re.exec(sql))) {
-    const openParenIdx = m.index + m[0].length - 1;
-    const group = extractParenGroup(sql, openParenIdx);
-    if (!group) continue;
-    const after = sql.slice(group.endIdx + 1, group.endIdx + 200);
-    const toMatch = after.match(/TO\s+([^;]+)/i);
-    results.push({
-      name: m[1],
-      signature: normalizeSignature(group.params),
-      roles: toMatch ? splitRoleList(toMatch[1]) : [],
-      index: m.index,
-    });
-    re.lastIndex = group.endIdx + 1;
+    results.push({ roles: splitRoleList(m[1]), index: m.index });
   }
   return results;
 }
