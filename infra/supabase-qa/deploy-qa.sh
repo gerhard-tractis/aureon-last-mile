@@ -443,6 +443,125 @@ restart_auth() {
     --env-file "$QA_ENV_FILE" up -d --no-deps auth
 }
 
+# --------------------------------------------------------------------------
+# spec-93 fase 3 — generalizes restart_functions()/restart_auth() to the
+# other services in docker-compose.yml. Measured 2026-09-10 (`docker inspect
+# ... .State.StartedAt`): kong/rest/realtime/storage had not been recreated
+# since 2026-08-11, not because anything is currently drifted (the only
+# compose edits since then, #710 and #497, touched auth/edge and both
+# already have a dedicated helper above) but because the MECHANISM only ever
+# covered the two services someone happened to hit the BEETRACK_WEBHOOK
+# trap on. The next edit to, say, `rest`'s environment block would hit that
+# exact trap again, silently — restart_functions/restart_auth fix the
+# instance, not the pattern.
+#
+# compose_changed_services() finds which service BLOCK actually changed
+# between two revisions of docker-compose.yml — not "did the file change",
+# which would recreate every service (including `db`) on any unrelated
+# edit. It works on unified diff hunks (`--unified=0`, so hunk headers give
+# exact new-file line ranges) mapped against the TARGET file's own
+# top-level `  <service>:` block boundaries — and the target file is what's
+# on disk, since sync_checkout() has already reset the checkout to
+# QA_SYNCED_SHA by the time this runs in main().
+#
+# QA_PREV_SHA/QA_SYNCED_SHA — the exact same two values sync_checkout()
+# computed and widen_changed_flags() already keys off — not the checkout's
+# raw `git rev-parse HEAD`. That is deliberately the #721 fix
+# (read_qa_prev_sha()'s comment above tells the incident in full): HEAD
+# advances as soon as `git reset --hard` runs, before any restart in this
+# same main() has actually completed, so a run that dies partway through
+# would poison the NEXT run's baseline with a commit whose restarts never
+# ran. Reusing QA_PREV_SHA/QA_SYNCED_SHA here means this function inherits
+# that fix for free instead of re-deriving a baseline of its own — and
+# re-deriving one is exactly how a second copy of #721 would get written.
+compose_changed_services() { # $1 prev sha, $2 target sha -> one service per line
+  local prev="$1" target="$2"
+  local rel="infra/supabase-qa/docker-compose.yml"
+  local compose_file="${QA_CHECKOUT_DIR}/${rel}"
+  [ -f "$compose_file" ] || return 0
+  [ -n "$prev" ] || return 0
+  [ "$prev" != "$target" ] || return 0
+  git -C "$QA_CHECKOUT_DIR" rev-parse -q --verify "${prev}^{commit}" >/dev/null 2>&1 || return 0
+
+  local diff_out
+  diff_out="$(git -C "$QA_CHECKOUT_DIR" diff --unified=0 "$prev" "$target" -- "$rel" 2>/dev/null || true)"
+  [ -n "$diff_out" ] || return 0
+
+  # Top-level `  <service>:` block ranges in the file AS IT STANDS NOW (the
+  # target revision — see the comment above for why no extra `git show` is
+  # needed). Scoped to the `services:` section only: `volumes:`/`networks:`
+  # footers use the same two-space-then-colon shape and would otherwise be
+  # misread as services.
+  local ranges
+  ranges="$(awk '
+    /^services:$/ { insvc=1; next }
+    insvc && /^[A-Za-z]/ {
+      if (name != "") { print name, start, NR - 1; name = "" }
+      insvc = 0
+    }
+    insvc && /^  [A-Za-z0-9_-]+:$/ {
+      if (name != "") print name, start, NR - 1
+      name = $1; sub(":$", "", name); start = NR
+    }
+    END { if (name != "") print name, start, NR }
+  ' "$compose_file")"
+  [ -n "$ranges" ] || return 0
+
+  # Hunk headers (`@@ -a,b +c,d @@`) give the changed range in the NEW file
+  # as `c,d` — `d` defaults to 1 when omitted. A pure deletion has `d=0`
+  # (nothing added at that position); treated as a single-line marker at `c`
+  # rather than dropped, so a deletion that shrinks a block still attributes
+  # to the block it shrank.
+  local hunks
+  hunks="$(printf '%s\n' "$diff_out" | grep -oE '^@@ -[0-9]+(,[0-9]+)? \+[0-9]+(,[0-9]+)? @@' \
+    | sed -E 's/^@@ -[0-9]+(,[0-9]+)? \+([0-9]+)(,([0-9]+))? @@/\2 \4/')"
+  [ -n "$hunks" ] || return 0
+
+  local start count end svc s e
+  while read -r start count; do
+    [ -n "$start" ] || continue
+    count="${count:-1}"
+    if [ "$count" -eq 0 ]; then end="$start"; else end=$((start + count - 1)); fi
+    while read -r svc s e; do
+      [ -n "$svc" ] || continue
+      if [ "$end" -ge "$s" ] && [ "$start" -le "$e" ]; then
+        printf '%s\n' "$svc"
+      fi
+    done <<< "$ranges"
+  done <<< "$hunks" | sort -u
+}
+
+# Only the services it is safe to blind-recreate on a compose edit:
+#   - NOT `db` — stateful (carries Musan's data). A block change to `db`
+#     itself is a deliberate, reviewed operational decision, not something
+#     that should auto-recreate the container and cut every live connection
+#     as a side effect of a green merge. The same hazard restart_auth()'s
+#     --no-deps already guards against as a DEPENDENCY is a different,
+#     smaller risk than recreating it directly.
+#   - NOT `functions`/`auth` — already covered by restart_functions()/
+#     restart_auth() via CHANGED_EDGE_FUNCTIONS/CHANGED_QA_COMPOSE; adding
+#     them here too would just recreate the same container twice.
+#   - NOT `studio`/`imgproxy`/`meta` — out of scope for this phase; nothing
+#     was measured drifting on them and QA's own dashboards/health don't
+#     depend on studio being fresh the way auth/functions/kong do.
+RECREATABLE_QA_SERVICES="kong rest realtime storage"
+
+# `up -d --no-deps`, not `restart`, for the same reason as
+# restart_functions()/restart_auth() above: `restart` reuses the container's
+# existing config, so a compose edit to this service never reaches it.
+# `--no-deps`: every service in RECREATABLE_QA_SERVICES depends (directly,
+# or for `storage` transitively via `rest`/`imgproxy`) on `db: service_
+# healthy` — without it, `up -d <svc>` would also recreate `db` whenever
+# db's OWN config-hash changed, taking QA's Postgres down as a side effect
+# of an unrelated service's compose edit. Same fix, same reasoning,
+# restart_auth() ronda 4.
+recreate_qa_service() { # $1 compose service name
+  local infra_dir="${QA_CHECKOUT_DIR}/infra/supabase-qa"
+  log "recreating ${1} (compose block changed)"
+  docker compose -f "${infra_dir}/docker-compose.yml" \
+    --env-file "$QA_ENV_FILE" up -d --no-deps "$1"
+}
+
 # Restarting the QA units needs passwordless sudo. The prod units have a
 # sudoers rule (apps/worker/scripts/deploy.sh relies on the same thing); the QA
 # units were never added to it, so the job used to build for five minutes and
@@ -931,6 +1050,16 @@ main() {
   apply_qa_users
   if is_true "${CHANGED_EDGE_FUNCTIONS:-}"; then restart_functions; fi
   if is_true "${CHANGED_QA_COMPOSE:-}"; then restart_auth; fi
+  # spec-93 fase 3 — the other four recreatable services (kong/rest/
+  # realtime/storage), scoped to only the ones whose OWN compose block
+  # actually changed. Must follow sync_checkout/widen_changed_flags: it
+  # reads QA_PREV_SHA/QA_SYNCED_SHA, the same #721-safe baseline those set.
+  qa_svc=""
+  for qa_svc in $(compose_changed_services "${QA_PREV_SHA:-}" "${QA_SYNCED_SHA:-${DEPLOY_SHA}}"); do
+    case " ${RECREATABLE_QA_SERVICES} " in
+      *" ${qa_svc} "*) recreate_qa_service "$qa_svc" ;;
+    esac
+  done
   if is_true "${CHANGED_FRONTEND:-}"; then deploy_frontend; fi
   if is_true "${CHANGED_AGENTS:-}"; then deploy_node_app agents; fi
   if is_true "${CHANGED_WORKER:-}"; then deploy_node_app worker; fi
