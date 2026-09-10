@@ -98,18 +98,10 @@ export function normalizeSignature(paramsRaw) {
 
 /**
  * Splits a `FROM ...`/`TO ...` role list on commas into lowercase role
- * names. Two fixes from review round 2/3:
- *  - B3 (round 2): a naive `\s+(\w+)` capture only grabs the FIRST role in
- *    `FROM anon, PUBLIC` / `TO anon, authenticated`, silently missing
- *    every role after the first comma.
- *  - CASCADE/RESTRICT (round 3, menor): `REVOKE ... FROM PUBLIC CASCADE` is
- *    valid Postgres — CASCADE/RESTRICT is a trailing keyword of the REVOKE
- *    statement, not a role name, and must be stripped before splitting or
- *    it corrupts the last role into the literal string "public cascade".
- *  - B1 (round 5): a double-quoted role (`TO "anon"`) is what `supabase db
- *    diff` actually emits — real precedent in this repo,
- *    `20250130181641_todo_list.sql:23` (`grant ... to "anon";`). Without
- *    stripping the quotes, `"anon" !== 'anon'` and the role never matches.
+ * names, stripped of surrounding double-quotes (`TO "anon"` — the form
+ * `supabase db diff` emits, B1 round 5) and any trailing CASCADE/RESTRICT
+ * keyword (B menor round 3 — not a role name). Splits on EVERY comma, not
+ * just the first (B3 round 2).
  */
 function splitRoleList(roleListRaw) {
   const withoutTrailingKeyword = roleListRaw.replace(/\s+(CASCADE|RESTRICT)\s*$/i, '');
@@ -120,28 +112,24 @@ function splitRoleList(roleListRaw) {
 }
 
 const CREATE_FN_RE = /CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\s+(?:"?public"?\.)?"?(\w+)"?\s*\(/gi;
-// REVOKE ALL [PRIVILEGES] or REVOKE EXECUTE — both close the default PUBLIC
-// grant equally; requiring only "ALL" (medium finding, review round 2)
-// rejected a migration that correctly used the narrower, equally valid form.
-// No trailing `\(` requirement (round 3, menor): `REVOKE ... ON FUNCTION
-// name FROM role` with NO argument list is legal Postgres (PG14+) when the
-// name is unambiguous — the paren group, if present, is parsed separately
-// below.
-const REVOKE_HEADER_RE = /REVOKE\s+(?:ALL(?:\s+PRIVILEGES)?|EXECUTE)\s+ON\s+FUNCTION\s+(?:"?public"?\.)?"?(\w+)"?/gi;
-// B2 (round 5): GRANT ALL / GRANT ALL PRIVILEGES opens EXECUTE exactly like
-// GRANT EXECUTE does — REVOKE already accepted both forms symmetrically
-// (above); GRANT only accepting EXECUTE was strict on the wrong side: the
-// side that OPENS access, not the side that closes it.
-const GRANT_HEADER_RE = /GRANT\s+(?:ALL(?:\s+PRIVILEGES)?|EXECUTE)\s+ON\s+FUNCTION\s+(?:"?public"?\.)?"?(\w+)"?/gi;
+// REVOKE/GRANT: ALL|EXECUTE (GRANT ALL round 5 B2, schema-wide round 6 B4 —
+// being strict on the OPEN side, lax on the CLOSE side, was backwards) ON
+// FUNCTION|ROUTINE (ROUTINE is PG11+'s singular synonym, round 6 B5 — a
+// REVOKE via it failed closed, a GRANT via it failed open). No trailing
+// `\(` requirement: a bare, no-argument-list reference is legal PG14+ when
+// the name is unambiguous (round 3 menor).
+const REVOKE_HEADER_RE =
+  /REVOKE\s+(?:ALL(?:\s+PRIVILEGES)?|EXECUTE)\s+ON\s+(?:FUNCTION|ROUTINE)\s+(?:"?public"?\.)?"?(\w+)"?/gi;
+const GRANT_HEADER_RE =
+  /GRANT\s+(?:ALL(?:\s+PRIVILEGES)?|EXECUTE)\s+ON\s+(?:FUNCTION|ROUTINE)\s+(?:"?public"?\.)?"?(\w+)"?/gi;
+// Schema-wide form (round 3) — same ALL|EXECUTE and FUNCTIONS|ROUTINES
+// symmetry as above (round 6 B4).
 const SCHEMA_WIDE_GRANT_RE =
-  /GRANT\s+EXECUTE\s+ON\s+ALL\s+FUNCTIONS\s+IN\s+SCHEMA\s+(?:"?public"?)\s+TO\s+([^;]+)/gi;
+  /GRANT\s+(?:ALL(?:\s+PRIVILEGES)?|EXECUTE)\s+ON\s+ALL\s+(?:FUNCTIONS|ROUTINES)\s+IN\s+SCHEMA\s+(?:"?public"?)\s+TO\s+([^;]+)/gi;
 // DROP FUNCTION [IF EXISTS] name[(...)] — round 4: unlike CREATE OR REPLACE
-// (which preserves the existing ACL — round 3), a DROP destroys the
-// function object entirely; whatever CREATE follows gets Postgres's default
-// EXECUTE-to-PUBLIC grant fresh, regardless of any earlier REVOKE. No
-// trailing `\(` requirement, same reasoning as REVOKE_HEADER_RE above: a
-// bare `DROP FUNCTION name` (no argument list) is legal Postgres (PG14+)
-// when the name is unambiguous.
+// (preserves the existing ACL, round 3), a DROP destroys the function
+// object entirely; whatever CREATE follows gets Postgres's default
+// EXECUTE-to-PUBLIC grant fresh, regardless of any earlier REVOKE.
 const DROP_HEADER_RE = /DROP\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?(?:"?public"?\.)?"?(\w+)"?/gi;
 
 // Marks the start of a dollar-quoted function body ($$, $function$, etc.) —

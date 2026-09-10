@@ -1095,5 +1095,314 @@ SQL
 assert_exit 0 "B8: a DROP FUNCTION mentioned inside a function BODY (never actually run) does not count as a real reset" b8-drop-inside-function-body-does-not-count
 
 echo ""
+echo "-- round 6 (PR #723 review): B1 critical — degradation swallows any NEW violation in an M/R file --"
+
+# ── B1 (round 6, CRITICAL): a function that did NOT exist at base has no
+# events in baseTimeline for its name+signature, so isPublicOpenAt defaults
+# to true (Postgres's own default) — which the old predicate read as
+# "open at base" -> preexisting -> warn. A brand-new CREATE FUNCTION added
+# by editing an EXISTING (M-status) file, opened to anon with no REVOKE,
+# must still REJECT — the violating CREATE did not exist at base at all, so
+# there is no "before" it could have been safe or unsafe at.
+GIT_FIXTURE6="$TMP/gitrepo-rule5-base-new-fn-in-modified-file"
+mkdir -p "$GIT_FIXTURE6/migrations"
+(
+  cd "$GIT_FIXTURE6"
+  git init -q
+  git config user.email test@example.com
+  git config user.name test
+  cat > migrations/0000000001_unrelated.sql <<'SQL'
+ALTER TABLE public.packages ADD COLUMN foo TEXT;
+SQL
+  git add -A
+  git commit -q -m base
+  cat > migrations/0000000001_unrelated.sql <<'SQL'
+ALTER TABLE public.packages ADD COLUMN foo TEXT;
+
+CREATE OR REPLACE FUNCTION public.brand_new_fn() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+GRANT EXECUTE ON FUNCTION public.brand_new_fn() TO anon;
+SQL
+  git add -A
+  git commit -q -m "PR edits the file to add a brand-new open function"
+)
+BASE_SHA6=$(cd "$GIT_FIXTURE6" && git rev-parse HEAD~1)
+output6=$(cd "$GIT_FIXTURE6" && bash "$SCRIPT" --base "$BASE_SHA6" migrations 2>&1)
+actual6=$?
+if [ "$actual6" -eq 1 ] && printf '%s' "$output6" | grep -q "::error::.*brand_new_fn"; then
+  pass=$((pass + 1))
+  echo "  ok   B1 (round 6): a brand-new open function added by editing an existing file still rejects under --base"
+else
+  fail=$((fail + 1))
+  echo "  FAIL B1 (round 6): a brand-new function in a modified file did not reject — expected exit 1 with ::error:: naming brand_new_fn, got exit $actual6"
+  printf '%s\n' "$output6" | sed 's/^/         /'
+fi
+
+# ── B1 (round 6): a file both renamed AND substantially edited in the same
+# commit. Verified: with THIS content delta, git's similarity heuristic does
+# NOT classify it as a rename (R) — it comes out as A (new path) + D (old
+# path), confirmed via `git status --short` against this exact fixture. That
+# routes it through the already-tested "added file always rejects" path, not
+# a new one — still asserted here as a regression guard, not claimed as
+# covering a genuine R-status branch.
+GIT_FIXTURE6R="$TMP/gitrepo-rule5-base-new-fn-in-renamed-file"
+mkdir -p "$GIT_FIXTURE6R/migrations"
+(
+  cd "$GIT_FIXTURE6R"
+  git init -q
+  git config user.email test@example.com
+  git config user.name test
+  cat > migrations/0000000001_old_name.sql <<'SQL'
+ALTER TABLE public.packages ADD COLUMN foo TEXT;
+SQL
+  git add -A
+  git commit -q -m base
+  git mv migrations/0000000001_old_name.sql migrations/0000000001_new_name.sql
+  cat > migrations/0000000001_new_name.sql <<'SQL'
+ALTER TABLE public.packages ADD COLUMN foo TEXT;
+
+CREATE OR REPLACE FUNCTION public.brand_new_fn_renamed() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+GRANT EXECUTE ON FUNCTION public.brand_new_fn_renamed() TO anon;
+SQL
+  git add -A
+  git commit -q -m "PR renames the file AND adds a brand-new open function"
+)
+BASE_SHA6R=$(cd "$GIT_FIXTURE6R" && git rev-parse HEAD~1)
+output6r=$(cd "$GIT_FIXTURE6R" && bash "$SCRIPT" --base "$BASE_SHA6R" migrations 2>&1)
+actual6r=$?
+if [ "$actual6r" -eq 1 ] && printf '%s' "$output6r" | grep -q "::error::.*brand_new_fn_renamed"; then
+  pass=$((pass + 1))
+  echo "  ok   B1 (round 6): a brand-new open function added while renaming the file still rejects under --base"
+else
+  fail=$((fail + 1))
+  echo "  FAIL B1 (round 6): a brand-new function in a renamed file did not reject — expected exit 1 with ::error:: naming brand_new_fn_renamed, got exit $actual6r"
+  printf '%s\n' "$output6r" | sed 's/^/         /'
+fi
+
+# ── B1 (round 6): the case most likely to slip through a per-FILE
+# degradation — a file that ALREADY had one violating function at base
+# (correctly degrades) gets a SECOND, brand-new violating function added by
+# this PR (must reject). Proves the split is per-VIOLATION, not per-file —
+# a file-level "any violation here is preexisting" would swallow the new
+# one alongside the old one.
+GIT_FIXTURE6M="$TMP/gitrepo-rule5-base-old-and-new-violation-same-file"
+mkdir -p "$GIT_FIXTURE6M/migrations"
+(
+  cd "$GIT_FIXTURE6M"
+  git init -q
+  git config user.email test@example.com
+  git config user.name test
+  cat > migrations/0000000001_mixed.sql <<'SQL'
+CREATE OR REPLACE FUNCTION public.already_open_fn() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+  git add -A
+  git commit -q -m base
+  cat > migrations/0000000001_mixed.sql <<'SQL'
+CREATE OR REPLACE FUNCTION public.already_open_fn() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.newly_added_open_fn() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+  git add -A
+  git commit -q -m "PR adds a second, brand-new open function alongside the pre-existing one"
+)
+BASE_SHA6M=$(cd "$GIT_FIXTURE6M" && git rev-parse HEAD~1)
+output6m=$(cd "$GIT_FIXTURE6M" && bash "$SCRIPT" --base "$BASE_SHA6M" migrations 2>&1)
+actual6m=$?
+has_old_warning=$(printf '%s' "$output6m" | grep -q "::warning::.*already_open_fn.*already present" && echo yes || echo no)
+has_new_error=$(printf '%s' "$output6m" | grep -q "::error::.*newly_added_open_fn" && echo yes || echo no)
+if [ "$actual6m" -eq 1 ] && [ "$has_old_warning" = "yes" ] && [ "$has_new_error" = "yes" ]; then
+  pass=$((pass + 1))
+  echo "  ok   B1 (round 6): the pre-existing violation degrades AND the new one in the SAME file rejects — per-violation, not per-file"
+else
+  fail=$((fail + 1))
+  echo "  FAIL B1 (round 6): mixed old+new violations in one file did not split correctly — exit=$actual6m old_warning=$has_old_warning new_error=$has_new_error"
+  printf '%s\n' "$output6m" | sed 's/^/         /'
+fi
+
+# ── B2 (round 6): the reviewer's construction proving the null-override-
+# for-added-files branch IS observable — retracts round 5's "not
+# observable" argument. Base: a hardened function (CREATE + REVOKE FROM
+# PUBLIC, properly closed). This PR ADDS a file that sorts BEFORE it with a
+# direct `GRANT ... TO anon` (genuinely opening it), and separately TOUCHES
+# the hardened file (CREATE OR REPLACE, no ACL statements of its own — round
+# 3's "preserves the ACL" pattern). The added file's GRANT is what makes the
+# touched file's function open in `timeline` (the real one) at all — so,
+# unlike round 5's failed attempt to observe this, the GRANT does not
+# collapse the violation, it CREATES it. If the added file's phantom content
+# leaks into `baseTimeline` (missing null override), the violation reads as
+# "also open at base" and wrongly degrades to a warning instead of
+# rejecting a GRANT this PR itself introduced.
+GIT_FIXTURE7="$TMP/gitrepo-b2-added-grant-not-preexisting"
+mkdir -p "$GIT_FIXTURE7/migrations"
+(
+  cd "$GIT_FIXTURE7"
+  git init -q
+  git config user.email test@example.com
+  git config user.name test
+  cat > migrations/0000000001_harden.sql <<'SQL'
+CREATE OR REPLACE FUNCTION public.shared_fn() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.shared_fn() FROM PUBLIC;
+SQL
+  git add -A
+  git commit -q -m base
+  cat > migrations/0000000000_added_grant_to_anon.sql <<'SQL'
+GRANT EXECUTE ON FUNCTION public.shared_fn() TO anon;
+SQL
+  cat > migrations/0000000001_harden.sql <<'SQL'
+-- touched by this PR for an unrelated reason, no ACL statements of its own
+CREATE OR REPLACE FUNCTION public.shared_fn() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.shared_fn() FROM PUBLIC;
+SQL
+  git add -A
+  git commit -q -m "add an earlier-sorting file that GRANTs TO anon directly, and touch the hardened file"
+)
+BASE_SHA7=$(cd "$GIT_FIXTURE7" && git rev-parse HEAD~1)
+output7=$(cd "$GIT_FIXTURE7" && bash "$SCRIPT" --base "$BASE_SHA7" migrations 2>&1)
+actual7=$?
+if [ "$actual7" -eq 1 ] && printf '%s' "$output7" | grep -q "::error::.*shared_fn"; then
+  pass=$((pass + 1))
+  echo "  ok   B2 (round 6): a GRANT ... TO anon introduced by an added file rejects — it is not read back as pre-existing"
+else
+  fail=$((fail + 1))
+  echo "  FAIL B2 (round 6): the added file's GRANT was wrongly treated as pre-existing — expected exit 1, got exit $actual7"
+  printf '%s\n' "$output7" | sed 's/^/         /'
+fi
+
+# ── B4 (round 6): SCHEMA_WIDE_GRANT_RE still only accepted `GRANT EXECUTE`
+# — the exact asymmetry B2 (round 5) already fixed for the per-function
+# GRANT_HEADER_RE, unfixed on the schema-wide axis B3 (round 5) introduced.
+write_file b4-schema-wide-grant-all-to-anon-rejects 0000000001_harden <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC;
+SQL
+write_file b4-schema-wide-grant-all-to-anon-rejects 0000000002_schema_wide_grant_all <<'SQL'
+GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon;
+SQL
+write_file b4-schema-wide-grant-all-to-anon-rejects 0000000003_replace_no_acl_touch <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+assert_exit 1 "B4 (round 6): GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon reopens (not just GRANT EXECUTE)" b4-schema-wide-grant-all-to-anon-rejects
+
+# ── B4 (round 6): ROUTINES is the PG11+ synonym for FUNCTIONS in this exact
+# schema-wide grant form — must be recognized too.
+write_file b4-schema-wide-grant-routines-to-anon-rejects 0000000001_harden <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.internal_helper() FROM PUBLIC;
+SQL
+write_file b4-schema-wide-grant-routines-to-anon-rejects 0000000002_schema_wide_grant_routines <<'SQL'
+GRANT EXECUTE ON ALL ROUTINES IN SCHEMA public TO anon;
+SQL
+write_file b4-schema-wide-grant-routines-to-anon-rejects 0000000003_replace_no_acl_touch <<'SQL'
+CREATE OR REPLACE FUNCTION public.internal_helper() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+SQL
+assert_exit 1 "B4 (round 6): GRANT EXECUTE ON ALL ROUTINES IN SCHEMA public TO anon reopens (ROUTINES is the FUNCTIONS synonym)" b4-schema-wide-grant-routines-to-anon-rejects
+
+# ── B5 (round 6): `GRANT EXECUTE ON ROUTINE public.f() TO anon` — the
+# PG11+ singular synonym for `ON FUNCTION` in a per-function GRANT — failed
+# OPEN (no diagnostic at all), the dangerous direction. Declared as debt in
+# round 5 with the wrong characterization ("fails closed"); fixed here
+# instead, since it's a one-line regex change same as B2/B4.
+write_file b5-grant-on-routine-to-anon-rejects 0000000001_fixture <<'SQL'
+CREATE OR REPLACE FUNCTION public.h() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.h() FROM PUBLIC;
+GRANT EXECUTE ON ROUTINE public.h() TO anon;
+SQL
+assert_exit 1 "B5 (round 6): GRANT EXECUTE ON ROUTINE (singular, PG11+ synonym for FUNCTION) ... TO anon rejects" b5-grant-on-routine-to-anon-rejects
+
+# ── B5 negative/regression: REVOKE ... ON ROUTINE also recognized — a
+# migration that correctly closes via the ROUTINE synonym must not be
+# falsely rejected either (the symmetric direction of the same fix).
+write_file b5-revoke-on-routine-closes-correctly 0000000001_fixture <<'SQL'
+CREATE OR REPLACE FUNCTION public.h() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  NULL;
+END;
+$function$;
+
+REVOKE ALL ON ROUTINE public.h() FROM PUBLIC;
+SQL
+assert_exit 0 "B5 (round 6): REVOKE ALL ON ROUTINE (singular, PG11+ synonym) FROM PUBLIC closes it correctly" b5-revoke-on-routine-closes-correctly
+
+echo ""
 echo "check-migration-safety.sh (rules 4/5): $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

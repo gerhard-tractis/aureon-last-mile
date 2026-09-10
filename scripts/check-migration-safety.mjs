@@ -72,6 +72,7 @@ import {
   changedFilesSince,
   newViolationsSinceBase,
   buildBaseAclTimeline,
+  functionExistedAtBase,
 } from './check-migration-safety-git.mjs';
 import {
   buildRevokeIndex,
@@ -228,14 +229,15 @@ function main(argv) {
       }
     }
     for (const violation of result.aclRejections) {
-      // B10: same pre-existing/new split as rule 1, using baseTimeline
-      // (state AT base) instead of a statement-identity diff — rule 5's
-      // "identity" is the function's name+signature, not statement text.
+      // B10 (round 5) + B1 (round 6, CRITICAL) — two conditions, not one:
+      // see functionExistedAtBase's doc (check-migration-safety-git.mjs)
+      // for why isPublicOpenAt/isAnonOpenDirectly alone are not enough.
       const status = fileStatus.get(f);
       const preexisting =
         base &&
         (status === 'M' || status === 'R') &&
         baseTimeline &&
+        functionExistedAtBase(base, f, fileOldPath.get(f), violation.name, violation.signature) &&
         (isPublicOpenAt(baseTimeline, violation.name, violation.signature, fileIdxOf(f)) ||
           isAnonOpenDirectly(baseTimeline, violation.name, violation.signature, fileIdxOf(f)));
       if (preexisting) {

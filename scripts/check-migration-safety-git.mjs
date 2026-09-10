@@ -10,6 +10,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { findRule1Violations } from './check-migration-safety-rule1.mjs';
 import { buildAclTimeline } from './check-migration-safety-acl.mjs';
+import { findCreateFunctionSignatures } from './check-migration-safety-acl-parse.mjs';
 
 export function listSqlFiles(target) {
   const st = statSync(target);
@@ -128,6 +129,28 @@ export function readFileAtBase(baseSha, filePath, oldPathAtBase) {
  * `null` override — they did not exist at base, so nothing they contain
  * should count as having applied before this PR.
  */
+/**
+ * B1 (review round 6, CRITICAL): whether the violating `CREATE FUNCTION
+ * public.name(signature)` already existed AT `baseSha` — i.e. whether
+ * there is a "before" this violation could genuinely be pre-existing at.
+ * `isPublicOpenAt`/`isAnonOpenDirectly` alone are not enough: they default
+ * to "open" when a key has NO events at all (Postgres's own default grant
+ * — see check-migration-safety-acl.mjs), which is exactly the state of a
+ * function that never existed in `baseTimeline` in the first place. A
+ * brand-new function added by editing an existing (M-status) file reads,
+ * under that lone test, as "open at base" — false: it wasn't there to be
+ * open OR closed. `ci.yml` invokes this checker with `--base` on every
+ * PR, so this was not an edge case — it was the only path rule 5 actually
+ * took in CI, and it silently passed until the file's OWN new CREATE
+ * happened to also carry its own closing REVOKE (round 5's "genuinely
+ * introduced" fixture only ever exercised that lucky half).
+ */
+export function functionExistedAtBase(baseSha, filePath, oldPathAtBase, name, signature) {
+  const content = readFileAtBase(baseSha, filePath, oldPathAtBase);
+  if (content === null) return false; // file itself did not exist at base
+  return findCreateFunctionSignatures(content).some((fn) => fn.name === name && fn.signature === signature);
+}
+
 export function buildBaseAclTimeline(baseSha, files, fileStatus, fileOldPath, corpusFiles, fileIdxOf) {
   const overrides = new Map();
   for (const f of files) {
