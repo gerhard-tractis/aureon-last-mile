@@ -173,6 +173,8 @@ jobs:
           bash ./infra/supabase-qa/deploy-qa.sql-tests.test.sh
           bash ./infra/supabase-qa/deploy-qa.functions.test.sh
           bash ./infra/supabase-qa/deploy-qa.marker.test.sh
+          bash ./infra/supabase-qa/deploy-qa.pgtap.test.sh
+          bash ./infra/supabase-qa/deploy-qa.compose-recreate.test.sh
 
       # scripts/pgtap-local.sh's `run` case is the only gate the 83 real SQL
       # test files under packages/database/supabase/tests have — those files
