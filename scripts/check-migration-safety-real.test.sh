@@ -87,12 +87,48 @@ if [ -d "$MIGRATIONS_DIR" ]; then
     pass=$((pass + 1))
     echo "  ok   20260909000001 (spec79_loaded_route_id) is not flagged dangerous"
   fi
-  # None of the OTHER eleven should hard-reject (::error::) — only
-  # 20260913000001 (F2) is expected to.
+  # None of the other TEN should hard-reject (::error::) — only
+  # 20260913000001 (F2, rule 1) is expected to, plus the one named below
+  # (rule 5, spec-88 fase 4, redesigned in review round 2 — PR #723).
+  #
+  # A round-1 version of this comment claimed THREE genuine historical hits
+  # here (`recompute_dispatch_stage`, `get_pre_route_snapshot`,
+  # `close_manifest`) — that was wrong for two of the three, and the
+  # redesign that fixed rule 5's B1 bug (GRANT presence/absence is
+  # irrelevant; only a REVOKE targeting PUBLIC closes the default grant)
+  # also exposed the over-report: `recompute_dispatch_stage`
+  # (20260907000001) and `get_pre_route_snapshot` (20260908000001) are both
+  # declared `SECURITY INVOKER`, not DEFINER — verified by reading the
+  # migrations directly. A SECURITY INVOKER function runs with the
+  # CALLER's own privileges; `anon` being able to call one is not a
+  # privilege escalation, so rule 5 correctly does not flag them once it
+  # checks SECURITY DEFINER-ness (added specifically because of this).
+  # `close_manifest` (20260913000002) IS `SECURITY DEFINER` — confirmed the
+  # same way — and remains the one genuine hit: CREATE OR REPLACE FUNCTION
+  # with zero REVOKE {ALL|EXECUTE} ... FROM PUBLIC anywhere in the file. It
+  # was fixed by hand in a LATER migration (20260913000004/spec-80 fase 1b
+  # — not in this list, so this file alone still has the bug). CI never
+  # re-scans it (the `ci.yml` step always passes `--base`, so only files
+  # ADDED/MODIFIED by a PR are checked) — this full, no-`--base` scan of a
+  # fixed file list is the one place it gets looked at directly, and hiding
+  # it here would defeat the point of rule 5 having found it.
+  RULE5_EXPECTED_HITS="20260913000002_spec80_close_manifest.sql"
   for name in $TWELVE; do
     if [ "$name" = "20260913000001_spec85_discrepancies_schema.sql" ]; then
       continue
     fi
+    case " $RULE5_EXPECTED_HITS " in
+      *" $name "*)
+        if printf '%s\n' "$output" | grep "::error::" | grep -qF "$name"; then
+          pass=$((pass + 1))
+          echo "  ok   $name is rejected by rule 5 (genuine SECURITY DEFINER without REVOKE FROM PUBLIC, verified by hand)"
+        else
+          fail=$((fail + 1))
+          echo "  FAIL $name was expected to be rejected by rule 5 but was not"
+        fi
+        continue
+        ;;
+    esac
     if printf '%s\n' "$output" | grep "::error::" | grep -qF "$name"; then
       fail=$((fail + 1))
       echo "  FAIL $name was unexpectedly rejected"

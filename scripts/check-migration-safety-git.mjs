@@ -9,6 +9,8 @@ import { readdirSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { findRule1Violations } from './check-migration-safety-rule1.mjs';
+import { buildAclTimeline } from './check-migration-safety-acl.mjs';
+import { findCreateFunctionSignatures } from './check-migration-safety-acl-parse.mjs';
 
 export function listSqlFiles(target) {
   const st = statSync(target);
@@ -91,6 +93,80 @@ export function violationsAtBase(baseSha, filePath, oldPathAtBase) {
   } catch {
     return []; // file did not exist at base under that path -> nothing pre-existed
   }
+}
+
+/**
+ * B10 (review round 5, PR #723): the raw content of `filePath` (as it
+ * existed at `baseSha`, under `oldPathAtBase` — see m8) or `null` if it did
+ * not exist there. Used by rule 5's `--base` degradation (a violation that
+ * ALSO held at base is pre-existing — warn; one that only holds now is
+ * genuinely new — reject) — the same "measure against base" shape as
+ * `violationsAtBase` above, but returning raw content rather than a parsed
+ * violation list, because rule 5's "pre-existing" test needs a whole
+ * second `buildAclTimeline` corpus, not a per-statement diff.
+ */
+export function readFileAtBase(baseSha, filePath, oldPathAtBase) {
+  try {
+    return execFileSync('git', ['show', `${baseSha}:${oldPathAtBase ?? filePath}`], {
+      encoding: 'utf8',
+    });
+  } catch {
+    return null; // did not exist at base under that path
+  }
+}
+
+/**
+ * B1 (review round 6, CRITICAL): whether the violating `CREATE FUNCTION
+ * public.name(signature)` was ALREADY A VIOLATION at `baseSha` — i.e.
+ * whether there is a "before" this exact violation could genuinely be
+ * pre-existing at. Round 6's original wording ("existed at base") was
+ * itself incomplete (m1, round 7): a function that existed at base but was
+ * `SECURITY INVOKER`, or `RETURNS TRIGGER`, was never a rule-5 violation in
+ * the first place — a PR that edits that same migration to flip it to
+ * `SECURITY DEFINER` (or drop `RETURNS TRIGGER`) INTRODUCES the exposure,
+ * and must reject, not degrade. `isPublicOpenAt`/`isAnonOpenDirectly` alone
+ * are not enough either: they default to "open"/"closed" when a key has NO
+ * events at all (Postgres's own default grant — see
+ * check-migration-safety-acl.mjs), which is exactly the state of a
+ * function that never existed in `baseTimeline` in the first place. `ci.yml`
+ * invokes this checker with `--base` on every PR, so this was not an edge
+ * case — it was the only path rule 5 actually took in CI.
+ */
+export function functionExistedAtBase(baseSha, filePath, oldPathAtBase, name, signature) {
+  const content = readFileAtBase(baseSha, filePath, oldPathAtBase);
+  if (content === null) return false; // file itself did not exist at base
+  return findCreateFunctionSignatures(content).some(
+    (fn) => fn.name === name && fn.signature === signature && fn.isSecurityDefiner && !fn.returnsTrigger
+  );
+}
+
+/**
+ * B10 (review round 5): the full `buildAclTimeline` corpus AS OF `baseSha`
+ * — split out of check-migration-safety.mjs's `main()` (review round 5) to
+ * keep that file under the repo's 300-line limit, same reason this file
+ * already exists. `corpusPath = corpusFiles[fileIdxOf(f)]` is the exact
+ * string `buildAclTimeline` iterates over for that file — overrides must be
+ * keyed by that, not by `f` (which under `--base` is a forward-slash
+ * git-diff path that may differ from `corpusFiles`'s platform separator).
+ * Unchanged files get no override (read from disk — identical at base,
+ * since base is an ancestor and the file wasn't touched); `M`/`R` files
+ * read via `git show base:<oldPath>`; `A`(dded) files get an explicit
+ * `null` override — they did not exist at base, so nothing they contain
+ * should count as having applied before this PR.
+ */
+export function buildBaseAclTimeline(baseSha, files, fileStatus, fileOldPath, corpusFiles, fileIdxOf) {
+  const overrides = new Map();
+  for (const f of files) {
+    const status = fileStatus.get(f);
+    const corpusPath = corpusFiles[fileIdxOf(f)];
+    if (corpusPath === undefined) continue; // should not happen — checked file is always in corpusFiles
+    if (status === 'A') {
+      overrides.set(corpusPath, null);
+    } else if (status === 'M' || status === 'R') {
+      overrides.set(corpusPath, readFileAtBase(baseSha, f, fileOldPath.get(f)));
+    }
+  }
+  return buildAclTimeline(corpusFiles, overrides);
 }
 
 /**
