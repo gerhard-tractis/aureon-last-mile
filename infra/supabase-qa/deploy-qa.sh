@@ -43,6 +43,10 @@ QA_ENV_FILE="${QA_ENV_FILE:-/home/aureon/.env.qa}"
 QA_STATE_FILE="${QA_STATE_FILE:-/home/aureon/.qa-last-deployed-sha}"
 QA_DEGRADED_FILE="${QA_DEGRADED_FILE:-${QA_STATE_FILE}.degraded}"
 QA_DEGRADED_MAX="${QA_DEGRADED_MAX:-3}"
+# Exit code for "the deploy worked, the marker did not, and it has been that
+# way too long". deploy.yml keys its failure message off this — see the
+# escalation in record_deploy_marker().
+QA_EXIT_MARKER_STREAK=78
 
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
 err() { log "ERROR: $*" >&2; }
@@ -735,6 +739,13 @@ post_checks() {
 # GNU-only; the guard and its test are portable.
 write_atomic() { # $1 path, $2 content
   local path="$1" content="$2" tmp="$1.tmp.$$"
+  # Sweep temps a killed run left behind (SIGKILL between write and rename).
+  # Here rather than in the caller so it covers EVERY path this writes: the
+  # counter's temp is "<marker>.degraded.tmp.<pid>", which a glob anchored on
+  # the marker name alone does not match — one orphaned byte, forever.
+  # Safe to take all of them, not just this pid's: the workflow's `qa-deploy`
+  # concurrency group guarantees one QA sync at a time on this host.
+  rm -f "$path".tmp.* 2>/dev/null || true
   [ ! -d "$path" ] || return 1
   if printf '%s' "$content" > "$tmp" 2>/dev/null && mv -f "$tmp" "$path" 2>/dev/null; then
     return 0
@@ -775,10 +786,6 @@ record_deploy_marker() {
   local sha="${QA_SYNCED_SHA:-${DEPLOY_SHA}}"
   local runner; runner="$(id -un 2>/dev/null || echo '?')"
 
-  # Sweep temps a killed run left behind (SIGKILL between write and rename).
-  # Safe to take all of them, not just this pid's: the workflow's `qa-deploy`
-  # concurrency group guarantees one QA sync at a time on this host.
-  rm -f "${QA_STATE_FILE}".tmp.* 2>/dev/null || true
 
   if write_atomic "$QA_STATE_FILE" "$sha"; then
     rm -f "$QA_DEGRADED_FILE" 2>/dev/null || true
@@ -819,7 +826,12 @@ record_deploy_marker() {
     err "each of those runs deployed QA correctly but rebuilt every app to stay safe, and the"
     err "warning sat on a green run where nobody owned it. Fix the permissions and re-run:"
     err "  sudo chown ${runner} ${QA_STATE_FILE} $(dirname "$QA_STATE_FILE")"
-    exit 1
+    # A DISTINCT code, not 1. The workflow's generic failure step says "QA is
+    # now drifted from main", which here would be a lie: QA is in sync, only
+    # the note failed, and the runs that led here rebuilt EVERYTHING to stay
+    # safe. deploy.yml branches on this code to print the true diagnosis.
+    # A wrong reason attached to a correct red is how #718 cost two hours.
+    exit "$QA_EXIT_MARKER_STREAK"
   fi
   log "degraded run ${streak}/${QA_DEGRADED_MAX} — the deploy stays green until the streak reaches the limit"
   return 0

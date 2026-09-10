@@ -800,6 +800,77 @@ guarda `-d`), y `record_deploy_marker` llamado dentro de `$(...) || rc=$?`
 **desactiva `errexit` y el trap ERR**, así que la red del test no mordía en
 los cuatro casos de fallo — se llaman en pelado.
 
+##### Los tres verdes falsos de esta ronda, y por qué se escriben aquí
+
+Ninguno lo encontró un review: los tres los produjo **medir**, y los tres eran
+verdes que no probaban nada. Van al spec porque el patrón se repite, no el bug.
+
+1. **Baseline en rojo, mutantes «todos muertos».** La primera pasada de
+   mutación usaba `rc != 0` como criterio de muerte, con la suite ya en rojo en
+   Linux por dos bugs **del test**. Los 14 salieron «muertos» sin que ninguno
+   probara nada. Ahora hay puerta explícita: si la baseline no está verde, la
+   corrida de mutación se aborta.
+2. **Dos asserts que medían el entorno, no el código.** `chmod` no se aplica
+   igual en todas partes — Git Bash lo respeta en **ficheros** y lo ignora en
+   **directorios**, y root lo salta entero — y un assert que exigía `stdout`
+   vacío chocaba con `log()`, que escribe en stdout con todo derecho. De ahí
+   los *probes* separados por fichero y por directorio, y que un caso que no
+   puede morder se **salte declarándolo** en vez de pasar.
+3. **`QA_EXIT_MARKER_STREAK` sin definir en el test.** `extract()` sólo saca
+   funciones, así que la variable no existía; `exit "$QA_EXIT_MARKER_STREAK"`
+   tropezaba con `set -u` y salía **1**, y el assert que decía «esperado 1»
+   pasaba **sin verificar nada** del código de salida que existe para fijar. El
+   test lee ahora el valor del propio script y se cae si sale vacío.
+
+> **Un verde no es evidencia; tampoco un rojo.** Los tres casos de arriba
+> pasaban en verde sin mirar nada, y el rojo de la ronda 2 en `Sync QA
+> Environment` era un deploy correcto. En este repo la pregunta no es de qué
+> color salió, sino **contra qué entrada real se comprobó y qué mutación lo
+> pone del otro color**.
+
+##### Seguimiento (ronda 8) — la red muda y el diagnóstico falso
+
+Dos cosas que el propio arreglo introdujo, y que son la misma clase que el
+incidente que lo motivó:
+
+- **La red del arnés no informaba lo suficiente — pero NO mataba en silencio.**
+  La hipótesis era que el trap ERR corre dentro de la redirección del comando
+  que falla, así que su mensaje caería en `$TMP/invoke.out` y el trap EXIT lo
+  borraría. **Medido, y no reproduce**: forzando un abort real, la salida
+  visible es **idéntica** con `>&3` y sin él, en bash 5.2.21 (el VPS y el
+  runner de GitHub) y 5.2.37. El trap no hereda esa redirección. Y sobre el
+  artefacto de ronda 2 ya mergeado, el mutante del `rm` desnudo se caza con
+  una línea `FAIL` bien visible, no en silencio.
+
+  Lo que **sí** faltaba era contenido: ronda 2 imprimía un mensaje fijo, sin
+  el código de salida ni lo que la función había alcanzado a escribir. Eso es
+  lo que se arregla y lo que fija el self-check. El `fd 3` se queda como
+  cinturón y tirantes —cuesta una línea y la interacción entre traps ERR y
+  redirecciones es lo bastante sutil como para dejarla explícita— pero está
+  **anotado como inerte**, y un mutante que lo quite **sobrevive a propósito**:
+  pinchar un mecanismo que no actúa es pinchar ruido.
+- **La escalada a rojo imprimía un diagnóstico falso.** `exit 1` caía en el
+  paso genérico de `deploy.yml`, que dice *«QA is now drifted from main»* —
+  mentira: QA está sincronizado, sólo falló la nota, y las corridas degradadas
+  previas **reconstruyeron todo** precisamente para no saltarse nada. Ahora la
+  escalada sale con **78** y `deploy.yml` imprime la razón verdadera. El rojo
+  sigue bloqueando producción vía spec-57, a conciencia; lo que no puede
+  quedarse es mandar a alguien a buscar una deriva inexistente.
+
+Nit de la misma ronda: el barrido de temporales vive ahora **dentro de
+`write_atomic()`**, así que cubre también el temporal del contador
+(`<marcador>.degraded.tmp.<pid>`), que el glob anclado al nombre del marcador
+no casaba — un byte huérfano para siempre tras un SIGKILL.
+
+Deuda anotada, no pagada: `deploy-qa.sh` está en **898 líneas** y la regla del
+repo son 300. Ya estaba en 813 antes de este incidente, y las tres rondas han
+sumado 85 — casi todo comentario que explica por qué cada guarda existe, que
+es justo lo que evitó reintroducir el bug de #718 dos veces. Partirlo en un
+fichero que `deploy-qa.sh` haga `source` metería **exactamente la clase de
+fallo que este spec lleva tres rondas cazando**: un fichero más que tiene que
+existir, con el dueño correcto, en el VPS. No se hace en caliente; merece su
+propia tarea, con el arnés de tests ya montado como red.
+
 ### Fase 4 — Check automático de ACL huérfana `[pending]`
 
 **Archivos:** `scripts/check-migration-safety.sh`, `scripts/check-migration-safety-rule1-match.mjs`, `+ test`
