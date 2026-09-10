@@ -169,3 +169,19 @@ verified, since this guard existed, that those rows' content still matches
 what's actually in the database. Resolve it with `apply --force <version>`
 for each flagged version, or `up` if you're confident you're the only one
 using that container right now.
+
+## Platform gotcha: never invoke a script in this repo by bare path
+
+`scripts/pgtap-local.sh` is tracked at mode `100644` — no execute bit (so
+are most sibling scripts; it's not consistently `755` across this repo).
+Git Bash on Windows never enforces that bit, so `"$0" sync` inside the
+script, or any test invoking a sibling script by its path directly, runs
+fine on every developer machine. A Linux CI runner does enforce it: the
+exact same call fails with `Permission denied` / exit 126 — silently
+looking like a real logic bug, discovered only in CI, not locally. Round 5
+review's new stability self-test (the first thing in this whole PR's
+history to exercise `up` in CI) hit this. Always `bash <script>`, never a
+bare `<script>` or `"$0"` — matches how `.github/workflows/ci.yml` already
+invokes every script in this repo. This is the mirror image of B1: there,
+CI passed and the real machine (a pristine repo) failed; here, every
+developer's machine passes and only CI fails.

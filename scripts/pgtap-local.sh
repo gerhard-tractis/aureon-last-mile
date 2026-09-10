@@ -16,14 +16,7 @@
 #
 # MUTATION-TESTING A MIGRATION: read docs/runbooks/pgtap-mutation-testing.md
 # BEFORE trusting a green result — two agents got a perfect false-green on
-# 2026-09-10 by skipping it. Short version: mutate via `apply --force
-# <version>` (never a hand-rolled `docker exec ... psql -f` — see the
-# runbook for why), verify the LIVE OBJECT changed (e.g. `psql -tAc
-# "select md5(prosrc) from pg_proc where proname = '...'"` for a function
-# — other kinds need a different query, see the runbook), THEN trust
-# `run`'s red/green — and restore + re-`apply --force` afterward, or the
-# mutant stays live in the database. `up` (rebuild from scratch) is the
-# safer default on a container only you use; see the runbook for why.
+# 2026-09-10 by skipping it.
 set -uo pipefail
 
 # Overridable so CI (and this wrapper's own self-test) can point at a
@@ -91,9 +84,14 @@ case "${1:-}" in
       psq -tAc "select 1" >/dev/null 2>&1 && sleep 3 && psq -tAc "select 1" >/dev/null 2>&1 && break
       sleep 2
     done
-    "$0" sync
+    # bash "$0", not "$0" directly: this file is mode 100644 (no execute
+    # bit). Git Bash on Windows never enforces that; Linux CI does — exit
+    # 126 the first time anything here exercised `up` in CI (round 5
+    # review's new self-test). Match how ci.yml invokes every script:
+    # `bash ./scripts/...`, never by bare path.
+    bash "$0" sync
     bootstrap
-    "$0" apply
+    bash "$0" apply
     ;;
   sync)
     # Two traps here, both previously silent:
