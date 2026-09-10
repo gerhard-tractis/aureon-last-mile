@@ -140,4 +140,46 @@ describe('RouteManifestList — chip DESCARGAR', () => {
     );
     expect(screen.getByRole('button', { name: /descargar/i })).not.toBeDisabled();
   });
+
+  // Menor, revisión de fase 2 — la ausencia del chip significaba a la vez
+  // "descargada", "completada" y "todavía no lo sé", tres cosas distintas
+  // sobre el mismo slot visual vacío. Un estado afirmativo saca "descargada"
+  // de esa ambigüedad sin inventar nada que el mock pida — es un estado
+  // nuevo, no una reinterpretación del mock.
+  it('shows an affirmative DESCARGADA state once downloaded and not complete', () => {
+    render(
+      <RouteManifestList
+        manifests={[baseManifest()]}
+        onManifestClick={() => {}}
+        downloadedIds={new Set(['CARGA-99817'])}
+        onDownload={() => {}}
+      />,
+    );
+    expect(screen.getByText('DESCARGADA')).toBeInTheDocument();
+  });
+
+  it('does not show DESCARGADA while downloadedIds is still unknown', () => {
+    render(
+      <RouteManifestList
+        manifests={[baseManifest()]}
+        onManifestClick={() => {}}
+        downloadedIds={undefined}
+        onDownload={() => {}}
+      />,
+    );
+    expect(screen.queryByText('DESCARGADA')).toBeNull();
+  });
+
+  it('shows COMPLETADA, not DESCARGADA, once a downloaded carga is also fully verified', () => {
+    render(
+      <RouteManifestList
+        manifests={[baseManifest({ total_packages: 5, verified_count: 5 })]}
+        onManifestClick={() => {}}
+        downloadedIds={new Set(['CARGA-99817'])}
+        onDownload={() => {}}
+      />,
+    );
+    expect(screen.getByText('COMPLETADA')).toBeInTheDocument();
+    expect(screen.queryByText('DESCARGADA')).toBeNull();
+  });
 });

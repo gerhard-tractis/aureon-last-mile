@@ -134,6 +134,10 @@ export function RouteManifestList({
         // sé" y nunca pinta DESCARGAR — ver el docstring de la prop.
         const showDownload =
           !complete && !!onDownload && !!downloadedIds && !downloadedIds.has(m.external_load_id);
+        // Menor, revisión de fase 2 — `downloadedIds` puede seguir siendo
+        // `undefined` ("todavía no lo sé"); `!!downloadedIds` primero
+        // asegura que esto nunca sea `true` en ese caso.
+        const isDownloaded = !!downloadedIds && downloadedIds.has(m.external_load_id);
         return (
           <div
             key={m.id}
@@ -173,6 +177,17 @@ export function RouteManifestList({
                   {complete && (
                     <span className="flex-none rounded border border-status-success-border bg-status-success-bg px-1.5 py-1 font-mono text-[10.5px] font-semibold text-status-success-text">
                       COMPLETADA
+                    </span>
+                  )}
+                  {/* Menor, revisión de fase 2 — antes, la ausencia del
+                      chip significaba a la vez "descargada", "completada" y
+                      "todavía no lo sé": tres estados reales colapsados en
+                      un mismo vacío visual. Este estado afirmativo saca
+                      "descargada" de esa ambigüedad; COMPLETADA sigue
+                      ganando la colisión (mismo orden que showDownload). */}
+                  {!complete && isDownloaded && (
+                    <span className="flex-none rounded border border-border bg-surface-raised px-1.5 py-1 font-mono text-[10.5px] font-semibold text-text-secondary">
+                      DESCARGADA
                     </span>
                   )}
                 </div>
