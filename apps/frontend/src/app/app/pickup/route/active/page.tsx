@@ -65,12 +65,10 @@ export default function ActiveRoutePage() {
     [downloadedIdsList],
   );
   const downloadMut = useDownloadManifest(operatorId);
-  // B2/M1, ronda 4 de review del PR #727 — la PÁGINA controla qué filas
-  // muestran DESCARGAR deshabilitado, no `downloadMut.isPending`/`variables`:
-  // ese estado sólo puede describir UNA descarga a la vez (ver el docstring
-  // de `downloadingIds` en RouteManifestList), y con un mock estático de
-  // `useDownloadManifest` en los tests de página, `isPending` nunca reflejaba
-  // el clic real — la derivación vieja quedaba sin ejercer.
+  // B2, ronda 4 — la PÁGINA controla qué filas muestran DESCARGAR
+  // deshabilitado, no `downloadMut.isPending`/`variables` (sólo describe
+  // UNA descarga a la vez; ver el docstring de `downloadingIds` en
+  // RouteManifestList).
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
 
   if (routeLoading) {
@@ -163,39 +161,41 @@ export default function ActiveRoutePage() {
     );
   };
 
-  // spec-82 fase 2 — "DESCARGAR". La mutación necesita `externalLoadId`
-  // porque `useDownloadManifest` reconsulta Supabase con la misma clave que
-  // ya usa `useManifestOrders`/`5d`; `manifestId` marca la fila en
-  // `downloadingIds` para que RouteManifestList deshabilite SÓLO ese chip.
+  // spec-82 fase 2 — "DESCARGAR". `manifestId` marca la fila en
+  // `downloadingIds` (deshabilita SÓLO ese chip); `externalLoadId` es la
+  // clave real de la mutación.
   //
-  // M1, decisión del usuario, ronda 4 de review del PR #727 — sin señal,
-  // `networkMode: 'online'` (el default de `useDownloadManifest`) deja la
-  // mutación PAUSADA indefinidamente: `isPending` queda `true` para
-  // siempre, ni `onSuccess` ni `onError` corren nunca, y si el operario
-  // cierra la PWA antes de recuperar señal la mutación pausada se pierde
-  // sin rastro. Un chip que ningún código puede desbloquear no es un
-  // estado, es un cuelgue — se niega de entrada, con un mensaje que dice
-  // por qué, en vez de colgarse invisible.
+  // M1 (decisión del usuario) — sin señal, `networkMode: 'online'` deja la
+  // mutación pausada para siempre sin `onSuccess`/`onError`: se niega de
+  // entrada en vez de colgarse invisible.
+  //
+  // B1, ronda 5 de review del PR #727 — `mutateAsync` + `.finally`, no
+  // `mutate(id, { onSettled })`: los callbacks pasados a `mutate()` no
+  // vuelven a correr si un SEGUNDO `mutate()` arranca antes de que el
+  // primero resuelva (`MutationObserver` desengancha el observer previo en
+  // cada llamada). La promesa de `mutateAsync` es por-invocación y siempre
+  // se asienta. Ver `page.download.concurrent.test.tsx` para el mecanismo
+  // completo y la prueba contra el `useMutation` real.
   const handleDownload = (manifestId: string, externalLoadId: string) => {
     if (!onlineManager.isOnline()) {
       toast.error('Sin conexión: no se puede descargar. Busca señal e inténtalo de nuevo.');
       return;
     }
     setDownloadingIds((prev) => new Set(prev).add(manifestId));
-    downloadMut.mutate(externalLoadId, {
-      onSuccess: () => toast.success(`${externalLoadId} descargada para trabajar sin red`),
+    downloadMut
+      .mutateAsync(externalLoadId)
+      .then(() => toast.success(`${externalLoadId} descargada para trabajar sin red`))
       // Menor, revisión de fase 2 — no repetir el mensaje crudo de
       // PostgREST (códigos, nombres de columna/constraint) al operario;
       // no le ayuda a decidir nada y expone detalles internos.
-      onError: () => toast.error(`No se pudo descargar ${externalLoadId}. Inténtalo de nuevo.`),
-      onSettled: () => {
+      .catch(() => toast.error(`No se pudo descargar ${externalLoadId}. Inténtalo de nuevo.`))
+      .finally(() => {
         setDownloadingIds((prev) => {
           const next = new Set(prev);
           next.delete(manifestId);
           return next;
         });
-      },
-    });
+      });
   };
 
   const handleClose = () => {

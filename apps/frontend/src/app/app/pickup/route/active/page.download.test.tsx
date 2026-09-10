@@ -5,7 +5,7 @@
  * mismo patrón.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import React from 'react';
 
@@ -73,7 +73,15 @@ vi.mock('@/hooks/pickup/useRemoveManifestFromRoute', () => ({
 }));
 
 const downloadedIdsMock = vi.fn();
-const downloadMutate = vi.fn();
+// B1, ronda 5 de review del PR #727 — `page.tsx` ahora llama a
+// `mutateAsync(externalLoadId)` (no `mutate(externalLoadId, { onSuccess,
+// ... })`), precisamente para no depender de que TanStack vuelva a invocar
+// los callbacks del `mutate()` de una invocación anterior cuando una
+// segunda arranca antes (ver `page.download.concurrent.test.tsx`, que
+// prueba ese cableado real contra el `useMutation` sin mockear). Este
+// archivo sigue mockeando el hook — lo que verifica aquí es el cableado de
+// LA PÁGINA (qué hace con el resultado), no si TanStack cumple su contrato.
+const downloadMutateAsync = vi.fn();
 const useDownloadManifestArgsMock = vi.fn();
 // M4, revisión de fase 2 — antes, estos mocks IGNORABAN los argumentos con
 // los que `page.tsx` llama a los hooks reales. Un mutante que pasara
@@ -84,7 +92,7 @@ vi.mock('@/hooks/pickup/useManifestDownload', () => ({
   useDownloadedManifestIds: (...args: unknown[]) => downloadedIdsMock(...args),
   useDownloadManifest: (...args: unknown[]) => {
     useDownloadManifestArgsMock(...args);
-    return { mutate: downloadMutate, isPending: false, variables: undefined };
+    return { mutateAsync: downloadMutateAsync, isPending: false, variables: undefined };
   },
 }));
 
@@ -117,7 +125,8 @@ describe('ActiveRoutePage — DESCARGAR wiring', () => {
     routeManifestsMock.mockReset();
     routeManifestsMock.mockReturnValue({ data: [INCOMPLETE_MANIFEST], isLoading: false });
     downloadedIdsMock.mockReset();
-    downloadMutate.mockReset();
+    downloadMutateAsync.mockReset();
+    downloadMutateAsync.mockResolvedValue(undefined);
     useDownloadManifestArgsMock.mockReset();
   });
 
@@ -151,29 +160,30 @@ describe('ActiveRoutePage — DESCARGAR wiring', () => {
     await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Ver el manifiesto' }));
     fireEvent.click(screen.getByRole('button', { name: /descargar load-1/i }));
-    expect(downloadMutate).toHaveBeenCalledWith('LOAD-1', expect.anything());
+    expect(downloadMutateAsync).toHaveBeenCalledWith('LOAD-1');
+    // Deja que se asiente la promesa resuelta del mock (evita el warning de
+    // act() de la actualización de estado que dispara el .finally()).
+    await waitFor(() => expect(screen.getByRole('button', { name: /descargar load-1/i })).toBeInTheDocument());
   });
 
   // Menor, revisión de fase 2 — un fallo de descarga no debe enseñarle al
   // operario el mensaje crudo de PostgREST (códigos, nombres de columna,
-  // detalles internos). handleDownload pasa su propio onError a
-  // downloadMutate.mutate; lo invocamos aquí directamente para probarlo
-  // sin tener que fingir un rechazo real de Supabase.
+  // detalles internos). `handleDownload` transforma el rechazo de
+  // `mutateAsync` en su propio mensaje via `.catch`.
   it('shows a friendly message, not the raw error, when the download fails', async () => {
     downloadedIdsMock.mockReturnValue({ data: new Set<string>() });
+    downloadMutateAsync.mockRejectedValueOnce(
+      new Error('duplicate key value violates unique constraint "pk_manifests"'),
+    );
     wrap(<Page />);
     await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Ver el manifiesto' }));
     fireEvent.click(screen.getByRole('button', { name: /descargar load-1/i }));
 
-    const [, handlers] = downloadMutate.mock.calls[0] as [
-      string,
-      { onError: (err: Error) => void },
-    ];
-    handlers.onError(new Error('duplicate key value violates unique constraint "pk_manifests"'));
-
-    expect(toastError).toHaveBeenCalledWith(
-      expect.not.stringMatching(/constraint|violates|pk_manifests/i),
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        expect.not.stringMatching(/constraint|violates|pk_manifests/i),
+      ),
     );
   });
 
@@ -204,6 +214,12 @@ describe('ActiveRoutePage — DESCARGAR wiring', () => {
         data: [INCOMPLETE_MANIFEST, INCOMPLETE_MANIFEST_2],
         isLoading: false,
       });
+      let resolveDownload!: () => void;
+      downloadMutateAsync.mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          resolveDownload = resolve;
+        }),
+      );
       wrap(<Page />);
       await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
       fireEvent.click(screen.getByRole('button', { name: 'Ver los 2 manifiestos' }));
@@ -213,14 +229,7 @@ describe('ActiveRoutePage — DESCARGAR wiring', () => {
       expect(screen.getByRole('button', { name: /descargar load-1/i })).toBeDisabled();
       expect(screen.getByRole('button', { name: /descargar load-2/i })).not.toBeDisabled();
 
-      const [, handlers] = downloadMutate.mock.calls[0] as [
-        string,
-        { onSettled?: () => void },
-      ];
-      expect(typeof handlers.onSettled).toBe('function');
-      act(() => {
-        handlers.onSettled!();
-      });
+      resolveDownload();
 
       await waitFor(() =>
         expect(screen.getByRole('button', { name: /descargar load-1/i })).not.toBeDisabled(),
@@ -247,7 +256,7 @@ describe('ActiveRoutePage — DESCARGAR wiring', () => {
       onlineManager.setOnline(false);
       fireEvent.click(screen.getByRole('button', { name: /descargar load-1/i }));
 
-      expect(downloadMutate).not.toHaveBeenCalled();
+      expect(downloadMutateAsync).not.toHaveBeenCalled();
       expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/sin conexión/i));
     });
   });

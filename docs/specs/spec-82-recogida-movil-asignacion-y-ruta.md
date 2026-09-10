@@ -428,6 +428,69 @@ mutantes sobrevivían 86/86 verdes:
   (`downloadingId` de `RouteManifestList`) ya tenían test que sí lo mata.
   Queda como hueco declarado, no como "todos los mutantes mueren".
 
+**Corrección (ronda 4, sobre el párrafo de arriba): la razón dada era
+falsa, la conclusión no.** El chip sí era identificable: lo testeado en
+ronda 3 era el *componente* (`RouteManifestList.tsx`), no el *cableado de
+página* (`app/pickup/route/active/page.tsx`). El mock de
+`useDownloadManifest` en los tests de página devolvía siempre
+`{ isPending: false, variables: undefined }`, así que ningún test de
+página ejercía la derivación real — mutarla ahí sobrevivía 40/40. Cerrado
+en ronda 4 pasando la página a controlar su propio `Set<string>` de
+manifest ids en curso (no el `isPending`/`variables` del hook), con test
+de página que captura el mock por sus argumentos reales.
+
+**B1, ronda 5 de revisión — el `Set` de ronda 4 no se vaciaba nunca para
+la primera de dos descargas concurrentes.** `handleDownload` pasaba
+`onSuccess`/`onError`/`onSettled` como OPCIONES de `mutate()`.
+`MutationObserver.mutate()` (TanStack `query-core`) pisa
+`this.#mutateOptions` y DESENGANCHA el observer de la invocación anterior
+en cada llamada — si DESCARGAR se toca en una segunda carga antes de que
+la primera resuelva, los callbacks de la primera invocación no vuelven a
+correr NUNCA. Su chip quedaba `disabled` para siempre, sin toast, sin
+salida — todo online, sin relación con M1 (que sólo cubre "sin señal").
+Cerrado usando `mutateAsync()` + `.then()/.catch()/.finally()`: la
+promesa que devuelve `mutateAsync()` es por-invocación (no por-observer)
+y se asienta siempre, aunque el observer ya se haya movido a otra
+descarga.
+
+**El test que "probaba" B2 en ronda 4 no podía ver este bug — llamaba a
+`onSettled` a mano.** `page.download.test.tsx` tomaba
+`downloadMutate.mock.calls[0]` y ejecutaba `handlers.onSettled!()`
+directamente: probaba "la página limpia el `Set` SI alguien llama a
+`onSettled`", no si TanStack lo llama de verdad. Por construcción no podía
+ver que no lo llama en el caso concurrente. Cerrado con un archivo nuevo,
+`page.download.concurrent.test.tsx`, que usa el `useMutation` REAL (no
+mockeado) con dos `mutate` solapados contra un mock de Supabase con
+promesas diferidas — el mismo patrón que exige el resto de este spec para
+mecanismos de librería: mockear la frontera hace el test ciego a esa
+frontera.
+
+**Menores declarados, no resueltos en esta fase:**
+- **Regla de 300 líneas — cuatro ficheros sobre presupuesto, no dos.**
+  `scan/[loadId]/page.tsx` (438), `page.offline.test.tsx` (462, creado
+  "sólo por la regla de 300 líneas" y ya la incumple él mismo),
+  `route/active/page.tsx` (350, cruzó el umbral en ronda 4) y
+  `useManifestDownload.test.ts` (389, mismo cruce). Diferida la extracción
+  de los cuatro — no hay decisión de producto que resolver, es trabajo de
+  refactor puro que esta ronda no absorbió.
+- **`effectiveManifestFields.ts:24` (`totalPackages ?? 0`) — preexistente
+  y simétrico, no una contradicción nueva de esta fase.** El camino ONLINE
+  ya hace lo mismo en `scan/[loadId]/page.tsx:83`
+  (`setTotalPackages(data.total_packages ?? 0)`). Un manifiesto sin
+  conteo dice "3 de 0 paquetes" con red y "— de 0 paquetes" sin red — las
+  dos mienten, y la de la red es anterior a esta fase. Cerrarlo bien exige
+  cambiar `PickupFlowHeader.total` de `number` a `number | null` (y su
+  cálculo de porcentaje/denominador), que toca más que esta pantalla.
+  Ítem a abrir: el `?? 0` de `scan/[loadId]/page.tsx:83`, no el de
+  `effectiveManifestFields.ts`.
+- **Dos fuentes de verdad para "hay red" en la misma feature.**
+  `scansUnknown` sale de `useSyncQueue` (lee `navigator.onLine`);
+  `route/active/page.tsx` lee `onlineManager` (TanStack). Coinciden hoy
+  porque `Providers.tsx` refleja los mismos eventos del `window` hacia
+  `onlineManager`, pero divergen en cuanto algo llame a
+  `onlineManager.setOnline()` a mano — patrón que `review/[loadId]/
+  page.tsx:87` ya usa en otra pantalla de este mismo flujo.
+
 ### Fase 3 — Asignación `[pending]`
 
 **Decisión del usuario (2026-09-09), textual:** «El líder de recogida define la
