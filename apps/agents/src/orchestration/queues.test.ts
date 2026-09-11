@@ -33,7 +33,7 @@ describe('createQueues', () => {
     vi.resetModules();
   });
 
-  it('creates all 8 queues with correct names', async () => {
+  it('creates all 9 queues with correct names', async () => {
     const { createQueues } = await import('./queues');
     createQueues('redis://localhost:6379');
 
@@ -48,9 +48,20 @@ describe('createQueues', () => {
         'whatsapp.outbound',
         'exception.handle',
         'legacy.worker',
+        'geocode.enrich',
       ]),
     );
-    expect(names).toHaveLength(8);
+    expect(names).toHaveLength(9);
+  });
+
+  it('geocode.enrich: 3 attempts, 60s backoff', async () => {
+    const { createQueues } = await import('./queues');
+    createQueues('redis://localhost:6379');
+
+    const q = capturedQueues.find((q) => q.name === 'geocode.enrich')!;
+    const djo = q.opts.defaultJobOptions as Record<string, unknown>;
+    expect(djo.attempts).toBe(3);
+    expect((djo.backoff as Record<string, unknown>).delay).toBe(60_000);
   });
 
   it('intake.ingest: 3 attempts, exponential backoff 60s', async () => {
@@ -112,11 +123,11 @@ describe('closeQueues', () => {
     vi.resetModules();
   });
 
-  it('closes all 8 queue instances', async () => {
+  it('closes all 9 queue instances', async () => {
     const { createQueues, closeQueues } = await import('./queues');
     createQueues('redis://localhost:6379');
     await closeQueues();
-    expect(mockClose).toHaveBeenCalledTimes(8);
+    expect(mockClose).toHaveBeenCalledTimes(9);
   });
 
   it('is a no-op when called before createQueues', async () => {

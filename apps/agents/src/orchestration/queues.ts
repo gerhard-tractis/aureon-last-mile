@@ -10,7 +10,8 @@ export type QueueName =
   | 'settle.reconcile'
   | 'whatsapp.outbound'
   | 'exception.handle'
-  | 'legacy.worker';
+  | 'legacy.worker'
+  | 'geocode.enrich';
 
 interface QueueConfig {
   attempts: number;
@@ -26,6 +27,7 @@ const QUEUE_CONFIGS: Record<QueueName, QueueConfig> = {
   'whatsapp.outbound': { attempts: 3, backoffDelay: 10_000 },
   'exception.handle': { attempts: 3, backoffDelay: 60_000 },
   'legacy.worker': { attempts: 3, backoffDelay: 60_000 },
+  'geocode.enrich': { attempts: 3, backoffDelay: 60_000 },
 };
 
 export type Queues = Record<QueueName, Queue>;
