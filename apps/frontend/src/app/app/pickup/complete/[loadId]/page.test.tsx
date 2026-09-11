@@ -49,6 +49,15 @@ vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1', userId: 'user-1' }),
 }));
 
+// m5, ronda 2 de review de spec-95 fase 6 — mutable para que un test pueda
+// simular `retailer_name: null` (ningún test lo recorría antes; el doble
+// siempre devolvía 'Falabella'). Reseteada en `beforeEach`.
+let mockManifestRow: { id: string; started_at: string; retailer_name: string | null } = {
+  id: 'm1',
+  started_at: new Date().toISOString(),
+  retailer_name: 'Falabella',
+};
+
 const mockRpc = vi.fn(() => Promise.resolve({ data: [{ out_verified_count: 2 }], error: null }));
 vi.mock('@/lib/supabase/client', () => ({
   createSPAClient: () => {
@@ -75,13 +84,10 @@ vi.mock('@/lib/supabase/client', () => ({
         }
         return {
           // spec-95 fase 6 — `retailer_name` añadido al doble para poder
-          // anclar la cabecera del mock (`CARGA-… · <cliente>`); antes
-          // faltaba y `retailerName` quedaba siempre `null` en esta suite.
-          select: () => makeEq({
-            id: 'm1',
-            started_at: new Date().toISOString(),
-            retailer_name: 'Falabella',
-          }),
+          // anclar la cabecera del mock (`CARGA-… · <cliente>`); leído de
+          // `mockManifestRow` (mutable) para que m5 pueda simular
+          // `retailer_name: null`.
+          select: () => makeEq(mockManifestRow),
         };
       },
       rpc: mockRpc,
@@ -153,6 +159,11 @@ vi.mock('@/hooks/useOfflineQueue', () => ({
 describe('CompletionPage', () => {
   beforeEach(() => {
     mockManifestPhotoStripProps.length = 0;
+    mockManifestRow = {
+      id: 'm1',
+      started_at: new Date().toISOString(),
+      retailer_name: 'Falabella',
+    };
     mockUsePickupScans.mockReturnValue({
       data: [
         { id: 's1', scan_result: 'verified', package_id: 'pkg-a' },
@@ -193,6 +204,30 @@ describe('CompletionPage', () => {
     expect(title.compareDocumentPosition(subtitle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  // M3, ronda 2 de review — el mock (`Recogida.dc.html:793`) pinta
+  // "CARGA-99814 · Falabella" en JetBrains Mono, el mismo mono que
+  // distingue un id de carga en toda la app; el commit anterior lo llamó
+  // "subtítulo mono" sin llevar la clase.
+  it('renders the "CARGA-… · cliente" subtitle in monospace, per the mock', async () => {
+    render(<CompletionPage />);
+    const subtitle = await screen.findByText('CARGA-001 · Falabella');
+    expect(subtitle.className).toContain('font-mono');
+  });
+
+  // m5, ronda 2 de review — sin cliente conocido (retailerName null), el
+  // subtítulo cae a sólo el loadId, sin " · null" colgando. No lo recorría
+  // ningún test: el doble de Supabase siempre devolvía "Falabella".
+  it('falls back to just the loadId when retailerName is not known yet', async () => {
+    mockManifestRow = {
+      id: 'm1',
+      started_at: new Date().toISOString(),
+      retailer_name: null,
+    };
+    render(<CompletionPage />);
+    expect(await screen.findByText('CARGA-001')).toBeInTheDocument();
+    expect(screen.queryByText(/CARGA-001 ·/)).not.toBeInTheDocument();
+  });
+
   it('renders MetricCards with Spanish labels', async () => {
     render(<CompletionPage />);
     expect(await screen.findByText('Verificados')).toBeInTheDocument();
@@ -207,10 +242,16 @@ describe('CompletionPage', () => {
   // (un `\n` interno pasa a ser un espacio), así que el texto accesible
   // sigue siendo "Faltantes (con nota)" — lo que ancla el arreglo es que
   // el nodo YA NO recorta con elipsis (`truncate`).
+  // B4, ronda 2 de review — comprobar sólo `textContent` y la AUSENCIA de
+  // `truncate` no prueba que el arreglo se haya hecho: quitar
+  // `whitespace-pre-line` (el CSS que rompe la línea) deja pasar ambas
+  // aserciones igual, porque el `\n` sigue en el DOM. Se añade la
+  // aserción positiva de la clase.
   it('renders the missing-count label across two lines, without truncating it (the bug the mock fixed)', async () => {
     render(<CompletionPage />);
     const label = await screen.findByText('Faltantes (con nota)');
     expect(label.textContent).toBe('Faltantes\n(con nota)');
+    expect(label.className).toContain('whitespace-pre-line');
     expect(label.className).not.toContain('truncate');
   });
 
@@ -221,6 +262,30 @@ describe('CompletionPage', () => {
     expect(valueEls).toHaveLength(4);
     expect(valueEls[0].textContent).toBe('2');  // verified
     expect(valueEls[1].textContent).toBe('1');  // missing
+  });
+
+  // B2, ronda 2 de review de spec-95 fase 6 (bloqueante) — `usePickupScans`
+  // / `useMissingPackages` pausadas (`networkMode:'online'`, un enlace
+  // profundo o recarga de la PWA) leen `data: undefined`; el `= []` que
+  // tenía la página convertía eso en "0 verificados, 0 faltantes" dentro
+  // del aviso que TRANSFIERE CUSTODIA. Mismo patrón que
+  // `review/[loadId]/page.tsx:199-204` ya aplica: gatear por presencia de
+  // dato, no por `isLoading`/`isError`.
+  it('B2 — shows a loading state instead of "0 verificados / 0 faltantes" when scans or missingPackages are still undefined (a paused query, not an empty one)', async () => {
+    mockUsePickupScans.mockReturnValue({ data: undefined });
+    render(<CompletionPage />);
+    await waitFor(() => {
+      expect(screen.queryByText('Aviso de transferencia de custodia')).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText(/0 paquetes verificados/)).not.toBeInTheDocument();
+  });
+
+  it('B2 — same gate applies when missingPackages alone is undefined', async () => {
+    mockUseMissingPackages.mockReturnValue({ data: undefined });
+    render(<CompletionPage />);
+    await waitFor(() => {
+      expect(screen.queryByText('Aviso de transferencia de custodia')).not.toBeInTheDocument();
+    });
   });
 
   // Ronda 2 de review del PR #726 (B2) — asimétrico a propósito: dos filas
@@ -274,10 +339,41 @@ describe('CompletionPage', () => {
   it('renders the mock\'s custody-transfer copy, with the real verified/missing counts', async () => {
     render(<CompletionPage />);
     expect(await screen.findByText('Aviso de transferencia de custodia')).toBeInTheDocument();
-    // scans por defecto (beforeEach): 2 verificados; missingPackages: 1.
+    // scans por defecto (beforeEach): 2 verificados; missingPackages: 1
+    // (singular — ver `custodyNoticeCopy`, M1 de la ronda 2 de review).
     expect(
       screen.getByText(
-        'Al firmar, los 2 paquetes verificados pasan a custodia de Aureon. Los 1 faltantes quedan a nombre del local hasta que se resuelvan.'
+        'Al firmar, 2 paquetes verificados pasan a custodia de Aureon. 1 faltante queda a nombre del local hasta que se resuelva.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  // Ronda 2 de review de spec-95 fase 6 (B3) — el test de arriba usaba
+  // SIEMPRE las mismas dos cifras del `beforeEach` (2 y 1): hardcodear el
+  // string entero en `page.tsx` pasaba ese test igual. Este usa cifras
+  // DISTINTAS entre sí y del `beforeEach`, así que un valor quemado no
+  // puede coincidir con ambos tests a la vez.
+  it('B3 — the custody copy tracks DIFFERENT counts, not a fixed pair (kills the hardcoded-string mutation)', async () => {
+    mockUsePickupScans.mockReturnValue({
+      data: [
+        { id: 's1', scan_result: 'verified', package_id: 'pkg-a' },
+        { id: 's2', scan_result: 'verified', package_id: 'pkg-b' },
+        { id: 's3', scan_result: 'verified', package_id: 'pkg-c' },
+        { id: 's4', scan_result: 'verified', package_id: 'pkg-d' },
+      ],
+    });
+    mockUseMissingPackages.mockReturnValue({
+      data: [
+        { id: 'pkg1', label: 'PKG-001' },
+        { id: 'pkg2', label: 'PKG-002' },
+      ],
+    });
+
+    render(<CompletionPage />);
+
+    expect(
+      await screen.findByText(
+        'Al firmar, 4 paquetes verificados pasan a custodia de Aureon. 2 faltantes quedan a nombre del local hasta que se resuelvan.'
       )
     ).toBeInTheDocument();
   });

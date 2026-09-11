@@ -3,6 +3,7 @@ import {
   pendingLoadsLabel,
   summarizePendingRouteManifests,
   backupPhotosLabel,
+  custodyNoticeCopy,
 } from './manifestCloseSummary';
 
 describe('pendingLoadsLabel', () => {
@@ -121,5 +122,67 @@ describe('backupPhotosLabel', () => {
   // no "1 cargas pendientes").
   it('uses the singular noun for exactly 1 known photo', () => {
     expect(backupPhotosLabel(1, 0)).toBe('1 foto');
+  });
+});
+
+/**
+ * Ronda 2 de review de spec-95 fase 6 (B3, M1, M2) — el aviso de
+ * transferencia de custodia (`5f`) es la frase que le dice al cliente qué
+ * pasa legalmente con sus paquetes al firmar. Vivía como un template
+ * literal inline en `page.tsx`, lo que dejaba el bloqueante B3: un valor
+ * hardcodeado ahí pasaba las 34/34 pruebas de esa página porque el único
+ * test que la ejercitaba usaba SIEMPRE las mismas dos cifras del
+ * `beforeEach` (2 verificados, 1 faltante). Extraída aquí para poder variar
+ * las cifras en un test unitario puro, que es lo único que mata esa
+ * mutación.
+ *
+ * Concordancia singular/plural: mismo criterio que `pendingLoadsLabel` /
+ * `missingHeadingLabel` (reviewCloseGate.ts) / `closeButtonLabel` — "1
+ * paquete verificado pasa", no "1 paquetes verificado pasan"; "1 faltante
+ * queda", no "1 faltantes quedan" (M1). El mock (`5f`, 39/3) no cubre el
+ * singular ni el cero, así que el texto para esos casos se deriva de esa
+ * misma convención, no del mock — declarado, no inventado en silencio.
+ *
+ * missingCount === 0 (M2): con 0 faltantes — el camino feliz, y el más
+ * común según `reviewCloseGate.ts:83` ("pasa directo a 5f") — la segunda
+ * frase del mock ("Los N faltantes quedan…") no tiene nada que decir; se
+ * omite en vez de imprimir "0 faltantes quedan a nombre del local hasta
+ * que se resuelvan", que no tiene sentido.
+ */
+describe('custodyNoticeCopy', () => {
+  it('matches the mock’s two-sentence shape for its own numbers (39 verified, 3 missing)', () => {
+    expect(custodyNoticeCopy(39, 3)).toBe(
+      'Al firmar, 39 paquetes verificados pasan a custodia de Aureon. 3 faltantes quedan a nombre del local hasta que se resuelvan.'
+    );
+  });
+
+  it('uses the real counts, not a fixed pair (B3 — kills the hardcoded-string mutation)', () => {
+    expect(custodyNoticeCopy(7, 5)).toBe(
+      'Al firmar, 7 paquetes verificados pasan a custodia de Aureon. 5 faltantes quedan a nombre del local hasta que se resuelvan.'
+    );
+  });
+
+  it('singularizes verified (M1)', () => {
+    expect(custodyNoticeCopy(1, 3)).toBe(
+      'Al firmar, 1 paquete verificado pasa a custodia de Aureon. 3 faltantes quedan a nombre del local hasta que se resuelvan.'
+    );
+  });
+
+  it('singularizes missing (M1)', () => {
+    expect(custodyNoticeCopy(2, 1)).toBe(
+      'Al firmar, 2 paquetes verificados pasan a custodia de Aureon. 1 faltante queda a nombre del local hasta que se resuelva.'
+    );
+  });
+
+  it('omits the missing sentence entirely at zero missing — the common case (M2)', () => {
+    expect(custodyNoticeCopy(12, 0)).toBe(
+      'Al firmar, 12 paquetes verificados pasan a custodia de Aureon.'
+    );
+  });
+
+  it('is honest with zero verified too', () => {
+    expect(custodyNoticeCopy(0, 2)).toBe(
+      'Al firmar, 0 paquetes verificados pasan a custodia de Aureon. 2 faltantes quedan a nombre del local hasta que se resuelvan.'
+    );
   });
 });
