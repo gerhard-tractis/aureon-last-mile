@@ -86,7 +86,6 @@ describe('PickupDesktopView', () => {
     // DOCUMENT_POSITION_FOLLOWING on `chip` relative to `searchBar` means
     // searchBar comes first in the DOM — this is the position criterion
     // the fase-8 checklist calls out explicitly, not just presence of both.
-    // eslint-disable-next-line no-bitwise
     expect(searchBar.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
