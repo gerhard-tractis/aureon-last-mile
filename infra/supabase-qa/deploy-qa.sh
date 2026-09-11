@@ -948,13 +948,44 @@ sql_tests_check() {
     echo "\\echo ${end_tag} ${base}" >> "$runner"
   done
 
-  local output
-  output="$(PGPASSWORD="$pw" "${psql_qa[@]}" -v ON_ERROR_STOP=0 -q -f "$runner" 2>&1 || true)"
+  # rc is captured, not swallowed with a blind `|| true`: a nonzero exit here
+  # (psql couldn't even connect, or was killed mid-run) is a different failure
+  # mode from ON_ERROR_STOP=0 letting individual files error while the rest
+  # keep running (which still exits 0) — it's used below only to make the
+  # per-file "did not run" diagnosis readable, never to decide pass/fail on
+  # its own, since a partial run (some files' markers present, some not)
+  # needs the per-file marker check regardless of the overall exit code.
+  local output rc
+  output="$(PGPASSWORD="$pw" "${psql_qa[@]}" -v ON_ERROR_STOP=0 -q -f "$runner" 2>&1)" && rc=0 || rc=$?
   rm -f "$runner"
 
   local pass=0 fail=0 skip=0 section
   for f in "${files[@]}"; do
     base="$(basename "$f")"
+    # A file that never ran must never score "ok" — that would be a green
+    # check that saw nothing (the exact failure mode this fase exists to
+    # close: 2026-09-10 review round on this fase found sql_tests_check
+    # scored a connection-refused psql run as "ok" for every file, because
+    # it grepped $output for "ERROR:"/"not ok" and a connection failure
+    # prints lowercase "error:" and produces NO \echo output at all — every
+    # per-file section came back empty and fell through to the pass branch.
+    # A mid-run death (psql killed partway through) has the identical shape
+    # for every file after the point of death: no BEGIN/END pair. Fixed by
+    # requiring BOTH markers to be literally present in $output before a
+    # file's content is even inspected — grep -F/-x, not the awk scan below,
+    # so a missing marker can't be masked by a coincidental text match.
+    # FAIL, not SKIP: SKIP means an ABSENT PREREQUISITE (see the four
+    # record_advisory() paths above and in this loop); here the prerequisite
+    # (files, password, pgtap) was present and the run itself broke, which is
+    # a different failure the deploy must see.
+    if ! printf '%s\n' "$output" | grep -qxF "$begin_tag $base" \
+        || ! printf '%s\n' "$output" | grep -qxF "$end_tag $base"; then
+      fail=$((fail + 1))
+      log "--- $base did not run: psql produced no ${begin_tag}/${end_tag} pair for it" \
+        "(psql exit status ${rc} — connection failure or a mid-run crash, not a SQL test result)"
+      record "sql: $base" FAIL "psql did not run this file — see deploy log"
+      continue
+    fi
     section="$(printf '%s\n' "$output" | awk -v b="$begin_tag $base" -v e="$end_tag $base" \
       '$0==b{on=1;next} $0==e{on=0} on')"
     if printf '%s' "$section" | grep -q "SKIPPED-NO-PGTAP"; then

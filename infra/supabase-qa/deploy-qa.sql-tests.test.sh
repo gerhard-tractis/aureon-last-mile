@@ -50,7 +50,10 @@ check_true() { # $1 name, $2 condition result (0/1)
 #      have printed, keyed off the fixture's basename (never actually reads
 #      or executes the .sql files — this is a control-flow test, not a SQL
 #      test). Also logs every invocation and can be forced to fail via
-#      PSQL_F_EXIT.
+#      PSQL_F_EXIT, or to simulate a connection failure via PSQL_CONN_FAIL:
+#      the real failure mode found in review — psql can't reach the server,
+#      prints lowercase "error:" (not "ERROR:"), NEVER processes the runner
+#      file, so it emits zero \echo BEGIN/END markers, and exits nonzero.
 cat > "$STUB_DIR/psql" <<'STUB'
 #!/usr/bin/env bash
 echo "CALLED" >> "$PSQL_CALLS"
@@ -70,6 +73,10 @@ if [ "$tac" -eq 1 ]; then
 fi
 
 if [ -n "$runner" ]; then
+  if [ "${PSQL_CONN_FAIL:-}" = "1" ]; then
+    echo "psql: error: connection to server at \"localhost\", port 5433 failed: Connection refused" >&2
+    exit 2
+  fi
   while IFS= read -r line; do
     case "$line" in
       '\echo '*) echo "${line#\\echo }" ;;
@@ -211,6 +218,31 @@ rc=$?
 check_true "a nonzero psql exit does not propagate under set -e" $rc
 check "RESULT flips to 1 from the real ERROR in the captured output" \
   "RESULT=1" "$(printf '%s\n' "$output3" | grep '^RESULT=')"
+
+# ── psql cannot even connect (real 2026-09-10 review finding): it never
+#    processes the runner at all, so $output has ZERO \echo BEGIN/END
+#    markers and no "ERROR:"/"not ok" text either (real psql prints
+#    lowercase "error: connection ... failed", which the FAIL grep does not
+#    match). Before this fix every per-file section came back empty and
+#    fell through to the "ok" branch — a fully green table from a run that
+#    executed NOTHING. Must now score every file FAIL, and RESULT must flip
+#    to 1, not stay 0 (this is not a SKIP: the prerequisites — password,
+#    tests dir, files — were all present; the run itself broke) ───────────
+PSQL_CALLS="$STUB_DIR/calls3b"; export PSQL_CALLS; : > "$PSQL_CALLS"
+output3b="$(set -e; PGTAP_INSTALLED="" PSQL_CONN_FAIL=1 bash -c \
+  '. "'"$STUB_DIR"'/harness.sh"; sql_tests_check; printf "%s\n" "${CHECKS[@]}"; echo "RESULT=$RESULT"' 2>&1)"
+rc=$?
+check_true "a connection failure does not propagate under set -e" $rc
+check "RESULT flips to 1 when psql never ran a single file" \
+  "RESULT=1" "$(printf '%s\n' "$output3b" | grep '^RESULT=')"
+check "the clean file is reported FAIL, not ok, when it never actually ran" \
+  "sql: aaa_pass_test.sql|FAIL|psql did not run this file — see deploy log" \
+  "$(printf '%s\n' "$output3b" | grep '^sql: aaa_pass_test.sql')"
+check "the pgTAP file is reported FAIL, not SKIP, when it never actually ran" \
+  "sql: ccc_tapfail_test.sql|FAIL|psql did not run this file — see deploy log" \
+  "$(printf '%s\n' "$output3b" | grep '^sql: ccc_tapfail_test.sql')"
+check "no file is silently scored ok on a connection failure" \
+  "true" "$(printf '%s\n' "$output3b" | grep -q '|ok|' && echo false || echo true)"
 
 # ── Missing POSTGRES_PASSWORD: skip cleanly, never invoke psql ─────────────
 BAD_ENV="$STUB_DIR/.env.qa.blank"
