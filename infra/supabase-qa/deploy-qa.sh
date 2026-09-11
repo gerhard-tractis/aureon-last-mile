@@ -733,8 +733,11 @@ record() { CHECKS+=("$1|$2|$3"); [ "$2" = "ok" ] || RESULT=1; }
 # A deliberate fork of record(): same CHECKS array and table row shape, but
 # never touches RESULT. Used by ensure_pgtap() (a single CREATE-EXTENSION
 # failure — see its comment for the streak that DOES eventually escalate to
-# a real failure) and by sql_tests_check() for its four "a prerequisite to
-# running the tests was absent" SKIP paths (see that function's comment).
+# a real failure) and by sql_tests_check() for its two remaining "a
+# prerequisite to running the tests was absent" SKIP paths — round 6 (M3)
+# moved the missing/empty tests-DIR checks off this list and onto
+# record(); see that function's comment for why a wrong path is not the
+# same kind of absence as a missing password.
 # spec-92: as of that fase, a REAL SQL test failure in sql_tests_check is
 # BLOCKING — it goes through record(), not this function. Do not read this
 # comment as "a SQL test failure can never fail this deploy"; that was true
@@ -903,18 +906,23 @@ ensure_pgtap() {
 # comment block itself used to say 91/20/31/"two files" after the count had
 # already moved to 92/21 — caught in review round 3's m4).
 #
-# What is STILL advisory, deliberately: any SKIP, because a SKIP here always
-# means "a prerequisite to running the tests was absent", never "a test ran
-# and failed". Converting a missing POSTGRES_PASSWORD, a missing tests dir,
-# an empty tests dir, the pgtap-installed PROBE failing outright, or a
-# single pgTAP file skipped for lack of the pgtap extension into a hard
-# failure would fail deploys for reasons that have nothing to do with SQL
-# correctness. The pgtap-missing case is NOT a silent pass either:
-# ensure_pgtap() (above) already escalates a persistent CREATE-EXTENSION
-# failure into a hard deploy failure of its own (QA_PGTAP_DEGRADED_MAX,
-# QA_EXIT_PGTAP_STREAK), so a genuinely broken pgtap install cannot hide
-# behind SKIPPED-NO-PGTAP forever — that escalation lives there once, not
-# duplicated here.
+# What is STILL advisory, deliberately, and ONLY this (round 6, M3, cut
+# this list down to two): missing POSTGRES_PASSWORD (in practice
+# unreachable — apply_migrations() already exits 1 on the same condition
+# before this function can even run) and a single pgTAP file SKIPped for
+# lack of the pgtap extension. Both are genuine "a prerequisite was
+# absent" cases with no wrong-path reading. A missing/empty tests DIR is
+# NOT on this list — see the blocking checks below for why round 6 moved
+# those off it. The pgtap-installed PROBE failing outright is also NOT
+# advisory (see its own check, above) — it never was meant to be; an
+# earlier version of this comment listed it here by mistake, kept as
+# advisory only in prose, not in the code, which has recorded it as a
+# blocking FAIL since round 2 (M2). The pgtap-missing SKIP is not a
+# silent pass either: ensure_pgtap() (above) already escalates a
+# persistent CREATE-EXTENSION failure into a hard deploy failure of its
+# own (QA_PGTAP_DEGRADED_MAX, QA_EXIT_PGTAP_STREAK), so a genuinely broken
+# pgtap install cannot hide behind SKIPPED-NO-PGTAP forever — that
+# escalation lives there once, not duplicated here.
 #
 # record() (every per-file ok/FAIL row, and the probe-failed row) is what
 # makes a result reach post_checks' final `[ "$RESULT" -ne 0 ] && exit 1`.
@@ -978,9 +986,23 @@ sql_tests_check() {
     return 0
   fi
 
+  # round 6 (M3): these two used to be record_advisory SKIP, same as the
+  # missing-password case above. That reasoning ("a prerequisite was
+  # absent, not a test result") does not hold here. sync_checkout() just
+  # ran `git reset --hard` against the exact commit this deploy is for —
+  # there is no environment flakiness that can make a path inside a
+  # freshly-checked-out repo not exist. A missing/empty tests dir here
+  # can only mean the PATH ITSELF IS WRONG (e.g. a refactor moved
+  # packages/database/supabase/tests/ and this hardcoded path was not
+  # updated). That is exactly the sixth silent-green door the coordinator
+  # named: from the commit of such a refactor onward, every QA deploy
+  # would report "SKIP: tests dir not found", RESULT untouched, green,
+  # 0 of ~92 SQL tests ever run again — and nothing else would notice,
+  # since these files never run in CI (the reason sql_tests_check exists
+  # at all). record(), not record_advisory(): this blocks the deploy.
   local tests_dir="${QA_CHECKOUT_DIR}/packages/database/supabase/tests"
   if [ ! -d "$tests_dir" ]; then
-    record_advisory "sql tests" SKIP "tests dir not found: $tests_dir"
+    record "sql tests" FAIL "tests dir not found: $tests_dir — wrong path, not a missing prerequisite"
     return 0
   fi
 
@@ -988,7 +1010,7 @@ sql_tests_check() {
   local files=("$tests_dir"/*.sql)
   shopt -u nullglob
   if [ ${#files[@]} -eq 0 ]; then
-    record_advisory "sql tests" SKIP "no *.sql files in $tests_dir"
+    record "sql tests" FAIL "no *.sql files in $tests_dir — wrong path, not a missing prerequisite"
     return 0
   fi
 

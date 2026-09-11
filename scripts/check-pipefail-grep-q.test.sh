@@ -73,6 +73,50 @@ EOF
 bash "$S" "$TMP/deploy_yml_shape.sh" >/dev/null 2>&1
 check_false "catches deploy.yml's matches() shape" $?
 
+# ── M1 (round 6): three evasions a reviewer found within minutes of
+#    reading round 5's guard, the first of which is the shape anyone
+#    would type IMMEDIATELY after reading this guard's OWN error message
+#    ("use -qE, -Eq, ...") and reasonably guessing flags can be separate
+#    tokens too ──────────────────────────────────────────────────────────
+cat > "$TMP/separate_flags.sh" <<'EOF'
+if printf '%s' "$x" | grep -E -q "foo"; then echo true; fi
+EOF
+bash "$S" "$TMP/separate_flags.sh" >/dev/null 2>&1
+check_false "M1: catches | grep -E -q (flags as separate tokens)" $?
+
+cat > "$TMP/separate_flags_reversed.sh" <<'EOF'
+if printf '%s' "$x" | grep -q -E "foo"; then echo true; fi
+EOF
+bash "$S" "$TMP/separate_flags_reversed.sh" >/dev/null 2>&1
+check_false "M1: catches | grep -q -E (separate tokens, -q first)" $?
+
+cat > "$TMP/egrep.sh" <<'EOF'
+if printf '%s' "$x" | egrep -q "foo"; then echo true; fi
+EOF
+bash "$S" "$TMP/egrep.sh" >/dev/null 2>&1
+check_false "M1: catches | egrep -q" $?
+
+cat > "$TMP/fgrep.sh" <<'EOF'
+if printf '%s' "$x" | fgrep -q "foo"; then echo true; fi
+EOF
+bash "$S" "$TMP/fgrep.sh" >/dev/null 2>&1
+check_false "M1: catches | fgrep -q" $?
+
+cat > "$TMP/trailing_pipe_continuation.sh" <<'EOF'
+printf '%s' "$x" |
+  grep -q "foo"
+EOF
+bash "$S" "$TMP/trailing_pipe_continuation.sh" >/dev/null 2>&1
+check_false "M1: catches a trailing pipe at EOL with grep -q on the next line" $?
+
+# A grep-family command with NO -q anywhere must still pass — the
+# tokenizer must not over-match just because "grep" follows a pipe.
+cat > "$TMP/pipe_no_q.sh" <<'EOF'
+printf '%s' "$x" | grep -E "foo"
+EOF
+bash "$S" "$TMP/pipe_no_q.sh" >/dev/null 2>&1
+check_true "M1: | grep -E with no -q anywhere still passes" $?
+
 # ── A .yml file (workflow run: blocks) is scanned the same way ───────────
 cat > "$TMP/workflow.yml" <<'EOF'
 jobs:
@@ -102,6 +146,30 @@ printf '%s' "$x" | grep -q "foo"  # pipefail-safe: $x is a 3-line hardcoded stri
 EOF
 bash "$S" "$TMP/whitelisted.sh" >/dev/null 2>&1
 check_true "a line marked # pipefail-safe: <reason> is skipped" $?
+
+# ── M2 (round 6): the marker must be THIS line's own TRAILING comment, not
+#    a substring anywhere — e.g. embedded inside the pattern being grepped
+#    for. Before this fix, `grep -q '# pipefail-safe: x'` (grepping FOR the
+#    literal marker string, never having actually justified anything)
+#    would have skipped itself ─────────────────────────────────────────────
+cat > "$TMP/marker_as_substring.sh" <<'EOF'
+printf '%s' "$x" | grep -q '# pipefail-safe: x'
+EOF
+bash "$S" "$TMP/marker_as_substring.sh" >/dev/null 2>&1
+check_false "M2: the marker string used as a grep PATTERN (not a real trailing comment) is still caught" $?
+
+# The guard's whitelist mechanism deliberately does not (and cannot)
+# validate PROSE quality — "because I said so" mechanically parses as a
+# valid trailing marker. What it DOES enforce structurally: the marker
+# must trail a real comment on the SAME executable line, which the
+# marker-as-substring case above proves. Prose review is a human code-
+# review responsibility (round 6, M2) — this suite pins the structural
+# contract, not the English.
+cat > "$TMP/whitelist_low_effort_reason.sh" <<'EOF'
+printf '%s' "$x" | grep -q "foo"  # pipefail-safe: because I said so
+EOF
+bash "$S" "$TMP/whitelist_low_effort_reason.sh" >/dev/null 2>&1
+check_true "M2: the marker mechanism accepts any trailing reason text — prose quality is a review responsibility, not this script's" $?
 
 # ── The default (no-args) file set actually includes both target dirs —
 #    proven by running from a throwaway repo root with fixtures in place,

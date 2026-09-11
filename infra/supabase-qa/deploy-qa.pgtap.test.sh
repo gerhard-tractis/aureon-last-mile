@@ -120,7 +120,7 @@ output2="$(set -e; PSQL_FAIL=1 bash -c '. "'"$STUB_DIR"'/harness.sh"; ensure_pgt
 rc=$?
 check_true "a single hard psql failure does not propagate under set -e" $rc
 check "records FAIL rather than pretending success" \
-  "true" "$(printf '%s\n' "$output2" | grep -q '^pgtap extension|FAIL|' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows)
+  "true" "$(printf '%s\n' "$output2" | grep -q '^pgtap extension|FAIL|' && echo true)"  # pipefail-safe: output2 is ensure_pgtap's own CHECKS-row output for a single-call test run, well under 1KB
 check "RESULT still stays 0 on the first failure (advisory, same as sql_tests_check)" \
   "RESULT=0" "$(printf '%s\n' "$output2" | grep '^RESULT=')"
 check "records the failure streak so it can escalate" \

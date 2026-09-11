@@ -19,13 +19,16 @@
 # untouched output only) catches pgTAP's `not ok`, which never raises.
 #
 # a real SQL test failure now flips RESULT and fails the deploy, same as
-# any other record()'d check. What stays advisory is ONLY the absence of
-# something needed to run the tests at all, never a test result: missing
-# POSTGRES_PASSWORD, a missing tests dir, no *.sql files in it, the
-# pgtap-installed PROBE failing outright, or a single file being skipped
-# because pgtap isn't installed (SKIPPED-NO-PGTAP) — that last one is
-# covered separately by ensure_pgtap()'s own CREATE-EXTENSION degraded-
-# streak escalation (QA_PGTAP_DEGRADED_MAX), not duplicated here.
+# any other record()'d check. As of round 6 (M3), so does a missing or
+# empty tests dir — sync_checkout() just reset the checkout to the exact
+# commit being deployed, so an absent/empty dir there can only mean the
+# hardcoded path is wrong, not a flaky environment. What stays advisory is
+# ONLY missing POSTGRES_PASSWORD (in practice unreachable — apply_
+# migrations() already exits 1 on the same condition first) and a single
+# file being skipped because pgtap isn't installed (SKIPPED-NO-PGTAP) —
+# that last one is covered separately by ensure_pgtap()'s own CREATE-
+# EXTENSION degraded-streak escalation (QA_PGTAP_DEGRADED_MAX), not
+# duplicated here.
 #
 # These tests stub `psql` so the behaviour is verifiable without a VPS or a
 # real database. The HARNESS built by build_harness() below runs under
@@ -344,7 +347,7 @@ check "every psql call carries PGOPTIONS with a numeric statement_timeout" \
 #    stub above), so this greps for it directly on the per-file calls
 #    (lines containing " -f ") ────────────────────────────────────────────
 check "every per-file psql call carries -v ON_ERROR_STOP=1" \
-  "true" "$([ -s "$PSQL_CALLS" ] && ! grep -- ' -f ' "$PSQL_CALLS" | grep -qv -- '-v ON_ERROR_STOP=1' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
+  "true" "$([ -s "$PSQL_CALLS" ] && ! grep -- ' -f ' "$PSQL_CALLS" | grep -qv -- '-v ON_ERROR_STOP=1' && echo true)"  # pipefail-safe: PSQL_CALLS is one argv line per stub invocation for a 3-file fixture run, well under 1KB
 
 # ── H5 (round 4), secondary check only — see the REAL floor assertion in
 #    the pgtap-installed block above (H5/M1, round 5) for why. In THIS
@@ -435,7 +438,7 @@ check_true "H1: a file with >64KiB of output does not SIGPIPE-kill the function"
 check "H1: RESULT flips to 1 from the big file's real failure" \
   "RESULT=1" "$(printf '%s\n' "$outputH1" | grep '^RESULT=')"
 check "H1: the big file is reported FAIL, not silently dropped" \
-  "true" "$(printf '%s\n' "$outputH1" | grep -q '^sql: eee_bigfail_test.sql|FAIL|' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
+  "true" "$(printf '%s\n' "$outputH1" | grep -q '^sql: eee_bigfail_test.sql|FAIL|' && echo true)"  # pipefail-safe: outputH1 is sql_tests_check's own CHECKS-row output for a 2-file fixture run (H1), a few hundred bytes
 check "H1/H3: the file AFTER the big one still ran — the loop was not killed" \
   "sql: zzz_after_test.sql|ok|" \
   "$(printf '%s\n' "$outputH1" | grep '^sql: zzz_after_test.sql')"
@@ -452,7 +455,7 @@ PSQL_CALLS="$STUB_DIR/calls_h4"; export PSQL_CALLS; : > "$PSQL_CALLS"
 outputH4="$(run 'PGTAP_INSTALLED=1' "$PLANMIS_QA" 2>&1)"; rc=$?
 check_true "H4: runs to completion (exit 0) on a plan/ran mismatch" $rc
 check "H4: a plan/ran mismatch with no 'not ok' anywhere is still reported FAIL" \
-  "true" "$(printf '%s\n' "$outputH4" | grep -q '^sql: fff_planmismatch_test.sql|FAIL|' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
+  "true" "$(printf '%s\n' "$outputH4" | grep -q '^sql: fff_planmismatch_test.sql|FAIL|' && echo true)"  # pipefail-safe: outputH4 is sql_tests_check's own CHECKS-row output for a 1-file fixture run (H4), a few hundred bytes
 check "H4: RESULT flips to 1" \
   "RESULT=1" "$(printf '%s\n' "$outputH4" | grep '^RESULT=')"
 
@@ -473,7 +476,7 @@ PSQL_CALLS="$STUB_DIR/calls_b2"; export PSQL_CALLS; : > "$PSQL_CALLS"
 outputB2="$(run 'PGTAP_INSTALLED=1' "$BIGTAP_QA" 2>&1)"; rc=$?
 check_true "B2: runs to completion (exit 0) on a large pgTAP failure" $rc
 check "B2: a 'not ok' near the start of a large output is still reported FAIL" \
-  "true" "$(printf '%s\n' "$outputB2" | grep -q '^sql: ggg_bigtap_test.sql|FAIL|' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
+  "true" "$(printf '%s\n' "$outputB2" | grep -q '^sql: ggg_bigtap_test.sql|FAIL|' && echo true)"  # pipefail-safe: outputB2 is sql_tests_check's own CHECKS-row output for a 1-file fixture run (B2), a few hundred bytes
 check "B2: RESULT flips to 1 — not silently scored ok" \
   "RESULT=1" "$(printf '%s\n' "$outputB2" | grep '^RESULT=')"
 
@@ -487,9 +490,9 @@ check_true "a connection failure does not propagate under set -e" $rc
 check "RESULT flips to 1 when every file's own connection failed" \
   "RESULT=1" "$(printf '%s\n' "$output3b" | grep '^RESULT=')"
 check "the clean file is reported FAIL, not ok, when its connection failed" \
-  "true" "$(printf '%s\n' "$output3b" | grep -q '^sql: aaa_pass_test.sql|FAIL|' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
+  "true" "$(printf '%s\n' "$output3b" | grep -q '^sql: aaa_pass_test.sql|FAIL|' && echo true)"  # pipefail-safe: output3b is sql_tests_check's own CHECKS-row output for a 3-file connection-outage fixture run, well under 1KB
 check "no file is silently scored ok on a connection failure" \
-  "true" "$(printf '%s\n' "$output3b" | grep -q '|ok|' && echo false || echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
+  "true" "$(printf '%s\n' "$output3b" | grep -q '|ok|' && echo false || echo true)"  # pipefail-safe: output3b is sql_tests_check's own CHECKS-row output for a 3-file connection-outage fixture run, well under 1KB
 
 # ── M6 (round 3): a file psql cannot even open (missing, permissions,
 #    disappeared between glob and run) produces psql's OWN lowercase
@@ -505,7 +508,7 @@ PSQL_CALLS="$STUB_DIR/calls_m6"; export PSQL_CALLS; : > "$PSQL_CALLS"
 outputM6="$(run 'PGTAP_INSTALLED=' "$DDD_QA" 2>&1)"; rc=$?
 check_true "runs to completion (exit 0) when one file cannot be opened" $rc
 check "M6: an unopenable file is reported FAIL, not ok" \
-  "true" "$(printf '%s\n' "$outputM6" | grep -q '^sql: ddd_notfound_test.sql|FAIL|' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
+  "true" "$(printf '%s\n' "$outputM6" | grep -q '^sql: ddd_notfound_test.sql|FAIL|' && echo true)"  # pipefail-safe: outputM6 is sql_tests_check's own CHECKS-row output for a 2-file fixture run (M6), a few hundred bytes
 check "M6: RESULT flips to 1" \
   "RESULT=1" "$(printf '%s\n' "$outputM6" | grep '^RESULT=')"
 check "M6: the unrelated file is still reported ok" \
@@ -522,9 +525,9 @@ check_true "runs to completion (exit 0) when the pgtap probe itself fails" $rc
 check "RESULT flips to 1 when the pgtap probe could not run" \
   "RESULT=1" "$(printf '%s\n' "$outputM2" | grep '^RESULT=')"
 check "records a blocking FAIL naming the probe failure" \
-  "true" "$(printf '%s\n' "$outputM2" | grep -q '^sql tests|FAIL|could not determine whether pgtap is installed' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
+  "true" "$(printf '%s\n' "$outputM2" | grep -q '^sql tests|FAIL|could not determine whether pgtap is installed' && echo true)"  # pipefail-safe: outputM2 is sql_tests_check's own CHECKS-row output for the probe-failure early-return path (M2) - a single row
 check "no per-file row is recorded — the probe failure aborts before the loop" \
-  "true" "$(printf '%s\n' "$outputM2" | grep -q '^sql: ' && echo false || echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
+  "true" "$(printf '%s\n' "$outputM2" | grep -q '^sql: ' && echo false || echo true)"  # pipefail-safe: outputM2 is sql_tests_check's own CHECKS-row output for the probe-failure early-return path (M2) - a single row
 
 # ── Missing POSTGRES_PASSWORD: skip cleanly, never invoke psql ─────────────
 BAD_ENV="$STUB_DIR/.env.qa.blank"
@@ -545,29 +548,38 @@ else
   fail=$((fail + 1)); echo "  FAIL should not have called psql"
 fi
 
-# ── Missing tests directory: skip cleanly rather than error ────────────────
+# ── M3 (round 6): a missing tests dir is now a BLOCKING FAIL, not a SKIP.
+#    sync_checkout() just did `git reset --hard` to the exact commit this
+#    deploy is for — there is no environment flakiness that makes a path
+#    inside a fresh checkout not exist. A missing dir here can only mean
+#    the hardcoded path is WRONG (e.g. a refactor moved the tests dir and
+#    nobody updated it here), which from that commit onward would report
+#    "SKIP: tests dir not found" forever, green, 0 of ~92 files ever run
+#    again — exactly the sixth silent-green door named in review ─────────
 EMPTY_QA="$STUB_DIR/qa-empty"
 mkdir -p "$EMPTY_QA"
 output5="$(QA_CHECKOUT_DIR="$EMPTY_QA" bash -c \
   '. "'"$STUB_DIR"'/harness.sh"; QA_CHECKOUT_DIR="'"$EMPTY_QA"'"; sql_tests_check; printf "%s\n" "${CHECKS[@]}"; echo "RESULT=$RESULT"' 2>&1)"
 rc=$?
-check_true "skips cleanly when the tests dir is missing" $rc
-check "records a SKIP naming the missing dir" \
-  "true" "$(printf '%s\n' "$output5" | grep -q '^sql tests|SKIP|tests dir not found' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
-check "RESULT stays 0 when the tests dir itself is missing" \
-  "RESULT=0" "$(printf '%s\n' "$output5" | grep '^RESULT=')"
+check_true "runs to completion (exit 0) when the tests dir is missing" $rc
+check "M3: records a blocking FAIL naming the missing dir" \
+  "true" "$(printf '%s\n' "$output5" | grep -q '^sql tests|FAIL|tests dir not found' && echo true)"  # pipefail-safe: output5 is sql_tests_check's own CHECKS-row output for the missing-tests-dir early-return path - a single row
+check "M3: RESULT flips to 1 when the tests dir itself is missing" \
+  "RESULT=1" "$(printf '%s\n' "$output5" | grep '^RESULT=')"
 
-# ── Tests dir exists but has no *.sql files: skip cleanly, distinct reason ─
+# ── M3 (round 6): tests dir exists but has no *.sql files — same reasoning,
+#    same fix. A checked-out repo with the RIGHT dir but zero files in it
+#    is the same "the path is wrong" signal, not a missing prerequisite ──
 NO_SQL_QA="$STUB_DIR/qa-no-sql"
 mkdir -p "$NO_SQL_QA/packages/database/supabase/tests"
 output6="$(QA_CHECKOUT_DIR="$NO_SQL_QA" bash -c \
   '. "'"$STUB_DIR"'/harness.sh"; QA_CHECKOUT_DIR="'"$NO_SQL_QA"'"; sql_tests_check; printf "%s\n" "${CHECKS[@]}"; echo "RESULT=$RESULT"' 2>&1)"
 rc=$?
-check_true "skips cleanly when there are no *.sql files" $rc
-check "records a SKIP naming the empty dir" \
-  "true" "$(printf '%s\n' "$output6" | grep -q '^sql tests|SKIP|no \*\.sql files' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
-check "RESULT stays 0 when there are no *.sql files to run" \
-  "RESULT=0" "$(printf '%s\n' "$output6" | grep '^RESULT=')"
+check_true "runs to completion (exit 0) when there are no *.sql files" $rc
+check "M3: records a blocking FAIL naming the empty dir" \
+  "true" "$(printf '%s\n' "$output6" | grep -q '^sql tests|FAIL|no \*\.sql files' && echo true)"  # pipefail-safe: output6 is sql_tests_check's own CHECKS-row output for the empty-tests-dir early-return path - a single row
+check "M3: RESULT flips to 1 when there are no *.sql files to run" \
+  "RESULT=1" "$(printf '%s\n' "$output6" | grep '^RESULT=')"
 
 echo ""
 echo "  $pass passed, $fail failed"
