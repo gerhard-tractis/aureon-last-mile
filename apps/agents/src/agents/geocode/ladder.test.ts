@@ -121,12 +121,22 @@ describe('providerPointRetryUpdate — the uncrosscheckable path', () => {
   });
 });
 
-// The pair the spec calls out as "the easiest to implement backwards":
-// wrong_comuna DISCARDS the provider's point in favour of the requested
-// comuna's centroid; uncrosscheckable KEEPS the provider's point. Testing
-// them against each other, with a centroid and a provider point that are
-// deliberately far apart, is what would catch the two being swapped.
-describe('wrong_comuna vs uncrosscheckable — the two opposite dispositions', () => {
+// CORRECTION (fase 5 review): this block does NOT catch wrong_comuna and
+// uncrosscheckable being swapped, and was wrong to claim it did.
+// `providerPoint` at line ~132 is never passed to centroidRetryUpdate --
+// the signature forbids it -- so this passes against ANY implementation
+// that keeps the two functions' signatures as-is, regardless of which
+// disposition enrich.ts's resolve.ts actually dispatches wrong_comuna and
+// uncrosscheckable TO. What it genuinely proves is narrower: each function
+// only ever draws from the coordinate source its own signature admits
+// (centroidRetryUpdate literally cannot accept a provider point; keeping
+// that structural separation is real and worth the two tests below), which
+// is a design property of ladder.ts, not a guarantee about the DISPATCH
+// decision in resolve.ts. The actual regression test for "wrong_comuna vs
+// uncrosscheckable, with a centroid available in both cases" lives in
+// enrich.test.ts, at the resolve.ts wiring layer where the choice between
+// them is actually made.
+describe('centroidRetryUpdate and providerPointRetryUpdate draw from disjoint coordinate sources', () => {
   it('centroidRetryUpdate never returns the far-away provider point', () => {
     const order = makeOrder({ geocode_attempts: 0 });
     const centroid = { latitude: -33.4, longitude: -70.6 }; // requested comuna

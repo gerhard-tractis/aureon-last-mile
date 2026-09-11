@@ -205,6 +205,133 @@ describe('runGeocodeEnrichBatch — uncrosscheckable keeps the provider point', 
       geocode_status: 'fallback',
     });
   });
+
+  // BLOCKER 1 (review): this is the discriminating case grep found
+  // untested. Fase 0 measured a SECOND uncrosscheckable shape -- comuna_id
+  // IS set, context[] simply carried no municipality.* entry -- where a
+  // centroid IS available. The centroid being available is exactly what
+  // makes this test able to tell "kept the provider's point" apart from
+  // "silently swapped it for the centroid" (both branches would otherwise
+  // look identical when comuna_id is null and no centroid exists at all).
+  it('with a comuna_id AND a centroid available, still keeps the provider point, not the centroid', async () => {
+    const order = makeOrder({ comuna_id: 'comuna-las-condes' });
+    const result: GeocodeResult = {
+      latitude: -12.3,
+      longitude: -45.6,
+      matchClass: 'uncrosscheckable',
+      precision: 'approximate',
+      source: 'maptiler',
+    };
+    const farAwayCentroid = { centroid_lat: -33.4, centroid_lng: -70.6 };
+    const { db, updateOrderCalls } = makeDb({ claimed: [order], cacheRow: null, centroid: farAwayCentroid });
+    const provider = makeProvider({ geocode: vi.fn().mockResolvedValue(result) });
+
+    await runGeocodeEnrichBatch({ db, provider, redis: null, now: () => NOW });
+
+    expect(updateOrderCalls[0]).toMatchObject({
+      latitude: result.latitude,
+      longitude: result.longitude,
+      geocode_source: 'maptiler',
+    });
+    expect(updateOrderCalls[0]).not.toMatchObject({
+      latitude: farAwayCentroid.centroid_lat,
+      longitude: farAwayCentroid.centroid_lng,
+    });
+  });
+});
+
+// BLOCKER 1 (review): wrong_comuna had NO test anywhere on the branch.
+// Two mutations at the dispatch site both stayed green without this:
+// folding wrong_comuna into the uncrosscheckable (provider-point) branch,
+// and gating that fold on `!order.comuna_id`. Both require a centroid to
+// be PRESENT to catch, because with no centroid both branches degrade to
+// the same "no coordinates change" result.
+describe('runGeocodeEnrichBatch — wrong_comuna discards the provider point for the requested centroid', () => {
+  it('writes the requested comuna centroid, never the sharp-but-wrong-comuna point', async () => {
+    const order = makeOrder({ comuna_id: 'comuna-la-union', comuna: 'La Union' });
+    const result: GeocodeResult = {
+      // A real doorway match -- in Valdivia, ~100km from La Union -- per
+      // Fase 0's measured false positive.
+      latitude: -39.8142,
+      longitude: -73.2459,
+      matchClass: 'wrong_comuna',
+      precision: 'approximate',
+      source: 'maptiler',
+    };
+    const requestedCentroid = { centroid_lat: -40.2861, centroid_lng: -73.0928 };
+    const { db, updateOrderCalls } = makeDb({ claimed: [order], cacheRow: null, centroid: requestedCentroid });
+    const provider = makeProvider({ geocode: vi.fn().mockResolvedValue(result) });
+
+    await runGeocodeEnrichBatch({ db, provider, redis: null, now: () => NOW });
+
+    expect(updateOrderCalls[0]).toMatchObject({
+      latitude: requestedCentroid.centroid_lat,
+      longitude: requestedCentroid.centroid_lng,
+      geocode_source: 'comuna_centroid',
+    });
+    expect(updateOrderCalls[0]).not.toMatchObject({
+      latitude: result.latitude,
+      longitude: result.longitude,
+    });
+  });
+});
+
+// BLOCKER 2 (review): comuna_id present but the centroid is missing is a
+// DATA fault (fase 2's centroid backfill not deployed, or a schema gap),
+// not the spec's "no comuna_id and no provider answer" terminal case.
+// Conflating the two condemns an order to `unresolvable` on the very first
+// tick, spending nothing and logging nothing, purely because a downstream
+// migration has not landed yet.
+describe('runGeocodeEnrichBatch — comuna_id present but centroid data missing is a transient DATA fault, never terminal', () => {
+  it('a null match with comuna_id set but no centroid data logs an error and stays fallback, not unresolvable', async () => {
+    const order = makeOrder({ comuna_id: 'comuna-las-condes' });
+    const { db, updateOrderCalls } = makeDb({ claimed: [order], cacheRow: null, centroid: null });
+    const provider = makeProvider({ geocode: vi.fn().mockResolvedValue(null) });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const summary = await runGeocodeEnrichBatch({ db, provider, redis: null, now: () => NOW });
+
+    expect(updateOrderCalls[0]).toMatchObject({ geocode_status: 'fallback' });
+    expect(updateOrderCalls[0]).not.toMatchObject({ geocode_status: 'unresolvable' });
+    expect(summary.unresolvable).toBe(0);
+    const errorLines = logSpy.mock.calls
+      .map((call) => JSON.parse(String(call[0])))
+      .filter((entry) => entry.level === 'error' && entry.event === 'geocode_centroid_missing');
+    expect(errorLines).toHaveLength(1);
+    logSpy.mockRestore();
+  });
+
+  it('never consumes the attempt budget, even repeatedly', async () => {
+    const order = makeOrder({ comuna_id: 'comuna-las-condes', geocode_attempts: 1 });
+    const { db, updateOrderCalls } = makeDb({ claimed: [order], cacheRow: null, centroid: null });
+    const provider = makeProvider({ geocode: vi.fn().mockResolvedValue(null) });
+
+    await runGeocodeEnrichBatch({ db, provider, redis: null, now: () => NOW });
+
+    expect(updateOrderCalls[0]).toMatchObject({ geocode_attempts: 1 });
+  });
+
+  it('a coarse match keeps the provider point instead of discarding it for a nonexistent centroid', async () => {
+    const order = makeOrder({ comuna_id: 'comuna-las-condes' });
+    const result: GeocodeResult = {
+      latitude: -33.42,
+      longitude: -70.58,
+      matchClass: 'coarse',
+      precision: 'approximate',
+      source: 'maptiler',
+    };
+    const { db, updateOrderCalls } = makeDb({ claimed: [order], cacheRow: null, centroid: null });
+    const provider = makeProvider({ geocode: vi.fn().mockResolvedValue(result) });
+
+    await runGeocodeEnrichBatch({ db, provider, redis: null, now: () => NOW });
+
+    expect(updateOrderCalls[0]).toMatchObject({
+      latitude: result.latitude,
+      longitude: result.longitude,
+      geocode_source: 'maptiler',
+      geocode_status: 'fallback',
+    });
+  });
 });
 
 describe('runGeocodeEnrichBatch — no match at all', () => {
@@ -360,5 +487,133 @@ describe('runGeocodeEnrichBatch — batch summary', () => {
 
     expect(summary.providerCalls).toBe(1);
     expect(summary.cacheHits).toBe(0);
+  });
+
+  it('breaks the reasons down so a quota-exhausted row is distinguishable from a coarse-match row', async () => {
+    const orders = [makeOrder({ id: 'o1' }), makeOrder({ id: 'o2' })];
+    const { db } = makeDb({ claimed: orders, cacheRow: null, centroid: { centroid_lat: -33.4, centroid_lng: -70.6 } });
+    const provider = makeProvider({ geocode: vi.fn().mockResolvedValue(null) });
+    const redis = {
+      incr: vi.fn().mockResolvedValueOnce(1).mockResolvedValueOnce(2),
+      decr: vi.fn().mockResolvedValue(0),
+      expireat: vi.fn().mockResolvedValue(1),
+    } as never;
+
+    const summary = await runGeocodeEnrichBatch({ db, provider, redis, monthlyQuota: 1, now: () => NOW });
+
+    expect(summary.reasons.no_match_centroid).toBe(1);
+    expect(summary.reasons.quota_exhausted).toBe(1);
+  });
+});
+
+// BLOCKER 3 (review): tryConsume() reserved quota even for a call that
+// never reached the network (circuit breaker open, or any other thrown
+// error) and never gave it back, so a provider outage can freeze the whole
+// remaining month having spent zero real HTTP calls.
+describe('runGeocodeEnrichBatch — quota is refunded when the reserved call did not succeed', () => {
+  it('a transport failure gives back its quota reservation', async () => {
+    const order = makeOrder();
+    const { db } = makeDb({
+      claimed: [order],
+      cacheRow: null,
+      centroid: { centroid_lat: -33.4, centroid_lng: -70.6 },
+    });
+    const provider = makeProvider({
+      geocode: vi.fn().mockRejectedValue(new GeocodingProviderError('network', 'circuit breaker open')),
+    });
+
+    const store = new Map<string, number>();
+    const redis = {
+      incr: vi.fn(async (key: string) => {
+        const next = (store.get(key) ?? 0) + 1;
+        store.set(key, next);
+        return next;
+      }),
+      decr: vi.fn(async (key: string) => {
+        const next = (store.get(key) ?? 0) - 1;
+        store.set(key, next);
+        return next;
+      }),
+      expireat: vi.fn().mockResolvedValue(1),
+    } as never;
+
+    await runGeocodeEnrichBatch({ db, provider, redis, monthlyQuota: 100, now: () => NOW });
+
+    // One reservation, one refund -- net zero. Without the refund this
+    // would be 1, and with a monthlyQuota of 1 a SECOND row in the same
+    // outage would be wrongly blocked as "quota exhausted".
+    expect(store.get('geocode:quota:2026-09')).toBe(0);
+  });
+});
+
+// Review finding 4: one row's own write failure must not abort the batch
+// or suppress the summary log this phase's QA step reads.
+describe('runGeocodeEnrichBatch — one row failing does not abort the batch', () => {
+  it('continues to the next row, counts the failure, and still emits the summary log', async () => {
+    const orders = [makeOrder({ id: 'bad-row' }), makeOrder({ id: 'good-row' })];
+    const { db, updateOrderCalls } = makeDb({ claimed: orders, cacheRow: null, centroid: null });
+    // Force the FIRST order's write to throw by overriding `from('orders')`
+    // after the base mock is built.
+    const baseFrom = (db as unknown as { from: (t: string) => unknown }).from as (t: string) => unknown;
+    let call = 0; // outside the factory -- `.from('orders')` is called once PER ROW
+    (db as unknown as { from: (t: string) => unknown }).from = vi.fn((table: string) => {
+      if (table === 'orders') {
+        return {
+          update: (payload: unknown) => ({
+            eq: () => ({
+              eq: () => ({
+                select: () => ({
+                  single: async () => {
+                    call += 1;
+                    if (call === 1) throw new Error('write failed');
+                    updateOrderCalls.push(payload);
+                    return { data: {}, error: null };
+                  },
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+      return baseFrom(table);
+    });
+    const provider = makeProvider({ geocode: vi.fn().mockResolvedValue(null) });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const summary = await runGeocodeEnrichBatch({ db, provider, redis: null, now: () => NOW });
+
+    expect(summary.errors).toBe(1);
+    expect(updateOrderCalls).toHaveLength(1); // the second (good) row still got written
+    const completeLine = logSpy.mock.calls
+      .map((call) => JSON.parse(String(call[0])))
+      .find((entry) => entry.event === 'geocode_batch_complete');
+    expect(completeLine).toBeDefined();
+    expect(completeLine.errors).toBe(1);
+    logSpy.mockRestore();
+  });
+});
+
+// Review finding 8: an unclassified exception (our own bug, e.g. a
+// TypeError inside the adapter) must not silently become an ordinary,
+// unlogged transport failure.
+describe('runGeocodeEnrichBatch — an unexpected (non-provider) exception is logged', () => {
+  it('logs at error level and still degrades to a transient retry, not a crash', async () => {
+    const order = makeOrder();
+    const { db, updateOrderCalls } = makeDb({
+      claimed: [order],
+      cacheRow: null,
+      centroid: { centroid_lat: -33.4, centroid_lng: -70.6 },
+    });
+    const provider = makeProvider({ geocode: vi.fn().mockRejectedValue(new TypeError('boom')) });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runGeocodeEnrichBatch({ db, provider, redis: null, now: () => NOW });
+
+    expect(updateOrderCalls[0]).toMatchObject({ geocode_status: 'fallback' });
+    const errorLines = logSpy.mock.calls
+      .map((call) => JSON.parse(String(call[0])))
+      .filter((entry) => entry.level === 'error' && entry.event === 'geocode_unexpected_error');
+    expect(errorLines).toHaveLength(1);
+    logSpy.mockRestore();
   });
 });
