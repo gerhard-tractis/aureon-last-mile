@@ -530,7 +530,39 @@ que hacer».
 Los dos hallazgos van en **un solo implementer, no dos en paralelo**: ambos
 tocan `deploy-qa.sh` y el guard de solapamiento los rechazaría con razón.
 
-### Fase 4 — Guardarraíl determinista `[in_progress]`
+### Fase 4 — Guardarraíl determinista `[done]`
+
+> Implementado por: **implementer** — rama `feat/spec-93-fase-4-guardarrail`, SHAs `847f038` (implementación) y `8639918` (cierre del review). Más `fix/spec-93-parity-prod-pooler` (#767), del orquestador.
+> Review: **reviewer** (opus) — veredicto inicial **no mergeable**: 4 bloqueantes, 3 serios, 7 menores. Todos cerrados en `8639918`, cada guard con mutation-evidence. El bloqueante 1 era una **fuga de credencial** (la password de Postgres de QA hacia un artifact descargable); nunca llegó a ejecutarse — el workflow sólo existía en la rama.
+> QA: PR #765 merged 2026-09-10T23:00:48Z, CI verde. Y verificado **en vivo**, que es lo que de verdad cuenta aquí: corridas `34544230110` (falló correctamente, ver abajo) y `34545563792` (`matched: 44`, 5 aceptadas, 13 no declaradas).
+> Downstream: revisado spec-92 (PR #761) — su tabla de huecos crece con las clases que este guardarraíl vigila. Ver fase 5.
+
+**Las dos corridas reales valen más que los tests, y por razones opuestas.**
+
+`34544230110` **falló**, y ésa fue la buena noticia: las siete superficies de
+producción vía `psql` dieron cero hechos, y el suelo de cobertura no dijo «sin
+divergencias» sino *«a file that exists but measured nothing is the same failure
+as a missing file»*, exit 3, nombrando las siete. **Sin ese guard —el
+bloqueante 2 del review— la corrida habría sido verde**, y el guardarraíl contra
+los checks que no miran nada habría nacido siendo uno. La causa era el bug del
+pooler por tercera vez (#767).
+
+`34545563792` comparó de verdad. Y encontró **una divergencia que el inventario
+de la fase 1 había declarado «idéntica»**: el bucket `raw-files`. Lo que a una
+persona se le escapó por grepear sólo lo que esperaba ver, el comparador lo
+listó sin más. Ésa es la justificación de esta fase, medida y no argumentada.
+
+**Hueco declarado, no cerrado:** nadie ha verificado empíricamente que
+`if: always()` en el job de comparación se dispare cuando el job de QA queda
+`cancelled` por queue-timeout con el runner de la VPS caído. El comparador sí da
+rojo sin artifact (verificado en `34544230110`), pero eso exige que el job de
+producción llegue a correr. Se demostrará la próxima vez que el runner caiga.
+
+**Desviación deliberada del texto del spec:** el spec pide un check que «rompa el
+build», con `verify-prod-migrations` como precedente. Esto es `schedule` +
+`workflow_dispatch`: **no bloquea ningún deploy**. La mitad de QA necesita QA ya
+desplegado, así que meterlo en el camino crítico lo haría más lento y más frágil.
+Queda dicho aquí para que sea una decisión y no un descuido.
 
 **Depende de:** ninguna — el mecanismo se construye contra la lista de superficies de la fase 1, que ya está cerrada; qué filas acaban aceptadas es contenido del fichero de línea base, no del comparador.
 
@@ -591,7 +623,12 @@ los dos entornos difieren.
 Eso es también lo que conecta con la fase 5: cada entrada de ese fichero es
 una clase de cambio que no puede auto-aprobarse en spec-92.
 
-### Fase 5 — Realimentar spec-92 `[in_progress]`
+### Fase 5 — Realimentar spec-92 `[done]`
+
+> Implementado por: **el orquestador** — el entregable es la edición de otro spec, no código. Rama `docs/spec-93-fase-5-realimentar-spec-92`.
+> Review: **sin review adversarial** — es prosa sobre mediciones ya verificadas en la fase 1, y las dos que resultaron mal medidas (los GUCs por rol y el bucket `raw-files`) **nunca llegaron a spec-92**: se escribió antes de medirlas. El hueco se declara igual.
+> QA: PR #761 merged 2026-09-10T22:23:41Z contra `feat/spec-92-gate-prod-diferenciado` — no contra `main`, porque el fichero de spec-92 sólo existe en esa rama (PR #716). No aplica `e2e-qa`: sólo documentación.
+> Downstream: spec-92 es el único downstream declarado de este spec, y es precisamente lo que esta fase actualiza.
 
 **Depende de:** ninguna — la fase 1 midió ya lo suficiente para realimentar; la fila que sigue a medias (realtime) va declarada como tal, no omitida.
 
