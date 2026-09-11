@@ -54,3 +54,8 @@ test-results/
 .claude/.keep-going-fp
 .claude/BLOCKED.md
 .claude/active-spec
+
+# scratch extractor written by check-deploy-gating-pgnet-differential.test.sh
+# at run time (PID-suffixed, removed by its own trap on exit) — a killed run
+# can leave one behind.
+scripts/.check-deploy-gating-pgnet-differential-extract.*.mjs
