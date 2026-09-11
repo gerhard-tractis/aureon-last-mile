@@ -11,7 +11,8 @@ type WorkerName =
   | 'settle.reconcile'
   | 'whatsapp.outbound'
   | 'exception.handle'
-  | 'legacy.worker';
+  | 'legacy.worker'
+  | 'geocode.enrich';
 
 interface WorkerConfig {
   concurrency: number;
@@ -28,6 +29,13 @@ const WORKER_CONFIGS: Record<WorkerName, WorkerConfig> = {
   'whatsapp.outbound': { concurrency: 10, limiter: { max: 60, duration: 60_000 } },
   'exception.handle': { concurrency: 3 },
   'legacy.worker': { concurrency: 1 },
+  // Concurrency 1: the batch itself is already 200 orders per cron tick,
+  // resolved sequentially against a single shared MapTiler circuit breaker
+  // and Redis quota counter (spec-58 fase 5). Running two of these jobs at
+  // once in the same process would race both against each other for no
+  // throughput gain -- the provider call latency is what limits speed, not
+  // worker concurrency.
+  'geocode.enrich': { concurrency: 1 },
 };
 
 export type Workers = Record<WorkerName, Worker>;

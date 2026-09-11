@@ -16,6 +16,7 @@ const SCHEDULES: ScheduleDef[] = [
   { queue: 'assignment.optimize', schedulerId: 'batch-assign-cron', pattern: '0 6,14 * * *', jobName: 'batch_assign' },
   { queue: 'settle.reconcile', schedulerId: 'eod-reconcile-cron', pattern: '0 22 * * *', jobName: 'eod_reconcile' },
   { queue: 'legacy.worker', schedulerId: 'browser-cron', pattern: '0 7,10,13,16 * * *', jobName: 'browser' },
+  { queue: 'geocode.enrich', schedulerId: 'geocode-cron', pattern: '*/10 * * * *', jobName: 'geocode_pending' },
 ];
 
 export async function registerSchedulers(queues: Record<string, Queue>): Promise<void> {

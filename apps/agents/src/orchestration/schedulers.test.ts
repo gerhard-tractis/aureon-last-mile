@@ -18,6 +18,7 @@ describe('registerSchedulers', () => {
       'whatsapp.outbound': { upsertJobScheduler: vi.fn().mockResolvedValue({}) },
       'exception.handle': { upsertJobScheduler: vi.fn().mockResolvedValue({}) },
       'legacy.worker': { upsertJobScheduler: vi.fn().mockResolvedValue({}) },
+      'geocode.enrich': { upsertJobScheduler: vi.fn().mockResolvedValue({}) },
     };
   });
 
@@ -65,7 +66,18 @@ describe('registerSchedulers', () => {
     );
   });
 
-  it('registers exactly 4 cron jobs in total', async () => {
+  it('registers geocode_pending cron on geocode.enrich every 10 minutes', async () => {
+    const { registerSchedulers } = await import('./schedulers');
+    await registerSchedulers(mockQueues as unknown as Record<string, Queue>);
+
+    expect(mockQueues['geocode.enrich'].upsertJobScheduler).toHaveBeenCalledWith(
+      'geocode-cron',
+      expect.objectContaining({ pattern: '*/10 * * * *', tz: 'America/Santiago' }),
+      expect.objectContaining({ name: 'geocode_pending' }),
+    );
+  });
+
+  it('registers exactly 5 cron jobs in total', async () => {
     const { registerSchedulers } = await import('./schedulers');
     await registerSchedulers(mockQueues as unknown as Record<string, Queue>);
 
@@ -73,6 +85,6 @@ describe('registerSchedulers', () => {
       (sum, q) => sum + q.upsertJobScheduler.mock.calls.length,
       0,
     );
-    expect(totalCalls).toBe(4);
+    expect(totalCalls).toBe(5);
   });
 });

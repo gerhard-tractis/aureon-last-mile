@@ -32,7 +32,7 @@ describe('createWorkers', () => {
     vi.resetModules();
   });
 
-  it('registers workers for all 8 queues', async () => {
+  it('registers workers for all 9 queues', async () => {
     const { createWorkers } = await import('./workers');
     createWorkers('redis://localhost:6379');
 
@@ -47,9 +47,18 @@ describe('createWorkers', () => {
         'whatsapp.outbound',
         'exception.handle',
         'legacy.worker',
+        'geocode.enrich',
       ]),
     );
-    expect(names).toHaveLength(8);
+    expect(names).toHaveLength(9);
+  });
+
+  it('geocode.enrich worker has concurrency 1', async () => {
+    const { createWorkers } = await import('./workers');
+    createWorkers('redis://localhost:6379');
+
+    const w = capturedWorkers.find((w) => w.name === 'geocode.enrich')!;
+    expect(w.opts.concurrency).toBe(1);
   });
 
   it('intake.ingest worker has concurrency 3', async () => {
@@ -112,10 +121,10 @@ describe('closeWorkers', () => {
     vi.resetModules();
   });
 
-  it('closes all 8 worker instances', async () => {
+  it('closes all 9 worker instances', async () => {
     const { createWorkers, closeWorkers } = await import('./workers');
     const workers = createWorkers('redis://localhost:6379');
     await closeWorkers(workers);
-    expect(mockWorkerClose).toHaveBeenCalledTimes(8);
+    expect(mockWorkerClose).toHaveBeenCalledTimes(9);
   });
 });
