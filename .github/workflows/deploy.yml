@@ -203,14 +203,27 @@ jobs:
           fi
 
           # M1/M2 (see the step's YAML comment above): content signal,
-          # captured before grepping (not piped, to avoid a SIGPIPE under
-          # pipefail on a large diff).
+          # captured into a variable before grepping. Capturing alone is NOT
+          # enough to avoid SIGPIPE, though — see the review finding below —
+          # the check against that variable must also avoid re-piping it.
           #
-          # spec-92 fase 1b / spec-93: pg_net rides the SAME range (RANGE_BASE
-          # .. DEPLOY_SHA, fail-closed if it can't be established) and the
-          # SAME MIGRATIONS_DIFF as auth_hook — deploy-supabase is equally
-          # unconditional for this class, so the cumulative-diff argument in
-          # the review comment above applies identically here.
+          # spec-92 fase 1b / spec-93 review (2026-09-10), B2 — `printf '%s'
+          # "$VAR" | grep -qE ...` reintroduces the exact SIGPIPE this
+          # comment claims to avoid: `grep -q` exits at the first match and
+          # closes its stdin; under `pipefail`, if the match sits near the
+          # START of a diff bigger than one pipe buffer (~64 KB) and printf
+          # is still writing the rest, printf gets SIGPIPE, its exit code is
+          # 141, and `pipefail` makes the WHOLE pipeline report 141 — which
+          # the `if` reads as "did not match", silently producing false=false
+          # even though the pattern was present. Reproduced on Ubuntu 22.04
+          # (the runner's own OS): a 200 KB diff with the match on line one
+          # gave pipeline rc=141 and PG_NET=false. This is the realistic
+          # shape too — `git diff` orders by path, paths are migration
+          # timestamps, so a pg_net migration merged first but left pending
+          # behind later merges sorts EARLY in the cumulative diff, not
+          # late. The fix is a herestring, not a pipe: `grep -qE ... <<<
+          # "$VAR"` hands grep the data as a file descriptor with no writer
+          # process on the other end of a pipe to SIGPIPE.
           AUTH_HOOK=false
           PG_NET=false
           if [ "${RANGE_OK}" != "true" ]; then
@@ -222,12 +235,20 @@ jobs:
               AUTH_HOOK=true
             fi
             MIGRATIONS_DIFF="$(git diff "${RANGE_BASE}" "${DEPLOY_SHA}" -- packages/database/supabase/migrations/)"
-            if printf '%s' "${MIGRATIONS_DIFF}" | grep -qE 'custom_access_token_hook|supabase_auth_admin'; then
+            if grep -qE 'custom_access_token_hook|supabase_auth_admin' <<< "${MIGRATIONS_DIFF}"; then
               AUTH_HOOK=true
             fi
-            # The dot MUST be escaped (net\.http_...) — an unescaped dot
-            # would also match unrelated identifiers like "netXhttp_post".
-            if printf '%s' "${MIGRATIONS_DIFF}" | grep -qE 'net\.http_(post|get)'; then
+            # Case-insensitive (SQL identifiers are) and widened past the
+            # two call forms — G1 (2026-09-10 review): net.http_post/get are
+            # not the only surface. net.http_delete exists since pg_net
+            # 0.7, a schema-qualified call (extensions.net.http_post) or a
+            # bare `PERFORM net.http_get` both still match this, and so does
+            # whitespace around the dot (`net . http_post`, legal SQL) via
+            # \s*. A bare `pg_net` or `SCHEMA net` mention (an install/grant,
+            # not just a call) also counts — a false negative here ships a
+            # migration production cannot apply at all; the cost of a false
+            # positive is one click.
+            if grep -qiE 'net\s*\.\s*http|pg_net\b|schema\s+net\b' <<< "${MIGRATIONS_DIFF}"; then
               PG_NET=true
             fi
           fi
