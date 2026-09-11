@@ -2,17 +2,14 @@
 #
 # check-deploy-gating-pgnet-differential.test.sh (spec-92 fase 1b / spec-93,
 # review rounds 2026-09-10, B2/B3/G1/G2 + items 1/4)
-#
 # check-deploy-gating-pgnet.mjs only checks that the LITERAL TEXT of a
 # detection pattern appears somewhere in the "Filter paths" step's run: — it
 # cannot tell whether that text is WIRED to the right variable, has the
-# right polarity, or survives a large diff without SIGPIPE. Every one of
-# those was a real, surviving mutant against the committed deploy.yml (see
-# the review). Same root cause and same fix as
-# check-deploy-gating-quarantine-differential.test.sh (round 7), but
-# stronger: that harness runs a SYNTHETIC candidate and never reads
-# deploy.yml; this one extracts the REAL "Filter paths" run: text from the
-# REAL deploy.yml and runs THAT under real bash, with git/gh stubbed,
+# right polarity, or survives a large diff without SIGPIPE. Same root cause
+# and same fix as check-deploy-gating-quarantine-differential.test.sh
+# (round 7), but stronger: that harness runs a SYNTHETIC candidate and never
+# reads deploy.yml; this one extracts the REAL "Filter paths" run: text from
+# the REAL deploy.yml and runs THAT under real bash, with git/gh stubbed,
 # asserting on the GITHUB_OUTPUT it actually produces.
 #
 # This is also what catches B2 (SIGPIPE under pipefail on a large diff): a
@@ -70,10 +67,22 @@ RUN_TEXT="${RAW_RUN//\$\{\{ github.repository \}\}/x/y}"
 # -e; (5) merge-base --is-ancestor; (6) diff --name-only RANGE_BASE..DEPLOY →
 # CUM_CHANGED; (7) diff RANGE_BASE..DEPLOY -- migrations/ → MIGRATIONS_DIFF.
 # Range always resolves (RANGE_OK=true) unless STUB_RANGE_FAIL=true. (2)/(6)/
-# (7) are under the test's control via STUB_CHANGED/STUB_CUM_CHANGED/
-# STUB_MIGRATIONS_DIFF — (2) feeds `matches()` (database/frontend/etc.), (6)
-# is a path LIST, (7) is migration CONTENT. The SIGPIPE class (B2) was found
-# alive on all three, not just (7) — hence three independent stubs.
+# (7) are under the test's control via STUB_CHANGED_FILE/STUB_CUM_CHANGED_FILE/
+# STUB_MIGRATIONS_DIFF_FILE — (2) feeds `matches()` (database/frontend/etc.),
+# (6) is a path LIST, (7) is migration CONTENT. The SIGPIPE class (B2) was
+# found alive on all three, not just (7) — hence three independent stubs.
+#
+# CI incident (2026-09-10, run 34571709928, PR #793): these were originally
+# plain environment VARIABLES, not files. Green on Windows/MSYS (where this
+# suite was developed), rc=126 on every 200 KB case on the Linux CI runner
+# — not a logic bug. Linux execve() caps each INDIVIDUAL env string at
+# MAX_ARG_STRLEN (32 pages = 131072 bytes); 200 KB in one env var blows
+# past that → E2BIG → bash reports 126. MSYS doesn't enforce the same cap.
+# Fixed by passing large values through FILES: the env var holds a short
+# PATH, the stub `cat`s it — no size limit to re-approach later. (Shrinking
+# the filler under 131072 bytes was rejected: ~30 KB from a kernel limit
+# nobody keeps in their head, breaking again for no reason visible in the
+# diff the next time someone grows it.)
 write_stubs() {
   local dir="$1"
   mkdir -p "$dir/bin"
@@ -87,9 +96,9 @@ case "$1" in
     shift
     args="$*"
     case "$args" in
-      *basesha*) printf '%s' "$STUB_CHANGED" ;;              # (2) CHANGED
-      *--name-only*) printf '%s' "$STUB_CUM_CHANGED" ;;      # (6) CUM_CHANGED
-      *) printf '%s' "$STUB_MIGRATIONS_DIFF" ;;                # (7) MIGRATIONS_DIFF
+      *basesha*) cat "$STUB_CHANGED_FILE" ;;              # (2) CHANGED
+      *--name-only*) cat "$STUB_CUM_CHANGED_FILE" ;;       # (6) CUM_CHANGED
+      *) cat "$STUB_MIGRATIONS_DIFF_FILE" ;;                # (7) MIGRATIONS_DIFF
     esac
     exit 0
     ;;
@@ -117,15 +126,14 @@ GHEOF
 }
 
 # Runs the real extracted script under real bash with the stubs on PATH.
-# $1 = STUB_MIGRATIONS_DIFF (7), $2 = range_fail ("true" forces the
-# fail-closed branch, see write_stubs), $3 = STUB_CUM_CHANGED (6),
-# $4 = STUB_CHANGED (2, feeds matches() / frontend/database/etc.),
-# $5 = FORCE_DB ("true"/"false", item 4 of the 2026-09-10 review). Returns
-# "rc=<v> pg_net=<v> auth_hook=<v> outfile=<path>" — every caller invokes
-# this via command substitution (`x="$(run_filter ...)"`), which forks a
-# subshell, so a field a caller needs must ride in the printed summary, not
-# in a variable this function merely assigns (that assignment would be
-# invisible outside the subshell — B1, round 3 review).
+# $1 = MIGRATIONS_DIFF content (7), $2 = range_fail (see write_stubs),
+# $3 = CUM_CHANGED content (6), $4 = CHANGED content (2, feeds matches()),
+# $5 = FORCE_DB ("true"/"false", item 4). Each payload is written to a file
+# and the stub is told the PATH, not the content — see write_stubs' comment.
+# Returns "rc=<v> pg_net=<v> auth_hook=<v> outfile=<path>" — callers invoke
+# this via `x="$(run_filter ...)"` (a subshell), so any field a caller needs
+# must ride in the printed summary, not a variable this merely assigns
+# (invisible outside the subshell — B1, round 3 review).
 run_filter() {
   local migrations_diff="$1" range_fail="${2:-false}" cum_changed="${3:-}" changed="${4:-}" force_db="${5:-false}"
   local dir out_file
@@ -135,6 +143,10 @@ run_filter() {
   printf '%s' "$RUN_TEXT" > "$dir/filter.sh"
   out_file="$dir/github_output"
   : > "$out_file"
+  # Payloads go through FILES, not env vars — see write_stubs' comment.
+  printf '%s' "$migrations_diff" > "$dir/migrations_diff"
+  printf '%s' "$cum_changed" > "$dir/cum_changed"
+  printf '%s' "$changed" > "$dir/changed"
   (
     cd "$dir" \
     && PATH="$dir/bin:$PATH" \
@@ -142,10 +154,10 @@ run_filter() {
        FORCE_DB="$force_db" \
        GH_TOKEN="dummy" \
        GITHUB_OUTPUT="$out_file" \
-       STUB_MIGRATIONS_DIFF="$migrations_diff" \
+       STUB_MIGRATIONS_DIFF_FILE="$dir/migrations_diff" \
        STUB_RANGE_FAIL="$range_fail" \
-       STUB_CUM_CHANGED="$cum_changed" \
-       STUB_CHANGED="$changed" \
+       STUB_CUM_CHANGED_FILE="$dir/cum_changed" \
+       STUB_CHANGED_FILE="$dir/changed" \
        bash --noprofile --norc filter.sh
   ) > "$dir/stdout" 2> "$dir/stderr"
   local rc=$?
@@ -177,12 +189,10 @@ assert_auth_hook() {
   fi
 }
 
-# Generic single-field assertion — for fields assert_pg_net/assert_auth_hook
-# don't parse (worker, frontend, database, ...). Same args as run_filter,
-# plus $1=field. B1 (round 3 review): kept run_summary (not sent to
-# /dev/null) so a future expected="" FAIL still shows rc= instead of looking
-# identical to a genuinely empty output; out_file also comes from
-# run_summary, not a variable set inside run_filter (see its comment).
+# Generic single-field assertion — fields assert_pg_net/assert_auth_hook
+# don't parse (worker, frontend, database, ...). Same args plus $1=field.
+# B1 (round 3): keeps run_summary (not /dev/null) so a future expected=""
+# FAIL still shows rc= instead of looking like a genuinely empty output.
 assert_output_field() {
   local field="$1" name="$2" migrations_diff="$3" expected="$4" range_fail="${5:-false}" cum_changed="${6:-}" changed="${7:-}" force_db="${8:-false}" actual run_summary out_file
   run_summary="$(run_filter "$migrations_diff" "$range_fail" "$cum_changed" "$changed" "$force_db")"
@@ -205,10 +215,9 @@ assert_pg_net "net.http_post at the end of a small diff -> pg_net=true" \
   "+ create or replace function f() returns void as \$\$ begin perform net.http_post('http://x'); end; \$\$ language plpgsql;" \
   "true"
 
-# ── B2: the SIGPIPE regression, reproduced structurally ─────────────────────
-# 200 KB of filler AFTER the match on line one, real newline so the match
-# sits on its own first line (matching a real diff's line structure). Before
-# the herestring fix this reported pg_net=false under pipefail.
+# ── B2: SIGPIPE regression, reproduced structurally — 200 KB of filler
+# AFTER the match on line one (real newline, matching a real diff's line
+# structure). Before the herestring fix this reported pg_net=false.
 build_big_diff() {
   local marker="$1" filler
   filler="$(node -e "process.stdout.write('x'.repeat(200000))")"
@@ -222,11 +231,9 @@ BIG_AUTH_DIFF="$(build_big_diff '+ grant supabase_auth_admin to postgres; -- cus
 assert_auth_hook "200 KB diff with the auth-hook signal on line ONE still -> auth_hook=true (same B2 class, base branch line)" \
   "$BIG_AUTH_DIFF" "true"
 
-# ── B2 round 2: same SIGPIPE class, on CUM_CHANGED — a PATH LIST, not
-# migration content. Reachable: a path averages ~60 bytes, ~1,100 changed
-# paths cross the 64 KB pipe buffer, and this repo has a documented
-# 1,599-file incident. CUM_CHANGED is the CUMULATIVE range since the last
-# successful deploy, exactly the case that gets large.
+# ── B2 round 2: same SIGPIPE class, on CUM_CHANGED — a PATH LIST. ~1,100
+# changed paths (~60 bytes each) cross the 64 KB pipe buffer, and this repo
+# has a documented 1,599-file incident; CUM_CHANGED is the CUMULATIVE range.
 BIG_CUM_CHANGED="$(build_big_diff 'infra/supabase-qa/custom_access_token_hook.sql')"
 assert_auth_hook "200 KB CUM_CHANGED (path list) with the signal on line ONE still -> auth_hook=true (B2, CUM_CHANGED)" \
   "+ create table foo (id uuid primary key);" "true" "false" "$BIG_CUM_CHANGED"
@@ -234,25 +241,21 @@ assert_auth_hook "200 KB CUM_CHANGED (path list) with the signal on line ONE sti
 # ── item 1: the THIRD instance of the same SIGPIPE class — `matches()`, fed
 # by CHANGED (2), behind database/edge_functions/worker/agents/solver/
 # frontend. Worse than pg_net/auth_hook failing false: it decides WHAT
-# DEPLOYS, not whether to pause. `worker` (not `frontend` — a round-2
-# review correction, M1: deploy-vercel is gated only on approve-production
-# + changes succeeding, NOT on outputs.frontend at deploy.yml:471-480;
-# outputs.frontend's only consumer is deploy-qa.sh's CHANGED_FRONTEND env,
-# so frontend=false there means QA silently skips rebuilding the frontend
-# and e2e-qa runs green against a stale bundle — a real bug, just not a
-# skipped PRODUCTION deploy). `worker=false` on a real worker change DOES
-# skip deploy-worker directly (deploy.yml:505-514) — green run, nothing
-# shipped to the VPS.
+# DEPLOYS, not whether to pause. `worker` (not `frontend`, M1 round-2
+# correction — deploy-vercel is gated only on approve-production + changes
+# succeeding, not outputs.frontend at deploy.yml:471-480; frontend=false
+# there just means QA silently skips rebuilding, a different bug).
+# `worker=false` DOES skip deploy-worker directly (deploy.yml:505-514) —
+# green run, nothing shipped to the VPS.
 BIG_CHANGED="$(build_big_diff 'apps/worker/src/index.ts')"
 assert_output_field worker \
   "200 KB CHANGED with an apps/worker/ path on line ONE still -> worker=true (item 1, matches())" \
   "+ create table foo (id uuid primary key);" "true" "false" "" "$BIG_CHANGED" "false"
 
-# ── item 4: force_db must also force auth_hook/pg_net. RANGE_BASE trusts
-# "a successful run at sha X ⇒ production has every migration up to X" —
-# force_db exists BECAUSE that invariant already broke once (2026-08-23, 13
-# migrations at once). Clean content on every other signal, but
-# FORCE_DB=true — both must still come out true.
+# ── item 4: force_db must also force auth_hook/pg_net — RANGE_BASE trusts
+# "a successful run at sha X ⇒ production has every migration up to X",
+# and force_db exists BECAUSE that broke once (2026-08-23, 13 migrations at
+# once). Clean content everywhere else, but FORCE_DB=true — both true.
 assert_output_field pg_net \
   "FORCE_DB=true forces pg_net=true even with clean content (item 4)" \
   "+ create table foo (id uuid primary key);" "true" "false" "" "" "true"
@@ -282,11 +285,9 @@ assert_pg_net "SCHEMA net mention -> pg_net=true" \
 assert_pg_net "unrelated content -> pg_net=false" \
   "+ create index concurrently on orders (operator_id);" "false"
 
-# ── the fail-closed branch: PG_NET=true even with NO content, NO diff at all ─
-# When the cumulative range cannot be established, the script must pause
-# without ever looking at diff content — a mutant that deletes PG_NET=true
-# from ONLY this branch (leaving the content-check branch below it intact)
-# is invisible to every case above, which all resolve the range successfully.
+# ── fail-closed: PG_NET=true with NO content, NO diff at all — a mutant
+# deleting PG_NET=true from only this branch (content-check branch intact)
+# is invisible to every case above, which all resolve the range.
 assert_pg_net "range cannot be established -> pg_net=true (fail-closed), even with clean content" \
   "+ create table foo (id uuid primary key);" "true" "true"
 assert_auth_hook "range cannot be established -> auth_hook=true (fail-closed), same branch" \
