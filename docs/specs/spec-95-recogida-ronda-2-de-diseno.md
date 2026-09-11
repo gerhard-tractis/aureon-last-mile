@@ -1,6 +1,6 @@
 # spec-95 — Recogida: la ronda 2 del mock, y el chip que por fin tiene regla
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit, e2e-qa
 **Downstream:** spec-94-recogida-cuatro-estados.md, spec-82-recogida-movil-asignacion-y-ruta.md, spec-83-recogida-escritorio-datos-faltantes.md
 
@@ -107,11 +107,11 @@ Dos colisiones reales, las dos decididas por el usuario el 2026-09-10:
 > Con el selector correcto: las fases 1, 4, 5, 6 y 9 salen despachables en
 > paralelo, sin conflicto duro.
 
-### Fase 1 — `5c` chip único y agrupación por cliente `[pending]`
+### Fase 1 — `5c` chip único y agrupación por cliente `[in_progress]`
 
 **Depende de:** ninguna
 
-**Archivos:** `apps/frontend/src/components/pickup/RouteManifestList.tsx`, `apps/frontend/src/components/pickup/RouteManifestCard.tsx`, y sus tests
+**Archivos:** `apps/frontend/src/components/pickup/RouteManifestList.tsx`, `apps/frontend/src/components/pickup/RouteManifestCard.tsx`, `apps/frontend/src/lib/pickup/routeManifestGrouping.ts`, y sus tests
 
 Hoy `route/active/page.tsx` trabaja sobre una **lista plana** de manifiestos:
 `NextManifestCard` / `UpcomingManifestList` / `RouteManifestList` no agrupan por
@@ -153,9 +153,18 @@ campo ya viaja en `RouteManifestRow` — y que lo caro era la semántica, no el
 > que volver a reportarlo.
 
 > **Desviaciones de alcance, declaradas.** (1) `RouteManifestCard.tsx` es nuevo:
-> agregar la agrupación empujó `RouteManifestList.tsx` a 437 líneas y la regla de
-> 300 no es negociable, así que la tarjeta por manifiesto se extrajo sin cambio
-> de comportamiento (quedan 280 y 173). (2) **No se tocó
+> agregar la agrupación empujó `RouteManifestList.tsx` por encima de las 300
+> líneas y la regla no es negociable, así que la tarjeta por manifiesto se
+> extrajo. **La extracción NO fue neutra** —la primera redacción de esta línea
+> decía «sin cambio de comportamiento» y era falsa contra el diff, lo encontró el
+> review—: el título de la fila pasó de `retailer_name` a `pickup_location`,
+> deliberadamente, porque el retailer ahora vive en la cabecera de grupo y
+> repetirlo en cada fila era ruido. Para no perder información cuando
+> `pickup_location` es null (frecuente: «Null when not captured at intake») el
+> título cae a `pickup_location || retailer_name || 'Sin punto de recogida'`.
+> Un tercer fichero, `lib/pickup/routeManifestGrouping.ts`, saca la agrupación
+> pura del componente siguiendo la capa que `pickupStartRouteGrouping.ts` ya usa
+> para `3j`. Líneas finales: 251 / 187 / 75. (2) **No se tocó
 > `PickupMobileClientGroup.tsx`**, pese a estar en el `**Archivos:**` original:
 > pertenece a la pantalla `3j` (selección pre-ruta, modelo
 > `StartRouteClientGroup`/`ManifestRow`), una superficie de datos distinta de la
@@ -163,6 +172,22 @@ campo ya viaja en `RouteManifestRow` — y que lo caro era la semántica, no el
 > —selección y progreso— en un componente ya ajustado a su pantalla.
 > (3) `route/active/page.tsx` tampoco necesitó cambios: sigue pasando el mismo
 > contrato a `RouteManifestList`.
+
+> **Divergencias con `5c` declaradas, no arregladas aquí.** Las encontró el
+> review comparando artboard y código lado a lado:
+>
+> 1. **La cabecera de grupo del mock lleva un control de plegado** (chevron abajo
+>    en `EN RUTA`, a la derecha en `PENDIENTE`/`COMPLETADA`) y los grupos que no
+>    están en ruta se dibujan **plegados**. La implementación no pinta chevron y
+>    expande siempre. Plegar es comportamiento nuevo, no un ajuste visual — va a
+>    su propia fase o a la fase 2, que ya toca esta pantalla.
+> 2. **El subtítulo del grupo cerrado no es «M paquetes»**: Sodimac dice
+>    `1 punto · cerrada 07:31`. Aquí la desviación es **del spec**, cuyo criterio
+>    pedía `N puntos · M paquetes` para los cuatro casos por igual.
+> 3. Efecto de (1): en un grupo de un solo manifiesto cerrado se pintan **dos
+>    chips `COMPLETADA`** (fila + cabecera). En el mock no ocurre porque el grupo
+>    está plegado. Un test congela hoy ese duplicado — si se implementa (1), hay
+>    que revisarlo.
 
 ### Fase 2 — `5c` cabecera de ruta y pie de dos filas `[pending]`
 
