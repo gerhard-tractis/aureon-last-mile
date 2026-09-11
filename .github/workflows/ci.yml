@@ -133,6 +133,21 @@ jobs:
       - name: Test the deploy-gating guard — auto-approve shape (round 2)
         run: bash ./scripts/check-deploy-gating-autoapprove-r2.test.sh
 
+      # spec-92 fase 1b / spec-93: the second auto-approve-exempt class
+      # (a migration using pg_net) — output wiring and detection-signal
+      # presence in the "Filter paths" step.
+      - name: Test the deploy-gating guard — pg_net shape (spec-92 fase 1b / spec-93)
+        run: bash ./scripts/check-deploy-gating-pgnet.test.sh
+
+      # Same strategy as the quarantine differential harness (round 7): runs
+      # the REAL "Filter paths" run: text from the REAL deploy.yml under real
+      # bash, with git/gh stubbed, and asserts on the GITHUB_OUTPUT it
+      # actually produces. Presence-only checks on the YAML source cannot
+      # tell whether the detection signal is wired to PG_NET, has the right
+      # polarity, or survives a large diff without SIGPIPE — this does.
+      - name: Test the deploy-gating guard — pg_net differential harness (real bash, real deploy.yml)
+        run: bash ./scripts/check-deploy-gating-pgnet-differential.test.sh
+
       # A malformed quarantine.json only fails today's e2e-qa run on the VPS —
       # by then it has already re-blocked production, the exact state spec-87
       # fase 1 exists to end. Catch a bad entry (missing field, impossible
