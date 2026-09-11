@@ -277,17 +277,39 @@ salen de la primera lectura de la configuración de producción (2026-09-10).
 | 8 | MFA / AAL | `mfa_totp_enroll_enabled` y `mfa_totp_verify_enabled`: prod `true` / QA no declarada (default de GoTrue) | Igual que 7 |
 | 9 | Refresco de sesión y reuso de token | `refresh_token_rotation_enabled`: prod `true`, `security_refresh_token_reuse_interval` 10s / QA no declarada | Igual que 7 |
 | 10 | Referencias sin cualificar al esquema `extensions` | PostgREST `extra_search_path`: prod `public, extensions` / QA `public`. Un nombre **sin cualificar** resuelve en producción y falla en QA, o al revés | Alinear el `search_path`, o cualificar siempre en las migraciones |
-| 11 | UI dirigida por realtime | La publicación `supabase_realtime` de QA tiene **2 tablas** (`orders`, `dock_verifications`) y el frontend se suscribe a **7**. Las otras cinco se suscriben sin error y no reciben un evento nunca | Pendiente de la columna de producción (bloqueada por #753): decide si prod las tiene añadidas a mano —configuración fuera de control de versiones— o si están muertas en los dos sitios |
+| ~~11~~ | ~~UI dirigida por realtime~~ | **RETIRADA.** Medida: producción tiene **exactamente las mismas 2 tablas** que QA. Las otras cinco suscripciones están muertas en **los dos** entornos | **No es divergencia de paridad** — es un bug de producto (cinco canales que el frontend abre y que no reciben un evento en ninguna parte). No afecta al gate |
+| 12 | Ficheros subidos al bucket `raw-files` | Producción tenía un tercer bucket de storage que QA no tenía, y lo usan tres workflows de n8n con service role. **Cerrada** por spec-93 fase 3b (migración que lo crea en QA) | — (cerrada) |
+| 13 | Migraciones que usen `pg_net` | `pg_net` está instalada **sólo en QA**. Una migración con `net.http_post`/`net.http_get` aplicaría **verde contra QA y fallaría al aplicarse en producción**. Ninguna la usa hoy (verificado), pero nada lo guarda | Instalar `pg_net` en producción, o un check que rechace una migración que la use |
 
 **La 7 es la más afilada.** En producción el registro está **abierto y exige
 confirmar por email**; en QA está **cerrado y auto-confirma**. Un cambio en el
 alta llega a producción sin haberse ejecutado nunca contra esa forma — que es
 exactamente la premisa que este spec necesita que sea falsa.
 
-**La 11 todavía no se puede cerrar**: la mitad de producción del inventario
-depende de una vía `psql` que hoy está rota (`resolve-supabase-pooler-host.sh`
-construye el host del pooler en vez de leerlo; lo arregla el PR #753, sin
-mergear). Queda declarada como medida a medias, no como cerrada.
+**Actualización (2026-09-11), con el inventario ya completo.** Cuando se
+escribió esto, la mitad de producción del inventario estaba bloqueada por una
+vía `psql` rota. Ya no: se midieron las ocho superficies (corrida
+`34539233402`), y tres filas de arriba cambian.
+
+**La 11 se retira.** Producción tiene exactamente las mismas dos tablas en
+`supabase_realtime` que QA. Las cinco suscripciones restantes están muertas en
+**los dos** entornos, así que no hay divergencia que pueda hacer que un cambio
+llegue a producción sin ejercitarse — es un bug de producto, y no toca a este
+gate.
+
+**Entran la 12 y la 13.** El bucket `raw-files` existía sólo en producción (ya
+cerrado). Y `pg_net` existe sólo en QA, que es **la dirección peligrosa**: una
+migración que la use pasa QA en verde y falla al aplicarse en producción. Hoy
+ninguna la usa, pero eso es una verificación de un instante, no un guard.
+
+**Y una corrección, porque esta sección la escribió el inventario que se
+equivocó dos veces.** spec-93 publicó, y luego retiró, un hallazgo que afirmaba
+que producción tenía `statement_timeout`/`lock_timeout`/`safeupdate` y QA
+ninguno. **Era falso** — una consulta sin `coalesce` hizo que quince filas de QA
+salieran en blanco. QA tiene los mismos relojes. **Esa afirmación nunca llegó a
+esta tabla** porque esta sección se escribió antes de medir los GUCs; se deja
+dicho para que nadie la reintroduzca desde la conversación o desde un commit
+viejo.
 
 ### 3. El guardarraíl que mantiene honesta esta tabla
 
