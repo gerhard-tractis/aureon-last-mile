@@ -15,21 +15,27 @@
 # password>@...` — the literal string "password" never appears in that
 # expanded value, so a denylist keyed on that substring let it straight
 # through into a downloadable artifact. Every key this script emits is named
-# explicitly in AUTH_ALIAS/POSTGREST_ALIAS below; anything not named there
-# (PGRST_DB_URI, PGRST_JWT_SECRET, PGRST_APP_SETTINGS_JWT_SECRET, ...) is
-# structurally never read, so there is no value to leak regardless of what
-# it expands to.
+# explicitly in auth_alias/postgrest_alias (scripts/lib/qa-surface-aliases.sh,
+# sourced below); anything not named there (PGRST_DB_URI, PGRST_JWT_SECRET,
+# PGRST_APP_SETTINGS_JWT_SECRET, ...) is structurally never read, so there is
+# no value to leak regardless of what it expands to.
 #
-# ALIASES TO PRODUCTION'S REAL NAMES — review round 1, Serio 5
+# ALIASES TO PRODUCTION'S REAL NAMES — review round 1, Serio 5; corrected
+# spec-93 fase 3b (run 34545563792 caught GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_
+# ENABLED aliased to a key with a spurious "_hook_" that production never
+# had)
 # ---------------------------------------------------------------------
 # QA's env vars are GOTRUE_<KEY>/PGRST_<KEY>; production's Management API
 # uses different spellings for some of the same settings, confirmed against
-# a real production response: PGRST_DB_SCHEMAS -> `db_schema` (singular),
+# real production responses: PGRST_DB_SCHEMAS -> `db_schema` (singular),
 # PGRST_DB_MAX_ROWS -> `max_rows` (no `db_` prefix). This script emits the
-# PRODUCTION spelling so the two sides line up on the same key. A handful of
-# other settings (db_anon_role, db_use_legacy_gucs) use a best-guess mapping
-# that has not been independently confirmed — a wrong guess there produces a
-# loud, visible spurious divergence, never a silent false match.
+# PRODUCTION spelling so the two sides line up on the same key. Two settings
+# (db_anon_role, db_use_legacy_gucs) keep a mechanical `PGRST_DB_*` -> `db_*`
+# mapping that production's Management API does not expose under ANY name —
+# confirmed against a real /v1/projects/{ref}/postgrest response (run
+# 34539233402): it returns only db_extra_search_path, db_pool,
+# db_pool_acquisition_timeout, db_schema, max_rows. Declared as accepted
+# divergences in docs/qa-prod-parity-baseline.yml, not a mapping bug.
 #
 # A SURFACE FAILING TO READ DOES NOT ABORT THE OTHERS — same discipline as
 # measure-prod-surfaces.sh: each surface is wrapped so a failure logs and the
@@ -48,20 +54,14 @@ container_env() {
   docker inspect "$1" --format '{{range .Config.Env}}{{println .}}{{end}}'
 }
 
-# ── auth (GoTrue) ────────────────────────────────────────────────────────
-auth_alias() {
-  case "$1" in
-    GOTRUE_DISABLE_SIGNUP) echo disable_signup ;;
-    GOTRUE_MAILER_AUTOCONFIRM) echo mailer_autoconfirm ;;
-    GOTRUE_JWT_EXP) echo jwt_exp ;;
-    GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED) echo hook_custom_access_token_hook_enabled ;;
-    GOTRUE_EXTERNAL_EMAIL_ENABLED) echo external_email_enabled ;;
-    GOTRUE_EXTERNAL_PHONE_ENABLED) echo external_phone_enabled ;;
-    GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED) echo external_anonymous_users_enabled ;;
-    *) return 1 ;;
-  esac
-}
+# auth_alias/postgrest_alias live in scripts/lib/qa-surface-aliases.sh so
+# they can be unit tested (scripts/lib/qa-surface-aliases.test.sh) without
+# docker — see that file for the mapping notes and the review round 1
+# provenance.
+# shellcheck source=./lib/qa-surface-aliases.sh
+source "$(dirname "$0")/lib/qa-surface-aliases.sh"
 
+# ── auth (GoTrue) ────────────────────────────────────────────────────────
 measure_auth() {
   container_env supabase-qa-auth | while IFS='=' read -r name value; do
     canonical="$(auth_alias "$name")" || continue
@@ -71,17 +71,6 @@ measure_auth() {
 measure_auth || surface_failed auth "docker inspect failed"
 
 # ── PostgREST ────────────────────────────────────────────────────────────
-postgrest_alias() {
-  case "$1" in
-    PGRST_DB_SCHEMAS) echo db_schema ;;          # prod: singular, confirmed
-    PGRST_DB_MAX_ROWS) echo max_rows ;;          # prod: no db_ prefix, confirmed
-    PGRST_DB_EXTRA_SEARCH_PATH) echo db_extra_search_path ;; # confirmed as-is
-    PGRST_DB_ANON_ROLE) echo db_anon_role ;;     # best guess, unconfirmed
-    PGRST_DB_USE_LEGACY_GUCS) echo db_use_legacy_gucs ;; # best guess, unconfirmed
-    *) return 1 ;;
-  esac
-}
-
 measure_postgrest() {
   container_env supabase-qa-rest | while IFS='=' read -r name value; do
     canonical="$(postgrest_alias "$name")" || continue
