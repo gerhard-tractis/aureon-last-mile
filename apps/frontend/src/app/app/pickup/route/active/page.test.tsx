@@ -434,4 +434,95 @@ describe('ActiveRoutePage', () => {
       ).toBeInTheDocument();
     });
   });
+
+  // spec-95 fase 2 (mock 5c) — el pie pasa de una fila a dos: arriba
+  // Buscar/Ver manifiesto/Digitalizar/+, abajo Cerrar ruta/Cancelar ruta.
+  describe('spec-95 fase 2 — pie de dos filas', () => {
+    it('agrupa Buscar, el toggle de manifiestos, Digitalizar manifiesto y + en la fila superior del pie fijo', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      const topRow = screen.getByTestId('route-footer-top-row');
+      expect(within(topRow).getByRole('button', { name: 'Buscar carga' })).toBeInTheDocument();
+      expect(
+        within(topRow).getByRole('button', { name: 'Ver los 2 manifiestos' }),
+      ).toBeInTheDocument();
+      expect(
+        within(topRow).getByRole('button', { name: /digitalizar manifiesto/i }),
+      ).toBeInTheDocument();
+      expect(within(topRow).getByTestId('open-add-manifest')).toBeInTheDocument();
+    });
+
+    it('deja Cerrar ruta y Cancelar ruta en la fila inferior, fuera de la fila superior', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      const topRow = screen.getByTestId('route-footer-top-row');
+      expect(within(topRow).queryByTestId('close-route-button')).toBeNull();
+      expect(within(topRow).queryByTestId('cancel-route-button')).toBeNull();
+      expect(screen.getByTestId('close-route-button')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /cancelar ruta/i })).toBeInTheDocument();
+    });
+  });
+
+  // spec-95 fase 2 — "Buscar" en el mock es un ícono sin contraparte hoy.
+  // Se cablea reusando el mismo patrón ya establecido en PickupMobileActiveRoute
+  // y PickupMobileStartRoute (campo inline que filtra por código/cliente/punto).
+  describe('spec-95 fase 2 — Buscar carga en la ruta activa', () => {
+    beforeEach(() => {
+      routeManifestsMock.mockReturnValue({
+        data: [
+          {
+            ...INCOMPLETE_MANIFEST,
+            id: 'm1',
+            external_load_id: 'LOAD-1',
+            retailer_name: 'Acme',
+            verified_count: 0,
+          },
+          {
+            ...INCOMPLETE_MANIFEST,
+            id: 'm5',
+            external_load_id: 'LOAD-5',
+            retailer_name: 'Beta',
+            verified_count: 0,
+          },
+        ],
+        isLoading: false,
+      });
+    });
+
+    it('el campo de búsqueda está oculto hasta pulsar Buscar', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      expect(screen.queryByRole('searchbox', { name: 'Buscar carga' })).toBeNull();
+    });
+
+    it('Buscar revela un campo que filtra la lista de manifiestos por cliente', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: 'Buscar carga' }));
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar carga' }), {
+        target: { value: 'Acme' },
+      });
+      // Ambas cargas son incompletas, así que LOAD-1 (Acme) también se
+      // pinta en la tarjeta destacada "SIGUIENTE" — el assert se acota a la
+      // lista filtrada. Dentro de esa lista "Acme" aparece dos veces
+      // (cabecera de grupo + fila, porque pickup_location es null y cae a
+      // retailer_name — fallback de spec-95 fase 1), por eso getAllByText.
+      const list = screen.getByTestId('route-manifest-list');
+      expect(list).toBeInTheDocument();
+      expect(within(list).getAllByText('Acme').length).toBeGreaterThan(0);
+      expect(within(list).queryByText('Beta')).toBeNull();
+    });
+
+    it('muestra un aviso de sin resultados en vez de "Sin manifiestos en la ruta" cuando la búsqueda no encuentra nada', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: 'Buscar carga' }));
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar carga' }), {
+        target: { value: 'nada-coincide' },
+      });
+      expect(screen.queryByTestId('route-manifest-list')).toBeNull();
+      expect(screen.getByText(/sin resultados/i)).toBeInTheDocument();
+      expect(screen.queryByText(/sin manifiestos en la ruta/i)).toBeNull();
+    });
+  });
 });

@@ -24,6 +24,14 @@ import type { RouteManifestRow } from './RouteManifestList';
  * state instead of quietly summing only the manifests that do have a total
  * (which would understate the route and could show impossible math like a
  * bar past 100%). A one-line note names how many manifests are missing one.
+ *
+ * spec-95 fase 2 (mock 5c) — re-verificado contra el mock nuevo, sin
+ * cambios: el layout de `5c` es el mismo que este componente ya pinta
+ * (bloque de identidad + contador a la derecha, barra apilada, rejilla de
+ * tres métricas), y `spec-82` fase 1 ya había decidido conservar esta
+ * versión por ser más rica que la pastilla compacta del mock (Salida +
+ * patente, que el mock omite). Esta fase confirma esa decisión, no la
+ * revierte — ver la fase 2 de spec-95 para el resto del pie.
  */
 
 interface RouteProgressHeaderProps {

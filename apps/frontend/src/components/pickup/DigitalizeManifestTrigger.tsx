@@ -28,8 +28,18 @@ import { CameraIntake } from './CameraIntake';
  * regression test in app/app/pickup/page.test.tsx pinning it) and nothing
  * in spec-82's text revisits that call. Mock 5c is the active-ROUTE screen,
  * not the pre-route manifest list, so the two decisions do not conflict.
+ *
+ * spec-95 fase 2 — el mock mueve este botón del bloque inline que tenía
+ * `page.tsx` a la fila fija del pie, junto a "Buscar", el toggle de
+ * manifiestos y "+". Ahí necesita `flex-1`, no `w-full`. `className` es
+ * opcional y sustituye por completo el default (no se concatena) para que
+ * quien lo pase controle el ancho sin pelear con la clase original.
  */
-export function DigitalizeManifestTrigger() {
+export interface DigitalizeManifestTriggerProps {
+  className?: string;
+}
+
+export function DigitalizeManifestTrigger({ className }: DigitalizeManifestTriggerProps = {}) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
 
@@ -50,7 +60,7 @@ export function DigitalizeManifestTrigger() {
       <Button
         type="button"
         variant="outline"
-        className="w-full min-h-[44px] gap-2"
+        className={className ?? 'w-full min-h-[44px] gap-2'}
         onClick={() => setOpen(true)}
       >
         <Camera className="h-4 w-4" aria-hidden="true" />

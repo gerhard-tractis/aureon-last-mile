@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { onlineManager } from '@tanstack/react-query';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { useActivePickupRoute } from '@/hooks/pickup/useActivePickupRoute';
@@ -24,9 +24,9 @@ import { RouteMapPlaceholder } from '@/components/pickup/RouteMapPlaceholder';
 import { NextManifestCard } from '@/components/pickup/NextManifestCard';
 import { RouteCompleteNotice } from '@/components/pickup/RouteCompleteNotice';
 import { UpcomingManifestList } from '@/components/pickup/UpcomingManifestList';
-import { RouteManifestList } from '@/components/pickup/RouteManifestList';
+import { RouteManifestPanel } from '@/components/pickup/RouteManifestPanel';
+import { RouteFooterTopRow } from '@/components/pickup/RouteFooterTopRow';
 import { AddManifestSheet } from '@/components/pickup/AddManifestSheet';
-import { DigitalizeManifestTrigger } from '@/components/pickup/DigitalizeManifestTrigger';
 import { CloseRouteButton } from '@/components/pickup/CloseRouteButton';
 import { CancelRouteButton } from '@/components/pickup/CancelRouteButton';
 import { toast } from 'sonner';
@@ -38,6 +38,8 @@ export default function ActiveRoutePage() {
   const { operatorId, userId } = useOperatorId();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
 
   const {
     data: route,
@@ -226,6 +228,23 @@ export default function ActiveRoutePage() {
     );
   };
 
+  // spec-95 fase 2 — abrir la búsqueda también revela el panel (si no lo
+  // estaba ya): sin esto, tocar "Buscar" con la lista colapsada tecleaba
+  // contra un panel invisible. Cerrarla NO la vuelve a colapsar — el
+  // conductor pudo haber encontrado lo que buscaba y quiere seguir viendo
+  // la lista completa.
+  const handleToggleSearch = () => {
+    setSearchOpen((open) => {
+      const next = !open;
+      if (next) {
+        setShowAll(true);
+      } else {
+        setQuery('');
+      }
+      return next;
+    });
+  };
+
   const manifestListVisible = routeManifests.length === 0 || showAll;
 
   // pb-40 (160px), not pb-24: the fixed bar at the foot of this screen now
@@ -254,65 +273,24 @@ export default function ActiveRoutePage() {
           <UpcomingManifestList manifests={upcoming} />
 
           {manifestListVisible && (
-            <div id={MANIFEST_LIST_PANEL_ID}>
-              <h2 className="text-sm font-semibold text-text mb-2">
-                Manifiestos en la ruta
-              </h2>
-              <RouteManifestList
-                manifests={routeManifests}
-                onManifestClick={goToScan}
-                // Only wired once operatorId has resolved: useRemoveManifestFromRoute
-                // keys its cache invalidation off it, and a null operatorId
-                // would invalidate queries that match nothing (a trait it
-                // shares with useAddManifestToRoute / useCancelPickupRoute).
-                onRemove={operatorId ? handleRemove : undefined}
-                isRemoving={removeMut.isPending}
-                downloadedIds={downloadedIds}
-                onDownload={handleDownload}
-                downloadingIds={downloadingIds}
-              />
-            </div>
+            <RouteManifestPanel
+              panelId={MANIFEST_LIST_PANEL_ID}
+              manifests={routeManifests}
+              searchOpen={searchOpen}
+              query={query}
+              onQueryChange={setQuery}
+              onManifestClick={goToScan}
+              // Only wired once operatorId has resolved: useRemoveManifestFromRoute
+              // keys its cache invalidation off it, and a null operatorId
+              // would invalidate queries that match nothing (a trait it
+              // shares with useAddManifestToRoute / useCancelPickupRoute).
+              onRemove={operatorId ? handleRemove : undefined}
+              isRemoving={removeMut.isPending}
+              downloadedIds={downloadedIds}
+              onDownload={handleDownload}
+              downloadingIds={downloadingIds}
+            />
           )}
-
-          <div className="flex items-center gap-2">
-            {routeManifests.length > 0 && (
-              <Button
-                type="button"
-                variant="secondary"
-                className="flex-1 min-h-[44px]"
-                aria-expanded={showAll}
-                // Only points at a real id: the panel doesn't exist in the
-                // DOM until expanded, and a dangling aria-controls idref is
-                // worse than omitting the attribute.
-                aria-controls={manifestListVisible ? MANIFEST_LIST_PANEL_ID : undefined}
-                onClick={() => setShowAll((v) => !v)}
-              >
-                {showAll
-                  ? 'Ocultar manifiestos'
-                  : routeManifests.length === 1
-                    ? 'Ver el manifiesto'
-                    : `Ver los ${routeManifests.length} manifiestos`}
-              </Button>
-            )}
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="min-h-[44px] min-w-[44px]"
-              aria-label="Agregar manifiesto"
-              data-testid="open-add-manifest"
-              onClick={() => setSheetOpen(true)}
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          </div>
-
-          {/* spec-82 phase 1 (mock 5c) — precarga/digitalización de un
-              manifiesto nuevo directamente desde la ruta activa, sin
-              volver a la pantalla de escritorio. Reusa el mismo flujo OCR
-              que "Nuevo Manifiesto" ya usa en /app/pickup (spec-47);
-              ver DigitalizeManifestTrigger.tsx. */}
-          <DigitalizeManifestTrigger />
         </>
       )}
 
@@ -326,13 +304,24 @@ export default function ActiveRoutePage() {
       />
 
       <div className="fixed bottom-0 inset-x-0 bg-background border-t border-border p-4 sm:p-6">
-        {/* space-y-3: "Cancelar ruta" is destructive and sits directly under
-            the routine "Cerrar ruta" CTA. Flush, they are two
-            full-width 40px targets one thumb-width apart on a phone held
-            one-handed, with only the confirm dialog between a mis-tap and
-            detaching every manifest on the route. 3h already separates them
-            (`flex flex-col gap-4`); this surface did not. */}
+        {/* space-y-3: "Cancelar ruta" es destructivo y va justo debajo del
+            CTA de rutina "Cerrar ruta". Pegados, son dos objetivos de 40px
+            a ancho completo separados por el ancho de un pulgar en un
+            teléfono sostenido con una mano, con sólo el diálogo de
+            confirmación entre un toque errado y desenganchar todos los
+            manifiestos de la ruta. 3h ya los separa
+            (`flex flex-col gap-4`); esta superficie no lo hacía. */}
         <div className="max-w-2xl mx-auto space-y-3">
+          <RouteFooterTopRow
+            manifestsCount={routeManifests.length}
+            showAll={showAll}
+            manifestListPanelId={manifestListVisible ? MANIFEST_LIST_PANEL_ID : undefined}
+            onToggleShowAll={() => setShowAll((v) => !v)}
+            searchOpen={searchOpen}
+            onToggleSearch={handleToggleSearch}
+            onOpenAdd={() => setSheetOpen(true)}
+          />
+
           <CloseRouteButton
             totalVerified={totalVerified}
             isSubmitting={closeMut.isPending}
