@@ -1,6 +1,6 @@
 # spec-92 — el gate de producción distingue el camino verde de todo lo demás
 
-**Status:** in progress
+**Status:** completed
 **Verify:** unit
 **Depende de:** spec-57-qa-gate-before-production.md (`completed`)
 
@@ -399,7 +399,12 @@ tuvo esa prosa para empezar.
 
 ---
 
-### Fase 1 — `changes` gana `auth_hook`; `approve-production` se autoaprueba salvo esa clase `[in_progress]`
+### Fase 1 — `changes` gana `auth_hook`; `approve-production` se autoaprueba salvo esa clase `[done]`
+
+> Implementado por: **implementer** — commits `8c077a2` (base) y `0daaa67` (ronda 2 del review), en esta rama. Ampliada por la fase 1b (#793) con la segunda clase.
+> Review: **reviewer** (opus), 2 rondas sobre el PR #716 — B1/B2/B3 y M1-M4, todos cerrados; los seis mutantes de la tabla de más abajo se cazan **en vivo contra el `deploy.yml` real**, no sólo contra fixtures.
+> QA: no aplica `e2e-qa` — el cambio es del propio workflow de deploy. Verificado con `check-deploy-gating.sh` sobre el fichero real y con las nueve suites de la familia.
+> Downstream: ninguno.
 
 **Archivos:**
 - Modificar: `.github/workflows/deploy.yml`
@@ -440,7 +445,114 @@ round 2) en esta rama.
 
 ---
 
-### Fase 2 — el guardarraíl aprende la regla nueva `[in_progress]`
+---
+
+### Fase 1b — `pg_net`, la segunda clase que QA no ejercita `[done]`
+
+> Implementado por: **implementer** — rama `feat/spec-92-fase-1b-clase-pg-net`, SHAs `976dda5`→`4ee6556` (PR #793, merged 2026-09-11T07:15:17Z). Más `fix/matches-sigpipe-main` (PR #795) para llevar a `main` el mismo arreglo de `matches()`.
+> Review: **reviewer** (opus), **cinco rondas**. R1: 3 bloqueantes + 2 graves. R2: 2 graves. R3: nombre de output sin anclar. R4: el ancla por negación dejaba pasar el punto. R5: el valor entero seguía sin anclar. Todos cerrados con mutation-evidence **contra el `deploy.yml` real**, no contra fixtures.
+> QA: CI verde en #793; `check-deploy-gating.sh` ok sobre el fichero real; nueve suites, 107 aserciones.
+> Downstream: ninguno — esta fase no habilita trabajo de nadie más.
+
+**Por qué existe.** La revisión 2 de este spec estableció el criterio: se exceptúa
+una clase de cambio **si no existe una ruta de QA que ejercite lo que cambió**.
+Cuando se escribió, la única medida era el hook de auth. spec-93 midió el
+inventario completo y encontró una segunda, y esta vez **mecánicamente
+detectable**.
+
+**`pg_net` está instalada sólo en QA.** Medido en la corrida `34539233402`:
+producción tiene `pg_cron`, `pg_stat_statements`, `pgcrypto`, `plpgsql`,
+`postgis`, `supabase_vault`, `uuid-ossp`. QA tiene **las mismas más
+`pg_net 0.20.3`**. Así que una migración que use `net.http_post()` **aplica en
+verde contra QA y falla al aplicarse en producción** con
+`schema "net" does not exist`. Sería el primer caso en que el auto-approve manda
+a producción algo que QA dio por bueno y producción no puede ejecutar.
+
+Hoy ninguna migración la usa — verificado — pero eso es una comprobación de un
+instante, no un guard. Ése es justo el hueco.
+
+**Qué se construyó.** Output `pg_net` separado (no plegado en `auth_hook`: la
+razón de la pausa es distinta y el runbook tiene que poder decirla), calculado
+sobre el **mismo rango acumulado** y con el **mismo fail-closed** que
+`auth_hook`. La condicional pasa a:
+
+```
+${{ (auth_hook == 'true' || pg_net == 'true') && 'production' || 'production-auto' }}
+```
+
+Los paréntesis no son cosméticos: sin ellos `&&` liga más fuerte que `||`, la
+expresión cortocircuita al booleano `true`, y el `environment` pasaría a
+llamarse `true` — un entorno nuevo, sin reglas de protección. Verificado
+evaluando las cuatro combinaciones.
+
+**La señal es ancha a propósito.** `grep -qiE 'net\s*\.\s*http|pg_net\b|schema\s+net\b'`
+cubre mayúsculas (los identificadores SQL no distinguen caso),
+`net.http_delete`, `extensions.net.http_post`, espacios alrededor del punto, y
+las menciones de instalación. La asimetría lo manda: un falso positivo cuesta
+un clic, un falso negativo cuesta un despliegue roto sin supervisión.
+
+**`force_db` fuerza las dos clases.** El detector descansa en la invariante
+«hubo corrida exitosa en el sha X ⇒ producción tiene aplicada toda migración
+hasta X», y `force_db` existe **precisamente porque esa invariante se rompió**
+(2026-08-23, 13 migraciones de golpe). Cuando el operador ya está diciendo que
+el rango no es de fiar, pausar es lo barato.
+
+#### Lo que enseñaron las cinco rondas
+
+Un solo diagnóstico las explica todas, y vale más que el código:
+
+> **Cada arreglo enumeró por negación el conjunto de cosas malas, en vez de
+> exigir positivamente la forma buena.**
+
+R3 cerró el `id:`; R4, el sufijo `_v2`; R5 llegó por el punto (`outputs.pg_net.x`)
+y por el valor entero (`}}-x`, `== 'false'`). Cada ronda cerraba un carácter y
+abría el siguiente. La corrección final abandona esa vía: el valor **es**
+exactamente `${{ steps.<id>.outputs.<campo> }}` o es un error —
+`check-deploy-gating-output-binding.mjs`. Eso mató los cuatro mutantes vivos y
+eliminó de paso los falsos positivos sobre `!=`, `contains()` y `format()`.
+
+**El otro aprendizaje: los guards de forma no ven comportamiento.** Cuatro
+mutantes conductuales (`pg_net=false` hardcodeado, polaridad invertida, el
+`echo` de salida comentado) **pasan el guard estático** y mueren todos en
+`check-deploy-gating-pgnet-differential.test.sh`, que extrae el `run:` real del
+`deploy.yml` real y lo ejecuta bajo bash con `git`/`gh` stubbeados. Un guard que
+comprueba que un texto aparece no comprueba que ese texto esté conectado a algo.
+
+#### La cadena, atada eslabón por eslabón
+
+Doce eslabones entre el diff y el gate, cada uno verificado por mutación contra
+el fichero real: la detección y su polaridad · el bloque
+`{ … } >> $GITHUB_OUTPUT` · el **valor** de `changes.outputs.<campo>` · la
+presencia de la clave · el binding `steps.<id>` · `approve-production.needs:` ·
+la forma de `environment:` · `needs: approve-production` en cada job de
+producción · los **nombres de campo en los `if:`** (un `workerz` dejaba
+`deploy-worker` sin ejecutarse **nunca**) · y los **`env:` de job y step** (un
+typo ahí deja QA sin reconstruir el worker, y `e2e-qa` corre verde contra uno
+viejo — y `e2e-qa` verde **es** la precondición de esta puerta).
+
+#### El eslabón que ningún guard del repo puede ver
+
+Los *required reviewers* del environment `production` viven en los ajustes de
+GitHub, no en un fichero. Comprobado el 2026-09-11 con
+`gh api repos/:owner/:repo/environments/production`:
+
+```
+production      -> required_reviewers: gerhard-tractis
+production-auto -> 404 (lo crea GitHub al primer uso)
+```
+
+Quitar ese revisor **desactiva también la pausa del hook de auth**, sin tocar
+una línea de código y sin que ningún test lo note. Queda escrito aquí y en el
+runbook porque es lo único que se puede hacer al respecto.
+
+---
+
+### Fase 2 — el guardarraíl aprende la regla nueva `[done]`
+
+> Implementado por: **implementer** — commit `8c077a2`, más `0daaa67` (ronda 2). Extendido por la fase 1b con `check-deploy-gating-pgnet.mjs`, `check-deploy-gating-output-binding.mjs`, `check-deploy-gating-field-refs.mjs` y el arnés diferencial.
+> Review: **reviewer** (opus) — la ronda 2 encontró que los seis mutantes pasaban contra fixtures sintéticas y **sobrevivían contra el fichero real**; cerrado. Las cinco rondas de la fase 1b endurecieron el mismo guard.
+> QA: nueve suites, 107 aserciones, 0 fallos; `check-deploy-gating.sh` ok sobre el `deploy.yml` real.
+> Downstream: ninguno.
 
 **Archivos:**
 - Crear: `scripts/check-deploy-gating-autoapprove.mjs`
@@ -510,7 +622,12 @@ lista negativa corta (`computeProdJobs`), así que un job nuevo no puede
 
 ---
 
-### Fase 3 — vigilante de runs sin resolver `[pending]`
+### Fase 3 — vigilante de runs sin resolver `[done]`
+
+> Implementado por: **implementer** — commits `a82cacc` (base) y `d36cd78` (ronda 2). Verificado por el orquestador contra la rama: `scripts/deploy-approval-watchdog.mjs` y `.github/workflows/deploy-approval-watchdog.yml` **existen** — el token decía `[pending]` por descuido de bookkeeping, no porque faltara el trabajo.
+> Review: **reviewer** (opus) — B2 (runs fallidos contaban como «sin resolver» para siempre: 15 runs producían `alert` permanente), M4 (un `ok` de la punta cerraba sobre un run viejo sin atender — la forma exacta del incidente 2026-08-17→22) y M3 (nada vigilaba si `production` perdía sus `required_reviewers`). Los tres cerrados y reproducidos sobre el mismo fixture.
+> QA: 20/20 tests verdes tras la ronda 2.
+> Downstream: ninguno.
 
 Mismo patrón que `qa-drift-watchdog.yml`/`qa-drift-check.mjs`: lógica de
 decisión pura y testeable, wiring de E/S real sólo en el workflow, un
@@ -570,7 +687,12 @@ M4, M3) — ver `scripts/deploy-approval-watchdog.test.sh`.
 
 ---
 
-### Fase 4 — documentación `[in_progress]`
+### Fase 4 — documentación `[done]`
+
+> Implementado por: **el orquestador** — el entregable es prosa. Diagrama de flujo y runbook reescritos en esta rama; ampliados aquí con la segunda clase (`pg_net`) y con el eslabón que ningún guard puede ver (los `required_reviewers` del environment `production`).
+> Review: **sin review adversarial dedicado** — es documentación sobre mediciones ya verificadas en las fases 1-3 y en spec-93. El hueco se declara en vez de maquillarse.
+> QA: no aplica.
+> Downstream: `docs/runbooks/approve-production-deploy.md` y `.github/workflows/README.md` actualizados en el mismo commit.
 
 **Archivos:**
 - Modificar: `.github/workflows/README.md`

@@ -7,11 +7,11 @@ and the E2E suite against QA must pass.** From there, `approve-production`
 ```
 push / PR ──▶ ci.yml ──(success, push to main only)──▶ deploy.yml
                                                           │
-                                                          ├─▶ changes            (incl. auth_hook)
+                                                          ├─▶ changes            (incl. auth_hook, pg_net)
                                                           ├─▶ deploy-qa          (QA VPS)
                                                           ├─▶ e2e-qa             (Playwright, BLOCKING)
                                                           ├─▶ approve-production
-                                                          │     auth_hook == 'true' ?
+                                                          │     auth_hook OR pg_net == 'true' ?
                                                           │       ⏸ HUMAN  (environment: production)
                                                           │       : auto        (environment: production-auto)
                                                           └─▶ production fan-out
@@ -72,7 +72,7 @@ the blocks kept their original positions so the spec-57 diff stayed reviewable.
 | `changes` | always (after green CI) | computes the diff vs the previous main commit |
 | `deploy-qa` | **every** green push | syncs the spec-48 QA stack on the VPS; migrations always replayed, app rebuilds path-filtered (`docs/qa-environment.md`) |
 | `e2e-qa` | after `deploy-qa` succeeds | Playwright drives the real QA screens on that commit. **BLOCKING** since 2026-09-03 — `approve-production` requires `needs.e2e-qa.result == 'success'` |
-| `approve-production` | after `e2e-qa` succeeds | `environment:` resolves to `production` (⏸ human) when `changes.outputs.auth_hook == 'true'`, else `production-auto` (no pause). Either way, a "run is current" step re-checks `DEPLOY_SHA` against `main`'s tip before anything downstream runs (spec-92) |
+| `approve-production` | after `e2e-qa` succeeds | `environment:` resolves to `production` (⏸ human) when `auth_hook` **or** `pg_net` is `'true'` — the two classes QA does not exercise (spec-92 fase 1b; `pg_net` is installed in QA and not in production, so a migration using `net.http_post()` passes QA and fails on apply) — else `production-auto` (no pause). `force_db=true` forces both on. Either way, a "run is current" step re-checks `DEPLOY_SHA` against `main`'s tip before anything downstream runs (spec-92) |
 | `deploy-supabase` | approved **and** migrations / `seed.sql` / `config.toml` changed | `supabase db push --include-all` |
 | `verify-prod-migrations` | after `deploy-supabase` resolves, always | read-only; fails if prod's migration ledger diverges from the repo |
 | `deploy-edge-functions` | approved **and** `packages/database/supabase/functions/**` changed | `supabase functions deploy` |
