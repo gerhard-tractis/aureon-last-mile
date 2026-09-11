@@ -16,6 +16,18 @@ INSERT INTO public.operators (id, name, slug)
 VALUES ('00000000-0000-4000-8000-000000005850', 'Spec58 Fase5 Op', 'spec58-fase5-op')
 ON CONFLICT (id) DO NOTHING;
 
+-- Drain whatever else is sitting in the shared table's pending/fallback
+-- pool before TEST 1's own fixtures go in. Review finding: TEST 1 and
+-- TEST 2 only held with a near-empty `orders` -- one pre-existing eligible
+-- row elsewhere (e.g. left behind by another spec's fixture in this same
+-- shared container) can push TEST 1's own rows out of a LIMIT 10 window,
+-- or eat TEST 2's LIMIT 1, and both would go red for a reason that has
+-- nothing to do with claim_geocode_batch itself. A 9/9 pass proves the
+-- suite ran against a quiet container at that moment, not that the suite
+-- is stable regardless of what else is in the table -- this drain is what
+-- makes it actually stable.
+SELECT * FROM public.claim_geocode_batch(100000, 1);
+
 -- ── TEST 1 -- claims only pending/fallback, not-deleted, due rows ──────────
 INSERT INTO public.orders (
   id, operator_id, order_number, customer_name, customer_phone,
@@ -150,20 +162,28 @@ INSERT INTO public.orders (
   CURRENT_DATE, '{}'::jsonb, 'MANUAL', NOW(), 'pending', NOW()
 );
 
-SELECT * FROM public.claim_geocode_batch(10, 10);
+-- Explicit 15 here, matching the function's own new default, not a bare
+-- (10, 10): this call is what TEST 4's assertion below measures.
+SELECT * FROM public.claim_geocode_batch(10, 15);
 
 SELECT ok(
-  (SELECT geocode_next_attempt_at > NOW() + INTERVAL '9 minutes'
+  (SELECT geocode_next_attempt_at > NOW() + INTERVAL '14 minutes'
      FROM public.orders WHERE id = '00000000-0000-4000-8000-000000058400'),
   'a claimed row''s geocode_next_attempt_at is leased into the future'
 );
 
 -- ── TEST 5 -- the lease excludes the row from an immediate second claim ────
--- Proves the LEASE, not just the FOR UPDATE lock, protects the batch: each
--- statement is its own implicit transaction (no explicit multi-statement
--- BEGIN around the claim itself), so by the time this second call runs the
--- row lock from TEST 4's call has already released. Only the lease (a
--- future geocode_next_attempt_at) can be what excludes the row here.
+-- Proves the LEASE, not the FOR UPDATE lock, protects the batch. This whole
+-- file runs inside one BEGIN/ROLLBACK transaction, so the row lock TEST 4's
+-- call took on 058400 is in fact still held here -- but that does not
+-- explain the exclusion either: FOR UPDATE SKIP LOCKED only skips rows
+-- locked by ANOTHER session/transaction, and re-selecting a row your OWN
+-- still-open transaction already holds is never blocked or skipped. If the
+-- lease did not exist, this second call WOULD re-select 058400. What
+-- actually excludes it is the lease's own WHERE-clause effect: the earlier
+-- call already bumped geocode_next_attempt_at into the future, so the row
+-- no longer satisfies `geocode_next_attempt_at IS NULL OR <= now()` at all --
+-- nothing to do with locking.
 SELECT ok(
   NOT EXISTS (
     SELECT 1 FROM public.claim_geocode_batch(10, 10)

@@ -45,9 +45,16 @@
 
 BEGIN;
 
+-- p_lease_minutes default is 15, not the */10 cron's own interval: a lease
+-- exactly equal to the cron cadence has zero margin. Safe today only
+-- because WORKER_CONFIGS['geocode.enrich'].concurrency is 1 in
+-- orchestration/workers.ts (a single process, one run at a time) -- the
+-- lease exists for when that assumption breaks (two processes sharing
+-- Redis by accident, or a concurrency bump later), and 15 minutes costs
+-- nothing extra against a 10-minute cron.
 CREATE OR REPLACE FUNCTION public.claim_geocode_batch(
   p_limit INT DEFAULT 200,
-  p_lease_minutes INT DEFAULT 10
+  p_lease_minutes INT DEFAULT 15
 )
 RETURNS SETOF public.orders
 LANGUAGE sql

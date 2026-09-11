@@ -74,3 +74,39 @@ describe('createQuotaGuard — MAPTILER_MONTHLY_QUOTA configured', () => {
     expect(redis.expireat).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('createQuotaGuard — refund', () => {
+  it('gives back a reservation that did not produce a usable network result', async () => {
+    const redis = makeRedis();
+    const guard = createQuotaGuard(redis as never, 10, () => NOW);
+
+    await guard.tryConsume();
+    await guard.refund();
+
+    expect(redis._store.get('geocode:quota:2026-09')).toBe(0);
+  });
+
+  it('a consume-then-refund cycle leaves room for the next real call under a tight cap', async () => {
+    // The scenario BLOCKER 3 describes: quota=1, the one call available is
+    // spent on a circuit-breaker-open failure (no HTTP left the process at
+    // all) -- without a refund the month is frozen having spent nothing.
+    const redis = makeRedis();
+    const guard = createQuotaGuard(redis as never, 1, () => NOW);
+
+    expect(await guard.tryConsume()).toBe(true);
+    await guard.refund();
+    expect(await guard.tryConsume()).toBe(true);
+  });
+
+  it('is a no-op when no quota is configured', async () => {
+    const redis = makeRedis();
+    const guard = createQuotaGuard(redis as never, undefined, () => NOW);
+    await guard.refund();
+    expect(redis.decr).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op with a null redis client', async () => {
+    const guard = createQuotaGuard(null, undefined, () => NOW);
+    await expect(guard.refund()).resolves.toBeUndefined();
+  });
+});

@@ -137,6 +137,39 @@ export function unresolvableNoCoordinatesUpdate(order: ClaimedOrder, now: Date):
   };
 }
 
+/**
+ * `comuna_id` IS present -- a comuna was resolved for this order -- but the
+ * centroid lookup came back empty. That is a DATA fault (chile_comunas
+ * lacks centroid data for this row, e.g. fase 2's backfill not yet
+ * deployed), not the business case `unresolvableNoCoordinatesUpdate`
+ * exists for ("no comuna_id and no provider answer"). Treated as fully
+ * transient: never consumes the attempt budget, never terminates, retried
+ * soon -- once the data fault is fixed the very next tick resolves it
+ * properly. Keeps whatever point IS available (a coarse/wrong_comuna
+ * result still returned real coordinates) rather than discarding it for a
+ * centroid that does not exist -- discarding paid information for nothing
+ * is worse than an approximate pin during a temporary fault.
+ */
+export function centroidDataFaultUpdate(
+  order: ClaimedOrder,
+  point: { latitude: number; longitude: number } | null,
+  now: Date,
+): OrderGeocodeUpdate {
+  const hasPoint = point !== null;
+
+  return {
+    latitude: hasPoint ? point.latitude : order.latitude,
+    longitude: hasPoint ? point.longitude : order.longitude,
+    geocoded_at: hasPoint ? now.toISOString() : order.geocoded_at,
+    geocode_source: hasPoint ? 'maptiler' : order.geocode_source,
+    geocode_precision: hasPoint ? 'approximate' : order.geocode_precision,
+    geocode_status: 'fallback',
+    geocode_attempts: order.geocode_attempts,
+    geocode_last_attempt_at: now.toISOString(),
+    geocode_next_attempt_at: new Date(now.getTime() + TRANSPORT_RETRY_MS).toISOString(),
+  };
+}
+
 export type TransientReason = 'transport' | 'credential' | 'quota_or_missing_key';
 
 /**

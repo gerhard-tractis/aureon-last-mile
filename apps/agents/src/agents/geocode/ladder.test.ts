@@ -8,6 +8,7 @@ import {
   providerPointRetryUpdate,
   unresolvableNoCoordinatesUpdate,
   transientRetryUpdate,
+  centroidDataFaultUpdate,
   startOfNextMonth,
 } from './ladder';
 
@@ -211,6 +212,42 @@ describe('transientRetryUpdate', () => {
     const update = transientRetryUpdate(order, null, 'transport', NOW);
     expect(update.latitude).toBeNull();
     expect(update.longitude).toBeNull();
+  });
+});
+
+describe('centroidDataFaultUpdate — comuna_id present but the centroid is missing (a data fault, not a business case)', () => {
+  it('never terminates: status stays fallback, attempts unchanged, even repeatedly', () => {
+    const order = makeOrder({ geocode_attempts: 5 });
+    const update = centroidDataFaultUpdate(order, null, NOW);
+
+    expect(update.geocode_status).toBe('fallback');
+    expect(update.geocode_attempts).toBe(5);
+    expect(update.geocode_next_attempt_at).not.toBeNull();
+  });
+
+  it('keeps a provider point when one is available (coarse/wrong_comuna still returned SOMETHING)', () => {
+    const order = makeOrder();
+    const point = { latitude: -39.8, longitude: -73.2 };
+    const update = centroidDataFaultUpdate(order, point, NOW);
+
+    expect(update.latitude).toBe(point.latitude);
+    expect(update.longitude).toBe(point.longitude);
+    expect(update.geocode_source).toBe('maptiler');
+    expect(update.geocode_precision).toBe('approximate');
+  });
+
+  it('leaves existing coordinates untouched when there is no point at all (a null match with no centroid)', () => {
+    const order = makeOrder({ latitude: null, longitude: null });
+    const update = centroidDataFaultUpdate(order, null, NOW);
+
+    expect(update.latitude).toBeNull();
+    expect(update.longitude).toBeNull();
+  });
+
+  it('retries soon, not in 7 days and not next month', () => {
+    const order = makeOrder();
+    const update = centroidDataFaultUpdate(order, null, NOW);
+    expect(update.geocode_next_attempt_at).toBe(new Date(NOW.getTime() + 30 * 60 * 1000).toISOString());
   });
 });
 

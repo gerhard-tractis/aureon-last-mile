@@ -32,7 +32,14 @@ export interface ClaimedOrder {
 }
 
 export const DEFAULT_BATCH_LIMIT = 200;
-export const DEFAULT_LEASE_MINUTES = 10;
+// 15, not 10: the cron itself is */10, so a lease exactly equal to the
+// cron interval has zero margin -- fine today only because
+// WORKER_CONFIGS['geocode.enrich'].concurrency is 1 (a single process, one
+// run at a time). The lease exists precisely for when that assumption
+// breaks (a second process -- QA and prod sharing Redis by accident, or a
+// concurrency bump later); 15 minutes costs nothing extra and buys real
+// margin against a run that overruns one tick.
+export const DEFAULT_LEASE_MINUTES = 15;
 
 /**
  * Atomically claims up to `limit` orders due for geocoding, leasing them for

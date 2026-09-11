@@ -19,7 +19,7 @@ describe('claimGeocodeBatch', () => {
 
     expect(db.rpc).toHaveBeenCalledWith('claim_geocode_batch', {
       p_limit: 200,
-      p_lease_minutes: 10,
+      p_lease_minutes: 15,
     });
   });
 

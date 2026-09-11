@@ -16,6 +16,19 @@ export interface QuotaGuard {
    * Redis at all -- when no monthly quota is configured.
    */
   tryConsume(): Promise<boolean>;
+
+  /**
+   * Gives back a reservation made by tryConsume() when it turned out NOT to
+   * produce a usable network result -- a transport failure, a refused
+   * credential, or any other thrown error means the reservation was never
+   * actually spent. Without this, a circuit-breaker-open stretch (which
+   * makes zero HTTP calls) can still burn the whole monthly cap and freeze
+   * every remaining row until next month having spent nothing (spec-58
+   * fase 5 review, BLOCKER 3). A no-op when no quota is configured, or when
+   * tryConsume() itself already returned false (it rolls back its own
+   * reservation internally in that case -- nothing to refund).
+   */
+  refund(): Promise<void>;
 }
 
 function quotaKey(now: Date): string {
@@ -35,7 +48,7 @@ export function createQuotaGuard(
   now: () => Date,
 ): QuotaGuard {
   if (!monthlyQuota || !redis) {
-    return { tryConsume: async () => true };
+    return { tryConsume: async () => true, refund: async () => {} };
   }
 
   return {
@@ -53,6 +66,10 @@ export function createQuotaGuard(
         return false;
       }
       return true;
+    },
+
+    async refund(): Promise<void> {
+      await redis.decr(quotaKey(now()));
     },
   };
 }
