@@ -27,6 +27,18 @@ describe('openPendingManifest', () => {
         }),
       );
       expect(manifestsChain.eq).toHaveBeenCalledWith('id', 'db-id-1');
+      // Contrato no negociable (operator_id en toda query/tabla): el UPDATE
+      // filtra por operator_id además de por id. `eq` es el mismo mock
+      // encadenado que el SELECT de arriba ya llama con
+      // ('operator_id', 'op-1') — por eso se cuentan las llamadas totales
+      // (2 del SELECT + 2 del UPDATE) en vez de sólo comprobar presencia,
+      // que un `.eq('operator_id', ...)` quitado del UPDATE seguiría
+      // dejando pasar.
+      expect(manifestsChain.eq).toHaveBeenCalledTimes(4);
+      expect(manifestsChain.eq.mock.calls.slice(2)).toEqual([
+        ['id', 'db-id-1'],
+        ['operator_id', 'op-1'],
+      ]);
     });
 
     it('does not write when the manifest is already in_progress', async () => {

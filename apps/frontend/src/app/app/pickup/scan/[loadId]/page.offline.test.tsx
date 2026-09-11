@@ -50,6 +50,14 @@ vi.mock('@/lib/supabase/client', () => ({
   }),
 }));
 
+// Ampliación de alcance, fase 5 — mismo motivo que en page.test.tsx: evita
+// que la implementación real de `openPendingManifest` intente encadenar
+// `select`/`update` sobre el `createSPAClient` simplificado que mockea
+// este archivo.
+vi.mock('@/lib/pickup/openPendingManifest', () => ({
+  openPendingManifest: vi.fn().mockResolvedValue(undefined),
+}));
+
 const mockOfflineScanSource = vi.fn();
 vi.mock('@/hooks/pickup/useOfflineScanSource', () => ({
   useOfflineScanSource: (...args: unknown[]) => mockOfflineScanSource(...args),
