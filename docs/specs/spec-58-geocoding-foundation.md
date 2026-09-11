@@ -87,7 +87,7 @@ The two are near-identical in practice, but the poll is suspect: the Show Route 
 |---|---|---|
 | 0 | Precision mapping: which MapTiler response field carries match granularity | `[done]` |
 | 1 | `orders` geocode columns, queue index, reset trigger, `geocode_cache` | `[done]` |
-| 2 | `chile_comunas` centroids, 347 rows with provenance | `[pending]` |
+| 2 | `chile_comunas` centroids, 347 rows with provenance | `[done]` |
 | 3 | Address normalisation v1 + cache read/write. No network. | `[done]` |
 | 4 | MapTiler adapter behind the interface, circuit breaker, env | `[done]` |
 | 5 | `geocode.enrich` queue, cron, batch claim, retry ladder, quota | `[pending]` |
@@ -393,11 +393,30 @@ Also regenerate `packages/database/src/database.types.ts` wholesale. That file i
 
 ---
 
-### Fase 2 — Comuna centroids `[pending]`
+### Fase 2 — Comuna centroids `[done]`
 
 **Depende de:** spec-58 fase 1
 
-**Archivos:** `packages/database/supabase/migrations/<ts>_spec58_comuna_centroids.sql` (nueva), `packages/database/supabase/tests/spec58_comuna_centroids.sql` (nuevo), `packages/database/src/database.types.ts`
+**Archivos:** `packages/database/supabase/migrations/20261011000001_spec58_comuna_centroids.sql` (DDL), `packages/database/supabase/migrations/20261011000003_spec58_comuna_centroids_seed.sql` (la siembra), `packages/database/supabase/tests/spec58_comuna_centroids.sql`, `packages/database/src/database.types.ts`
+
+> Implementado por: `implementer` — rama `feat/spec-58-fase-2-centroides`, SHAs 8b1e38b (implementación), 28aac2d + 308a6ed (correcciones de review), 46250db (partición DDL/siembra por la regla 1 de CI)
+> Review: `reviewer` (Opus), dos rondas. **Reverse-geocodificó los 347 puntos, no una muestra**: 346/347 caen dentro del boundary administrativo de su propia comuna y su región; el único sin respuesta es `12202`, que corrobora que OSM no mapea ese boundary. Cero casos de «mismo nombre, otra región», cero duplicados. Hallazgo principal: **ninguna aserción podía detectar un punto dentro de Chile pero en la comuna equivocada** — intercambiar Arica y Punta Arenas dejaba la suite verde. Cerrado con TEST 5 (banda de latitud por región) y TEST 6 (puntos duplicados), los dos mutation-testeados con esos intercambios exactos.
+> QA: PR #813 merged 2026-09-11. `e2e-qa` n/a — esta fase no despliega pantalla. pgTAP 8/8 vía `scripts/pgtap-local.sh`, idempotente bajo `apply --force`. CI verde tras la partición (los dos jobs, leídos fila por fila).
+> Downstream: revisado spec-59 y spec-60 — sin cambios. Ninguno lee `chile_comunas` directamente; consumen `orders.latitude/longitude`.
+
+#### Dos números y una lección que conviene conservar
+
+**El guard atrapa el 93,1 %, no la clase entera.** De los 54.036 intercambios posibles entre comunas de regiones distintas, **3.725 (6,9 %) siguen pasando** TEST 5 — el residuo se concentra donde las regiones comparten latitud de verdad (Valparaíso↔RM, O'Higgins↔RM). Se probó añadir una banda de longitud y **no sirve** (6,89 % → 6,70 %): las regiones adyacentes se solapan en los dos ejes. Cerrarlo exige point-in-polygon, y `geometry` NULL es Non-Goal declarado. El número está escrito aquí para que nadie lea la aserción como total.
+
+**Dos errores de la misma forma, encontrados en rondas distintas.** `05502 Calera` matcheaba una aldea cerca de Pica, a 1.400 km — lo cazó un check de outlier por mediana regional que el implementer construyó por su cuenta. Y `12104 San Gregorio` apuntaba a un **cabo** a 18,3 km de la capital comunal, porque la búsqueda usó `Punta Delgada` (el accidente geográfico) en vez de `Villa Punta Delgada` (el asentamiento). En Chile el nombre corto suele ser el accidente y el asentamiento lleva nombre largo. El segundo salió de una coordenada que el **propio review** había producido en la ronda 1 y que se copió en vez de re-derivarse: **una coordenada que aparece en una revisión es una pista para volver a consultar, no una fuente.**
+
+#### Por qué son dos migraciones y no una
+
+`scripts/check-migration-safety.mjs` regla 1 rechaza un fichero que mezcle DDL con un `UPDATE` de nivel superior sin acotar, porque en producción (~112k despachos) un backfill así muere a medias. `chile_comunas` son 347 filas de tabla de referencia y no corre ese riesgo, pero el guard no puede distinguirlo — y **no se le pidió que lo hiciera**.
+
+Se intentaron dos formas antes de la buena, y las dos quedan escritas en las cabeceras de los ficheros para que nadie las reintroduzca: el `UPDATE` desnudo junto al DDL (rechazado, correctamente), y la siembra envuelta en función e invocada en línea — que **pasaba por un agujero del regex**, no por diseño: `BODY_UPDATE_RE` exige que `SET` siga al nombre de la tabla sin nada en medio, y el alias `AS c` lo impedía. El implementer lo descubrió y lo reportó en vez de cobrar el verde.
+
+La forma final no depende de ningún detalle: `check-migration-safety-rule1.mjs:242` devuelve `[]` en cuanto el fichero no contiene DDL, así que separar la siembra del `ALTER TABLE` satisface la regla **estructuralmente**. La siembra sigue corriendo sola en el deploy, que es lo que la alternativa conservadora (declarar la función y ejecutarla a mano) habría perdido — y con ella, el riesgo de un deploy que deja `centroid_lat` NULL mientras la Fase 5 depende de él.
 
 ```sql
 ALTER TABLE public.chile_comunas ADD COLUMN IF NOT EXISTS centroid_lat DECIMAL(10,7);
@@ -600,7 +619,23 @@ Against a mocked `fetch`: a Chilean address fixture resolving `exact`; a localit
 
 **Depende de:** spec-58 fase 4
 
-**Archivos:** `apps/agents/src/orchestration/queues.ts`, `apps/agents/src/orchestration/queues.test.ts`, `apps/agents/src/orchestration/workers.ts`, `apps/agents/src/orchestration/workers.test.ts`, `apps/agents/src/orchestration/schedulers.ts`, `apps/agents/src/orchestration/schedulers.test.ts`, `apps/agents/src/agents/geocode/enrich.ts` (nuevo), `apps/agents/src/agents/geocode/enrich.test.ts` (nuevo)
+**Archivos:** `apps/agents/src/orchestration/queues.ts`, `apps/agents/src/orchestration/queues.test.ts`, `apps/agents/src/orchestration/workers.ts`, `apps/agents/src/orchestration/workers.test.ts`, `apps/agents/src/orchestration/schedulers.ts`, `apps/agents/src/orchestration/schedulers.test.ts`, `apps/agents/src/agents/geocode/enrich.ts` (nuevo), `apps/agents/src/agents/geocode/enrich.test.ts` (nuevo), `apps/agents/src/agents/geocode/claim.ts` (nuevo), `apps/agents/src/agents/geocode/ladder.ts` (nuevo), `apps/agents/src/agents/geocode/quota.ts` (nuevo) y sus tests, `apps/agents/src/index.ts`, `packages/database/supabase/migrations/20261012000001_spec58_fase5_claim_geocode_batch.sql` (nueva), `packages/database/supabase/tests/spec58_fase5_claim_geocode_batch.sql` (nuevo)
+
+> **Dos desviaciones declaradas (2026-09-11), ninguna opcional.**
+>
+> **La migración.** PostgREST no puede expresar `FOR UPDATE SKIP LOCKED`, así que el claim atómico que esta misma sección exige tiene que vivir detrás de una función de Postgres llamada por `.rpc()`. La lista original no la contemplaba; el requisito y su imposibilidad estaban ambos en el spec.
+>
+> **`index.ts`.** Sin él, la cola, el worker y el scheduler se cablean pero el handler real nunca llega: el worker cae al logger de relleno de `workers.ts` y la fase entera es **inerte en producción** mientras todos los tests pasan.
+
+#### El arriendo, y lo que cuesta
+
+El claim no sólo bloquea: **arrienda**. El lock de `FOR UPDATE` muere con la transacción implícita de la sentencia que reclama, así que no protege nada durante el trabajo de red que viene después — que es justo el escenario que esta sección describía («a run that outlives its ten-minute cron window… re-selects the identical 200 rows»). El arriendo empuja `geocode_next_attempt_at` `p_lease_minutes` hacia adelante en la misma sentencia atómica. El spec exigía la protección sin nombrar el mecanismo.
+
+**Lo que cuesta, y no estaba escrito:** `orders_audit_trigger` es `AFTER INSERT OR UPDATE OR DELETE … FOR EACH ROW` e inserta en `audit_logs` para todo UPDATE. El arriendo **es** un UPDATE sobre las 200 filas reclamadas, así que cada tick escribe **400** filas de auditoría en vez de 200 — y mueve `orders.updated_at` en 200 filas cada diez minutos por algo que no es un cambio de negocio. Sobre el backlog completo eso duplica el coste de auditoría que esta sección ya citaba. El arriendo es correcto y necesario; la factura queda dicha.
+
+#### Corrección: `isConfigured` se comprueba **por fila**, no por lote
+
+Este spec decía dos veces que `provider.isConfigured` se comprueba una vez por lote, «rather than discovering it 200 times per run». **Estaba equivocado, y la implementación tiene razón.** Un early-return por lote se saltaría también el paso 1 de la resolución, y las filas con acierto de caché `exact` dejarían de resolverse sin key — que es exactamente lo que la fila «`MAPTILER_API_KEY` absent» promete que sigue funcionando. La comprobación por fila, situada **después** de la caché, es la única ordenación correcta. Y el churn que preocupaba no lo evita el chequeo de todas formas: cada fila necesita su escritura de centroide pase lo que pase.
 
 #### La decisión que desbloqueó esta fase (usuario, 2026-09-11)
 
