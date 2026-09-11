@@ -326,11 +326,11 @@ Así que esta fase es sobre todo de orden y de copy.
 > cinco ficheros. No se revierte ninguno de sus `w-full` ni el `flex-wrap` de
 > `PackageRow` — son load-bearing y están comentados como tal en el código.
 
-### Fase 6 — `5f` firma y finalización `[pending]`
+### Fase 6 — `5f` firma y finalización `[in_progress]`
 
 **Depende de:** ninguna
 
-**Archivos:** `apps/frontend/src/app/app/pickup/complete/[loadId]/page.tsx`, y sus tests
+**Archivos:** `apps/frontend/src/app/app/pickup/complete/[loadId]/page.tsx`, `apps/frontend/src/components/metrics/MetricCard.tsx`, `apps/frontend/src/components/pickup/ClientSignatureSection.tsx`, `apps/frontend/src/lib/pickup/manifestCloseSummary.ts`, y sus tests
 
 La ronda 2 **adopta** las tres cosas que la app tenía y el mock no dibujaba: la
 rejilla de cifras, el aviso legal y la firma del cliente opt-in.
@@ -342,6 +342,46 @@ rejilla de cifras, el aviso legal y la firma del cliente opt-in.
 - [ ] Casilla «Agregar firma del cliente» con la etiqueta `opcional` a la derecha.
 - [ ] `TU FIRMA` sin campo de nombre, como ya está.
 - [ ] La leyenda ámbar de offline: decidir y **escribir** si es condicional a estar sin red. Hoy se muestra siempre. `spec-80` fase 3 (ronda 2) dejó anotado que la promesa «Las fotos también» sólo es completa con `spec-81` fase 5 — no prometer de más en el copy.
+
+> **`DURACIÓN` NO se resuelve aquí — se movió a la fase 5, y la razón importa.**
+> El criterio original de esta fase («`DURACIÓN` con el valor real; hoy pinta
+> `—`») se cerró en la ronda 1 con una cita SQL que **apuntaba a otra tabla**:
+> `20260625000001:279` y `20260812000006:88` escriben `route_receptions`, no
+> `manifests`. Lo encontró el review. La causa raíz es que **ninguna migración
+> escribe `manifests.started_at`**; su único escritor es
+> `lib/pickup/openPendingManifest.ts:50`, y el flujo de la cuadrilla
+> (`route/active/page.tsx:131` → escaneo) **nunca lo llama**. Por eso
+> `DURACIÓN` es `—` **siempre** para la cuadrilla, no a veces — verificado en QA
+> el 2026-09-10 con 1 de 28 escaneado. `openPendingManifest.ts:8-11` ya avisaba
+> de esta misma regresión en el camino móvil: volvió a pasar en otra pantalla.
+> El arreglo vive en la fase 5, que es dueña de la pantalla de escaneo.
+>
+> **El aviso de custodia dejó de poder mentir.** Al volverlo dinámico, las
+> cifras entraban con `= []` por defecto: una query en pausa
+> (`networkMode:'online'`) pintaba «los **0** paquetes verificados pasan a
+> custodia de Aureon» encima del botón de firmar. Es el bloqueante 1 de spec-80
+> fase 2 ronda 3, ya escrito en `review/[loadId]/page.tsx:199-204`, y este mismo
+> fichero ya había quitado un `= []` por esa razón. Ahora se gatea por presencia
+> de dato.
+>
+> **El copy vive en `lib/`, no en la página.** Hardcodearlo pasaba 34/34 porque
+> el test afirmaba el string exacto con las cifras del `beforeEach`.
+> `custodyNoticeCopy()` en `manifestCloseSummary.ts` lo hace testeable variando
+> cifras — y de paso resuelve la pluralización, que **sí tenía precedente** en
+> la pantalla de al lado (`reviewCloseGate.ts:73,92-94`), y el caso de 0
+> faltantes, que es el camino feliz y decía «Los 0 faltantes quedan … hasta que
+> se resuelvan».
+>
+> **Divergencias de formato con `5f`, declaradas y NO arregladas** (ninguna
+> estaba en el checklist de esta fase): valor de `VERIFICADOS` en verde y
+> `FALTANTES` en rojo en el mock, el código pinta todo en `text-text`; el mock
+> no lleva iconos en las tarjetas y el código sí; el mock no lleva banda dorada
+> en la cabecera; título 19px contra `text-base`.
+>
+> **Deuda declarada:** `page.tsx` queda en **380 líneas**, por encima del límite
+> de 300. Ya estaba en 340 antes de esta fase; la ronda 2 lo bajó de 399
+> extrayendo `CompletionSkeleton` y `custodyNoticeCopy`. Sigue siendo deuda y no
+> se disimula.
 
 ### Fase 7 — `5f2` la confirmación irreversible `[pending]`
 
