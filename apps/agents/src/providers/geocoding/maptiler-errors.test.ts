@@ -1,8 +1,9 @@
 // src/providers/geocoding/maptiler-errors.test.ts — error classification,
 // circuit breaker behaviour and the module-scoped singleton. Request
 // construction and match classification live in maptiler.test.ts.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MaptilerProvider, getMaptilerProvider } from './maptiler';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { MaptilerProvider } from './maptiler';
+import type { GeocodingProvider } from './types';
 import { textResponse } from './test-helpers';
 
 describe('MaptilerProvider error classification', () => {
@@ -171,9 +172,15 @@ describe('MaptilerProvider with no API key', () => {
 
     expect(provider.isConfigured).toBe(false);
 
+    // NOT 'credential': a `switch (err.type)` over Fase 5's ladder must land
+    // this on "MAPTILER_API_KEY absent -> centroid, retry at start of next
+    // month", not on the 1-hour-latched-and-logged-at-error credential row.
+    // Those rows have very different costs at scale — the wrong one here
+    // means a */10 cron churns the whole order book hourly writing dead
+    // audit_logs rows all month, for zero paid calls saved.
     await expect(
       provider.geocode({ address: 'Bandera 140', comuna: 'Santiago' }),
-    ).rejects.toMatchObject({ type: 'credential' });
+    ).rejects.toMatchObject({ type: 'not_configured' });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -181,17 +188,51 @@ describe('MaptilerProvider with no API key', () => {
     const provider = new MaptilerProvider('a-real-key', vi.fn() as unknown as typeof fetch);
     expect(provider.isConfigured).toBe(true);
   });
+
+  it('exposes isConfigured through the GeocodingProvider interface, not just the concrete class', () => {
+    // This is a compile-time assertion, not a runtime one: Vitest transpiles
+    // without type-checking, so this test cannot go red by itself — it goes
+    // red under `tsc --noEmit` if `isConfigured` is ever removed from the
+    // GeocodingProvider interface. Fase 5 types against GeocodingProvider
+    // (Decision 1), so if this field isn't on the interface,
+    // `provider.isConfigured` below is a type error, and the only way to use
+    // it is typing against MaptilerProvider directly — the exact adapter
+    // coupling declaring GeocodingProviderError in types.ts was meant to end.
+    const provider: GeocodingProvider = new MaptilerProvider('a-real-key', vi.fn() as unknown as typeof fetch);
+    expect(provider.isConfigured).toBe(true);
+  });
 });
 
+// This describe block deliberately never uses the static `import ... from
+// './maptiler'` at the top of the file for the module-scoped singleton
+// itself — every test here gets its OWN fresh copy via a dynamic import
+// after vi.resetModules(), in both beforeEach AND afterEach. Two module
+// copies (the file-level static import other describe blocks use, and
+// whatever this block's dynamic imports produce) must never be allowed to
+// share a mutable `instance` — that was the origin of an order-dependent
+// flake the first time this file mixed resetModules()/doMock() with a
+// static import of the same module. Resetting in both hooks (not just one)
+// means a fresh module is guaranteed on the way in AND the way out,
+// independent of whether the previous test in this block passed, failed, or
+// forgot its own cleanup.
 describe('getMaptilerProvider', () => {
-  it('returns the same instance on repeated calls (module-scoped singleton)', () => {
-    const a = getMaptilerProvider();
-    const b = getMaptilerProvider();
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.doUnmock('../../config');
+    vi.resetModules();
+  });
+
+  it('returns the same instance on repeated calls (module-scoped singleton)', async () => {
+    const mod = await import('./maptiler');
+    const a = mod.getMaptilerProvider();
+    const b = mod.getMaptilerProvider();
     expect(a).toBe(b);
   });
 
   it('logs loudly when MAPTILER_API_KEY is absent, so the worker still boots', async () => {
-    vi.resetModules();
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       const mod = await import('./maptiler');
@@ -206,7 +247,6 @@ describe('getMaptilerProvider', () => {
     // Under Vitest, config.ts's own singleton is always null (it checks
     // process.env.VITEST), so this branch cannot be reached by setting env
     // vars — it has to mock the config module directly.
-    vi.resetModules();
     vi.doMock('../../config', () => ({
       config: { MAPTILER_API_KEY: 'a-real-key' },
     }));
@@ -218,8 +258,6 @@ describe('getMaptilerProvider', () => {
       expect(errorSpy).not.toHaveBeenCalled();
     } finally {
       errorSpy.mockRestore();
-      vi.doUnmock('../../config');
-      vi.resetModules();
     }
   });
 });

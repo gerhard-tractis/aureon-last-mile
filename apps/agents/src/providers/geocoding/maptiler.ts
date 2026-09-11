@@ -172,7 +172,11 @@ export class MaptilerProvider implements GeocodingProvider {
 
   async geocode(q: GeocodeQuery): Promise<GeocodeResult | null> {
     if (!this.isConfigured) {
-      throw new GeocodingProviderError('credential', 'MAPTILER_API_KEY is not configured');
+      // Deliberately NOT 'credential' — see GeocodingErrorType's doc comment
+      // in ./types.ts. This never reaches the breaker (no trip(), no
+      // failure count), because a permanently-missing key is not a
+      // transient condition the breaker's latches are built to model.
+      throw new GeocodingProviderError('not_configured', 'MAPTILER_API_KEY is not configured');
     }
     try {
       return await this.breaker.execute(q);

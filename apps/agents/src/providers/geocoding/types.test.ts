@@ -1,6 +1,6 @@
 // src/providers/geocoding/types.test.ts
 import { describe, it, expect } from 'vitest';
-import { precisionOf, GeocodingProviderError, type MaptilerErrorType } from './types';
+import { precisionOf, GeocodingProviderError, type GeocodingErrorType } from './types';
 
 describe('precisionOf', () => {
   it('maps exact to exact', () => {
@@ -23,7 +23,7 @@ describe('precisionOf', () => {
 describe('GeocodingProviderError', () => {
   it('carries the error type it was constructed with', () => {
     const err = new GeocodingProviderError('credential', 'refused');
-    const type: MaptilerErrorType = err.type;
+    const type: GeocodingErrorType = err.type;
     expect(type).toBe('credential');
     expect(err.message).toBe('refused');
     expect(err.name).toBe('GeocodingProviderError');

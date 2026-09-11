@@ -4,7 +4,7 @@
 // written. The doc comments below record what was rejected and why — do not
 // simplify them away in a later pass.
 //
-// GeocodingProviderError / MaptilerErrorType live HERE, not in maptiler.ts,
+// GeocodingProviderError / GeocodingErrorType live HERE, not in maptiler.ts,
 // on purpose: Fase 5's retry ladder needs to read a provider's error type to
 // pick a row, and if that type only existed in the concrete adapter, Fase 5
 // would import `from '.../geocoding/maptiler'` to get it — coupling
@@ -19,11 +19,27 @@ import type { ProviderErrorType } from '../types';
 // 'network'. Extending the shared ProviderErrorType here — rather than
 // adding 'credential' to ProviderErrorType itself — keeps that value out of
 // LLMError's vocabulary, where it would never be constructed.
-export type MaptilerErrorType = ProviderErrorType | 'credential';
+//
+// 'not_configured' is a SEPARATE value from 'credential', not a synonym.
+// Both mean "the request never went to MapTiler", but Fase 5's ladder gives
+// them opposite recoveries: 'credential' latches the circuit for one hour
+// and logs at error (a key that WAS presented and WAS refused, which never
+// self-clears on the usual cadence); 'not_configured' means no key exists
+// at all, and belongs on the "MAPTILER_API_KEY absent -> centroid, retry at
+// start of next month" row instead. Collapsing the two would land a
+// permanently-missing key on the hourly row: at cron cadence, that churns
+// the whole order book every hour writing dead audit_logs rows all month,
+// for zero paid calls saved — the exact cost the monthly row exists to
+// avoid.
+export type GeocodingErrorType = ProviderErrorType | 'credential' | 'not_configured';
+
+/** @deprecated kept as an alias — some earlier code/tests referred to this
+ *  type before it moved out of the (vendor-named) adapter file. */
+export type MaptilerErrorType = GeocodingErrorType;
 
 export class GeocodingProviderError extends Error {
   constructor(
-    public readonly type: MaptilerErrorType,
+    public readonly type: GeocodingErrorType,
     message: string,
   ) {
     super(message);
@@ -81,6 +97,13 @@ export interface GeocodeResult {
 
 export interface GeocodingProvider {
   readonly name: string;
+  /** False when the provider has no usable credential at all (e.g.
+   *  MAPTILER_API_KEY unset) — Fase 5 checks this BEFORE calling geocode(),
+   *  so an unconfigured provider never enters the retry ladder's per-call
+   *  paths at all. Declared on the interface, not just the concrete
+   *  adapter: a caller typing against GeocodingProvider (Decision 1 requires
+   *  this) must be able to read it without importing a specific vendor. */
+  readonly isConfigured: boolean;
   geocode(q: GeocodeQuery): Promise<GeocodeResult | null>;
 }
 
