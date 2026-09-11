@@ -6,7 +6,7 @@
 -- fail for "column/table/trigger does not exist" before the migration
 -- lands, and pass once it does.
 --
--- The trigger-ordering test (TEST 9) is the one the spec calls out
+-- The trigger-ordering test (TEST 10) is the one the spec calls out
 -- explicitly: it is the assertion that fails if `orders_zz_geocode_reset`
 -- is ever renamed to something that no longer sorts after
 -- `orders_normalize_comuna_trigger` (BEFORE-trigger firing order is
@@ -134,6 +134,19 @@ SELECT throws_like(
 );
 
 -- ── TEST 8 -- the address-change trigger resets state ───────────────────────
+-- geocode_attempts and geocode_next_attempt_at are born 0/NULL by DEFAULT,
+-- so asserting a reset to 0/NULL without first moving them away from the
+-- default proves nothing -- give this row a simulated retry history (as
+-- fase 5's worker would leave behind after a coarse/failed attempt) so the
+-- assertion below can only pass if the trigger actually reset them. This
+-- is the pair Decision 4 / fase 5's retry ladder depends on: without this
+-- reset, a corrected address would re-enter the queue with attempts
+-- already spent and a backoff window inherited from a DIFFERENT address,
+-- landing at 'unresolvable' early.
+UPDATE public.orders
+   SET geocode_attempts = 2, geocode_next_attempt_at = NOW() + INTERVAL '30 minutes'
+ WHERE id = '00000000-0000-4000-8000-0000000058a0';
+
 UPDATE public.orders
    SET delivery_address = 'Av. Providencia 4321'
  WHERE id = '00000000-0000-4000-8000-0000000058a0';

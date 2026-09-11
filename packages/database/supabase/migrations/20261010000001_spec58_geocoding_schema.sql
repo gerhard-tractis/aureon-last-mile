@@ -5,6 +5,8 @@
 -- No UI, no network calls, no provider adapter land here -- see the spec
 -- for the phases that consume this schema (2-7).
 
+BEGIN;
+
 -- ============================================================================
 -- PART 1: `orders` geocode columns
 -- ============================================================================
@@ -28,23 +30,76 @@ COMMENT ON COLUMN public.orders.geocode_next_attempt_at IS
 -- CHECK constraints are named explicitly: fase 1's pgTAP suite asserts on
 -- the constraint name, and a later reader needs to be able to tell which
 -- rule an INSERT tripped without re-deriving it from the expression.
-ALTER TABLE public.orders
-  ADD CONSTRAINT orders_geocode_precision_check
-    CHECK (geocode_precision IN ('exact', 'approximate')),
-  ADD CONSTRAINT orders_geocode_status_check
-    CHECK (geocode_status IN ('pending', 'resolved', 'fallback', 'unresolvable')),
+--
+-- Each is wrapped in its own `IF NOT EXISTS (SELECT ... pg_constraint)`
+-- guard, matching this repo's own idempotent-CHECK convention
+-- (20260903000004:31-39) rather than a bare `ADD CONSTRAINT` list: a bare
+-- list dies with 42710 ("constraint already exists") the moment this file
+-- is re-applied, which `pgtap-local.sh apply --force` and any real replay
+-- of migration history both do.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'public.orders'::regclass
+       AND conname  = 'orders_geocode_precision_check'
+  ) THEN
+    ALTER TABLE public.orders
+      ADD CONSTRAINT orders_geocode_precision_check
+        CHECK (geocode_precision IN ('exact', 'approximate'));
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'public.orders'::regclass
+       AND conname  = 'orders_geocode_status_check'
+  ) THEN
+    ALTER TABLE public.orders
+      ADD CONSTRAINT orders_geocode_status_check
+        CHECK (geocode_status IN ('pending', 'resolved', 'fallback', 'unresolvable'));
+  END IF;
+
   -- Both NULL (never geocoded) or both set -- never one without the other.
-  ADD CONSTRAINT orders_geocode_lat_lng_pair_check
-    CHECK ((latitude IS NULL) = (longitude IS NULL)),
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'public.orders'::regclass
+       AND conname  = 'orders_geocode_lat_lng_pair_check'
+  ) THEN
+    ALTER TABLE public.orders
+      ADD CONSTRAINT orders_geocode_lat_lng_pair_check
+        CHECK ((latitude IS NULL) = (longitude IS NULL));
+  END IF;
+
   -- NULL AND/OR NULL evaluates to NULL, and a CHECK only rejects a row when
   -- the expression is FALSE -- so an ungeocoded (NULL, NULL) row always
   -- passes this range check without needing an explicit "OR latitude IS NULL".
-  ADD CONSTRAINT orders_geocode_lat_lng_range_check
-    CHECK (latitude BETWEEN -90 AND 90 AND longitude BETWEEN -180 AND 180),
-  -- A provider bug writing null-island, or a swapped lat/lng pair, must
-  -- never reach the map.
-  ADD CONSTRAINT orders_geocode_lat_lng_null_island_check
-    CHECK (NOT (latitude = 0 AND longitude = 0));
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'public.orders'::regclass
+       AND conname  = 'orders_geocode_lat_lng_range_check'
+  ) THEN
+    ALTER TABLE public.orders
+      ADD CONSTRAINT orders_geocode_lat_lng_range_check
+        CHECK (latitude BETWEEN -90 AND 90 AND longitude BETWEEN -180 AND 180);
+  END IF;
+
+  -- Only catches the (0,0) null-island case -- a provider bug or a bare
+  -- write landing exactly on 0,0. It does NOT catch a transposed-but-valid
+  -- pair (e.g. swapping a real Chilean lat/lng still yields a point inside
+  -- -90..90 / -180..180, just in the wrong hemisphere) -- `orders` is not
+  -- restricted to Chilean addresses, so no blanket "longitude more negative
+  -- than -65" rule is enforced here the way fase 2 enforces one for comuna
+  -- centroids specifically.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'public.orders'::regclass
+       AND conname  = 'orders_geocode_lat_lng_null_island_check'
+  ) THEN
+    ALTER TABLE public.orders
+      ADD CONSTRAINT orders_geocode_lat_lng_null_island_check
+        CHECK (NOT (latitude = 0 AND longitude = 0));
+  END IF;
+END $$;
 
 -- Work-queue index, leading on the due-time column so the claim query's
 -- predicate and ordering both use it (spec-58 fase 5).
@@ -146,3 +201,5 @@ COMMENT ON COLUMN public.geocode_cache.normalisation_version IS
 
 ALTER TABLE public.geocode_cache ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.geocode_cache FROM anon, authenticated;
+
+COMMIT;
