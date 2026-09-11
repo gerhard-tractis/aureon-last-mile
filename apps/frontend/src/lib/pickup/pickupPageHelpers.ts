@@ -1,10 +1,12 @@
 import type { ManifestRow } from '@/components/pickup/ManifestTable';
+import type { TabKey } from '@/components/pickup/PickupDesktopView';
 import type { RouteManifestRow } from '@/components/pickup/RouteManifestList';
 import type {
   CompletedManifest,
   InTransitManifest,
   PendingManifest,
 } from '@/hooks/pickup/useManifests';
+import type { RoutedManifest } from '@/hooks/pickup/useRoutedManifests';
 
 /**
  * Extracted from page.tsx (spec-54 3h review fix, item 6) to keep the page
@@ -94,6 +96,51 @@ export function matchesSearchTerm(row: ManifestRow, term: string): boolean {
   );
 }
 
+/**
+ * spec-94 fase 2 — the routed tab's rows are `RoutedManifest`, not
+ * `ManifestRow` (RoutedManifestTable reads them directly), so the search
+ * bar needs its own matcher. Gains route code and driver name over
+ * `matchesSearchTerm`: on this tab "which load" and "which truck" are the
+ * same question, and searching only load/retailer/pickup-point would make
+ * the shared search bar mean nothing on the one tab that's actually about
+ * a route.
+ */
+export function matchesSearchTermRouted(row: RoutedManifest, term: string): boolean {
+  if (!term) return true;
+  const q = term.toLowerCase();
+  return (
+    row.external_load_id.toLowerCase().includes(q) ||
+    (row.retailer_name ?? '').toLowerCase().includes(q) ||
+    (row.pickup_point ?? '').toLowerCase().includes(q) ||
+    row.route_code.toLowerCase().includes(q) ||
+    (row.driver_name ?? '').toLowerCase().includes(q)
+  );
+}
+
+/**
+ * spec-94 fase 1 review: a `switch`, not a ternary chain — a ternary lets a
+ * new `TabKey` fall through to the final `else` with no compiler error,
+ * which is exactly how the routed tab would have silently rendered
+ * Completados under its own label. `routed` returns `[]` on purpose: that
+ * tab renders through `RoutedManifestTable`, never through this list.
+ */
+export function rowsForTab(
+  tab: TabKey,
+  pendingRows: ManifestRow[],
+  inTransitRows: ManifestRow[],
+  completedRows: ManifestRow[],
+): ManifestRow[] {
+  switch (tab) {
+    case 'pending':
+      return pendingRows;
+    case 'routed':
+      return [];
+    case 'in_transit':
+      return inTransitRows;
+    case 'completed':
+      return completedRows;
+  }
+}
 
 /**
  * The three manifest shapes the page renders through one table.
@@ -113,8 +160,13 @@ export function pendingToRows(rows: PendingManifest[]): ManifestRow[] {
     externalLoadId: m.external_load_id,
     pickupPoint: m.pickup_point,
     retailerName: m.retailer_name,
-    orderCount: m.order_count ?? 0,
-    packageCount: m.package_count ?? 0,
+    // spec-94 fase 1/2 review: NOT `?? 0`. openPendingManifest.ts forbids
+    // turning a genuine unknown into zero — handleRowOpen (page.tsx) reads
+    // these same fields to decide whether to include `counts` in that
+    // write, so coalescing here would silently reintroduce the bug the RPC
+    // fix closed.
+    orderCount: m.order_count,
+    packageCount: m.package_count,
     verifiedCount: m.verified_count,
     pickupWindowStart: m.pickup_window_start,
     pickupWindowEnd: m.pickup_window_end,

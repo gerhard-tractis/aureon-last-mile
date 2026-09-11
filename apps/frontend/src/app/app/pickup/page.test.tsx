@@ -48,6 +48,9 @@ const mockInTransit = [
     updated_at: new Date().toISOString(),
   },
 ];
+// spec-94 fase 2 — the routed tab's fixture (cubo 2). Empty by default so
+// every pre-existing test (none of which cares about it) is unaffected.
+const mockRouted: unknown[] = [];
 
 const mockUsePendingManifests = vi.fn();
 const mockUseCompletedManifests = vi.fn();
@@ -64,6 +67,15 @@ vi.mock('@/hooks/pickup/useManifests', () => ({
   useCompletedManifests: (...args: unknown[]) => mockUseCompletedManifests(...args),
   useInTransitManifests: (...args: unknown[]) => mockUseInTransitManifests(...args),
   useSignatureRescueManifests: (...args: unknown[]) => mockUseSignatureRescueManifests(...args),
+}));
+
+// spec-94 fase 1/2 — the fourth query, get_routed_manifests (cubo 2).
+// Mocked at the module boundary like its siblings above, so the real
+// useRoutedManifests.ts (which imports PICKUP_QUERY_OPTIONS from
+// useManifests.ts, itself mocked without that export) never actually runs.
+const mockUseRoutedManifests = vi.fn();
+vi.mock('@/hooks/pickup/useRoutedManifests', () => ({
+  useRoutedManifests: (...args: unknown[]) => mockUseRoutedManifests(...args),
 }));
 
 // spec-61 Task 5: this page now reads `role` (3j vs the crew screen, and
@@ -209,6 +221,7 @@ describe('PickupPage', () => {
     mockUsePendingManifests.mockReturnValue({ data: mockPending, isLoading: false });
     mockUseCompletedManifests.mockReturnValue({ data: mockCompleted, isLoading: false });
     mockUseInTransitManifests.mockReturnValue({ data: mockInTransit, isLoading: false });
+    mockUseRoutedManifests.mockReturnValue({ data: mockRouted, isLoading: false });
     mockUseRouteManifests.mockReturnValue({ data: [], isLoading: false });
     mockRefetchRescue.mockClear();
     mockUseSignatureRescueManifests.mockReturnValue({
@@ -259,25 +272,64 @@ describe('PickupPage', () => {
   });
 
   describe('Tabs', () => {
-    it('renders the three tabs in Spanish with counts', () => {
+    // spec-94 fase 2 — renamed to match "El modelo de estados": Por retirar
+    // / En punto de retiro / Camino a bodega / En bodega. Internal TabKeys
+    // (pending/routed/in_transit/completed) are unchanged — only these
+    // Spanish literals moved.
+    it('renders the four tabs in Spanish with counts', () => {
       render(<PickupPage />);
-      expect(screen.getByRole('button', { name: 'Pendientes · 2' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'En tránsito · 1' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Completados · 1' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Por retirar · 2' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'En punto de retiro · 0' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Camino a bodega · 1' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'En bodega · 1' })).toBeInTheDocument();
     });
 
     it('shows in-transit manifests when that tab is selected', async () => {
       render(<PickupPage />);
       expect(screen.queryByText('CARGA-INT-1')).not.toBeInTheDocument();
-      await userEvent.click(screen.getByRole('button', { name: 'En tránsito · 1' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Camino a bodega · 1' }));
       expect(screen.getByText('CARGA-INT-1')).toBeInTheDocument();
     });
 
     it('offers selection only on the pending tab', async () => {
       render(<PickupPage />);
       expect(screen.getAllByTestId('manifest-row')[0]).toHaveAttribute('aria-checked');
-      await userEvent.click(screen.getByRole('button', { name: 'Completados · 1' }));
+      await userEvent.click(screen.getByRole('button', { name: 'En bodega · 1' }));
       expect(screen.getAllByTestId('manifest-row')[0]).not.toHaveAttribute('aria-checked');
+    });
+
+    // spec-94 fase 2 — the routed tab renders through RoutedManifestTable,
+    // not ManifestTable, and shows its own row shape (route code, driver,
+    // "abierta hace").
+    it('shows the routed table, not ManifestTable, on the routed tab', async () => {
+      mockUseRoutedManifests.mockReturnValue({
+        data: [
+          {
+            id: 'r1',
+            external_load_id: 'CARGA-ROUTED-1',
+            retailer_name: 'Ripley',
+            total_orders: 2,
+            total_packages: 6,
+            created_at: new Date().toISOString(),
+            pickup_point: 'Ripley Costanera',
+            labels_printed_at: null,
+            labels_printed_by_name: null,
+            route_code: 'PR-2026-0099',
+            route_started_at: new Date().toISOString(),
+            driver_name: 'Marcela R.',
+            route_status: 'in_progress',
+            closed_at: null,
+            missing_count: 0,
+            verified_count: 1,
+          },
+        ],
+        isLoading: false,
+      });
+      render(<PickupPage />);
+      await userEvent.click(screen.getByRole('button', { name: 'En punto de retiro · 1' }));
+      expect(screen.getByText('CARGA-ROUTED-1')).toBeInTheDocument();
+      expect(screen.getByText('PR-2026-0099')).toBeInTheDocument();
+      expect(screen.queryAllByTestId('manifest-row')).toHaveLength(0);
     });
   });
 

@@ -129,7 +129,12 @@ export function PickupMobileStartRoute({
     idsToFlip.forEach((id) => onToggleSelect(id));
   }
 
-  const selectedPackages = selectedManifests.reduce((sum, m) => sum + m.packageCount, 0);
+  // spec-94 fase 1/2 review: `packageCount` is nullable (get_pending_
+  // manifests' arm2 — a load whose orders are all soft-deleted has no live
+  // aggregate). `?? 0` here is a DISPLAY approximation for this summary
+  // line only, never written back anywhere — unlike openPendingManifest's
+  // write path, which must never see a fabricated zero.
+  const selectedPackages = selectedManifests.reduce((sum, m) => sum + (m.packageCount ?? 0), 0);
 
   return (
     <div className="flex flex-col gap-4" data-testid="pickup-mobile-start-route">

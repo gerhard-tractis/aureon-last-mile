@@ -8,8 +8,15 @@ export interface PendingManifest {
   id: string | null;
   external_load_id: string;
   retailer_name: string | null;
-  order_count: number;
-  package_count: number;
+  /** spec-94 fase 1 — nullable since the round-2 review: the UNION ALL's
+   * arm2 (a manifest whose orders are ALL soft-deleted) reads these from
+   * `manifests.total_orders`/`total_packages` (nullable, OCR/manual intake),
+   * NOT the `COUNT(DISTINCT o.id)` SQL aggregate arm1 uses — that source is
+   * a genuine "we never recorded a total" unknown, not zero. NEVER coalesce
+   * with `?? 0` before writing back through `openPendingManifest` — see its
+   * docstring. */
+  order_count: number | null;
+  package_count: number | null;
   created_at: string;
   pickup_point: string | null;
   /** Count of pickup_scans with scan_result='verified' for this load. >0 = in progress. */
@@ -64,7 +71,10 @@ export interface InTransitManifest {
   labels_printed_by_name: string | null;
 }
 
-const PICKUP_QUERY_OPTIONS = {
+// spec-94 fase 2 — exported so useRoutedManifests.ts (a sibling hook file,
+// not this one) shares the same staleTime/refetchInterval instead of
+// drifting to its own copy.
+export const PICKUP_QUERY_OPTIONS = {
   staleTime: 30_000,
   refetchInterval: 60_000,
 } as const;

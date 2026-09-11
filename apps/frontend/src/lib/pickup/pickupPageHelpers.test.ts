@@ -2,12 +2,14 @@ import { describe, it, expect } from 'vitest';
 import {
   todayLabel,
   matchesSearchTerm,
+  matchesSearchTermRouted,
   pendingToRows,
   manifestsAvailability,
   rescueRowsFromCompleted,
 } from './pickupPageHelpers';
 import type { ManifestRow } from '@/components/pickup/ManifestTable';
 import type { PendingManifest, CompletedManifest } from '@/hooks/pickup/useManifests';
+import type { RoutedManifest } from '@/hooks/pickup/useRoutedManifests';
 
 describe('todayLabel', () => {
   it('capitalises the weekday and formats in Spanish', () => {
@@ -95,6 +97,68 @@ describe('pendingToRows', () => {
     expect(row.pickupWindowStart).toBeNull();
     expect(row.pickupWindowEnd).toBeNull();
     expect(row.pickupCutoffTime).toBeNull();
+  });
+
+  // spec-94 fase 1/2 review: arm2 (a manifest whose orders are ALL
+  // soft-deleted) returns order_count/package_count as NULL, the honest
+  // "unknown" from manifests.total_orders/total_packages — NOT 0. This
+  // function must pass that NULL through unchanged; coalescing it here
+  // would let handleRowOpen (page.tsx) write a fabricated zero back to the
+  // database through openPendingManifest.
+  it('passes order_count/package_count through as null, never coalesced to 0', () => {
+    const [row] = pendingToRows([pending({ order_count: null, package_count: null })]);
+    expect(row.orderCount).toBeNull();
+    expect(row.packageCount).toBeNull();
+  });
+});
+
+describe('matchesSearchTermRouted', () => {
+  function routedRow(over: Partial<RoutedManifest> = {}): RoutedManifest {
+    return {
+      id: 'r1',
+      external_load_id: 'CARGA-94-DOCK',
+      retailer_name: 'Easy',
+      total_orders: 5,
+      total_packages: 12,
+      created_at: '2026-09-10T09:00:00Z',
+      pickup_point: 'Easy Vespucio',
+      labels_printed_at: null,
+      labels_printed_by_name: null,
+      route_code: 'PR-2026-0042',
+      route_started_at: '2026-09-10T08:00:00Z',
+      driver_name: 'Juan Pérez',
+      route_status: 'in_progress',
+      closed_at: null,
+      missing_count: 0,
+      verified_count: 3,
+      ...over,
+    };
+  }
+
+  it('matches everything when the term is empty', () => {
+    expect(matchesSearchTermRouted(routedRow(), '')).toBe(true);
+  });
+
+  it('matches by external load id', () => {
+    expect(matchesSearchTermRouted(routedRow(), 'carga-94-dock')).toBe(true);
+  });
+
+  it('matches by route code — the whole reason this is a separate matcher', () => {
+    expect(matchesSearchTermRouted(routedRow(), 'pr-2026-0042')).toBe(true);
+  });
+
+  it('matches by driver name', () => {
+    expect(matchesSearchTermRouted(routedRow(), 'juan')).toBe(true);
+  });
+
+  it('does not match an unrelated term', () => {
+    expect(matchesSearchTermRouted(routedRow(), 'sodimac')).toBe(false);
+  });
+
+  it('does not crash on a null driver/pickup point', () => {
+    const bare = routedRow({ driver_name: null, pickup_point: null });
+    expect(matchesSearchTermRouted(bare, 'anything')).toBe(false);
+    expect(matchesSearchTermRouted(bare, '')).toBe(true);
   });
 });
 

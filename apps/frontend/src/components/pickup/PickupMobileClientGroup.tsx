@@ -163,9 +163,9 @@ function ManifestSelectRow({
           {manifest.externalLoadId}
         </p>
         <p className="truncate text-[11px] text-text-secondary">
-          <span className="font-mono">{manifest.orderCount}</span>{' '}
+          <span className="font-mono">{manifest.orderCount ?? '—'}</span>{' '}
           {manifest.orderCount === 1 ? 'orden' : 'órdenes'} ·{' '}
-          <span className="font-mono">{manifest.packageCount}</span>{' '}
+          <span className="font-mono">{manifest.packageCount ?? '—'}</span>{' '}
           {manifest.packageCount === 1 ? 'paquete' : 'paquetes'}
         </p>
       </div>

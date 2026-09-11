@@ -1,4 +1,5 @@
 import type { CompletedManifest, PendingManifest } from './useManifests';
+import type { RoutedManifest } from './useRoutedManifests';
 
 /**
  * spec-54 phase 4.4 — aggregates for the Recogida desktop screen (mock 1l).
@@ -29,8 +30,16 @@ export interface ClientCount {
   count: number;
 }
 
-/** Manifests per retailer, heaviest first — the filter chips above the table. */
-export function clientBreakdown(rows: PendingManifest[]): ClientCount[] {
+/**
+ * Manifests per retailer, heaviest first — the filter chips above the
+ * table. spec-94 fase 2: callers pass the UNION of all four cubes' rows,
+ * not just `pending` — a retailer with every load already routed would
+ * otherwise lose its chip exactly when it's needed (its manifests are
+ * still there, just on a different tab). Generic over anything carrying a
+ * `retailer_name`, so `PendingManifest`/`RoutedManifest`/`InTransitManifest`/
+ * `CompletedManifest` rows can all be concatenated into one call.
+ */
+export function clientBreakdown(rows: { retailer_name: string | null }[]): ClientCount[] {
   const counts = new Map<string, number>();
   for (const row of rows) {
     // A manifest with no retailer still exists and still has to be picked up.
@@ -43,15 +52,62 @@ export function clientBreakdown(rows: PendingManifest[]): ClientCount[] {
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 
-/** Today's closures, newest first — the "Cierres de hoy" panel. */
+/**
+ * spec-94 fase 1/2 — the shared shape `TodayClosuresPanel` actually needs,
+ * from EITHER source below. Not `CompletedManifest` verbatim: that type
+ * carries `signature_operator`, which `get_routed_manifests` does not
+ * return and the panel does not render.
+ */
+export interface ClosureRow {
+  id: string;
+  external_load_id: string;
+  retailer_name: string | null;
+  total_packages: number | null;
+  missing_count: number;
+  completed_at: string;
+}
+
+/**
+ * Today's closures, newest first — the "Cierres de hoy" panel.
+ *
+ * spec-94 fase 1 ("«Cierres de hoy» no puede quedarse colgando del cubo
+ * 4"): a carga cerrada en el andén (`get_completed_manifests` no longer
+ * returns it — it belongs to cubo 2 while the truck has not left) still
+ * closed TODAY, and its `missing_count` still needs to show up here — this
+ * panel is a count of PAPERWORK EVENTS ("closed"), not a place, unlike the
+ * tabs. `routed` rows are keyed on `closed_at` (only populated when
+ * `status='completed'`); `completed` rows keep using `completed_at`. A
+ * `get_routed_manifests` row that isn't closed yet (`closed_at IS NULL`)
+ * is filtered out below by the same "did this happen today" check that
+ * excludes any row with no timestamp at all.
+ */
 export function completedToday(
-  rows: CompletedManifest[],
+  completed: CompletedManifest[],
+  routed: RoutedManifest[] = [],
   now: Date = new Date(),
-): CompletedManifest[] {
+): ClosureRow[] {
   const today = now.toDateString();
-  return rows
+  const fromCompleted: ClosureRow[] = completed.map((row) => ({
+    id: row.id,
+    external_load_id: row.external_load_id,
+    retailer_name: row.retailer_name,
+    total_packages: row.total_packages,
+    missing_count: row.missing_count,
+    completed_at: row.completed_at,
+  }));
+  const fromRouted: ClosureRow[] = routed
+    .filter((row): row is RoutedManifest & { closed_at: string } => row.closed_at != null)
+    .map((row) => ({
+      id: row.id,
+      external_load_id: row.external_load_id,
+      retailer_name: row.retailer_name,
+      total_packages: row.total_packages,
+      missing_count: row.missing_count,
+      completed_at: row.closed_at,
+    }));
+
+  return [...fromCompleted, ...fromRouted]
     .filter((row) => {
-      if (!row.completed_at) return false;
       const at = new Date(row.completed_at);
       return !Number.isNaN(at.getTime()) && at.toDateString() === today;
     })

@@ -6,11 +6,13 @@ import { StatTile } from '@/components/StatTile';
 import { ClientFilter } from '@/components/pickup/ClientFilter';
 import { ActiveRouteBanner } from '@/components/pickup/ActiveRouteBanner';
 import { ManifestTable, type ManifestRow } from '@/components/pickup/ManifestTable';
+import { RoutedManifestTable } from '@/components/pickup/RoutedManifestTable';
 import { PickupRouteDraftPanel } from '@/components/pickup/PickupRouteDraftPanel';
 import { TodayClosuresPanel } from '@/components/pickup/TodayClosuresPanel';
-import type { CompletedManifest } from '@/hooks/pickup/useManifests';
+import type { ClosureRow } from '@/hooks/pickup/pickupSummary';
 import type { ActivePickupRoute } from '@/hooks/pickup/useActivePickupRoute';
 import type { RouteManifestRow } from '@/components/pickup/RouteManifestList';
+import type { RoutedManifest } from '@/hooks/pickup/useRoutedManifests';
 import { cn } from '@/lib/utils';
 
 /**
@@ -25,6 +27,14 @@ import { cn } from '@/lib/utils';
  * assembled and today's closures on the right. Below 1280px (`xl`) they
  * stack.
  *
+ * spec-94 fase 2 — a fourth tab, `routed` ("En punto de retiro", cubo 2:
+ * a manifest on a live pickup route that has not yet left for the hub).
+ * The four `TabKey`s went through a map/switch, not a ternary chain — a
+ * ternary silently routes a new key to its final `else` branch with no
+ * compiler error (spec-94 fase 1's review: `rowsForTab` in page.tsx was
+ * exactly this trap, and would have shown the routed tab's rows under the
+ * OLD "Completados" label).
+ *
  * Not rendered, because the data does not exist:
  *   - the pickup window column and the urgency it colours rows by
  *     (get_pending_manifests returns no window)
@@ -34,24 +44,37 @@ import { cn } from '@/lib/utils';
  */
 
 export const TABS = [
-  { key: 'pending', label: 'Pendientes' },
-  { key: 'in_transit', label: 'En tránsito' },
-  { key: 'completed', label: 'Completados' },
+  { key: 'pending', label: 'Por retirar' },
+  { key: 'routed', label: 'En punto de retiro' },
+  { key: 'in_transit', label: 'Camino a bodega' },
+  { key: 'completed', label: 'En bodega' },
 ] as const;
 
 export type TabKey = (typeof TABS)[number]['key'];
+
+const EMPTY_MESSAGES: Record<TabKey, string> = {
+  pending: 'No hay manifiestos pendientes de retiro.',
+  routed: 'Ninguna carga en punto de retiro.',
+  in_transit: 'Ningún manifiesto en tránsito.',
+  completed: 'Ningún manifiesto completado todavía.',
+};
 
 interface PickupDesktopViewProps {
   activeRoute: ActivePickupRoute | null | undefined;
   activeManifests: RouteManifestRow[];
   totals: { manifests: number; orders: number; packages: number };
-  closures: CompletedManifest[];
+  closures: ClosureRow[];
   clients: string[];
   selectedClient: string | null;
   setSelectedClient: (client: string | null) => void;
   searchTerm: string;
   setSearchTerm: (term: string) => void;
   pendingRows: ManifestRow[];
+  /** Unfiltered — feeds the tab button's own count, same as the other three. */
+  routedRows: RoutedManifest[];
+  /** Filtered by search term + selected client — what RoutedManifestTable
+   *  actually renders when the routed tab is active. */
+  visibleRoutedRows: RoutedManifest[];
   inTransitRows: ManifestRow[];
   completedRows: ManifestRow[];
   visibleRows: ManifestRow[];
@@ -88,6 +111,8 @@ export function PickupDesktopView({
   searchTerm,
   setSearchTerm,
   pendingRows,
+  routedRows,
+  visibleRoutedRows,
   inTransitRows,
   completedRows,
   visibleRows,
@@ -106,6 +131,13 @@ export function PickupDesktopView({
   routeUnknown = false,
   roleUnknown = false,
 }: PickupDesktopViewProps) {
+  const countForTab: Record<TabKey, number> = {
+    pending: pendingRows.length,
+    routed: routedRows.length,
+    in_transit: inTransitRows.length,
+    completed: completedRows.length,
+  };
+
   return (
     <div className="grid min-h-0 gap-4 xl:grid-cols-[1fr_340px]">
       <div className="flex min-w-0 flex-col gap-4">
@@ -152,30 +184,22 @@ export function PickupDesktopView({
 
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-border bg-surface">
           <div className="flex flex-none flex-wrap items-center gap-1 border-b border-border px-4 py-2.5">
-            {TABS.map((option) => {
-              const count =
-                option.key === 'pending'
-                  ? pendingRows.length
-                  : option.key === 'in_transit'
-                    ? inTransitRows.length
-                    : completedRows.length;
-              return (
-                <button
-                  key={option.key}
-                  type="button"
-                  aria-pressed={tab === option.key}
-                  onClick={() => setTab(option.key)}
-                  className={cn(
-                    'rounded-[7px] px-3 py-1.5 text-[11.5px] leading-none transition-colors',
-                    tab === option.key
-                      ? 'bg-surface-raised font-semibold text-text'
-                      : 'text-text-secondary hover:bg-surface-raised',
-                  )}
-                >
-                  {option.label} · {count}
-                </button>
-              );
-            })}
+            {TABS.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                aria-pressed={tab === option.key}
+                onClick={() => setTab(option.key)}
+                className={cn(
+                  'rounded-[7px] px-3 py-1.5 text-[11.5px] leading-none transition-colors',
+                  tab === option.key
+                    ? 'bg-surface-raised font-semibold text-text'
+                    : 'text-text-secondary hover:bg-surface-raised',
+                )}
+              >
+                {option.label} · {countForTab[option.key]}
+              </button>
+            ))}
             {tab === 'pending' && (
               <span className="ml-auto hidden text-[11px] text-text-muted lg:inline">
                 Marca los manifiestos y agrégalos a una ruta de recogida
@@ -183,21 +207,19 @@ export function PickupDesktopView({
             )}
           </div>
 
-          <ManifestTable
-            rows={visibleRows}
-            selectedIds={tab === 'pending' ? selectedIds : undefined}
-            onToggle={tab === 'pending' ? toggle : undefined}
-            labelsEnabled={labelsEnabled}
-            onPrintLabels={onPrintLabels}
-            onOpen={onOpen}
-            emptyMessage={
-              tab === 'pending'
-                ? 'No hay manifiestos pendientes de retiro.'
-                : tab === 'in_transit'
-                  ? 'Ningún manifiesto en tránsito.'
-                  : 'Ningún manifiesto completado todavía.'
-            }
-          />
+          {tab === 'routed' ? (
+            <RoutedManifestTable rows={visibleRoutedRows} emptyMessage={EMPTY_MESSAGES.routed} />
+          ) : (
+            <ManifestTable
+              rows={visibleRows}
+              selectedIds={tab === 'pending' ? selectedIds : undefined}
+              onToggle={tab === 'pending' ? toggle : undefined}
+              labelsEnabled={labelsEnabled}
+              onPrintLabels={onPrintLabels}
+              onOpen={onOpen}
+              emptyMessage={EMPTY_MESSAGES[tab]}
+            />
+          )}
         </section>
       </div>
 

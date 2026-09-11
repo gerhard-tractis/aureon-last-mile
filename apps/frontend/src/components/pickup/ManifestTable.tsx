@@ -32,8 +32,13 @@ export interface ManifestRow {
   externalLoadId: string;
   pickupPoint: string | null;
   retailerName: string | null;
-  orderCount: number;
-  packageCount: number;
+  /** spec-94 fase 1/2 — nullable: a pending load whose orders are ALL
+   * soft-deleted has no live aggregate to count (get_pending_manifests'
+   * arm2 falls back to the nullable manifests.total_orders/total_packages).
+   * Render as "—", never coalesce to 0 before a write — see
+   * useManifests.ts's PendingManifest doc. */
+  orderCount: number | null;
+  packageCount: number | null;
   /** Verified scans so far. >0 means collection is under way. */
   verifiedCount?: number;
   /** spec-83 fase 2 — pickup point's own window. NULL/undefined means "not
@@ -180,11 +185,11 @@ export function ManifestTable({
                 </span>
 
                 <span className="text-right font-mono text-[11.5px] font-semibold text-text">
-                  {row.orderCount}
+                  {row.orderCount ?? '—'}
                 </span>
 
                 <span className="text-right font-mono text-[11.5px] font-semibold text-text">
-                  {row.packageCount}
+                  {row.packageCount ?? '—'}
                 </span>
 
                 {(() => {
