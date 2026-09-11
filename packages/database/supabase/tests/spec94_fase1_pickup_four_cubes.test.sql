@@ -1,40 +1,44 @@
--- pgTAP: spec-94 fase 1 — las cuatro RPC de Recogida particionan el espacio
--- de estados de manera exhaustiva y disjunta (docs/specs/spec-94-recogida-
--- cuatro-estados.md, "El modelo de estados").
+-- pgTAP: spec-94 fase 1 (ronda 3, "manda la ruta") — las cuatro RPC de
+-- Recogida particionan el espacio de estados de manera exhaustiva y
+-- disjunta (docs/specs/spec-94-recogida-cuatro-estados.md, "El modelo de
+-- estados" y "Por qué manda la ruta, y no status ni reception_status").
 --
 -- La aserción es ASIGNACIÓN, no sólo partición: cada carga viva aparece en
--- la RPC que su predicado nombra, y en NINGUNA otra. "Exactamente una vez"
--- es un corolario, no una comprobación aparte -- una carga en la RPC
--- equivocada también pasaría un conteo global en verde.
+-- la RPC que su predicado nombra, y en NINGUNA otra.
 --
 -- Dos poblaciones, como exige la sección "La verificación" del spec:
 --   * filas vivas de manifests (la mayoría del fixture);
 --   * un external_load_id con órdenes vivas SIN fila de manifests
---     (CARGA-94-NOMANIFEST) -- la mitad del contrato de get_pending_manifests
---     que el LEFT JOIN existe para preservar.
+--     (CARGA-94-NOMANIFEST).
 --
--- Fixture (los seis casos que el spec exige por nombre, más los necesarios
--- para que cada rama de cada predicado sea falsificable):
---   CARGA-94-DOCK          cubo 2 -- cerrada en el andén, ruta in_progress
---   CARGA-94-INROUTE       cubo 2 -- sin cerrar, ruta in_progress
---   CARGA-94-DELETEDROUTE  cubo 2 -- ruta SOFT-DELETED (regresión CARGA-PARIS-001)
---   CARGA-94-AWAITING      cubo 3 -- reception_status='awaiting_reception'
---   CARGA-94-INPROGRESSRX  cubo 3 -- reception_status='reception_in_progress'
---   CARGA-94-RECEIVED      cubo 4 -- reception_status='received'
---   CARGA-94-OLDCLOSE      cubo 4 -- flujo viejo: completed, sin ruta, sin reception_status
---   CARGA-94-PENDING       cubo 1 -- caso base, nada seteado
---   CARGA-94-NOMANIFEST    cubo 1 -- fila de manifests borrada tras el trigger (arm1, id NULL)
---   CARGA-94-ORDERSDELETED cubo 1 -- fila de manifests viva, TODAS sus órdenes soft-deleted (arm2)
---   CARGA-94-CANCELLED     ninguno -- status='cancelled' CON reception_status
---                          seteado (espejo de QA-LOAD-004, seed-qa/scenarios/pickup.ts:42)
---   CARGA-94-CANCELLED-BARE ninguno -- status='cancelled' sin ruta ni reception_status:
---                          el único caso donde `status <> 'cancelled'` en el cubo 1 es lo
---                          único que la excluye (todo lo demás la dejaría pasar).
+-- EL TEST QUE PRUEBA EL MODELO NUEVO (ronda 3): CARGA-94-DOCK se cierra con
+-- un UPDATE de un solo paso (status='completed', pickup_route_id=ruta
+-- in_progress). trg_manifest_reception_status auto-rellena
+-- reception_status='awaiting_reception' -- exactamente lo que produce en
+-- producción, no un artefacto del fixture. Bajo el modelo viejo (ronda 2,
+-- que miraba reception_status) esa carga habría caído en el cubo 3
+-- ("Camino a bodega") con el camión todavía en el andén -- la mentira que
+-- esta ronda corrige. CARGA-94-TRANSIT y CARGA-94-RXRECEIVED repiten la
+-- MISMA forma (reception_status='awaiting_reception', vía el mismo
+-- trigger) pero con la ruta en 'in_transit'/'received' -- si el modelo
+-- mirara reception_status en vez de la ruta, las tres caerían en el mismo
+-- cubo. Que caigan en cubos distintos es lo que prueba que manda la ruta.
+--
+-- CARGA-94-DRAFT hace falsificable el NOT IN del cubo 2: una ruta en
+-- 'draft' no es 'in_transit' ni 'received', así que cae en el cubo 2. Una
+-- lista positiva ('draft','in_progress') pasaría el mismo test -- por eso
+-- la mutación de la sección de mutation-testing cambia justamente esa
+-- lista y se apoya en esta fixture para notar la diferencia.
+--
+-- CARGA-94-DELETEDROUTE ya NO se queda en el cubo 2 (ronda 2 lo dejaba ahí
+-- vía el LEFT JOIN): con el modelo de ronda 3, "ruta viva" es falso, así
+-- que la carga cae por sus propias columnas (reception_status NULL,
+-- status<>completed) en el cubo 1.
 
 BEGIN;
-SELECT plan(18);
+SELECT plan(24);
 
--- ── Fixtures ─────────────────────────────────────────────────────────────────
+-- ── Fixtures: operador A (el caller) ─────────────────────────────────────────
 INSERT INTO public.operators (id, name, slug)
 VALUES ('00000000-0000-4000-8000-000000009400', 'Spec94 Op', 'spec94-op')
 ON CONFLICT (id) DO NOTHING;
@@ -53,13 +57,19 @@ INSERT INTO auth.users (
    '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'crew-94b@spec94.test', crypt('x', gen_salt('bf')), NOW(),
    '{"operator_id":"00000000-0000-4000-8000-000000009400"}'::jsonb,
-   '{"full_name":"Crew 94-B"}'::jsonb, NOW(), NOW(), '', '')
+   '{"full_name":"Crew 94-B"}'::jsonb, NOW(), NOW(), '', ''),
+  ('00000000-0000-4000-8000-000000009407',
+   '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+   'crew-94c@spec94.test', crypt('x', gen_salt('bf')), NOW(),
+   '{"operator_id":"00000000-0000-4000-8000-000000009400"}'::jsonb,
+   '{"full_name":"Crew 94-C"}'::jsonb, NOW(), NOW(), '', '')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (id, operator_id, email, full_name, permissions)
 VALUES
   ('00000000-0000-4000-8000-000000009401','00000000-0000-4000-8000-000000009400','crew-94@spec94.test','Crew 94',ARRAY['pickup']),
-  ('00000000-0000-4000-8000-000000009406','00000000-0000-4000-8000-000000009400','crew-94b@spec94.test','Crew 94-B',ARRAY['pickup'])
+  ('00000000-0000-4000-8000-000000009406','00000000-0000-4000-8000-000000009400','crew-94b@spec94.test','Crew 94-B',ARRAY['pickup']),
+  ('00000000-0000-4000-8000-000000009407','00000000-0000-4000-8000-000000009400','crew-94c@spec94.test','Crew 94-C',ARRAY['pickup'])
 ON CONFLICT (id) DO UPDATE
   SET operator_id = EXCLUDED.operator_id, full_name = EXCLUDED.full_name, permissions = EXCLUDED.permissions;
 
@@ -68,20 +78,19 @@ VALUES ('00000000-0000-4000-8000-000000009402','00000000-0000-4000-8000-00000000
 ON CONFLICT (id) DO NOTHING;
 
 -- ── Rutas ────────────────────────────────────────────────────────────────────
--- ROUTE_DOCK/ROUTE_DELETED share driver 9401 with status='in_progress': the
--- partial unique index uniq_pickup_routes_one_active_per_driver only guards
--- deleted_at IS NULL rows, so a soft-deleted route never competes with it.
--- ROUTE_INROUTE needs a SECOND in_progress route -> a different driver.
--- ROUTE_AWAIT/ROUTE_INPROG_RX/ROUTE_RECEIVED are 'in_transit'/'received',
--- outside that index's status list, so they can reuse driver 9401 too.
+-- uniq_pickup_routes_one_active_per_driver sólo restringe (operator_id,
+-- driver_id) con status IN ('draft','in_progress') AND deleted_at IS NULL.
+-- DOCK/INROUTE/DRAFT están los tres en ese conjunto -> tres drivers
+-- distintos. DELETEDROUTE (soft-deleted) y TRANSIT/RXRECEIVED (fuera de
+-- draft/in_progress) pueden compartir driver 9401 libremente.
 INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, vehicle_id, status, deleted_at)
 VALUES
   ('00000000-0000-4000-8000-000000009410','00000000-0000-4000-8000-000000009400','PR-94-DOCK','00000000-0000-4000-8000-000000009401','00000000-0000-4000-8000-000000009402','in_progress', NULL),
   ('00000000-0000-4000-8000-000000009411','00000000-0000-4000-8000-000000009400','PR-94-INROUTE','00000000-0000-4000-8000-000000009406','00000000-0000-4000-8000-000000009402','in_progress', NULL),
   ('00000000-0000-4000-8000-000000009412','00000000-0000-4000-8000-000000009400','PR-94-DELETEDROUTE','00000000-0000-4000-8000-000000009401','00000000-0000-4000-8000-000000009402','in_progress', NOW()),
-  ('00000000-0000-4000-8000-000000009413','00000000-0000-4000-8000-000000009400','PR-94-AWAIT','00000000-0000-4000-8000-000000009401','00000000-0000-4000-8000-000000009402','in_transit', NULL),
-  ('00000000-0000-4000-8000-000000009414','00000000-0000-4000-8000-000000009400','PR-94-INPROGRESSRX','00000000-0000-4000-8000-000000009401','00000000-0000-4000-8000-000000009402','in_transit', NULL),
-  ('00000000-0000-4000-8000-000000009415','00000000-0000-4000-8000-000000009400','PR-94-RECEIVED','00000000-0000-4000-8000-000000009401','00000000-0000-4000-8000-000000009402','received', NULL);
+  ('00000000-0000-4000-8000-000000009416','00000000-0000-4000-8000-000000009400','PR-94-DRAFT','00000000-0000-4000-8000-000000009407','00000000-0000-4000-8000-000000009402','draft', NULL),
+  ('00000000-0000-4000-8000-000000009417','00000000-0000-4000-8000-000000009400','PR-94-TRANSIT','00000000-0000-4000-8000-000000009401','00000000-0000-4000-8000-000000009402','in_transit', NULL),
+  ('00000000-0000-4000-8000-000000009418','00000000-0000-4000-8000-000000009400','PR-94-RXRECEIVED','00000000-0000-4000-8000-000000009401','00000000-0000-4000-8000-000000009402','received', NULL);
 
 -- ── Órdenes (una por carga; trg_ensure_manifest_for_order crea la fila de
 --    manifests automáticamente al insertar) ───────────────────────────────────
@@ -101,7 +110,11 @@ INSERT INTO public.orders (
   ('00000000-0000-4000-8000-0000000094a8','00000000-0000-4000-8000-000000009400','ORD-94-8','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-NOMANIFEST','Retailer 94','{}'::jsonb,'MANUAL',NOW()),
   ('00000000-0000-4000-8000-0000000094a9','00000000-0000-4000-8000-000000009400','ORD-94-9','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-ORDERSDELETED','Retailer 94','{}'::jsonb,'MANUAL',NOW()),
   ('00000000-0000-4000-8000-0000000094aa','00000000-0000-4000-8000-000000009400','ORD-94-A','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-CANCELLED','Retailer 94','{}'::jsonb,'MANUAL',NOW()),
-  ('00000000-0000-4000-8000-0000000094ab','00000000-0000-4000-8000-000000009400','ORD-94-B','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-CANCELLED-BARE','Retailer 94','{}'::jsonb,'MANUAL',NOW());
+  ('00000000-0000-4000-8000-0000000094ab','00000000-0000-4000-8000-000000009400','ORD-94-B','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-CANCELLED-BARE','Retailer 94','{}'::jsonb,'MANUAL',NOW()),
+  ('00000000-0000-4000-8000-0000000094ac','00000000-0000-4000-8000-000000009400','ORD-94-C','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-DRAFT','Retailer 94','{}'::jsonb,'MANUAL',NOW()),
+  ('00000000-0000-4000-8000-0000000094ad','00000000-0000-4000-8000-000000009400','ORD-94-D','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-TRANSIT','Retailer 94','{}'::jsonb,'MANUAL',NOW()),
+  ('00000000-0000-4000-8000-0000000094ae','00000000-0000-4000-8000-000000009400','ORD-94-E','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-RXRECEIVED','Retailer 94','{}'::jsonb,'MANUAL',NOW()),
+  ('00000000-0000-4000-8000-0000000094af','00000000-0000-4000-8000-000000009400','ORD-94-F','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-DEADROUTE-DONE','Retailer 94','{}'::jsonb,'MANUAL',NOW());
 
 -- ── Bultos (uno por carga; dos para CARGA-94-DOCK: uno se declara faltante) ──
 INSERT INTO public.packages (id, operator_id, order_id, label, sku_items, raw_data)
@@ -118,75 +131,115 @@ VALUES
   ('00000000-0000-4000-8000-0000000094b8','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094a8','CTN94-8','[]'::jsonb,'{}'::jsonb),
   ('00000000-0000-4000-8000-0000000094b9','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094a9','CTN94-9','[]'::jsonb,'{}'::jsonb),
   ('00000000-0000-4000-8000-0000000094ba','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094aa','CTN94-A','[]'::jsonb,'{}'::jsonb),
-  ('00000000-0000-4000-8000-0000000094bb','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094ab','CTN94-B','[]'::jsonb,'{}'::jsonb);
+  ('00000000-0000-4000-8000-0000000094bb','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094ab','CTN94-B','[]'::jsonb,'{}'::jsonb),
+  ('00000000-0000-4000-8000-0000000094bc','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094ac','CTN94-C','[]'::jsonb,'{}'::jsonb),
+  ('00000000-0000-4000-8000-0000000094bd','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094ad','CTN94-D','[]'::jsonb,'{}'::jsonb),
+  ('00000000-0000-4000-8000-0000000094be','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094ae','CTN94-E','[]'::jsonb,'{}'::jsonb),
+  ('00000000-0000-4000-8000-0000000094bf','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094af','CTN94-F','[]'::jsonb,'{}'::jsonb);
 
 -- ── Ajustar cada manifests row al estado que su carga representa ─────────────
 -- (trg_ensure_manifest_for_order ya creó la fila con status='pending' al
 -- insertar la orden; el id es impredecible, por eso todo va por
 -- operator_id + external_load_id.)
--- CARGA-94-DOCK: dos pasos, no uno. trg_manifest_set_reception_status
--- (20260318000001, todavía vivo -- nunca redefinido desde spec-08) es un
--- BEFORE UPDATE que auto-rellena reception_status='awaiting_reception' EN
--- CUALQUIER transición hacia status='completed' si reception_status venía
--- NULL, sin mirar pickup_route_id. close_manifest (20260916000001) no toca
--- reception_status en su propio UPDATE, así que ese trigger igual dispara.
--- Un solo UPDATE con status='completed' Y reception_status=NULL a la vez
--- nunca llega a guardar el NULL -- el trigger lo pisa antes de escribir.
--- Paso 1 deja reception_status en un valor no-nulo (cualquiera) para que la
--- guarda `IF NEW.reception_status IS NULL` del trigger no dispare; paso 2
--- lo vuelve a NULL con OLD.status ya en 'completed', así que la condición
--- externa del trigger (transición HACIA completed) ya no aplica.
+
+-- CARGA-94-DOCK: UN SOLO PASO. reception_status se deja SIN TOCAR (sigue
+-- NULL de la creación) -- trg_manifest_reception_status la rellena sola a
+-- 'awaiting_reception' en la transición hacia 'completed'. Esto es
+-- exactamente lo que pasa en producción al cerrar una carga con
+-- close_manifest; no es un artefacto de fixture.
 UPDATE public.manifests SET
   status = 'completed', completed_at = NOW(),
   pickup_route_id = '00000000-0000-4000-8000-000000009410',
-  reception_status = 'reception_in_progress', -- placeholder, ver nota arriba
   total_orders = 1, total_packages = 2
-WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-DOCK';
-
-UPDATE public.manifests SET reception_status = NULL
 WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-DOCK';
 
 UPDATE public.manifests SET
   status = 'in_progress',
   pickup_route_id = '00000000-0000-4000-8000-000000009411',
-  reception_status = NULL,
   total_orders = 1, total_packages = 1
 WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-INROUTE';
 
 UPDATE public.manifests SET
   status = 'in_progress',
   pickup_route_id = '00000000-0000-4000-8000-000000009412', -- ruta SOFT-DELETED
-  reception_status = NULL,
   total_orders = 1, total_packages = 1
 WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-DELETEDROUTE';
 
+-- CARGA-94-DEADROUTE-DONE: MISMA ruta soft-deleted que CARGA-94-DELETEDROUTE,
+-- pero COMPLETED (reception_status queda en 'awaiting_reception' vía el
+-- trigger, un solo paso). Esta es la fixture que realmente hace falsificable
+-- mover `pr.deleted_at IS NULL` del ON a un AND incondicional en el WHERE de
+-- la subconsulta NOT IN de get_pending_manifests -- CARGA-94-DELETEDROUTE
+-- por sí sola NO alcanza: en ese caso ninguna otra condición de exclusión es
+-- verdadera (status<>completed, reception_status NULL), así que ambas
+-- formulaciones (ON vs WHERE) terminan de acuerdo en "no excluir". Aquí, en
+-- cambio, reception_status IS NOT NULL YA justifica la exclusión por sí solo
+-- -- si el AND de ruta-muerta se vuelve incondicional, sobreescribe esa
+-- exclusión independiente y la carga reaparecería equivocadamente en
+-- Pendientes.
 UPDATE public.manifests SET
   status = 'completed', completed_at = NOW(),
-  pickup_route_id = '00000000-0000-4000-8000-000000009413',
+  pickup_route_id = '00000000-0000-4000-8000-000000009412', -- MISMA ruta SOFT-DELETED
+  total_orders = 1, total_packages = 1
+WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-DEADROUTE-DONE';
+
+-- CARGA-94-DRAFT: la ruta está en 'draft' -- ni in_transit ni received, así
+-- que el NOT IN del cubo 2 la incluye. Es la fixture que hace falsificable
+-- esa cláusula (ver mutation-testing).
+UPDATE public.manifests SET
+  status = 'pending',
+  pickup_route_id = '00000000-0000-4000-8000-000000009416',
+  total_orders = 1, total_packages = 1
+WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-DRAFT';
+
+-- CARGA-94-TRANSIT: misma forma que CARGA-94-DOCK (reception_status queda
+-- en 'awaiting_reception', vía el mismo trigger), pero la ruta está
+-- 'in_transit'. Si el modelo mirara reception_status en vez de la ruta,
+-- esta carga caería en el mismo cubo que CARGA-94-DOCK -- cae en cubo 3,
+-- que es la prueba de que manda la ruta.
+UPDATE public.manifests SET
+  status = 'completed', completed_at = NOW(),
+  pickup_route_id = '00000000-0000-4000-8000-000000009417',
+  total_orders = 1, total_packages = 1
+WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-TRANSIT';
+
+-- CARGA-94-RXRECEIVED: misma forma otra vez, ruta 'received'.
+UPDATE public.manifests SET
+  status = 'completed', completed_at = NOW(),
+  pickup_route_id = '00000000-0000-4000-8000-000000009418',
+  total_orders = 1, total_packages = 1
+WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-RXRECEIVED';
+
+-- CARGA-94-AWAITING / CARGA-94-INPROGRESSRX / CARGA-94-RECEIVED: SIN ruta
+-- (pickup_route_id se queda NULL) -- el brazo "sin ruta viva" de los cubos
+-- 3/4. reception_status se setea EXPLÍCITAMENTE en el mismo UPDATE, así que
+-- el trigger no lo pisa (la guarda es "IF NEW.reception_status IS NULL").
+UPDATE public.manifests SET
+  status = 'completed', completed_at = NOW(),
   reception_status = 'awaiting_reception',
   total_orders = 1, total_packages = 1
 WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-AWAITING';
 
 UPDATE public.manifests SET
   status = 'completed', completed_at = NOW(),
-  pickup_route_id = '00000000-0000-4000-8000-000000009414',
   reception_status = 'reception_in_progress',
   total_orders = 1, total_packages = 1
 WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-INPROGRESSRX';
 
 UPDATE public.manifests SET
   status = 'completed', completed_at = NOW(),
-  pickup_route_id = '00000000-0000-4000-8000-000000009415',
   reception_status = 'received',
   total_orders = 1, total_packages = 1
 WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-RECEIVED';
 
--- CARGA-94-OLDCLOSE: mismo problema de trg_manifest_set_reception_status,
--- mismo arreglo en dos pasos -- ver la nota extensa junto a CARGA-94-DOCK.
+-- CARGA-94-OLDCLOSE: flujo viejo -- completed, SIN ruta, reception_status
+-- IS NULL. Dos pasos: el trigger auto-rellena awaiting_reception en el
+-- primer UPDATE (reception_status no tocado, viene NULL), el segundo lo
+-- vuelve a NULL con OLD.status ya en 'completed' -- la condición externa
+-- del trigger (transición HACIA completed) ya no aplica, así que el NULL
+-- sí se guarda esta vez.
 UPDATE public.manifests SET
   status = 'completed', completed_at = NOW(),
-  pickup_route_id = NULL,
-  reception_status = 'reception_in_progress', -- placeholder
   total_orders = 1, total_packages = 1
 WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-OLDCLOSE';
 
@@ -217,9 +270,12 @@ UPDATE public.manifests SET
   reception_status = NULL
 WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-CANCELLED-BARE';
 
--- ── Discrepancia + escaneo verificado sobre CARGA-94-DOCK, para probar que
---    missing_count/verified_count de get_routed_manifests leen datos reales,
---    no un COALESCE(...,0) de fachada. ─────────────────────────────────────
+-- ── Discrepancia + escaneos sobre CARGA-94-DOCK, para probar que
+--    missing_count/verified_count de get_routed_manifests leen datos
+--    reales, no un COALESCE(...,0) de fachada. El segundo escaneo,
+--    'verified' con package_id NULL, es lo que hace falsificable
+--    `package_id IS NOT NULL` -- sin él, verified_count contaría también
+--    esta fila y saldría 2, no 1. ─────────────────────────────────────────
 INSERT INTO public.discrepancies (
   operator_id, kind, operation_type, status, package_id, manifest_id, detected_by_user_id
 ) VALUES (
@@ -238,12 +294,6 @@ INSERT INTO public.pickup_scans (
   '00000000-0000-4000-8000-000000009401', NOW()
 );
 
--- Segundo escaneo, 'verified' pero con package_id NULL. No hay CHECK que lo
--- impida a nivel de esquema (los comentarios de get_routed_manifests dicen
--- "'not_found' siempre tiene package_id NULL, pero no vale apoyarse en eso
--- quedando implícito" -- este es exactamente el caso que hace esa guarda
--- falsificable: sin `package_id IS NOT NULL`, verified_count contaría esta
--- fila también y saldría 2, no 1.
 INSERT INTO public.pickup_scans (
   operator_id, manifest_id, package_id, barcode_scanned, scan_result, scanned_by_user_id, scanned_at
 ) VALUES (
@@ -253,7 +303,70 @@ INSERT INTO public.pickup_scans (
   '00000000-0000-4000-8000-000000009401', NOW()
 );
 
--- ── Contexto: RLS ON, como en producción ─────────────────────────────────────
+-- ── Operador B: sólo para el aislamiento cross-tenant de get_routed_manifests ─
+-- Misma forma que CARGA-94-DOCK (cubo 2, ruta in_progress) pero de OTRO
+-- operador. Si el filtro operator_id de get_routed_manifests fallara, esta
+-- carga aparecería junto a las del operador A.
+INSERT INTO public.operators (id, name, slug)
+VALUES ('00000000-0000-4000-8000-000000009500', 'Spec94 Op B', 'spec94-op-b')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO auth.users (
+  id, instance_id, aud, role, email, encrypted_password,
+  email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
+  created_at, updated_at, confirmation_token, recovery_token
+) VALUES (
+  '00000000-0000-4000-8000-000000009501',
+  '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+  'crew-94opb@spec94.test', crypt('x', gen_salt('bf')), NOW(),
+  '{"operator_id":"00000000-0000-4000-8000-000000009500"}'::jsonb,
+  '{"full_name":"Crew 94 Op B"}'::jsonb, NOW(), NOW(), '', ''
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.users (id, operator_id, email, full_name, permissions)
+VALUES ('00000000-0000-4000-8000-000000009501','00000000-0000-4000-8000-000000009500','crew-94opb@spec94.test','Crew 94 Op B',ARRAY['pickup'])
+ON CONFLICT (id) DO UPDATE
+  SET operator_id = EXCLUDED.operator_id, full_name = EXCLUDED.full_name, permissions = EXCLUDED.permissions;
+
+INSERT INTO public.vehicles (id, operator_id, plate, active)
+VALUES ('00000000-0000-4000-8000-000000009502','00000000-0000-4000-8000-000000009500','SPEC94B', true)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, vehicle_id, status)
+VALUES ('00000000-0000-4000-8000-000000009510','00000000-0000-4000-8000-000000009500','PR-94-OTHEROP','00000000-0000-4000-8000-000000009501','00000000-0000-4000-8000-000000009502','in_progress');
+
+INSERT INTO public.orders (
+  id, operator_id, order_number, customer_name, customer_phone,
+  delivery_address, comuna, delivery_date, external_load_id, retailer_name,
+  raw_data, imported_via, imported_at
+) VALUES (
+  '00000000-0000-4000-8000-0000000095a0','00000000-0000-4000-8000-000000009500','ORD-94OPB-1',
+  'Cliente OpB','+56900000950','Calle OpB','Santiago',CURRENT_DATE,
+  'CARGA-94-OTHEROP','Retailer OpB','{}'::jsonb,'MANUAL',NOW()
+);
+
+UPDATE public.manifests SET
+  status = 'in_progress',
+  pickup_route_id = '00000000-0000-4000-8000-000000009510',
+  total_orders = 1, total_packages = 1
+WHERE operator_id = '00000000-0000-4000-8000-000000009500' AND external_load_id = 'CARGA-94-OTHEROP';
+
+-- GUARD: como owner (RLS bypassada), ambos operadores deben ser visibles --
+-- si esto fallara, la aserción cross-tenant de abajo probaría RLS en vez del
+-- filtro operator_id propio de la función (mismo patrón que
+-- spec61_pending_excludes_routed.sql).
+DO $$
+DECLARE c INT;
+BEGIN
+  SELECT COUNT(*) INTO c FROM public.operators
+   WHERE slug IN ('spec94-op','spec94-op-b');
+  IF c <> 2 THEN
+    RAISE EXCEPTION 'owner context saw % of 2 fixture operators -- la aserción cross-tenant ya no prueba el filtro operator_id de la función', c;
+  END IF;
+END $$;
+
+-- ── Contexto: RLS ON, como en producción, caller = operador A ───────────────
 SELECT set_config(
   'request.jwt.claims',
   '{"sub":"00000000-0000-4000-8000-000000009401","operator_id":"00000000-0000-4000-8000-000000009400","role":"authenticated"}',
@@ -275,7 +388,7 @@ SELECT is(
     'CARGA-94-DOCK' IN (SELECT external_load_id FROM t_completed)
   ],
   ARRAY[false, true, false, false],
-  'CARGA-94-DOCK (cerrada en el andén, ruta in_progress): sólo en get_routed_manifests'
+  'CARGA-94-DOCK (cerrada en el andén, ruta in_progress, reception_status=awaiting_reception vía el trigger): sólo en get_routed_manifests -- EL test que prueba que manda la ruta'
 );
 
 SELECT is(
@@ -291,13 +404,57 @@ SELECT is(
 
 SELECT is(
   ARRAY[
+    'CARGA-94-DRAFT' IN (SELECT external_load_id FROM t_pending),
+    'CARGA-94-DRAFT' IN (SELECT external_load_id FROM t_routed),
+    'CARGA-94-DRAFT' IN (SELECT external_load_id FROM t_transit),
+    'CARGA-94-DRAFT' IN (SELECT external_load_id FROM t_completed)
+  ],
+  ARRAY[false, true, false, false],
+  'CARGA-94-DRAFT (ruta en draft): sólo en get_routed_manifests -- prueba el NOT IN del cubo 2 (draft no es in_transit ni received)'
+);
+
+SELECT is(
+  ARRAY[
     'CARGA-94-DELETEDROUTE' IN (SELECT external_load_id FROM t_pending),
     'CARGA-94-DELETEDROUTE' IN (SELECT external_load_id FROM t_routed),
     'CARGA-94-DELETEDROUTE' IN (SELECT external_load_id FROM t_transit),
     'CARGA-94-DELETEDROUTE' IN (SELECT external_load_id FROM t_completed)
   ],
-  ARRAY[false, true, false, false],
-  'CARGA-94-DELETEDROUTE (ruta soft-deleted): SIGUE en get_routed_manifests -- LEFT JOIN con la condición en el ON, no en el WHERE (regresión CARGA-PARIS-001)'
+  ARRAY[true, false, false, false],
+  'CARGA-94-DELETEDROUTE (ruta soft-deleted -- ya no es "ruta viva"): cae por sus propias columnas en get_pending_manifests, no en get_routed_manifests (regresión CARGA-PARIS-001, corregida distinto en ronda 3)'
+);
+
+SELECT is(
+  ARRAY[
+    'CARGA-94-DEADROUTE-DONE' IN (SELECT external_load_id FROM t_pending),
+    'CARGA-94-DEADROUTE-DONE' IN (SELECT external_load_id FROM t_routed),
+    'CARGA-94-DEADROUTE-DONE' IN (SELECT external_load_id FROM t_transit),
+    'CARGA-94-DEADROUTE-DONE' IN (SELECT external_load_id FROM t_completed)
+  ],
+  ARRAY[false, false, true, false],
+  'CARGA-94-DEADROUTE-DONE (MISMA ruta soft-deleted que CARGA-94-DELETEDROUTE, pero completed con reception_status=awaiting_reception vía el trigger): sólo en get_in_transit_manifests, NUNCA en get_pending_manifests -- la fixture que hace falsificable un AND incondicional de ruta-muerta en la subconsulta NOT IN'
+);
+
+SELECT is(
+  ARRAY[
+    'CARGA-94-TRANSIT' IN (SELECT external_load_id FROM t_pending),
+    'CARGA-94-TRANSIT' IN (SELECT external_load_id FROM t_routed),
+    'CARGA-94-TRANSIT' IN (SELECT external_load_id FROM t_transit),
+    'CARGA-94-TRANSIT' IN (SELECT external_load_id FROM t_completed)
+  ],
+  ARRAY[false, false, true, false],
+  'CARGA-94-TRANSIT (misma forma que CARGA-94-DOCK, ruta in_transit): sólo en get_in_transit_manifests -- prueba que la ruta decide, no reception_status (idéntico en ambas)'
+);
+
+SELECT is(
+  ARRAY[
+    'CARGA-94-RXRECEIVED' IN (SELECT external_load_id FROM t_pending),
+    'CARGA-94-RXRECEIVED' IN (SELECT external_load_id FROM t_routed),
+    'CARGA-94-RXRECEIVED' IN (SELECT external_load_id FROM t_transit),
+    'CARGA-94-RXRECEIVED' IN (SELECT external_load_id FROM t_completed)
+  ],
+  ARRAY[false, false, false, true],
+  'CARGA-94-RXRECEIVED (misma forma otra vez, ruta received): sólo en get_completed_manifests -- misma reception_status que CARGA-94-DOCK y CARGA-94-TRANSIT, cubo distinto'
 );
 
 SELECT is(
@@ -308,7 +465,7 @@ SELECT is(
     'CARGA-94-AWAITING' IN (SELECT external_load_id FROM t_completed)
   ],
   ARRAY[false, false, true, false],
-  'CARGA-94-AWAITING (reception_status=awaiting_reception): sólo en get_in_transit_manifests'
+  'CARGA-94-AWAITING (sin ruta, reception_status=awaiting_reception): sólo en get_in_transit_manifests -- brazo "sin ruta viva"'
 );
 
 SELECT is(
@@ -319,7 +476,7 @@ SELECT is(
     'CARGA-94-INPROGRESSRX' IN (SELECT external_load_id FROM t_completed)
   ],
   ARRAY[false, false, true, false],
-  'CARGA-94-INPROGRESSRX (reception_status=reception_in_progress): sólo en get_in_transit_manifests -- prueba el segundo valor del IN(), no sólo el primero'
+  'CARGA-94-INPROGRESSRX (sin ruta, reception_status=reception_in_progress): sólo en get_in_transit_manifests -- prueba el segundo valor del IN()'
 );
 
 SELECT is(
@@ -330,7 +487,7 @@ SELECT is(
     'CARGA-94-RECEIVED' IN (SELECT external_load_id FROM t_completed)
   ],
   ARRAY[false, false, false, true],
-  'CARGA-94-RECEIVED (reception_status=received): sólo en get_completed_manifests'
+  'CARGA-94-RECEIVED (sin ruta, reception_status=received): sólo en get_completed_manifests -- brazo "sin ruta viva"'
 );
 
 SELECT is(
@@ -404,7 +561,7 @@ SELECT is(
   (SELECT (route_code, route_status, driver_name, missing_count, verified_count, closed_at IS NOT NULL)
      FROM t_routed WHERE external_load_id = 'CARGA-94-DOCK'),
   ('PR-94-DOCK'::text, 'in_progress'::text, 'Crew 94'::text, 1, 1::bigint, true),
-  'CARGA-94-DOCK: route_code/route_status/driver_name vienen de la ruta real; missing_count=1 (la discrepancia abierta), verified_count=1 (el escaneo verified), closed_at poblado porque status=completed'
+  'CARGA-94-DOCK: route_code/route_status/driver_name vienen de la ruta real; missing_count=1 (la discrepancia abierta), verified_count=1 (el escaneo verified con package_id real; el segundo, con package_id NULL, no cuenta), closed_at poblado porque status=completed'
 );
 
 SELECT is(
@@ -415,10 +572,15 @@ SELECT is(
 );
 
 SELECT is(
-  (SELECT (route_code, route_status, driver_name)
-     FROM t_routed WHERE external_load_id = 'CARGA-94-DELETEDROUTE'),
-  (NULL::text, NULL::text, NULL::text),
-  'CARGA-94-DELETEDROUTE: route_code/route_status/driver_name salen NULL -- el LEFT JOIN sobrevive pero la fila de pickup_routes no calza (deleted_at IS NULL está en el ON)'
+  (SELECT route_status FROM t_routed WHERE external_load_id = 'CARGA-94-DRAFT'),
+  'draft'::text,
+  'CARGA-94-DRAFT: route_status refleja el valor real de la ruta (draft)'
+);
+
+SELECT is(
+  (SELECT id IS NOT NULL FROM t_pending WHERE external_load_id = 'CARGA-94-DELETEDROUTE'),
+  true,
+  'CARGA-94-DELETEDROUTE: aparece en get_pending_manifests con su manifest_id real (la fila existe de verdad, no es un artefacto del LEFT JOIN)'
 );
 
 -- ── El contrato del brazo nuevo de get_pending_manifests ────────────────────
@@ -436,19 +598,19 @@ SELECT is(
   'CARGA-94-ORDERSDELETED: id SÍ presente (la fila de manifests vive) pero order_count/package_count son 0 -- viene del arm2 (manifest-rooted, sin ninguna orden viva que agrupar)'
 );
 
--- ── Ámbito de operador, no de usuario firmado (spec-94: "el cubo nuevo es a
---    nivel de operador") -- get_routed_manifests debe devolver TODAS las
---    cargas ruteadas del operador, no sólo las de la ruta del usuario
---    firmado. El caller (crew-94, sub=...9401) lidera PR-94-DOCK y
---    PR-94-DELETEDROUTE, pero NO es driver ni crew de PR-94-INROUTE (esa
---    ruta es de crew-94b, sub=...9406) -- y aun así debe ver las tres.
---    get_my_active_pickup_route (spec-61), por contraste, sólo mostraría
---    las rutas del propio usuario; heredar ese alcance aquí reproduciría
---    el agujero que este spec cierra. ──────────────────────────────────
+-- ── Ámbito de operador, no de usuario firmado ────────────────────────────────
 SELECT is(
-  (SELECT COUNT(*)::int FROM t_routed WHERE external_load_id IN ('CARGA-94-DOCK','CARGA-94-INROUTE','CARGA-94-DELETEDROUTE')),
+  (SELECT COUNT(*)::int FROM t_routed WHERE external_load_id IN ('CARGA-94-DOCK','CARGA-94-INROUTE','CARGA-94-DRAFT')),
   3,
-  'get_routed_manifests ve las tres cargas ruteadas aunque ninguna comparta líder -- es de ámbito operador, no de usuario firmado'
+  'get_routed_manifests ve las tres cargas ruteadas del operador aunque ninguna comparta líder -- es de ámbito operador, no de usuario firmado'
+);
+
+-- ── Aislamiento cross-tenant: la carga del operador B (misma forma que
+--    CARGA-94-DOCK) NO debe filtrarse a la respuesta del operador A ────────
+SELECT is(
+  'CARGA-94-OTHEROP' IN (SELECT external_load_id FROM t_routed),
+  false,
+  'get_routed_manifests bajo el JWT del operador A no incluye la carga ruteada del operador B (operator_id propio de la función, bajo RLS real)'
 );
 
 SELECT * FROM finish();

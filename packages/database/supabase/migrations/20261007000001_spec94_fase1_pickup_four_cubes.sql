@@ -1,30 +1,49 @@
 -- =============================================================================
--- spec-94 fase 1 — Recogida: cuatro estados que particionan por lugar físico
+-- spec-94 fase 1 — Recogida: cuatro estados, y manda la ruta cuando hay una
 -- =============================================================================
 -- Contexto (ver docs/specs/spec-94-recogida-cuatro-estados.md): un manifiesto
--- enganchado a una ruta de recogida pero todavía sin llegar al hub
--- (`pickup_route_id` seteado, `reception_status` NULL) no lo devuelve ninguna
--- de las tres RPC vigentes (`get_pending_manifests`, `get_in_transit_manifests`,
--- `get_completed_manifests`): desaparece de toda la pantalla de escritorio.
+-- enganchado a una ruta de recogida pero todavía sin llegar al hub no lo
+-- devuelve ninguna de las tres RPC vigentes (`get_pending_manifests`,
+-- `get_in_transit_manifests`, `get_completed_manifests`): desaparece de toda
+-- la pantalla de escritorio.
 --
 -- Esta migración re-templa las CUATRO funciones a la vez (`get_routed_
--- manifests` es nueva) porque re-templar sólo la nueva y dejar las otras tres
--- intactas produce un solape real: una carga cerrada en el andén
--- (status='completed', ruta in_progress, reception_status NULL) saldría en
--- get_routed_manifests Y en get_completed_manifests al mismo tiempo, y en
--- cuanto sale el camión la devolvería sólo get_completed_manifests -- el
--- hallazgo original, intacto. Una migración, cuatro funciones.
+-- manifests` es nueva). Ronda 3 de este spec: la primera versión particionaba
+-- sobre `manifests.reception_status`, y resultó estar mal -- ver la sección
+-- siguiente.
 --
--- El modelo de estados (cubos, no trámites):
---   1. Por retirar        pickup_route_id IS NULL AND reception_status IS NULL
---                          AND status <> 'completed'      (+ status <> 'cancelled')
---   2. En punto de retiro  pickup_route_id IS NOT NULL AND reception_status IS NULL
+-- EL MODELO (ronda 3, "manda la ruta"): cuando hay una ruta VIVA
+-- (`pickup_routes` referenciada por `pickup_route_id`, `deleted_at IS NULL`),
+-- la columna que sabe dónde están los bultos es `pickup_routes.status`, NO
+-- `manifests.reception_status`. Verificado contra `pg_proc` en QA:
+-- `trg_manifest_reception_status` (`20260318000001:295-319`, BEFORE UPDATE,
+-- vivo desde spec-08, nunca redefinido) rellena
+-- `reception_status='awaiting_reception'` en TODA transición hacia
+-- `status='completed'` cuando la columna viene NULL -- sin mirar
+-- `pickup_route_id` ni la ruta. Por eso `awaiting_reception` NO distingue
+-- "cerrada en el andén, camión parado" de "el camión salió de verdad": las
+-- dos lo escriben. Sólo `pickup_routes.status` lo sabe.
+--
+--   1. Por retirar        sin ruta viva, reception_status IS NULL,
+--                          status <> 'completed'         (+ status <> 'cancelled')
+--   2. En punto de retiro  ruta viva, pr.status NOT IN ('in_transit','received')
 --                          (+ status <> 'cancelled')
---   3. Camino a bodega     reception_status IN ('awaiting_reception',
---                          'reception_in_progress')        (+ status <> 'cancelled')
---   4. En bodega           reception_status = 'received', O
---                          (status='completed' AND pickup_route_id IS NULL
---                           AND reception_status IS NULL)   (+ status <> 'cancelled')
+--   3. Camino a bodega     ruta viva y pr.status = 'in_transit', O
+--                          sin ruta viva y reception_status IN
+--                          ('awaiting_reception','reception_in_progress')
+--                          (+ status <> 'cancelled')
+--   4. En bodega           ruta viva y pr.status = 'received', O
+--                          sin ruta viva y (reception_status = 'received' O
+--                          (status='completed' AND reception_status IS NULL))
+--                          (+ status <> 'cancelled')
+--
+-- `pr.status NOT IN (...)`, no una lista positiva: el cubo 2 es el
+-- complemento, así que un valor nuevo de `pickup_route_status_enum` aterriza
+-- ahí en vez de caerse del modelo (el mismo bug que este spec cierra).
+--
+-- Una ruta soft-deleted ya no esconde nada: no es "ruta viva", así que el
+-- manifiesto cae por sus propias columnas (reception_status/status) en el
+-- cubo 1, 3 o 4 -- lo resuelve el modelo, no una cláusula del JOIN.
 --
 -- 'cancelled' no tiene pestaña (ver spec, sección "'cancelled': quién lo
 -- escribe"): los cuatro predicados lo excluyen explícitamente.
@@ -42,15 +61,21 @@
 -- (spec-53), missing_count (spec-83 fase 1) o signature_operator (spec-80
 -- fase 2b).
 --
--- POSICIÓN DE `status <> 'cancelled'`: en get_routed_manifests, get_in_
--- transit_manifests y get_completed_manifests va en el WHERE, porque las tres
--- parten de `manifests` directamente. En get_pending_manifests va DENTRO de
--- la subconsulta NOT IN (junto a completed/reception_status/pickup_route_id),
--- NUNCA en el WHERE que compara contra el LEFT JOIN a manifests: ahí
+-- RUTA VIVA, en las cuatro funciones: `LEFT JOIN public.pickup_routes pr ON
+-- pr.id = m.pickup_route_id AND pr.deleted_at IS NULL`, con la condición de
+-- soft-delete en el ON, NUNCA en el WHERE. En el WHERE convierte el LEFT JOIN
+-- en un INNER de hecho: una ruta soft-deleted no vacía
+-- manifests.pickup_route_id, así que ese manifiesto se caería de la RPC que
+-- lo busca por tener ruta Y de las que lo buscan por no tenerla -- invisible,
+-- exactamente como CARGA-PARIS-001. En el ON, `pr.id` sale NULL, "ruta viva"
+-- es falso, y el manifiesto cae por sus propias columnas.
+--
+-- POSICIÓN DE `status <> 'cancelled'`: en las tres que parten de `manifests`
+-- va en el WHERE. En `get_pending_manifests` va DENTRO de la subconsulta
+-- NOT IN, NUNCA en el WHERE que compara contra el LEFT JOIN a manifests: ahí
 -- `m.status <> 'cancelled'` evaluaría a NULL cuando no hay fila de
 -- manifiesto todavía, y NULL no es TRUE -- borraría de "Por retirar" toda
--- carga que aún no tiene fila en manifests, justo el conjunto que ese LEFT
--- JOIN existe para preservar.
+-- carga que aún no tiene fila en manifests.
 -- =============================================================================
 
 BEGIN;
@@ -96,13 +121,6 @@ AS $$
     pr.code AS route_code,
     pr.started_at AS route_started_at,
     drv.full_name AS driver_name,
-    -- LEFT, y la condición de deleted_at en el ON, no en el WHERE: una ruta
-    -- soft-deleted no vacía manifests.pickup_route_id, así que filtrar la
-    -- fila aquí recrea el agujero original (CARGA-PARIS-001) -- el
-    -- manifiesto quedaría excluido de esta RPC (por tener ruta) y de las
-    -- otras tres (por no tener reception_status), invisible otra vez. Con
-    -- LEFT JOIN la fila sobrevive y route_status sale NULL, que es la señal
-    -- que la fase 3 necesita.
     pr.status::TEXT AS route_status,
     CASE WHEN m.status = 'completed' THEN m.completed_at ELSE NULL END AS closed_at,
     -- Misma subconsulta que spec-83 fase 1 puso en get_completed_manifests
@@ -139,13 +157,13 @@ AS $$
   LEFT JOIN public.users drv ON drv.id = pr.driver_id
   WHERE m.operator_id = public.get_operator_id()
     AND m.deleted_at IS NULL
-    AND m.pickup_route_id IS NOT NULL
-    AND m.reception_status IS NULL
     AND m.status <> 'cancelled'
+    AND pr.id IS NOT NULL                              -- ruta viva
+    AND pr.status NOT IN ('in_transit','received')
   ORDER BY m.created_at DESC
 $$;
 
-COMMENT ON FUNCTION public.get_routed_manifests() IS 'spec-94 fase 1. Cubo 2 ("En punto de retiro"): manifiesto enganchado a una ruta de recogida (pickup_route_id IS NOT NULL) que todavía no llegó al hub (reception_status IS NULL). Incluye cargas ya cerradas en el andén con el camión todavía en el punto de retiro (status=''completed'', closed_at poblado) -- esa mezcla es coste aceptado a propósito, ver spec-94. LEFT JOIN a pickup_routes con la condición deleted_at en el ON: una ruta soft-deleted no debe hacer desaparecer el manifiesto. missing_count y verified_count replican exactamente las subconsultas de get_completed_manifests (spec-83 fase 1) y la guarda 7 de remove_manifest_from_route (spec-64) respectivamente.';
+COMMENT ON FUNCTION public.get_routed_manifests() IS 'spec-94 fase 1 (ronda 3, "manda la ruta"). Cubo 2 ("En punto de retiro"): ruta viva (pickup_routes.deleted_at IS NULL) con pr.status NOT IN (in_transit, received) -- NOT IN, no una lista positiva, para que un valor nuevo del enum aterrice aquí y no se caiga del modelo. Incluye cargas ya cerradas en el andén con el camión todavía parado (status=''completed'', closed_at poblado, ruta in_progress) -- esa mezcla es coste aceptado a propósito, ver spec-94. LEFT JOIN a pickup_routes con deleted_at en el ON: una ruta soft-deleted no debe hacer desaparecer el manifiesto, cae por sus propias columnas en otro cubo. missing_count y verified_count replican exactamente las subconsultas de get_completed_manifests (spec-83 fase 1) y la guarda 7 de remove_manifest_from_route (spec-64) respectivamente.';
 
 -- =============================================================================
 -- 2. get_pending_manifests -- cubo 1 ("Por retirar") + el brazo UNION ALL
@@ -190,7 +208,13 @@ AS $$
       AND o.external_load_id IS NOT NULL
       AND o.deleted_at IS NULL
       AND o.external_load_id NOT IN (
+        -- spec-94 (ronda 3): "ruta viva" via LEFT JOIN, no
+        -- m.pickup_route_id IS NOT NULL -- un manifiesto cuya ruta está
+        -- soft-deleted YA NO cuenta como "tiene ruta" para excluirlo de
+        -- Pendientes; si además reception_status es NULL y no está
+        -- completed/cancelled, pertenece al cubo 1.
         SELECT m.external_load_id FROM manifests m
+        LEFT JOIN pickup_routes pr ON pr.id = m.pickup_route_id AND pr.deleted_at IS NULL
         WHERE m.operator_id = public.get_operator_id()
           AND m.deleted_at IS NULL
           AND (m.status = 'completed'
@@ -199,7 +223,7 @@ AS $$
                -- ver la nota de cabecera de este archivo.
                OR m.status = 'cancelled'
                OR m.reception_status IS NOT NULL
-               OR m.pickup_route_id IS NOT NULL)
+               OR pr.id IS NOT NULL)                   -- ruta viva
       )
     GROUP BY o.external_load_id, o.retailer_name
   ),
@@ -246,11 +270,11 @@ AS $$
     FROM with_manifest
   ),
   arm2 AS (
-    -- spec-94: brazo nuevo. Un manifiesto vivo, cubo-1-shaped (sin ruta, sin
-    -- reception_status, no completed, no cancelled), cuyas órdenes están
-    -- TODAS soft-deleted -- arm1 nunca lo ve porque su CTE `pending` arranca
-    -- en orders con deleted_at IS NULL. Sin este brazo, esa carga no la
-    -- devuelve ninguna de las cuatro RPC.
+    -- spec-94: brazo nuevo. Un manifiesto vivo, cubo-1-shaped (sin ruta
+    -- VIVA, sin reception_status, no completed, no cancelled), cuyas
+    -- órdenes están TODAS soft-deleted -- arm1 nunca lo ve porque su CTE
+    -- `pending` arranca en orders con deleted_at IS NULL. Sin este brazo,
+    -- esa carga no la devuelve ninguna de las cuatro RPC.
     -- pickup_point/pickup_window_*/pickup_cutoff_time salen NULL a propósito
     -- (vienen de pickup_points vía orders.pickup_point_id, y aquí no hay
     -- ninguna orden viva) -- NULL significa "sin datos", nunca "sin plazo"
@@ -277,12 +301,13 @@ AS $$
       NULL::TEXT AS pickup_cutoff_time
     FROM manifests m
     LEFT JOIN users u ON u.id = m.labels_printed_by
+    LEFT JOIN pickup_routes pr ON pr.id = m.pickup_route_id AND pr.deleted_at IS NULL
     WHERE m.operator_id = public.get_operator_id()
       AND m.deleted_at IS NULL
       AND m.status <> 'completed'
       AND m.status <> 'cancelled'
       AND m.reception_status IS NULL
-      AND m.pickup_route_id IS NULL
+      AND pr.id IS NULL                                -- sin ruta viva
       AND NOT EXISTS (
         SELECT 1 FROM orders o
          WHERE o.operator_id = m.operator_id
@@ -307,7 +332,7 @@ AS $$
   ORDER BY (u.verified_count > 0) DESC, u.created_at DESC
 $$;
 
-COMMENT ON FUNCTION public.get_pending_manifests() IS 'spec-94 fase 1: cubo 1 ("Por retirar"). Excludes loads that are completed, cancelled, already handed off (reception_status set), or already attached to a pickup route (spec-61). Also returns pickup_window_start/end and pickup_cutoff_time (spec-83 fase 2) -- NULL until a pickup point has them configured; the frontend must treat NULL as "no data", never as "no deadline". UNION ALL of two disjoint arms: arm1 (an order-rooted CTE, requires ≥1 live order) and arm2 (a manifest with zero live orders -- all soft-deleted -- that arm1''s orders-rooted CTE cannot see). Sort: loads with ≥1 verified scan first, then by load creation date DESC.';
+COMMENT ON FUNCTION public.get_pending_manifests() IS 'spec-94 fase 1 (ronda 3, "manda la ruta"): cubo 1 ("Por retirar"). Excludes loads that are completed, cancelled, already handed off (reception_status set), or attached to a LIVE pickup route (pickup_routes.deleted_at IS NULL) -- a soft-deleted route no longer counts as "has a route". Also returns pickup_window_start/end and pickup_cutoff_time (spec-83 fase 2) -- NULL until a pickup point has them configured; the frontend must treat NULL as "no data", never as "no deadline". UNION ALL of two disjoint arms: arm1 (an order-rooted CTE, requires ≥1 live order) and arm2 (a manifest with zero live orders -- all soft-deleted -- that arm1''s orders-rooted CTE cannot see). Sort: loads with ≥1 verified scan first, then by load creation date DESC.';
 
 -- =============================================================================
 -- 3. get_in_transit_manifests -- cubo 3 ("Camino a bodega")
@@ -346,19 +371,25 @@ AS $$
     u.full_name AS labels_printed_by_name
   FROM manifests m
   LEFT JOIN users u ON u.id = m.labels_printed_by
+  LEFT JOIN pickup_routes pr ON pr.id = m.pickup_route_id AND pr.deleted_at IS NULL
   WHERE m.operator_id = public.get_operator_id()
     AND m.deleted_at IS NULL
-    -- spec-94: predicado sobre reception_status, no sobre status. El enum
-    -- reception_status_enum tiene exactamente tres valores
-    -- (awaiting_reception/reception_in_progress/received) -- excluir
-    -- 'received' aquí es lo que separa este cubo del cubo 4 sin tocar
-    -- status en absoluto.
-    AND m.reception_status IN ('awaiting_reception','reception_in_progress')
     AND m.status <> 'cancelled'
+    -- spec-94 (ronda 3): con ruta viva, manda pr.status='in_transit' -- el
+    -- camión salió de verdad. Sin ruta viva, manda reception_status (el
+    -- flujo viejo, pre-spec-47, o una ruta que ya se soltó del manifiesto).
+    -- reception_status NO es la señal cuando hay ruta: el mismo valor
+    -- 'awaiting_reception' se escribe tanto al cerrar en el andén (ruta
+    -- in_progress) como al arrancar la ruta de verdad (ruta in_transit) --
+    -- ver spec-94 "Por qué manda la ruta, y no reception_status".
+    AND (
+      (pr.id IS NOT NULL AND pr.status = 'in_transit')
+      OR (pr.id IS NULL AND m.reception_status IN ('awaiting_reception','reception_in_progress'))
+    )
   ORDER BY m.created_at DESC
 $$;
 
-COMMENT ON FUNCTION public.get_in_transit_manifests() IS 'spec-94 fase 1: cubo 3 ("Camino a bodega"). reception_status IN (awaiting_reception, reception_in_progress) -- ya no depende de status != completed; ver spec-94 "Por qué los cubos no miran status". Sorted by manifest creation date DESC. pickup_point sourced from manifests.pickup_location. spec-53: adds labels_printed_at/labels_printed_by_name.';
+COMMENT ON FUNCTION public.get_in_transit_manifests() IS 'spec-94 fase 1 (ronda 3, "manda la ruta"): cubo 3 ("Camino a bodega"). Con ruta viva, pr.status=''in_transit''. Sin ruta viva, reception_status IN (awaiting_reception, reception_in_progress) -- el flujo viejo o una ruta ya soltada. reception_status por sí solo no distingue "cerrada en el andén" de "camión en la carretera" cuando hay ruta -- trg_manifest_reception_status (spec-08) escribe awaiting_reception en ambos casos. Sorted by manifest creation date DESC. pickup_point sourced from manifests.pickup_location. spec-53: adds labels_printed_at/labels_printed_by_name.';
 
 -- =============================================================================
 -- 4. get_completed_manifests -- cubo 4 ("En bodega")
@@ -418,23 +449,25 @@ AS $$
     m.signature_operator
   FROM manifests m
   LEFT JOIN users u ON u.id = m.labels_printed_by
+  LEFT JOIN pickup_routes pr ON pr.id = m.pickup_route_id AND pr.deleted_at IS NULL
   WHERE m.operator_id = public.get_operator_id()
-    -- spec-94: cubo 4 ahora mira reception_status='received' primero (el
-    -- brazo alcanzable en la práctica -- ver spec-94 "El modelo de estados",
-    -- reception_status='received' con status<>'completed' no es alcanzable,
-    -- 20260812000006 escribe ambas columnas en el mismo UPDATE). El segundo
-    -- brazo (status='completed' AND pickup_route_id IS NULL AND
-    -- reception_status IS NULL) cubre el flujo viejo, cerrado sin ruta.
-    AND (
-      m.reception_status = 'received'
-      OR (m.status = 'completed' AND m.pickup_route_id IS NULL AND m.reception_status IS NULL)
-    )
-    AND m.status <> 'cancelled'
     AND m.deleted_at IS NULL
+    AND m.status <> 'cancelled'
+    -- spec-94 (ronda 3): con ruta viva, manda pr.status='received' -- el hub
+    -- recibió la ruta completa. Sin ruta viva, manda reception_status=
+    -- 'received' (flujo consolidado) O el flujo viejo (completed sin
+    -- reception_status, pre-spec-47 o dato histórico).
+    AND (
+      (pr.id IS NOT NULL AND pr.status = 'received')
+      OR (pr.id IS NULL AND (
+            m.reception_status = 'received'
+            OR (m.status = 'completed' AND m.reception_status IS NULL)
+          ))
+    )
   ORDER BY m.created_at DESC
 $$;
 
-COMMENT ON FUNCTION public.get_completed_manifests() IS 'spec-94 fase 1: cubo 4 ("En bodega"). reception_status=''received'', o status=''completed'' AND pickup_route_id IS NULL AND reception_status IS NULL (flujo viejo, cerrado sin ruta) -- ya no un simple status=''completed''. Sorted by manifest creation date DESC. pickup_point sourced from manifests.pickup_location. spec-53: adds labels_printed_at/labels_printed_by_name. spec-83 fase 1: adds missing_count, a COUNT(DISTINCT package_id) over public.discrepancies (kind=''missing'', operation_type=''pickup'', not soft-deleted, status <> ''resolved''). spec-80 fase 2b: adds signature_operator so callers can tell a genuinely-signed close apart from one trg_route_receptions_status_sync completed without ever reaching Firma (NULL).';
+COMMENT ON FUNCTION public.get_completed_manifests() IS 'spec-94 fase 1 (ronda 3, "manda la ruta"): cubo 4 ("En bodega"). Con ruta viva, pr.status=''received''. Sin ruta viva, reception_status=''received'' O (status=''completed'' AND reception_status IS NULL) -- flujo viejo. Sorted by manifest creation date DESC. pickup_point sourced from manifests.pickup_location. spec-53: adds labels_printed_at/labels_printed_by_name. spec-83 fase 1: adds missing_count, a COUNT(DISTINCT package_id) over public.discrepancies (kind=''missing'', operation_type=''pickup'', not soft-deleted, status <> ''resolved''). spec-80 fase 2b: adds signature_operator so callers can tell a genuinely-signed close apart from one trg_route_receptions_status_sync completed without ever reaching Firma (NULL).';
 
 -- =============================================================================
 -- Verificación
@@ -476,17 +509,26 @@ BEGIN
   IF v_src NOT LIKE '%LEFT JOIN public.pickup_routes pr ON pr.id = m.pickup_route_id AND pr.deleted_at IS NULL%' THEN
     RAISE EXCEPTION 'get_routed_manifests must LEFT JOIN pickup_routes with deleted_at in the ON clause, not the WHERE';
   END IF;
+  IF v_src NOT LIKE '%pr.status NOT IN (%in_transit%received%)%' THEN
+    RAISE EXCEPTION 'get_routed_manifests must use pr.status NOT IN (in_transit, received), not a positive list';
+  END IF;
 
   SELECT p.prosrc INTO v_src FROM pg_proc p
    WHERE p.oid = 'public.get_pending_manifests()'::regprocedure;
   IF v_src NOT LIKE '%UNION ALL%' THEN
     RAISE EXCEPTION 'get_pending_manifests lost its UNION ALL arm for manifests with zero live orders';
   END IF;
+  IF v_src NOT LIKE '%LEFT JOIN pickup_routes pr%' THEN
+    RAISE EXCEPTION 'get_pending_manifests must resolve "ruta viva" via pickup_routes, not pickup_route_id alone';
+  END IF;
 
   SELECT p.prosrc INTO v_src FROM pg_proc p
    WHERE p.oid = 'public.get_in_transit_manifests()'::regprocedure;
   IF v_src NOT LIKE '%awaiting_reception%' OR v_src NOT LIKE '%reception_in_progress%' THEN
-    RAISE EXCEPTION 'get_in_transit_manifests must filter on reception_status IN (awaiting_reception, reception_in_progress)';
+    RAISE EXCEPTION 'get_in_transit_manifests must filter on reception_status IN (awaiting_reception, reception_in_progress) for the no-live-route branch';
+  END IF;
+  IF v_src NOT LIKE '%pr.status = ''in_transit''%' THEN
+    RAISE EXCEPTION 'get_in_transit_manifests must check pr.status = in_transit for the live-route branch';
   END IF;
 
   SELECT p.prosrc INTO v_src FROM pg_proc p
@@ -494,8 +536,11 @@ BEGIN
   IF v_src NOT LIKE '%missing_count%' OR v_src NOT LIKE '%signature_operator%' THEN
     RAISE EXCEPTION 'get_completed_manifests lost missing_count (spec-83) or signature_operator (spec-80) in the re-template';
   END IF;
+  IF v_src NOT LIKE '%pr.status = ''received''%' THEN
+    RAISE EXCEPTION 'get_completed_manifests must check pr.status = received for the live-route branch';
+  END IF;
 
-  RAISE NOTICE '✓ spec-94 fase 1: four pickup RPCs re-templated onto the disjoint physical-location cubes';
+  RAISE NOTICE '✓ spec-94 fase 1 (ronda 3): four pickup RPCs re-templated, route status wins when a live route exists';
 END $$;
 
 COMMIT;
