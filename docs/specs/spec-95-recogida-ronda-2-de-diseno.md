@@ -273,11 +273,11 @@ dibuja exactamente eso (código de ruta, `12/28`, barra y las tres cifras
 > cerrados por esta fase**, anotado allí. spec-61 Task 5 revisado: `Cancelar
 > ruta` sólo cambia de sitio, diálogo y RPC intactos (`git diff` vacío).
 
-### Fase 3 — `5c` panel de mapa `[pending]`
+### Fase 3 — `5c` panel de mapa `[in_progress]`
 
 **Depende de:** spec-95 fase 2
 
-**Archivos:** `apps/frontend/src/components/pickup/RouteMapPlaceholder.tsx`, `apps/frontend/src/app/app/pickup/route/active/page.tsx`, y sus tests
+**Archivos:** `apps/frontend/src/components/pickup/RouteMapPlaceholder.tsx`, `apps/frontend/src/app/app/pickup/route/active/page.tsx`, `apps/frontend/src/hooks/pickup/useNextManifestPickupAddress.ts`, `apps/frontend/src/lib/pickup/nextManifestSelection.ts`, y sus tests
 
 El mock cuelga el panel de la carga siguiente y muestra dirección, distancia y
 ETA. **Sólo se implementan dirección y navegación.**
@@ -291,6 +291,34 @@ ETA. **Sólo se implementan dirección y navegación.**
 > igual que la barra de ocupación. El cálculo por arco conducido está diferido a
 > un spec de routing futuro; una distancia en línea recta tampoco sirve, porque
 > no es lo que conduce el operario y el mock no dice cuál de las dos dibuja.
+
+> **No hay lat/lng — Haversine no era sólo indeseable, era imposible.** Al
+> decidir esta fase se evaluó «distancia en línea recta» como alternativa a la
+> cifra del mock, dando por hecho que las coordenadas ya estaban en
+> `pickup_locations`. **No están.** El comentario de la migración
+> (`20260318000004:68`) documenta el contrato como
+> `[{name, address, comuna, lat, lng, …}]`, pero `pickupLocationSchema`
+> —el validador del **camino de escritura**, en
+> `api/pickup-points/pickupPointApiSchemas.ts:16-24`— no tiene `lat` ni `lng`:
+> nada en la app los escribe nunca. Así que no hay ruta hacia ninguna distancia,
+> ni recta ni conducida. La decisión del usuario (sólo dirección y navegación)
+> era la única implementable.
+>
+> **La dirección no sale de `manifests`.** Esa tabla no tiene
+> `pickup_point_id`; el join real pasa por `orders`, igual que
+> `deriveTotalPackages` ya hace para `total_packages`. Queda escrito para que la
+> próxima fase no lo redescubra.
+>
+> **Cuando no hay dirección, no se pinta un botón muerto.** Si falta cualquier
+> eslabón —orden inexistente, `pickup_point_id` nulo, `pickup_locations` vacío,
+> o sin `address`— el hook resuelve a `null` explícito y
+> `RouteMapPlaceholder` **no** renderiza «Abrir navegación»: sólo queda «Mapa no
+> disponible». Es la lección del chevron de la fase 4.
+>
+> **Deuda de tipos declarada:** `orders.pickup_point_id` faltaba en
+> `lib/types.ts` pese a existir desde `20260329000001` — misma deriva del
+> generador ya documentada para `fleet_vehicles.capacity_packages`. Añadido a
+> mano; sin eso `tsc` falla con `SelectQueryError`.
 
 ### Fase 4 — `5b` cuadrilla y selector de vehículo `[done]`
 
