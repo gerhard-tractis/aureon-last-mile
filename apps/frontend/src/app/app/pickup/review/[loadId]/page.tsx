@@ -164,7 +164,7 @@ export default function DiscrepancyReviewPage() {
     return (
       <div
         data-testid="review-loading"
-        className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto"
+        className="w-full space-y-4 p-4 sm:p-6 max-w-2xl mx-auto"
       >
         <Skeleton className="h-6 w-48" />
         <Skeleton className="h-20 w-full" />
@@ -182,7 +182,7 @@ export default function DiscrepancyReviewPage() {
     return (
       <div
         data-testid="review-error"
-        className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto"
+        className="w-full space-y-4 p-4 sm:p-6 max-w-2xl mx-auto"
       >
         <div className="flex flex-col gap-2 rounded-2xl p-4 bg-status-error-bg border-2 border-status-error-border">
           <span className="font-semibold text-status-error">
@@ -205,7 +205,7 @@ export default function DiscrepancyReviewPage() {
     return (
       <div
         data-testid="review-loading"
-        className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto"
+        className="w-full space-y-4 p-4 sm:p-6 max-w-2xl mx-auto"
       >
         <Skeleton className="h-6 w-48" />
         <Skeleton className="h-20 w-full" />
@@ -217,7 +217,7 @@ export default function DiscrepancyReviewPage() {
 
   return (
     <>
-      <div className="space-y-4 p-4 sm:p-6 pb-24 max-w-2xl mx-auto">
+      <div className="w-full space-y-4 p-4 sm:p-6 pb-24 max-w-2xl mx-auto">
         <PickupStepBreadcrumb current="review" />
 
         <div className="flex flex-col gap-0.5">
