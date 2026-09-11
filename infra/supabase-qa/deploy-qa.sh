@@ -37,9 +37,11 @@
 #   - Those flags are then widened against what QA actually had checked out, so
 #     a QA sync that GitHub dropped cannot leave an app un-rebuilt forever
 #     (widen_changed_flags).
-#   - packages/database/supabase/tests/*.sql are also run on every deploy, as
-#     an ADVISORY post-check (sql_tests_check) — they report pass/fail but can
-#     never fail the deploy. See sql_tests_check for why.
+#   - packages/database/supabase/tests/*.sql are also run on every deploy
+#     (sql_tests_check). A real test failure (spec-92) fails the deploy; a
+#     SKIP for a missing prerequisite (no password, no tests dir, no *.sql
+#     files, or a single pgTAP file with pgtap not installed) never does.
+#     See sql_tests_check for why.
 #
 # Test-only overrides (never set these on the VPS):
 #   QA_CHECKOUT_DIR=<path>        QA checkout location (default /home/aureon/aureon-qa)
@@ -833,26 +835,43 @@ ensure_pgtap() {
 
 # --------------------------------------------------------------------------
 # SQL tests — packages/database/supabase/tests/*.sql, run against QA's live
-# Postgres after migrations+seed. ADVISORY ONLY, always, no exceptions:
+# Postgres after migrations+seed.
 #
-#   - None of these 31 files have ever run anywhere (scripts/pgtap-local.sh:2
-#     says outright "NOT used by CI"), so some are near-certain to fail
-#     against schema that has moved since they were written.
-#   - A few assume fixtures that only pgtap-local.sh's docker bootstrap sets
-#     up (shimmed auth.uid()/auth.role()/auth.jwt(), extra auth.users
-#     columns) — QA runs the real Supabase image, so that shim shouldn't be
-#     needed there, but an untested test file can fail for the wrong reason.
-#   - A gate that goes red on day one, from files nobody has ever run, just
-#     trains people to click through red — the exact reasoning behind the
-#     e2e-qa job in .github/workflows/deploy.yml (see its ADVISORY comment).
+# BLOCKING as of spec-92, for the per-file pass/fail rows only. Through
+# 2026-09-09 this whole function was advisory-only, because none of these
+# files had ever run anywhere (scripts/pgtap-local.sh:2 said outright "NOT
+# used by CI") and pgtap wasn't even installed on QA — every plan()-based
+# file silently SKIPPED, so "green" meant "mostly untested", and gating a
+# deploy on that would have been theater. spec-93 fase 3 installed pgtap on
+# QA (ensure_pgtap, above) and the last real run against it came back clean:
+# pass=91 fail=0 skip=0. A file that has actually run and passed is exactly
+# the kind of result that SHOULD gate a deploy — that's the whole point of
+# this fase.
 #
-# record_advisory() (defined above, next to record()) is what makes this
-# airtight under `set -euo pipefail`: it appends to CHECKS but never sets
-# RESULT, so no matter how many of the 31 files fail, post_checks' final
-# `[ "$RESULT" -ne 0 ] && exit 1` cannot see them. Nothing in this function
-# calls record() or exits non-zero itself either — every psql invocation is
-# guarded with `|| true`, and the function always falls through to its final
-# `log` line, which returns 0.
+# What is STILL advisory, deliberately, and must stay that way: any SKIP,
+# because a SKIP here always means "a prerequisite to running the tests was
+# absent", never "a test ran and failed". Converting a missing
+# POSTGRES_PASSWORD, a missing tests dir, an empty tests dir, or a single
+# pgTAP file skipped for lack of the pgtap extension into a hard failure
+# would fail deploys for reasons that have nothing to do with SQL
+# correctness — a checkout without a password, or a fresh QA box mid-bootstrap,
+# would redden every deploy until someone fixes the environment, not the
+# SQL. The pgtap-missing case in particular is NOT a silent pass either:
+# ensure_pgtap() (above) already escalates a persistent CREATE-EXTENSION
+# failure into a hard deploy failure of its own (QA_PGTAP_DEGRADED_MAX,
+# QA_EXIT_PGTAP_STREAK) after QA_PGTAP_DEGRADED_MAX consecutive runs, so a
+# genuinely broken pgtap install cannot hide behind SKIPPED-NO-PGTAP
+# forever — that escalation lives there once, not duplicated here.
+#
+# record() (used for every per-file ok/FAIL row below) is what makes real
+# test results reach post_checks' final `[ "$RESULT" -ne 0 ] && exit 1`.
+# record_advisory() (defined above, next to record()) is reserved for the
+# four SKIP paths described above — appends to CHECKS but never touches
+# RESULT, so an absent prerequisite can never redden the deploy by itself.
+# Nothing in this function calls exit non-zero itself either — every psql
+# invocation is guarded with `|| true`, and the function always falls
+# through to its final `log` line and returns 0; post_checks() is the only
+# place that turns RESULT into an actual exit.
 #
 # Verified by hand (all 31 files): every one is `BEGIN; ... ROLLBACK;` with
 # no COMMIT anywhere, so nothing here can persist — including the one file
@@ -940,24 +959,32 @@ sql_tests_check() {
       '$0==b{on=1;next} $0==e{on=0} on')"
     if printf '%s' "$section" | grep -q "SKIPPED-NO-PGTAP"; then
       skip=$((skip + 1))
+      # Advisory: an absent prerequisite (pgtap not installed), not a test
+      # result. See the function-level comment for why this stays a SKIP
+      # forever and ensure_pgtap() is what escalates a persistent version
+      # of this into a real deploy failure, not this line.
       record_advisory "sql: $base" SKIP "pgtap extension not installed on QA"
     elif printf '%s' "$section" | grep -qE "ERROR:|not ok [0-9]"; then
       fail=$((fail + 1))
       # Echo the failing lines. Without this the summary row says "see the
-      # deploy log" and the log does not contain it — the section lives only in
-      # $output, which is never printed. A check that reports a failure you
-      # cannot diagnose is barely better than no check, and this one is
-      # advisory, so the log IS the whole product.
+      # deploy log" and the log does not contain it — the section lives only
+      # in $output, which is never printed. A check that reports a failure
+      # you cannot diagnose is barely better than no check, and now that
+      # this row blocks the deploy, the log IS what tells someone why.
       log "--- $base failed, first 20 offending lines:"
       printf '%s
 ' "$section" | grep -E "ERROR:|not ok [0-9]|EXCEPTION" | head -20 | sed 's/^/    /'
-      record_advisory "sql: $base" FAIL "see the block above this table"
+      # Blocking: record(), not record_advisory() — a real SQL test failure
+      # must flip RESULT and fail this deploy. See the function-level
+      # comment for why this is safe now (91/91 passing against QA today)
+      # when it would not have been before pgtap existed on QA.
+      record "sql: $base" FAIL "see the block above this table"
     else
       pass=$((pass + 1))
-      record_advisory "sql: $base" ok ""
+      record "sql: $base" ok ""
     fi
   done
-  log "sql tests (advisory): pass=$pass fail=$fail skip=$skip"
+  log "sql tests (blocking on FAIL, advisory on SKIP): pass=$pass fail=$fail skip=$skip"
 }
 
 post_checks() {
