@@ -65,29 +65,33 @@ export type GroupStatus = 'completada' | 'en_ruta' | 'pendiente';
  * como unidad (ver RouteManifestList.test.tsx) — nada de esto se repite ni
  * se decide de nuevo en el render.
  *
+ * Regla A, «por progreso» — decisión del usuario/diseñador, 2026-09-11. El
+ * mock de `5c` resultó inconsistente (Ripley llevaba `EN RUTA` con su única
+ * carga marcada `DESCARGAR`, pero bajo esa misma lectura Paris también
+ * debería haber llevado `EN RUTA`; el diseñador confirmó el error). La regla
+ * elegida no mira descarga en absoluto — es ortogonal al progreso de
+ * escaneo y se sigue resolviendo aparte, por manifiesto, con el chip
+ * `DESCARGAR` de spec-82 fase 2, que esta función no toca. Se prefirió esta
+ * regla sobre un chip `SIGUIENTE` a nivel de grupo porque hubiera
+ * duplicado la pastilla `SIGUIENTE` que ya lleva la tarjeta destacada del
+ * manifiesto siguiente — el operario ya ve la próxima parada ahí.
+ *
  * - `completada` — todas las cargas del grupo están cerradas
  *   (`isManifestComplete`).
- * - `en_ruta` — alguna carga tiene escaneo empezado (`verified_count > 0`) y
- *   ninguna de las cargas no cerradas está pendiente de descarga.
- * - `pendiente` — el resto, incluido el grupo vacío (caso de frontera).
- *
- * `downloadedIds` sigue el mismo contrato de tres estados que ya usa esta
- * lista (ver el docstring de la prop más abajo): `undefined` es "todavía no
- * lo sé" y NUNCA cuenta como "pendiente de descarga" — leerlo así
- * convertiría una lectura local sin resolver en un falso PENDIENTE.
+ * - `en_ruta` — alguna carga tiene escaneo empezado (`verified_count > 0`)
+ *   Y esa misma carga no está cerrada.
+ * - `pendiente` — el resto, incluido el grupo vacío (caso de frontera) y el
+ *   caso en que la única carga con escaneos ya cerró y ninguna otra tiene
+ *   escaneos.
  */
-export function groupManifestStatus(
-  manifests: RouteManifestRow[],
-  downloadedIds: Set<string> | undefined,
-): GroupStatus {
+export function groupManifestStatus(manifests: RouteManifestRow[]): GroupStatus {
   if (manifests.length === 0) return 'pendiente';
   if (manifests.every((m) => isManifestComplete(m))) return 'completada';
 
-  const someStarted = manifests.some((m) => m.verified_count > 0);
-  const somePendingDownload = manifests.some(
-    (m) => !isManifestComplete(m) && !!downloadedIds && !downloadedIds.has(m.external_load_id),
+  const someStartedAndOpen = manifests.some(
+    (m) => m.verified_count > 0 && !isManifestComplete(m),
   );
-  return someStarted && !somePendingDownload ? 'en_ruta' : 'pendiente';
+  return someStartedAndOpen ? 'en_ruta' : 'pendiente';
 }
 
 const GROUP_STATUS_LABEL: Record<GroupStatus, string> = {
@@ -176,6 +180,11 @@ interface RouteManifestListProps {
    * `Set` (aunque esté vacío) significa que la respuesta ya se conoce.
    * Optativo y aditivo, mismo patrón que `onRemove`: sin `onDownload` no se
    * ofrece el chip aunque `downloadedIds` esté resuelto.
+   *
+   * spec-95 fase 1, decisión del usuario/diseñador 2026-09-11 — esta prop
+   * ya NO participa en `groupManifestStatus` (el chip de grupo). La regla A
+   * elegida allí es ortogonal a la descarga local: sigue resolviéndose
+   * únicamente aquí, por manifiesto.
    */
   downloadedIds?: Set<string>;
   /**
@@ -227,7 +236,7 @@ export function RouteManifestList({
   return (
     <div className="space-y-3" data-testid="route-manifest-list">
       {groupManifestsByRetailer(manifests).map((group) => {
-        const status = groupManifestStatus(group.manifests, downloadedIds);
+        const status = groupManifestStatus(group.manifests);
         return (
           <div
             key={group.retailerName}

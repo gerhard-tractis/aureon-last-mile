@@ -21,7 +21,7 @@ function manifest(overrides: Partial<RouteManifestRow> = {}): RouteManifestRow {
 
 describe('groupManifestStatus', () => {
   it('is PENDIENTE for an empty group (frontier case)', () => {
-    expect(groupManifestStatus([], undefined)).toBe('pendiente');
+    expect(groupManifestStatus([])).toBe('pendiente');
   });
 
   it('is COMPLETADA when every manifest in the group is fully verified', () => {
@@ -29,7 +29,7 @@ describe('groupManifestStatus', () => {
       manifest({ id: 'm1', total_packages: 5, verified_count: 5 }),
       manifest({ id: 'm2', total_packages: 3, verified_count: 3 }),
     ];
-    expect(groupManifestStatus(group, undefined)).toBe('completada');
+    expect(groupManifestStatus(group)).toBe('completada');
   });
 
   it('is not COMPLETADA when only some manifests in the group are fully verified', () => {
@@ -37,42 +37,44 @@ describe('groupManifestStatus', () => {
       manifest({ id: 'm1', total_packages: 5, verified_count: 5 }),
       manifest({ id: 'm2', total_packages: 3, verified_count: 0 }),
     ];
-    expect(groupManifestStatus(group, undefined)).not.toBe('completada');
+    expect(groupManifestStatus(group)).not.toBe('completada');
   });
 
-  it('is EN RUTA when a manifest has scanning started and nothing in the group is pending download', () => {
+  it('is EN RUTA when a manifest has scanning started and is not closed', () => {
     const group = [manifest({ id: 'm1', total_packages: 5, verified_count: 2 })];
-    const downloadedIds = new Set(['LOAD-1']);
-    expect(groupManifestStatus(group, downloadedIds)).toBe('en_ruta');
+    expect(groupManifestStatus(group)).toBe('en_ruta');
   });
 
-  it('is PENDIENTE (not EN RUTA) when scanning started but another manifest is pending download', () => {
+  // Regla A, decisión del usuario/diseñador 2026-09-11 — la descarga local
+  // (chip DESCARGAR por manifiesto, spec-82 fase 2) quedó fuera del
+  // predicado de grupo: es ortogonal al progreso de escaneo. Este caso antes
+  // se llamaba "is PENDIENTE (not EN RUTA) when ... is pending download" y
+  // esperaba 'pendiente' bajo la regla vieja; con la regla nueva el mismo
+  // escenario (una carga con escaneo abierto, otra sin tocar) da 'en_ruta'
+  // sin mirar descarga en absoluto.
+  it('is EN RUTA when scanning started on one manifest, regardless of another manifest being undownloaded', () => {
     const group = [
       manifest({ id: 'm1', external_load_id: 'LOAD-1', total_packages: 5, verified_count: 2 }),
       manifest({ id: 'm2', external_load_id: 'LOAD-2', total_packages: 4, verified_count: 0 }),
     ];
-    // downloadedIds resolved (not undefined) and LOAD-2 is missing from it —
-    // that manifest is pending download, so the collision with COMPLETADA's
-    // sibling rule ("gana COMPLETADA") does not apply here: this blocks
-    // EN RUTA instead.
-    const downloadedIds = new Set(['LOAD-1']);
-    expect(groupManifestStatus(group, downloadedIds)).toBe('pendiente');
+    expect(groupManifestStatus(group)).toBe('en_ruta');
   });
 
   it('is PENDIENTE when nothing in the group has started scanning', () => {
     const group = [manifest({ verified_count: 0 })];
-    expect(groupManifestStatus(group, new Set(['LOAD-1']))).toBe('pendiente');
+    expect(groupManifestStatus(group)).toBe('pendiente');
   });
 
-  it('never reads downloadedIds as "pending download" when it is undefined ("todavía no lo sé")', () => {
-    // Same shape as the "PENDIENTE (not EN RUTA)" case above, but
-    // downloadedIds is unresolved — must not flip EN RUTA to PENDIENTE just
-    // because we do not know yet whether LOAD-2 was downloaded.
+  // El "sin cerrar" del predicado tiene que estar testeado por sí mismo, no
+  // sólo implícito en el caso EN RUTA de arriba: la única carga con
+  // escaneos ya cerró (isManifestComplete), y ninguna otra tiene escaneos —
+  // el grupo entero cae a PENDIENTE, no a EN RUTA.
+  it('is PENDIENTE when the only manifest with scans is already closed and nothing else has scans', () => {
     const group = [
-      manifest({ id: 'm1', external_load_id: 'LOAD-1', total_packages: 5, verified_count: 2 }),
-      manifest({ id: 'm2', external_load_id: 'LOAD-2', total_packages: 4, verified_count: 0 }),
+      manifest({ id: 'm1', total_packages: 5, verified_count: 5 }), // closed
+      manifest({ id: 'm2', total_packages: 4, verified_count: 0 }), // untouched
     ];
-    expect(groupManifestStatus(group, undefined)).toBe('en_ruta');
+    expect(groupManifestStatus(group)).toBe('pendiente');
   });
 });
 
@@ -419,12 +421,11 @@ describe('RouteManifestList', () => {
       expect(screen.getByTestId('route-manifest-group-status')).toHaveTextContent('COMPLETADA');
     });
 
-    it('shows an EN RUTA group chip when scanning started and downloadedIds resolves nothing pending', () => {
+    it('shows an EN RUTA group chip when a manifest has scanning started and is not closed', () => {
       render(
         <RouteManifestList
           manifests={[groupManifest({ total_packages: 5, verified_count: 2 })]}
           onManifestClick={() => {}}
-          downloadedIds={new Set(['LOAD-1'])}
         />
       );
       const group = screen.getByTestId('route-manifest-group');
