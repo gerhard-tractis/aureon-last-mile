@@ -2,7 +2,8 @@
 
 > **Related:** spec-92 (el gate de producción diferenciado — todavía en la rama `feat/spec-92-gate-prod-diferenciado`, sin mergear; el gate descansa **entero** sobre la premisa que este spec pone a prueba), [spec-88](spec-88-anon-security-definer-audit.md) (fase 3 es la instancia medida que abre este spec), [spec-57](spec-57-qa-gate-before-production.md) (el gate original y el clic humano que spec-92 retira), [spec-87](spec-87-desbloquear-produccion.md) (`verify-prod-migrations`, el precedente de un check que compara dos entornos)
 
-**Status:** in progress
+**Status:** completed
+**Pendiente de una persona (no bloquea el `completed`):** el deploy a producción de #776 está parado en `approve-production` — hasta que se apruebe, `qa-prod-parity` seguirá rojo con **una** divergencia no declarada (`cron_job/archive_old_audit_logs`), que es el comportamiento correcto. Y #777 (correcciones a spec-92) no puede auto-mergear porque su base es la rama abierta de spec-92 (#716).
 **Verify:** unit + e2e
 **Downstream:** spec-92 (aún sin mergear, ver Related) — si este spec encuentra superficies de divergencia además de la de auth, la tabla «clase de cambio → cobertura» de spec-92 tiene que crecer con ellas
 **Depende de:** ninguno. Puede empezar hoy.
@@ -507,7 +508,31 @@ Lo que tiene que quedar cierto, venga de donde venga:
   `operator_id`, `role` y `permissions`. Sin esto, el `EXCEPTION WHEN OTHERS`
   del hook hace que la prueba pase con un token vacío.
 
-### Fase 3 — El resto del inventario `[in_progress]`
+### Fase 3 — El resto del inventario `[done]`
+
+> Implementado por: **implementer**, en dos tandas. Primera: rama `feat/spec-93-fase-3-divergencias-qa`, SHAs `cd82d78`→`3a1210f` (PR #764). Segunda: `feat/spec-93-fase-3b-divergencias-declaradas`, `f2c69b1`→`7cb43e1` (PR #775). Más `fix/spec-93-neutralizar-archive-audit-logs` (PR #776) para la decisión del usuario.
+> Review: **reviewer** (opus), dos rondas. Primera tanda: 4 bloqueantes, 3 serios, 5 menores — los tres primeros bloqueantes eran guards que pasaban verdes con el arreglo deshecho. Segunda: 1 bloqueante (la fase 3b no estaba escrita en el spec — era del orquestador, cerrado en #774), 1 serio, 5 menores. Todos cerrados con mutation-evidence.
+> QA: PRs #764 (2026-09-10T23:00:19Z), #775 (2026-09-11T01:06:05Z) y #776 (2026-09-11T00:56:05Z) merged, CI verde. `e2e-qa` verde en el run `34541476466`, y —lo que de verdad prueba la primera tanda— `sql tests (advisory): pass=91 fail=0 skip=0` con `pgtap extension ok installed`: los 20 ficheros que se saltaban en silencio ahora corren, y pasan.
+> Downstream: revisado spec-92 (PRs #761 y #777) — la fila 11 de su tabla se retira (medida: no es divergencia de paridad) y entran dos nuevas, `raw-files` y `pg_net`. Ver fase 5.
+
+**Verificación final, medida y no derivada.** Corrida `34549513271` de
+`qa-prod-parity.yml`: **`matched: 47`, 14 aceptadas, `UNDECLARED: 1`**.
+
+La única sin declarar es `cron_job/archive_old_audit_logs`, y **es correcto que
+lo siga siendo**: su neutralización está mergeada pero su deploy a producción
+espera el clic humano de `approve-production`. La fila desaparece cuando esa
+migración se aplique.
+
+**Una corrida antes dio 3, y conviene que quede escrito por qué.** El intento
+inmediatamente anterior (`34549321520`) reportó tres sin declarar — las tres que
+esta fase acababa de **cerrar en código**. No fallaba ningún arreglo: el
+comparador mide el entorno **que corre**, y en ese momento QA todavía no se había
+redesplegado. El repositorio decía una cosa y los contenedores otra.
+
+Es la tesis de este spec aplicada contra sí mismo — *el compose declara la
+intención, no el estado*. Cerrar esta fase sobre la derivación («deberían ser
+0») habría registrado un 0 mientras tres divergencias seguían vivas. Se midió,
+se esperó al deploy de QA, y se volvió a medir.
 
 **Depende de:** ninguna — los dos hallazgos que esta fase cierra se midieron enteros contra QA y no esperan la columna de producción.
 
