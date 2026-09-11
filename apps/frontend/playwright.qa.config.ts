@@ -51,7 +51,13 @@ export default defineConfig({
   // above, this one actually dispatches routes — against the QA-only
   // DispatchTrack mock (infra/supabase-qa/dispatchtrack-mock/), never the
   // real tenant. See that spec's own header.
-  testMatch: /(spec52-.*|reception-mobile|despacho-crew-mobile|despacho-tablet-dock|despacho-close-dispatch)\.spec\.ts$/,
+  //
+  // spec95-recogida-mobile-ronda2 — reuses spec-52's own namespace
+  // (support/spec52-fixture.ts, PREFIX 'E2E52'), same as reception-mobile
+  // above; no new fixture file. Covers the round-2 mobile screens (`5a`
+  // chip counts, `5c` group chip + footer overflow, `5d` scan screen) that
+  // every phase of spec-95 declared as an undeclared `e2e-qa` gap.
+  testMatch: /(spec52-.*|spec95-.*|reception-mobile|despacho-crew-mobile|despacho-tablet-dock|despacho-close-dispatch)\.spec\.ts$/,
 
   // The suite drives two browser contexts through a full pickup + reception
   // workday and polls the database between steps; the per-test timeouts inside
