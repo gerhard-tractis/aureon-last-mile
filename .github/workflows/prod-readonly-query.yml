@@ -36,20 +36,38 @@ name: Production Read-Only Query
 # backfill dry_run (a different workflow) hit the same bug first:
 # `db.<ref>.supabase.co:5432` (Supabase's direct connection) resolves to an
 # IPv6-only address, and GitHub-hosted runners have no IPv6 route. The fix is
-# Supabase's pooler (Supavisor), which is dual-stack:
-# `aws-0-<region>.pooler.supabase.com`. The region is resolved at runtime from
-# the Supabase Management API (never hardcoded — see
-# scripts/resolve-supabase-pooler-host.sh for why) using the
-# SUPABASE_ACCESS_TOKEN secret this job already has.
+# Supabase's pooler (Supavisor), which is dual-stack.
+#
+# ROUND 2 (#750) built the pooler hostname from a template,
+# `aws-0-<region>.pooler.supabase.com`, using only the project's region. That
+# template is not universal — the third dry_run (run 34525271852) reached a
+# real, IPv4-reachable Supavisor host on that template that nonetheless
+# answered `FATAL: tenant/user postgres.<ref> not found`: the templated host
+# and composed `postgres.<project-ref>` user belonged to a DIFFERENT cluster
+# than the one actually hosting this project.
+#
+# ROUND 3 (this version) stops building the connection and asks the
+# Management API for it: `GET /v1/projects/{ref}/config/database/pooler`
+# returns an array of `SupavisorConfigResponse`, one entry per database on
+# the project. This job picks the entry with `database_type: "PRIMARY"` —
+# the same selection the Supabase CLI itself uses to link a project's pooler
+# (`supabase/cli`, `linkPooler` in
+# apps/cli/src/command-internal/link-services-core.ts) — and uses its
+# `db_host`, `db_port` and `db_user` verbatim
+# (scripts/resolve-supabase-pooler-host.sh does the parsing, unit-tested
+# without network access or credentials — see
+# resolve-supabase-pooler-host.test.sh). No part of the connection is
+# templated or composed anymore.
 #
 # TRANSACTION MODE (6543), NOT SESSION MODE (5432): every step here issues
 # exactly one `psql -c` with a single query, no state that needs to survive
 # past that one connection — the shape transaction mode is for. See
 # prod-backfill-loaded-route-id.yml's header for the fuller reasoning (same
-# pooler, same mode, this workflow just has simpler queries).
-#
-# The pooler also changes the connection user: `postgres` becomes
-# `postgres.<project-ref>`.
+# pooler, same mode, this workflow just has simpler queries). This is still
+# the goal, but it is no longer enforced by hardcoding port 6543 — the
+# Management API's own PRIMARY entry reports `pool_mode`/`db_port`, and this
+# workflow uses whatever it says (resolve-supabase-pooler-host.sh emits a
+# `::notice::`, not a failure, if that ever stops being "transaction"/6543).
 
 on:
   workflow_dispatch:
@@ -75,23 +93,22 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -yqq postgresql-client
 
-      - name: Resolve Supabase pooler host (IPv4 — see workflow header)
+      - name: Resolve Supabase pooler config (IPv4 — see workflow header)
         id: resolve-pooler
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
-          HTTP_STATUS=$(curl -sS -o project.json -w '%{http_code}' \
+          HTTP_STATUS=$(curl -sS -o pooler-config.json -w '%{http_code}' \
             -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
-            "https://api.supabase.com/v1/projects/${{ secrets.SUPABASE_PROJECT_REF }}")
+            "https://api.supabase.com/v1/projects/${{ secrets.SUPABASE_PROJECT_REF }}/config/database/pooler")
           if [ "$HTTP_STATUS" != "200" ]; then
-            echo "::error::Management API returned HTTP ${HTTP_STATUS} while resolving the project region"
-            rm -f project.json
+            echo "::error::Management API returned HTTP ${HTTP_STATUS} while resolving the project's pooler config"
+            rm -f pooler-config.json
             exit 1
           fi
-          POOLER_HOST=$(bash "$GITHUB_WORKSPACE/scripts/resolve-supabase-pooler-host.sh" < project.json)
-          rm -f project.json
-          echo "pooler_host=${POOLER_HOST}" >> "$GITHUB_OUTPUT"
+          bash "$GITHUB_WORKSPACE/scripts/resolve-supabase-pooler-host.sh" < pooler-config.json >> "$GITHUB_OUTPUT"
+          rm -f pooler-config.json
 
       - name: Confirm routes_one_vehicle_per_day does NOT exist (spec-87, spec-79 h5c/b1)
         # 20260911000002 creates this index only if it finds zero conflicting
@@ -102,10 +119,12 @@ jobs:
         # fase 3/4 for the full reasoning.
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
+          POOLER_HOST: ${{ steps.resolve-pooler.outputs.db_host }}
+          POOLER_PORT: ${{ steps.resolve-pooler.outputs.db_port }}
+          POOLER_USER: ${{ steps.resolve-pooler.outputs.db_user }}
         run: |
           set -euo pipefail
-          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
+          psql "sslmode=require host=$POOLER_HOST port=$POOLER_PORT dbname=postgres user=$POOLER_USER" \
             -c "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'routes_one_vehicle_per_day';"
 
       - name: List cron.job (spec-88 fase 1 review question)
@@ -114,10 +133,12 @@ jobs:
         # deploy. In QA there are only two jobs, both as postgres.
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
+          POOLER_HOST: ${{ steps.resolve-pooler.outputs.db_host }}
+          POOLER_PORT: ${{ steps.resolve-pooler.outputs.db_port }}
+          POOLER_USER: ${{ steps.resolve-pooler.outputs.db_user }}
         run: |
           set -euo pipefail
-          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
+          psql "sslmode=require host=$POOLER_HOST port=$POOLER_PORT dbname=postgres user=$POOLER_USER" \
             -c "SELECT jobid, jobname, username, active FROM cron.job;"
 
       - name: Count packages eligible for the spec-79 loaded_route_id backfill
@@ -127,10 +148,12 @@ jobs:
         # this step is read-only even though the function it mirrors is not.
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
+          POOLER_HOST: ${{ steps.resolve-pooler.outputs.db_host }}
+          POOLER_PORT: ${{ steps.resolve-pooler.outputs.db_port }}
+          POOLER_USER: ${{ steps.resolve-pooler.outputs.db_user }}
         run: |
           set -euo pipefail
-          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
+          psql "sslmode=require host=$POOLER_HOST port=$POOLER_PORT dbname=postgres user=$POOLER_USER" \
             -c "
               SELECT COUNT(*) AS eligible_packages
                 FROM public.packages p
