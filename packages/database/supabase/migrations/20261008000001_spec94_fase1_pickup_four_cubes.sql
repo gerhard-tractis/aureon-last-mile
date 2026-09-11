@@ -387,7 +387,9 @@ RETURNS TABLE (
   created_at             TIMESTAMPTZ,
   pickup_point           TEXT,
   labels_printed_at      TIMESTAMPTZ,
-  labels_printed_by_name TEXT
+  labels_printed_by_name TEXT,
+  closed_at              TIMESTAMPTZ,
+  missing_count          INT
 )
 LANGUAGE sql
 STABLE
@@ -404,7 +406,39 @@ AS $$
     m.created_at,
     m.pickup_location as pickup_point,
     m.labels_printed_at,
-    u.full_name AS labels_printed_by_name
+    u.full_name AS labels_printed_by_name,
+    -- spec-94 (ronda 4, review de fase 2): "Cierres de hoy" lee TRES cubos,
+    -- no dos -- una carga cerrada en el andén (cubo 2) que ve su ruta pasar
+    -- a in_transit cae AQUÍ, en cubo 3, y sin closed_at el contador de
+    -- trámites del día la pierde hasta que se recibe. Misma forma que
+    -- get_routed_manifests.
+    CASE WHEN m.status = 'completed' THEN m.completed_at ELSE NULL END AS closed_at,
+    -- Misma subconsulta que spec-83 fase 1 puso en get_completed_manifests
+    -- (COUNT(DISTINCT package_id), no un conteo plano -- ver esa migración
+    -- para el porqué de DISTINCT).
+    COALESCE((
+      SELECT COUNT(DISTINCT d.package_id)
+        FROM public.discrepancies d
+       WHERE d.manifest_id = m.id
+         -- Defense in depth, not load-bearing on its own: d.manifest_id
+         -- already FKs to a manifests row that the outer WHERE has scoped
+         -- to public.get_operator_id(), so a cross-operator d row could
+         -- only reach here via a manifest that isn't this operator's in the
+         -- first place — which the outer clause already excludes. No
+         -- fixture kills this line alone; it stays for the same reason the
+         -- rest of this repo re-checks tenant scope on every join.
+         AND d.operator_id = m.operator_id
+         -- Redundant by discrepancy_source_matches_operation (20260913000001):
+         -- that CHECK forces operation_type='reception' rows to have
+         -- manifest_id IS NULL, so d.manifest_id = m.id above already
+         -- implies operation_type='pickup'. Kept for readability, not as a
+         -- second guard — do not go looking for a fixture that kills this
+         -- clause alone.
+         AND d.operation_type = 'pickup'
+         AND d.kind = 'missing'
+         AND d.deleted_at IS NULL
+         AND d.status <> 'resolved'
+    ), 0)::INT AS missing_count
   FROM manifests m
   LEFT JOIN users u ON u.id = m.labels_printed_by
   LEFT JOIN pickup_routes pr ON pr.id = m.pickup_route_id AND pr.deleted_at IS NULL
@@ -425,7 +459,7 @@ AS $$
   ORDER BY m.created_at DESC
 $$;
 
-COMMENT ON FUNCTION public.get_in_transit_manifests() IS 'spec-94 fase 1 (ronda 3, "manda la ruta"): cubo 3 ("Camino a bodega"). Con ruta viva, pr.status=''in_transit''. Sin ruta viva, reception_status IN (awaiting_reception, reception_in_progress) -- el flujo viejo o una ruta ya soltada. reception_status por sí solo no distingue "cerrada en el andén" de "camión en la carretera" cuando hay ruta -- trg_manifest_reception_status (spec-08) escribe awaiting_reception en ambos casos. Sorted by manifest creation date DESC. pickup_point sourced from manifests.pickup_location. spec-53: adds labels_printed_at/labels_printed_by_name.';
+COMMENT ON FUNCTION public.get_in_transit_manifests() IS 'spec-94 fase 1 (ronda 4, "manda la ruta"): cubo 3 ("Camino a bodega"). Con ruta viva, pr.status=''in_transit''. Sin ruta viva, reception_status IN (awaiting_reception, reception_in_progress) -- el flujo viejo o una ruta ya soltada. reception_status por sí solo no distingue "cerrada en el andén" de "camión en la carretera" cuando hay ruta -- trg_manifest_reception_status (spec-08) escribe awaiting_reception en ambos casos. closed_at/missing_count (ronda 4): "Cierres de hoy" necesita este cubo también -- una carga cerrada en el andén cuya ruta luego arranca cae aquí, y sin estas columnas el panel la pierde entre las 09:00 (cubo 2) y la recepción (cubo 4). Sorted by manifest creation date DESC. pickup_point sourced from manifests.pickup_location. spec-53: adds labels_printed_at/labels_printed_by_name.';
 
 -- =============================================================================
 -- 4. get_completed_manifests -- cubo 4 ("En bodega")
@@ -603,8 +637,22 @@ BEGIN
   IF v_src NOT LIKE '%pr.status = ''in_transit''%' THEN
     RAISE EXCEPTION 'get_in_transit_manifests must check pr.status = in_transit for the live-route branch';
   END IF;
+  -- ronda 4 (review fase 2): "Cierres de hoy" lee tres cubos, no dos -- una
+  -- carga cerrada en el andén cuya ruta pasa a in_transit cae aquí, y sin
+  -- closed_at/missing_count el panel la pierde entre las 09:00 y la
+  -- recepción.
+  IF v_src NOT LIKE '%closed_at%' OR v_src NOT LIKE '%missing_count%' THEN
+    RAISE EXCEPTION 'get_in_transit_manifests lost closed_at or missing_count (ronda 4) in the re-template';
+  END IF;
+  -- La misma trampa ON-vs-WHERE que get_routed_manifests: si `AND pr.deleted_
+  -- at IS NULL` se cuela en el WHERE (en vez del ON), una ruta soft-deleted
+  -- convierte el LEFT JOIN en un INNER de hecho y el manifiesto desaparece
+  -- de esta RPC también -- el mismo agujero de CARGA-PARIS-001.
+  IF v_src NOT LIKE '%LEFT JOIN pickup_routes pr ON pr.id = m.pickup_route_id AND pr.deleted_at IS NULL%' THEN
+    RAISE EXCEPTION 'get_in_transit_manifests must LEFT JOIN pickup_routes with deleted_at in the ON clause, not the WHERE';
+  END IF;
   IF v_cols IS DISTINCT FROM
-     'id,external_load_id,retailer_name,total_orders,total_packages,reception_status,updated_at,created_at,pickup_point,labels_printed_at,labels_printed_by_name'
+     'id,external_load_id,retailer_name,total_orders,total_packages,reception_status,updated_at,created_at,pickup_point,labels_printed_at,labels_printed_by_name,closed_at,missing_count'
   THEN
     RAISE EXCEPTION 'get_in_transit_manifests column set changed unexpectedly, got: %', v_cols;
   END IF;
@@ -617,6 +665,9 @@ BEGIN
   END IF;
   IF v_src NOT LIKE '%pr.status = ''received''%' THEN
     RAISE EXCEPTION 'get_completed_manifests must check pr.status = received for the live-route branch';
+  END IF;
+  IF v_src NOT LIKE '%LEFT JOIN pickup_routes pr ON pr.id = m.pickup_route_id AND pr.deleted_at IS NULL%' THEN
+    RAISE EXCEPTION 'get_completed_manifests must LEFT JOIN pickup_routes with deleted_at in the ON clause, not the WHERE';
   END IF;
   IF v_cols IS DISTINCT FROM
      'id,external_load_id,retailer_name,total_orders,total_packages,completed_at,created_at,pickup_point,labels_printed_at,labels_printed_by_name,missing_count,signature_operator'

@@ -40,7 +40,7 @@
 -- status<>completed) en el cubo 1.
 
 BEGIN;
-SELECT plan(25);
+SELECT plan(28);
 
 -- ── Fixtures: operador A (el caller) ─────────────────────────────────────────
 INSERT INTO public.operators (id, name, slug)
@@ -130,7 +130,8 @@ INSERT INTO public.orders (
   ('00000000-0000-4000-8000-0000000094ad','00000000-0000-4000-8000-000000009400','ORD-94-D','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-TRANSIT','Retailer 94','{}'::jsonb,'MANUAL',NOW()),
   ('00000000-0000-4000-8000-0000000094ae','00000000-0000-4000-8000-000000009400','ORD-94-E','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-RXRECEIVED','Retailer 94','{}'::jsonb,'MANUAL',NOW()),
   ('00000000-0000-4000-8000-0000000094af','00000000-0000-4000-8000-000000009400','ORD-94-F','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-DEADROUTE-DONE','Retailer 94','{}'::jsonb,'MANUAL',NOW()),
-  ('00000000-0000-4000-8000-0000000094d0','00000000-0000-4000-8000-000000009400','ORD-94-G','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-ROUTECANCELLED','Retailer 94','{}'::jsonb,'MANUAL',NOW());
+  ('00000000-0000-4000-8000-0000000094d0','00000000-0000-4000-8000-000000009400','ORD-94-G','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-ROUTECANCELLED','Retailer 94','{}'::jsonb,'MANUAL',NOW()),
+  ('00000000-0000-4000-8000-0000000094d2','00000000-0000-4000-8000-000000009400','ORD-94-H','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-ORDERSDELETED-NULL','Retailer 94','{}'::jsonb,'MANUAL',NOW());
 
 -- ── Bultos (uno por carga; dos para CARGA-94-DOCK: uno se declara faltante) ──
 INSERT INTO public.packages (id, operator_id, order_id, label, sku_items, raw_data)
@@ -152,7 +153,8 @@ VALUES
   ('00000000-0000-4000-8000-0000000094bd','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094ad','CTN94-D','[]'::jsonb,'{}'::jsonb),
   ('00000000-0000-4000-8000-0000000094be','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094ae','CTN94-E','[]'::jsonb,'{}'::jsonb),
   ('00000000-0000-4000-8000-0000000094bf','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094af','CTN94-F','[]'::jsonb,'{}'::jsonb),
-  ('00000000-0000-4000-8000-0000000094d1','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094d0','CTN94-G','[]'::jsonb,'{}'::jsonb);
+  ('00000000-0000-4000-8000-0000000094d1','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094d0','CTN94-G','[]'::jsonb,'{}'::jsonb),
+  ('00000000-0000-4000-8000-0000000094d3','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094d2','CTN94-H','[]'::jsonb,'{}'::jsonb);
 
 -- ── Ajustar cada manifests row al estado que su carga representa ─────────────
 -- (trg_ensure_manifest_for_order ya creó la fila con status='pending' al
@@ -298,6 +300,17 @@ DELETE FROM public.manifests
 UPDATE public.orders SET deleted_at = NOW()
  WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-ORDERSDELETED';
 
+-- CARGA-94-ORDERSDELETED-NULL: MISMA forma, pero total_orders/total_packages
+-- se dejan en el NULL por defecto de ensure_manifest_for_order -- nunca
+-- tocados. Ronda 4 (review fase 2): la fixture (2,3) de arriba sólo prueba
+-- que un valor REAL pasa honesto; esta prueba la otra mitad del contrato,
+-- "NULL entra, NULL sale", que es justo lo que sostiene el ripple entero
+-- de order_count/package_count nullable (page.tsx's handleRowOpen,
+-- totalsToRows, ManifestRow). Sin este fixture, un bug que aplastara NULL a
+-- 0 en el brazo arm2 no lo detectaría ningún test SQL.
+UPDATE public.orders SET deleted_at = NOW()
+ WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-ORDERSDELETED-NULL';
+
 UPDATE public.manifests SET total_orders = 2, total_packages = 3
  WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-ORDERSDELETED';
 
@@ -343,6 +356,17 @@ INSERT INTO public.pickup_scans (
   (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-DOCK'),
   NULL, 'CTN94-GHOST', 'verified',
   '00000000-0000-4000-8000-000000009401', NOW()
+);
+
+-- ── Discrepancia sobre CARGA-94-TRANSIT, para probar que missing_count de
+--    get_in_transit_manifests (ronda 4) lee datos reales, no 0 fijo. ──────
+INSERT INTO public.discrepancies (
+  operator_id, kind, operation_type, status, package_id, manifest_id, detected_by_user_id
+) VALUES (
+  '00000000-0000-4000-8000-000000009400', 'missing', 'pickup', 'open',
+  '00000000-0000-4000-8000-0000000094bd',
+  (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-TRANSIT'),
+  '00000000-0000-4000-8000-000000009401'
 );
 
 -- ── Operador B: sólo para el aislamiento cross-tenant de get_routed_manifests ─
@@ -623,6 +647,28 @@ SELECT is(
 
 SELECT is(
   ARRAY[
+    'CARGA-94-ORDERSDELETED-NULL' IN (SELECT external_load_id FROM t_pending),
+    'CARGA-94-ORDERSDELETED-NULL' IN (SELECT external_load_id FROM t_routed),
+    'CARGA-94-ORDERSDELETED-NULL' IN (SELECT external_load_id FROM t_transit),
+    'CARGA-94-ORDERSDELETED-NULL' IN (SELECT external_load_id FROM t_completed)
+  ],
+  ARRAY[true, false, false, false],
+  'CARGA-94-ORDERSDELETED-NULL (misma forma, total_orders/total_packages nunca tocados): sólo en get_pending_manifests (arm2)'
+);
+
+-- Ronda 4: la mitad del contrato que la fixture (2,3) no prueba -- un
+-- manifiesto arm2 cuyos total_orders/total_packages NUNCA se escribieron
+-- debe devolver NULL, no 0. Sin esta aserción, un `COALESCE(m.total_orders,
+-- 0)` en el brazo arm2 pasaría en verde contra el resto de la suite.
+SELECT is(
+  (SELECT (order_count, package_count)
+     FROM t_pending WHERE external_load_id = 'CARGA-94-ORDERSDELETED-NULL'),
+  (NULL::bigint, NULL::bigint),
+  'CARGA-94-ORDERSDELETED-NULL: order_count/package_count son NULL, no 0 -- total_orders/total_packages nunca se escribieron'
+);
+
+SELECT is(
+  ARRAY[
     'CARGA-94-CANCELLED' IN (SELECT external_load_id FROM t_pending),
     'CARGA-94-CANCELLED' IN (SELECT external_load_id FROM t_routed),
     'CARGA-94-CANCELLED' IN (SELECT external_load_id FROM t_transit),
@@ -662,6 +708,17 @@ SELECT is(
   (SELECT route_status FROM t_routed WHERE external_load_id = 'CARGA-94-DRAFT'),
   'draft'::text,
   'CARGA-94-DRAFT: route_status refleja el valor real de la ruta (draft)'
+);
+
+-- Ronda 4 (review fase 2): get_in_transit_manifests también devuelve
+-- closed_at/missing_count -- "Cierres de hoy" necesita este cubo (una
+-- carga cerrada en el andén cuya ruta luego arranca cae aquí). Sin esta
+-- aserción, borrar esas dos columnas del SELECT pasaría en verde.
+SELECT is(
+  (SELECT (closed_at IS NOT NULL, missing_count)
+     FROM t_transit WHERE external_load_id = 'CARGA-94-TRANSIT'),
+  (true, 1),
+  'CARGA-94-TRANSIT: closed_at poblado (status=completed) y missing_count=1 (la discrepancia real) -- get_in_transit_manifests ya no se queda sin estas columnas'
 );
 
 SELECT is(

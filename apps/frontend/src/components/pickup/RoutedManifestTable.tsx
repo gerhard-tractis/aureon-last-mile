@@ -68,7 +68,7 @@ export function RoutedManifestTable({ rows, emptyMessage, now }: RoutedManifestT
                 {row.route_code}
               </span>
 
-              <span className="truncate text-[11.5px] text-text-secondary">
+              <span data-testid="driver-name" className="truncate text-[11.5px] text-text-secondary">
                 {row.driver_name ?? '—'}
               </span>
 

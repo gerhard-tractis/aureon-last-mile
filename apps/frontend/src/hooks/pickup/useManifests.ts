@@ -69,6 +69,14 @@ export interface InTransitManifest {
   pickup_point: string | null;
   labels_printed_at: string | null;
   labels_printed_by_name: string | null;
+  /** spec-94 fase 2 (ronda 4) — `manifests.completed_at` when
+   * `status='completed'`, NULL otherwise. A load closed at the dock whose
+   * route later moves to `in_transit` lands HERE, not in cubo 2 or cubo 4
+   * — "Cierres de hoy" needs this cube too, or that closure (and its
+   * missing_count) vanishes from the panel for the hours the truck is en
+   * route. */
+  closed_at: string | null;
+  missing_count: number;
 }
 
 // spec-94 fase 2 — exported so useRoutedManifests.ts (a sibling hook file,

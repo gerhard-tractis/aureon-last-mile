@@ -165,7 +165,11 @@ export function PickupDesktopView({
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
           <Input
             type="search"
-            placeholder="Buscar por carga, retailer o punto de recogida…"
+            placeholder={
+              tab === 'routed'
+                ? 'Buscar por carga, retailer, ruta o líder…'
+                : 'Buscar por carga, retailer o punto de recogida…'
+            }
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-9 pr-9"
@@ -207,19 +211,52 @@ export function PickupDesktopView({
             )}
           </div>
 
-          {tab === 'routed' ? (
-            <RoutedManifestTable rows={visibleRoutedRows} emptyMessage={EMPTY_MESSAGES.routed} />
-          ) : (
-            <ManifestTable
-              rows={visibleRows}
-              selectedIds={tab === 'pending' ? selectedIds : undefined}
-              onToggle={tab === 'pending' ? toggle : undefined}
-              labelsEnabled={labelsEnabled}
-              onPrintLabels={onPrintLabels}
-              onOpen={onOpen}
-              emptyMessage={EMPTY_MESSAGES[tab]}
-            />
-          )}
+          {(() => {
+            // ronda 4 (review fase 2): a `switch` with the FOUR TabKeys
+            // written out individually, not `tab === 'routed' ? … : …`
+            // wrapping the other three — a ternary here is exactly the
+            // trap this file's own header comment warns about, and a
+            // fifth tab added later would fall through to whichever
+            // branch happens to be the ternary's `else` with tsc staying
+            // silent. Exhaustive over TabKey: dropping a case makes this
+            // arrow function fail to return on every path (TS2366).
+            switch (tab) {
+              case 'routed':
+                return <RoutedManifestTable rows={visibleRoutedRows} emptyMessage={EMPTY_MESSAGES.routed} />;
+              case 'pending':
+                return (
+                  <ManifestTable
+                    rows={visibleRows}
+                    selectedIds={selectedIds}
+                    onToggle={toggle}
+                    labelsEnabled={labelsEnabled}
+                    onPrintLabels={onPrintLabels}
+                    onOpen={onOpen}
+                    emptyMessage={EMPTY_MESSAGES.pending}
+                  />
+                );
+              case 'in_transit':
+                return (
+                  <ManifestTable
+                    rows={visibleRows}
+                    labelsEnabled={labelsEnabled}
+                    onPrintLabels={onPrintLabels}
+                    onOpen={onOpen}
+                    emptyMessage={EMPTY_MESSAGES.in_transit}
+                  />
+                );
+              case 'completed':
+                return (
+                  <ManifestTable
+                    rows={visibleRows}
+                    labelsEnabled={labelsEnabled}
+                    onPrintLabels={onPrintLabels}
+                    onOpen={onOpen}
+                    emptyMessage={EMPTY_MESSAGES.completed}
+                  />
+                );
+            }
+          })()}
         </section>
       </div>
 

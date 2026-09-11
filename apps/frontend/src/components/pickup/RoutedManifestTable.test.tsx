@@ -83,11 +83,12 @@ describe('RoutedManifestTable', () => {
     expect(chip.className).toContain('status-warning');
   });
 
+  // ronda 4 (review fase 2) — the row also carries "—" in other cells
+  // (empty-message fallback shape, closed-chip absence), so asserting on
+  // the whole row would pass even if the driver cell rendered something
+  // else entirely. Assert on the driver cell specifically.
   it('renders a placeholder for a route with no resolvable driver', () => {
     render(<RoutedManifestTable rows={[makeRow({ driver_name: null })]} emptyMessage="—" now={NOW} />);
-    // "—" appears for driver AND is the emptyMessage fallback shape — scope
-    // to the row itself via its testid instead of a bare text match.
-    const row = screen.getByTestId('routed-manifest-row');
-    expect(row).toHaveTextContent('—');
+    expect(screen.getByTestId('driver-name')).toHaveTextContent('—');
   });
 });

@@ -46,6 +46,12 @@ const mockInTransit = [
     total_packages: 14,
     reception_status: 'awaiting_reception',
     updated_at: new Date().toISOString(),
+    // ronda 4 (review fase 2) — get_in_transit_manifests now returns these
+    // too (a load closed at the dock whose route then moved to in_transit
+    // still needs "Cierres de hoy"). Null/0 here: this default fixture
+    // load hasn't closed.
+    closed_at: null,
+    missing_count: 0,
   },
 ];
 // spec-94 fase 2 — the routed tab's fixture (cubo 2). Empty by default so
@@ -376,6 +382,69 @@ describe('PickupPage', () => {
       const panel = screen.getByText('Cierres de hoy').closest('section')!;
       expect(within(panel).getByText('CARGA-000')).toBeInTheDocument();
     });
+
+    // ronda 4 (review fase 2) — this is the wiring test the reviewer named
+    // explicitly: with mockRouted empty by default, dropping the second
+    // argument to completedToday(completed, routed, inTransit) at page.tsx
+    // stayed green everywhere else. Assert the StatTile AND the panel
+    // content, not just that a function got called with something.
+    it('includes a load closed at the dock (routed, cubo 2) in the StatTile and the panel, with its missing_count', () => {
+      mockUseRoutedManifests.mockReturnValue({
+        data: [
+          {
+            id: 'r-dock',
+            external_load_id: 'CARGA-DOCK-CLOSED',
+            retailer_name: 'Ripley',
+            total_orders: 3,
+            total_packages: 6,
+            created_at: new Date().toISOString(),
+            pickup_point: 'Ripley Costanera',
+            labels_printed_at: null,
+            labels_printed_by_name: null,
+            route_code: 'PR-2026-0011',
+            route_started_at: new Date().toISOString(),
+            driver_name: 'Marcela R.',
+            route_status: 'in_progress',
+            closed_at: new Date().toISOString(),
+            missing_count: 3,
+            verified_count: 6,
+          },
+        ],
+        isLoading: false,
+      });
+      render(<PickupPage />);
+      const tiles = screen.getAllByTestId('stat-tile');
+      const tile = (label: string) => tiles.find((t) => t.textContent?.startsWith(label))!;
+      // 1 (mockCompleted's CARGA-000) + 1 (the routed closure just added).
+      expect(tile('Completados hoy')).toHaveTextContent('2');
+      const panel = screen.getByText('Cierres de hoy').closest('section')!;
+      expect(within(panel).getByText('CARGA-DOCK-CLOSED')).toBeInTheDocument();
+      expect(within(panel).getByText(/3 faltantes/)).toBeInTheDocument();
+    });
+
+    // Same wiring test for the third source (cubo 3) — the one the review
+    // found missing entirely on the first pass of this fase.
+    it('includes a load closed at the dock whose route moved to in_transit (cubo 3) in the StatTile and the panel', () => {
+      mockUseInTransitManifests.mockReturnValue({
+        data: [
+          {
+            ...mockInTransit[0],
+            id: 't-dock',
+            external_load_id: 'CARGA-TRANSIT-CLOSED',
+            closed_at: new Date().toISOString(),
+            missing_count: 2,
+          },
+        ],
+        isLoading: false,
+      });
+      render(<PickupPage />);
+      const tiles = screen.getAllByTestId('stat-tile');
+      const tile = (label: string) => tiles.find((t) => t.textContent?.startsWith(label))!;
+      expect(tile('Completados hoy')).toHaveTextContent('2');
+      const panel = screen.getByText('Cierres de hoy').closest('section')!;
+      expect(within(panel).getByText('CARGA-TRANSIT-CLOSED')).toBeInTheDocument();
+      expect(within(panel).getByText(/2 faltantes/)).toBeInTheDocument();
+    });
   });
 
   describe('Empty state', () => {
@@ -564,6 +633,108 @@ describe('PickupPage', () => {
       expect(written.started_at).toEqual(expect.any(String));
       // The regression this round fixes: total_packages must never be
       // coerced from null to 0 by this write.
+      expect(written).not.toHaveProperty('total_orders');
+      expect(written).not.toHaveProperty('total_packages');
+    });
+  });
+
+  // ronda 4 (review fase 2), bloqueante 2 — this exact regression had NO
+  // test before this round: `page.tsx`'s handleRowOpen guard
+  // (`row.orderCount !== null && row.packageCount !== null`) could be
+  // reverted to `row.orderCount!`/`row.packageCount!` and all 6634 tests
+  // stayed green, because nothing here exercised handleRowOpen's write at
+  // all. Desktop equivalent of the mobile regression test above — clicking
+  // a row's load id (not the row itself, which only toggles selection)
+  // opens the scan flow and writes through openPendingManifest.
+  describe('Desktop — opening a manifest never writes a fabricated total (ronda 4 review, bloqueante 2)', () => {
+    const originalMatchMedia = window.matchMedia;
+
+    function chainResolving(data: unknown[]) {
+      const chain: Record<string, ReturnType<typeof vi.fn>> = {};
+      for (const m of ['select', 'eq', 'is', 'update']) {
+        chain[m] = vi.fn().mockReturnValue(chain);
+      }
+      chain.limit = vi.fn().mockResolvedValue({ data, error: null });
+      return chain;
+    }
+
+    function mockDesktop() {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: vi.fn().mockImplementation((query: string) => ({
+          matches: false,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        })),
+      });
+    }
+
+    afterEach(() => {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    });
+
+    it('does not include total_orders/total_packages when order_count is null (pending tab)', async () => {
+      mockDesktop();
+      mockUsePendingManifests.mockReturnValue({
+        data: [{ ...mockPending[0], order_count: null, package_count: null }],
+        isLoading: false,
+      });
+      const manifestsChain = chainResolving([{ id: 'db-id-1', status: 'pending' }]);
+      mockSupabaseFrom.mockReturnValue(manifestsChain);
+
+      render(<PickupPage />);
+      await userEvent.click(screen.getByRole('button', { name: 'CARGA-001' }));
+
+      expect(mockPush).toHaveBeenCalledWith('/app/pickup/scan/CARGA-001');
+      expect(manifestsChain.update).toHaveBeenCalledTimes(1);
+      const written = manifestsChain.update.mock.calls[0][0];
+      expect(written).toMatchObject({ status: 'in_progress' });
+      expect(written).not.toHaveProperty('total_orders');
+      expect(written).not.toHaveProperty('total_packages');
+    });
+
+    it('includes total_orders/total_packages when order_count is a real number (pending tab)', async () => {
+      mockDesktop();
+      // mockPending[0] carries order_count: 5, package_count: 12.
+      const manifestsChain = chainResolving([{ id: 'db-id-1', status: 'pending' }]);
+      mockSupabaseFrom.mockReturnValue(manifestsChain);
+
+      render(<PickupPage />);
+      await userEvent.click(screen.getByRole('button', { name: 'CARGA-001' }));
+
+      expect(manifestsChain.update).toHaveBeenCalledTimes(1);
+      const written = manifestsChain.update.mock.calls[0][0];
+      expect(written).toMatchObject({ total_orders: 5, total_packages: 12 });
+    });
+
+    // The actual bloqueante: a load NEVER opened (still 'pending' in the
+    // DB) that shows up on the in_transit tab because its route moved on
+    // without it ever being scanned. Before this round's fix,
+    // totalsToRows coalesced its NULL totals to 0 before handleRowOpen's
+    // guard ever saw them.
+    it('does not include total_orders/total_packages for a never-opened load shown on the in_transit tab', async () => {
+      mockDesktop();
+      mockUseInTransitManifests.mockReturnValue({
+        data: [{ ...mockInTransit[0], total_orders: null, total_packages: null }],
+        isLoading: false,
+      });
+      const manifestsChain = chainResolving([{ id: 'db-id-2', status: 'pending' }]);
+      mockSupabaseFrom.mockReturnValue(manifestsChain);
+
+      render(<PickupPage />);
+      await userEvent.click(screen.getByRole('button', { name: 'Camino a bodega · 1' }));
+      await userEvent.click(screen.getByRole('button', { name: 'CARGA-INT-1' }));
+
+      expect(manifestsChain.update).toHaveBeenCalledTimes(1);
+      const written = manifestsChain.update.mock.calls[0][0];
       expect(written).not.toHaveProperty('total_orders');
       expect(written).not.toHaveProperty('total_packages');
     });

@@ -25,7 +25,7 @@ import {
   attachManifestsToRoute,
   partialAttachMessage,
 } from '@/lib/pickup/attachManifestsToRoute';
-import { matchesSearchTerm, matchesSearchTermRouted, rowsForTab } from '@/lib/pickup/pickupPageHelpers';
+import { matchesClient, matchesSearchTerm, matchesSearchTermRouted, rowsForTab } from '@/lib/pickup/pickupPageHelpers';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { toast } from 'sonner';
 
@@ -98,7 +98,10 @@ function PickupPageContent() {
   const addMut = useAddManifestToRoute(operatorId);
 
   const totals = pendingTotals(pending);
-  const closures = completedToday(completed, routed);
+  // ronda 4 (review fase 2): TRES fuentes, no dos -- un cierre en el andén
+  // (cubo 2) cuya ruta pasa a in_transit (cubo 3) desaparecería de este
+  // panel si sólo se leyeran cubo 2 y cubo 4.
+  const closures = completedToday(completed, routed, inTransit);
   // spec-94 fase 2 — the union of all four cubes, not just pending: a
   // retailer with every load already routed would otherwise lose its
   // filter chip exactly when it's needed.
@@ -107,11 +110,11 @@ function PickupPageContent() {
   );
 
   const visibleRows = rowsForTab(tab, pendingRows, inTransitRows, completedRows)
-    .filter((r) => !selectedClient || r.retailerName === selectedClient)
+    .filter((r) => matchesClient(r.retailerName, selectedClient))
     .filter((r) => matchesSearchTerm(r, searchTerm));
 
   const visibleRoutedRows = routedRows
-    .filter((r) => !selectedClient || r.retailer_name === selectedClient)
+    .filter((r) => matchesClient(r.retailer_name, selectedClient))
     .filter((r) => matchesSearchTermRouted(r, searchTerm));
 
   const selectedManifests = pendingRows.filter((r) => r.id && selectedIds.has(r.id));
