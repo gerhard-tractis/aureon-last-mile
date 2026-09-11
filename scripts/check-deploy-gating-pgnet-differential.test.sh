@@ -120,11 +120,12 @@ GHEOF
 # $1 = STUB_MIGRATIONS_DIFF (7), $2 = range_fail ("true" forces the
 # fail-closed branch, see write_stubs), $3 = STUB_CUM_CHANGED (6),
 # $4 = STUB_CHANGED (2, feeds matches() / frontend/database/etc.),
-# $5 = FORCE_DB ("true"/"false", item 4 of the 2026-09-10 review). Leaves the
-# full $GITHUB_OUTPUT at $LAST_OUT_FILE for callers that need a field
-# assert_pg_net/assert_auth_hook don't parse (e.g. frontend=). Returns
-# "pg_net=<v> auth_hook=<v>".
-LAST_OUT_FILE=""
+# $5 = FORCE_DB ("true"/"false", item 4 of the 2026-09-10 review). Returns
+# "rc=<v> pg_net=<v> auth_hook=<v> outfile=<path>" — every caller invokes
+# this via command substitution (`x="$(run_filter ...)"`), which forks a
+# subshell, so a field a caller needs must ride in the printed summary, not
+# in a variable this function merely assigns (that assignment would be
+# invisible outside the subshell — B1, round 3 review).
 run_filter() {
   local migrations_diff="$1" range_fail="${2:-false}" cum_changed="${3:-}" changed="${4:-}" force_db="${5:-false}"
   local dir out_file
@@ -148,11 +149,10 @@ run_filter() {
        bash --noprofile --norc filter.sh
   ) > "$dir/stdout" 2> "$dir/stderr"
   local rc=$?
-  LAST_OUT_FILE="$out_file"
   local pg_net auth_hook
   pg_net="$(grep -oE '^pg_net=.*' "$out_file" | tail -1 | cut -d= -f2)"
   auth_hook="$(grep -oE '^auth_hook=.*' "$out_file" | tail -1 | cut -d= -f2)"
-  echo "rc=${rc} pg_net=${pg_net} auth_hook=${auth_hook}"
+  echo "rc=${rc} pg_net=${pg_net} auth_hook=${auth_hook} outfile=${out_file}"
 }
 
 assert_pg_net() {
@@ -177,17 +177,21 @@ assert_auth_hook() {
   fi
 }
 
-# Generic single-field assertion against the run's full GITHUB_OUTPUT — for
-# fields assert_pg_net/assert_auth_hook don't parse (frontend, database, ...).
-# Same positional args as run_filter, plus $1=field, shifted.
+# Generic single-field assertion — for fields assert_pg_net/assert_auth_hook
+# don't parse (worker, frontend, database, ...). Same args as run_filter,
+# plus $1=field. B1 (round 3 review): kept run_summary (not sent to
+# /dev/null) so a future expected="" FAIL still shows rc= instead of looking
+# identical to a genuinely empty output; out_file also comes from
+# run_summary, not a variable set inside run_filter (see its comment).
 assert_output_field() {
-  local field="$1" name="$2" migrations_diff="$3" expected="$4" range_fail="${5:-false}" cum_changed="${6:-}" changed="${7:-}" force_db="${8:-false}" actual
-  run_filter "$migrations_diff" "$range_fail" "$cum_changed" "$changed" "$force_db" > /dev/null
-  actual="$(grep -oE "^${field}=.*" "$LAST_OUT_FILE" | tail -1 | cut -d= -f2)"
+  local field="$1" name="$2" migrations_diff="$3" expected="$4" range_fail="${5:-false}" cum_changed="${6:-}" changed="${7:-}" force_db="${8:-false}" actual run_summary out_file
+  run_summary="$(run_filter "$migrations_diff" "$range_fail" "$cum_changed" "$changed" "$force_db")"
+  out_file="$(echo "$run_summary" | grep -oE 'outfile=.*' | cut -d= -f2-)"
+  actual="$(grep -oE "^${field}=.*" "$out_file" | tail -1 | cut -d= -f2)"
   if [ "$actual" = "$expected" ]; then
     pass=$((pass + 1)); echo "  ok   $name"
   else
-    fail=$((fail + 1)); echo "  FAIL $name — expected ${field}=$expected, got: ${field}=${actual}"
+    fail=$((fail + 1)); echo "  FAIL $name — expected ${field}=$expected, got: ${field}=${actual} (${run_summary})"
   fi
 }
 
@@ -228,13 +232,20 @@ assert_auth_hook "200 KB CUM_CHANGED (path list) with the signal on line ONE sti
   "+ create table foo (id uuid primary key);" "true" "false" "$BIG_CUM_CHANGED"
 
 # ── item 1: the THIRD instance of the same SIGPIPE class — `matches()`, fed
-# by CHANGED (2), behind database/edge_functions/.../frontend. Worse than
-# pg_net/auth_hook failing false: it decides WHAT DEPLOYS, not whether to
-# pause. `frontend=false` on a real frontend change skips deploy-vercel —
-# green run, nothing shipped.
-BIG_CHANGED="$(build_big_diff 'apps/frontend/src/App.tsx')"
-assert_output_field frontend \
-  "200 KB CHANGED with an apps/frontend/ path on line ONE still -> frontend=true (item 1, matches())" \
+# by CHANGED (2), behind database/edge_functions/worker/agents/solver/
+# frontend. Worse than pg_net/auth_hook failing false: it decides WHAT
+# DEPLOYS, not whether to pause. `worker` (not `frontend` — a round-2
+# review correction, M1: deploy-vercel is gated only on approve-production
+# + changes succeeding, NOT on outputs.frontend at deploy.yml:436-480;
+# outputs.frontend's only consumer is deploy-qa.sh's CHANGED_FRONTEND env,
+# so frontend=false there means QA silently skips rebuilding the frontend
+# and e2e-qa runs green against a stale bundle — a real bug, just not a
+# skipped PRODUCTION deploy). `worker=false` on a real worker change DOES
+# skip deploy-worker directly (deploy.yml:505-514) — green run, nothing
+# shipped to the VPS.
+BIG_CHANGED="$(build_big_diff 'apps/worker/src/index.ts')"
+assert_output_field worker \
+  "200 KB CHANGED with an apps/worker/ path on line ONE still -> worker=true (item 1, matches())" \
   "+ create table foo (id uuid primary key);" "true" "false" "" "$BIG_CHANGED" "false"
 
 # ── item 4: force_db must also force auth_hook/pg_net. RANGE_BASE trusts
