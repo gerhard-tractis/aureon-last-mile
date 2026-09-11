@@ -51,7 +51,13 @@ export interface ManifestRow {
 }
 
 // The mock originally had six columns; spec-53 added a seventh (label
-// printing) and spec-83 fase 2 adds the eighth (pickup window).
+// printing) and spec-83 fase 2 adds the eighth (pickup window). spec-95
+// fase 8 gives the label column its own header text, ETIQUETAS (5a:110) —
+// the action was already wired, only the header cell was missing. The
+// underlying data (labels_printed_at/labels_printed_by_name) is untouched
+// by spec-94 fase 1's re-template of the four RPCs: those two columns are
+// re-templated verbatim, not renamed (spec-94:260-261, migration
+// 20261008000001 lines 97-98/207-208/389-390/479-480).
 const GRID = 'grid grid-cols-[22px_118px_1fr_104px_72px_72px_96px_32px] gap-3';
 
 interface ManifestTableProps {
@@ -98,7 +104,7 @@ export function ManifestTable({
         <span className="text-right">Órdenes</span>
         <span className="text-right">Paq.</span>
         <span>Ventana</span>
-        <span />
+        <span className="text-right">Etiquetas</span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">

@@ -25,6 +25,15 @@ describe('ManifestTable', () => {
     expect(screen.getByText('Mall Plaza Vespucio')).toBeInTheDocument();
   });
 
+  // spec-95 fase 8 (mock 5a, Recogida.dc.html:110) — the label-printing
+  // column had the action wired since spec-53 but never its own header
+  // cell: GRID declares 8 columns and the header row only rendered 7
+  // <span>s, so the seventh data column floated under blank space.
+  it('names the seventh column ETIQUETAS, over the print action', () => {
+    render(<ManifestTable rows={[row()]} emptyMessage="vacío" />);
+    expect(screen.getByText('Etiquetas')).toBeInTheDocument();
+  });
+
   it('labels a manifest with no retailer rather than leaving the cell blank', () => {
     render(<ManifestTable rows={[row({ retailerName: null })]} emptyMessage="vacío" />);
     expect(screen.getByText('Sin cliente')).toBeInTheDocument();
