@@ -4,6 +4,7 @@ import {
   summarizePendingRouteManifests,
   backupPhotosLabel,
   custodyNoticeCopy,
+  custodyConfirmationCopy,
 } from './manifestCloseSummary';
 
 describe('pendingLoadsLabel', () => {
@@ -183,6 +184,56 @@ describe('custodyNoticeCopy', () => {
   it('is honest with zero verified too', () => {
     expect(custodyNoticeCopy(0, 2)).toBe(
       'Al firmar, 0 paquetes verificados pasan a custodia de Aureon. 2 faltantes quedan a nombre del local hasta que se resuelvan.'
+    );
+  });
+});
+
+/**
+ * spec-95 fase 7, mock `5f2` — la hoja de confirmación irreversible cuenta
+ * las mismas dos mitades que `custodyNoticeCopy` (5f), pero con la frase del
+ * mock: una sola oración de cuenta ("X pasan… y Y quedan registrados…"),
+ * seguida siempre de "Esta acción es irreversible." — a diferencia de
+ * `custodyNoticeCopy`, esa cola no depende de si hay faltantes.
+ *
+ * Concordancia con el mismo criterio que el resto del fichero (M1/M2 de
+ * `custodyNoticeCopy`): singular/plural en ambos sustantivos y verbos, y la
+ * mitad de faltantes se omite entera cuando son 0 — "0 quedan registrados
+ * como faltantes" no dice nada real (mismo M2).
+ */
+describe('custodyConfirmationCopy', () => {
+  it('matches the mock’s one-sentence shape for its own numbers (39 verified, 3 missing)', () => {
+    expect(custodyConfirmationCopy(39, 3)).toBe(
+      '39 paquetes pasan a custodia de Aureon y 3 quedan registrados como faltantes. Esta acción es irreversible.'
+    );
+  });
+
+  it('uses the real counts, not a fixed pair (kills the hardcoded-string mutation)', () => {
+    expect(custodyConfirmationCopy(7, 5)).toBe(
+      '7 paquetes pasan a custodia de Aureon y 5 quedan registrados como faltantes. Esta acción es irreversible.'
+    );
+  });
+
+  it('singularizes verified', () => {
+    expect(custodyConfirmationCopy(1, 3)).toBe(
+      '1 paquete pasa a custodia de Aureon y 3 quedan registrados como faltantes. Esta acción es irreversible.'
+    );
+  });
+
+  it('singularizes missing', () => {
+    expect(custodyConfirmationCopy(2, 1)).toBe(
+      '2 paquetes pasan a custodia de Aureon y 1 queda registrado como faltante. Esta acción es irreversible.'
+    );
+  });
+
+  it('omits the missing half entirely at zero missing — the common case', () => {
+    expect(custodyConfirmationCopy(12, 0)).toBe(
+      '12 paquetes pasan a custodia de Aureon. Esta acción es irreversible.'
+    );
+  });
+
+  it('is honest with zero verified too', () => {
+    expect(custodyConfirmationCopy(0, 2)).toBe(
+      '0 paquetes pasan a custodia de Aureon y 2 quedan registrados como faltantes. Esta acción es irreversible.'
     );
   });
 });
