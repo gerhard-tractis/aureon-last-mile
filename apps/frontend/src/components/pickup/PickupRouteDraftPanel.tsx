@@ -55,8 +55,11 @@ export function PickupRouteDraftPanel({
   routeUnknown = false,
   roleUnknown = false,
 }: PickupRouteDraftPanelProps) {
-  const orders = selected.reduce((sum, m) => sum + m.orderCount, 0);
-  const packages = selected.reduce((sum, m) => sum + m.packageCount, 0);
+  // spec-94 fase 1/2 review: orderCount/packageCount are nullable
+  // (get_pending_manifests' arm2). `?? 0` is a display-only approximation
+  // for this draft summary, never written back.
+  const orders = selected.reduce((sum, m) => sum + (m.orderCount ?? 0), 0);
+  const packages = selected.reduce((sum, m) => sum + (m.packageCount ?? 0), 0);
 
   return (
     <section className="flex flex-none flex-col overflow-hidden rounded-[10px] border border-border bg-surface">
@@ -137,7 +140,7 @@ export function PickupRouteDraftPanel({
                   </span>
                   <span className="truncate text-[10.5px] leading-none text-text-muted">
                     {m.retailerName ?? 'Sin cliente'}
-                    {m.pickupPoint ? ` · ${m.pickupPoint}` : ''} · {m.packageCount} paq.
+                    {m.pickupPoint ? ` · ${m.pickupPoint}` : ''} · {m.packageCount ?? '—'} paq.
                   </span>
                 </div>
                 <button

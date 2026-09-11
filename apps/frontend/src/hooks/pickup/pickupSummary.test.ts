@@ -1,6 +1,48 @@
 import { describe, it, expect } from 'vitest';
 import { clientBreakdown, completedToday, pendingTotals } from './pickupSummary';
-import type { CompletedManifest, PendingManifest } from './useManifests';
+import type { CompletedManifest, InTransitManifest, PendingManifest } from './useManifests';
+import type { RoutedManifest } from './useRoutedManifests';
+
+function inTransit(over: Partial<InTransitManifest> = {}): InTransitManifest {
+  return {
+    id: 't1',
+    external_load_id: 'CARGA-94-TRANSIT',
+    retailer_name: 'Falabella',
+    total_orders: 4,
+    total_packages: 9,
+    reception_status: 'awaiting_reception',
+    updated_at: '2026-08-16T11:00:00Z',
+    created_at: '2026-08-16T08:00:00Z',
+    pickup_point: 'Mall Plaza Vespucio',
+    labels_printed_at: null,
+    labels_printed_by_name: null,
+    closed_at: null,
+    missing_count: 0,
+    ...over,
+  };
+}
+
+function routed(over: Partial<RoutedManifest> = {}): RoutedManifest {
+  return {
+    id: 'r1',
+    external_load_id: 'CARGA-94-DOCK',
+    retailer_name: 'Easy',
+    total_orders: 5,
+    total_packages: 12,
+    created_at: '2026-08-16T08:00:00Z',
+    pickup_point: 'Easy Vespucio',
+    labels_printed_at: null,
+    labels_printed_by_name: null,
+    route_code: 'PR-2026-0042',
+    route_started_at: '2026-08-16T08:00:00Z',
+    driver_name: 'Juan Pérez',
+    route_status: 'in_progress',
+    closed_at: null,
+    missing_count: 0,
+    verified_count: 3,
+    ...over,
+  };
+}
 
 function pending(over: Partial<PendingManifest> = {}): PendingManifest {
   return {
@@ -79,8 +121,8 @@ describe('completedToday', () => {
       completed({ id: 'a', completed_at: '2026-08-16T13:12:00Z' }),
       completed({ id: 'b', completed_at: '2026-08-15T13:12:00Z' }),
     ];
-    expect(completedToday(rows, now)).toHaveLength(1);
-    expect(completedToday(rows, now)[0].id).toBe('a');
+    expect(completedToday(rows, [], [], now)).toHaveLength(1);
+    expect(completedToday(rows, [], [], now)[0].id).toBe('a');
   });
 
   it('sorts newest first, which is the order the panel reads in', () => {
@@ -88,11 +130,83 @@ describe('completedToday', () => {
       completed({ id: 'early', completed_at: '2026-08-16T09:20:00Z' }),
       completed({ id: 'late', completed_at: '2026-08-16T13:12:00Z' }),
     ];
-    expect(completedToday(rows, now).map((r) => r.id)).toEqual(['late', 'early']);
+    expect(completedToday(rows, [], [], now).map((r) => r.id)).toEqual(['late', 'early']);
   });
 
   it('skips rows with no completion timestamp instead of throwing', () => {
     const rows = [completed({ id: 'x', completed_at: null as unknown as string })];
-    expect(completedToday(rows, now)).toEqual([]);
+    expect(completedToday(rows, [], [], now)).toEqual([]);
+  });
+
+  // spec-94 fase 1 ("«Cierres de hoy» no puede quedarse colgando del cubo
+  // 4"): a load closed at the dock (status='completed', route still
+  // in_progress) no longer appears in get_completed_manifests at all — it
+  // belongs to cubo 2. Without reading get_routed_manifests too, that
+  // closure (and its missing_count) never appears in this panel, on any
+  // day.
+  it('includes a load closed at the dock (routed, closed_at set) today, with its missing_count', () => {
+    const routedRows = [
+      routed({ id: 'r-dock', external_load_id: 'CARGA-DOCK', closed_at: '2026-08-16T09:00:00Z', missing_count: 3 }),
+    ];
+    const rows = completedToday([], routedRows, [], now);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: 'r-dock', external_load_id: 'CARGA-DOCK', missing_count: 3 });
+  });
+
+  it('excludes a routed load that has not closed yet (closed_at NULL)', () => {
+    const routedRows = [routed({ id: 'r-open', closed_at: null })];
+    expect(completedToday([], routedRows, [], now)).toEqual([]);
+  });
+
+  it('excludes a routed closure from a previous day', () => {
+    const routedRows = [routed({ id: 'r-yesterday', closed_at: '2026-08-15T09:00:00Z' })];
+    expect(completedToday([], routedRows, [], now)).toEqual([]);
+  });
+
+  // ronda 4 (review fase 2): cubo 3 is the THIRD source, not an
+  // afterthought. A load closed at the dock (cubo 2, closed_at set) whose
+  // route then moves to in_transit falls OUT of get_routed_manifests and
+  // into get_in_transit_manifests — without reading this cube too, that
+  // closure vanishes from the panel for as long as the truck is en route.
+  it('includes a load closed at the dock whose route has since moved to in_transit (cubo 3), with its missing_count', () => {
+    const inTransitRows = [
+      inTransit({ id: 't-dock', external_load_id: 'CARGA-DOCK', closed_at: '2026-08-16T09:00:00Z', missing_count: 2 }),
+    ];
+    const rows = completedToday([], [], inTransitRows, now);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: 't-dock', external_load_id: 'CARGA-DOCK', missing_count: 2 });
+  });
+
+  it('excludes an in-transit load that never closed at the dock (closed_at NULL — still just travelling)', () => {
+    const inTransitRows = [inTransit({ id: 't-open', closed_at: null })];
+    expect(completedToday([], [], inTransitRows, now)).toEqual([]);
+  });
+
+  it('merges all three sources, newest first, across cubos 2, 3 and 4', () => {
+    const completedRows = [completed({ id: 'c1', completed_at: '2026-08-16T08:00:00Z' })];
+    const routedRows = [routed({ id: 'r1', closed_at: '2026-08-16T10:00:00Z' })];
+    const inTransitRows = [inTransit({ id: 't1', closed_at: '2026-08-16T12:00:00Z' })];
+    expect(completedToday(completedRows, routedRows, inTransitRows, now).map((r) => r.id)).toEqual([
+      't1',
+      'r1',
+      'c1',
+    ]);
+  });
+
+  // ronda 4 (review): "no hay duplicación" verificado con una aserción, no
+  // por lectura. Los tres cubos son disjuntos POR PREDICADO — un mismo
+  // manifiesto sólo puede satisfacer uno de los tres a la vez — así que en
+  // producción un id nunca aparece en dos de los tres arrays. Esta prueba
+  // fija esa garantía: tres cierres de hoy con ids distintos, uno por
+  // fuente, deben producir EXACTAMENTE tres filas, no más — si el merge
+  // alguna vez concatenara una fuente dos veces por error, este conteo lo
+  // delataría.
+  it('does not duplicate a closure when the three sources are already disjoint (one id each)', () => {
+    const completedRows = [completed({ id: 'c1', completed_at: '2026-08-16T08:00:00Z' })];
+    const routedRows = [routed({ id: 'r1', closed_at: '2026-08-16T09:00:00Z' })];
+    const inTransitRows = [inTransit({ id: 't1', closed_at: '2026-08-16T10:00:00Z' })];
+    const rows = completedToday(completedRows, routedRows, inTransitRows, now);
+    expect(rows).toHaveLength(3);
+    expect(new Set(rows.map((r) => r.id)).size).toBe(3);
   });
 });

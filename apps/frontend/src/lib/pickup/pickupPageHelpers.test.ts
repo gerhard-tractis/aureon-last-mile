@@ -1,18 +1,46 @@
 import { describe, it, expect } from 'vitest';
 import {
   todayLabel,
+  matchesClient,
   matchesSearchTerm,
+  matchesSearchTermRouted,
   pendingToRows,
+  totalsToRows,
   manifestsAvailability,
   rescueRowsFromCompleted,
 } from './pickupPageHelpers';
 import type { ManifestRow } from '@/components/pickup/ManifestTable';
-import type { PendingManifest, CompletedManifest } from '@/hooks/pickup/useManifests';
+import type { PendingManifest, CompletedManifest, InTransitManifest } from '@/hooks/pickup/useManifests';
+import type { RoutedManifest } from '@/hooks/pickup/useRoutedManifests';
 
 describe('todayLabel', () => {
   it('capitalises the weekday and formats in Spanish', () => {
     const date = new Date('2026-04-09T10:00:00Z');
     expect(todayLabel(date)).toMatch(/^[A-ZÁÉÍÓÚ]/);
+  });
+});
+
+describe('matchesClient', () => {
+  it('matches everything when no client is selected', () => {
+    expect(matchesClient('Easy', null)).toBe(true);
+    expect(matchesClient(null, null)).toBe(true);
+  });
+
+  it('matches a real retailer name exactly', () => {
+    expect(matchesClient('Easy', 'Easy')).toBe(true);
+    expect(matchesClient('Easy', 'Ripley')).toBe(false);
+  });
+
+  // ronda 4 (review fase 2) — the actual bug: clientBreakdown labels a null
+  // retailer_name 'Sin cliente' for the chip, but a bare `retailerName ===
+  // selectedClient` comparison never matches null against that string, so
+  // clicking the chip emptied the table.
+  it('matches a null retailer against the "Sin cliente" chip', () => {
+    expect(matchesClient(null, 'Sin cliente')).toBe(true);
+  });
+
+  it('does not match a null retailer against a real client name', () => {
+    expect(matchesClient(null, 'Easy')).toBe(false);
   });
 });
 
@@ -95,6 +123,133 @@ describe('pendingToRows', () => {
     expect(row.pickupWindowStart).toBeNull();
     expect(row.pickupWindowEnd).toBeNull();
     expect(row.pickupCutoffTime).toBeNull();
+  });
+
+  // spec-94 fase 1/2 review: arm2 (a manifest whose orders are ALL
+  // soft-deleted) returns order_count/package_count as NULL, the honest
+  // "unknown" from manifests.total_orders/total_packages — NOT 0. This
+  // function must pass that NULL through unchanged; coalescing it here
+  // would let handleRowOpen (page.tsx) write a fabricated zero back to the
+  // database through openPendingManifest.
+  it('passes order_count/package_count through as null, never coalesced to 0', () => {
+    const [row] = pendingToRows([pending({ order_count: null, package_count: null })]);
+    expect(row.orderCount).toBeNull();
+    expect(row.packageCount).toBeNull();
+  });
+});
+
+describe('totalsToRows', () => {
+  function completedManifest(over: Partial<CompletedManifest> = {}): CompletedManifest {
+    return {
+      id: 'c1',
+      external_load_id: 'CARGA-000',
+      retailer_name: 'Easy',
+      total_orders: 2,
+      total_packages: 4,
+      completed_at: '2026-09-10T09:00:00Z',
+      created_at: '2026-09-10T08:00:00Z',
+      pickup_point: 'Easy Vespucio',
+      labels_printed_at: null,
+      labels_printed_by_name: null,
+      missing_count: 0,
+      ...over,
+    };
+  }
+
+  function inTransitManifest(over: Partial<InTransitManifest> = {}): InTransitManifest {
+    return {
+      id: 't1',
+      external_load_id: 'CARGA-INT-1',
+      retailer_name: 'Falabella',
+      total_orders: 7,
+      total_packages: 14,
+      reception_status: 'awaiting_reception',
+      updated_at: '2026-09-10T11:00:00Z',
+      created_at: '2026-09-10T08:00:00Z',
+      pickup_point: 'Bodega Norte',
+      labels_printed_at: null,
+      labels_printed_by_name: null,
+      closed_at: null,
+      missing_count: 0,
+      ...over,
+    };
+  }
+
+  it('carries real totals through unchanged', () => {
+    const [row] = totalsToRows([completedManifest({ total_orders: 2, total_packages: 4 })]);
+    expect(row.orderCount).toBe(2);
+    expect(row.packageCount).toBe(4);
+  });
+
+  // ronda 4 (review fase 2) — THE bug: a load never opened (attached to a
+  // route while still 'pending', total_orders/total_packages never
+  // written) that later shows up on the in_transit or completed tab must
+  // pass NULL through unchanged, exactly like pendingToRows above. `?? 0`
+  // belongs in ManifestTable's render, never here — coalescing it in this
+  // mapper is what let a click on such a row (page.tsx's handleRowOpen)
+  // write a fabricated total_orders=0/total_packages=0 through
+  // openPendingManifest, permanently, on the very tabs corrección 4 was
+  // supposed to also protect.
+  it('passes total_orders/total_packages through as null, never coalesced to 0 (in_transit tab)', () => {
+    const [row] = totalsToRows([inTransitManifest({ total_orders: null, total_packages: null })]);
+    expect(row.orderCount).toBeNull();
+    expect(row.packageCount).toBeNull();
+  });
+
+  it('passes total_orders/total_packages through as null, never coalesced to 0 (completed tab)', () => {
+    const [row] = totalsToRows([completedManifest({ total_orders: null, total_packages: null })]);
+    expect(row.orderCount).toBeNull();
+    expect(row.packageCount).toBeNull();
+  });
+});
+
+describe('matchesSearchTermRouted', () => {
+  function routedRow(over: Partial<RoutedManifest> = {}): RoutedManifest {
+    return {
+      id: 'r1',
+      external_load_id: 'CARGA-94-DOCK',
+      retailer_name: 'Easy',
+      total_orders: 5,
+      total_packages: 12,
+      created_at: '2026-09-10T09:00:00Z',
+      pickup_point: 'Easy Vespucio',
+      labels_printed_at: null,
+      labels_printed_by_name: null,
+      route_code: 'PR-2026-0042',
+      route_started_at: '2026-09-10T08:00:00Z',
+      driver_name: 'Juan Pérez',
+      route_status: 'in_progress',
+      closed_at: null,
+      missing_count: 0,
+      verified_count: 3,
+      ...over,
+    };
+  }
+
+  it('matches everything when the term is empty', () => {
+    expect(matchesSearchTermRouted(routedRow(), '')).toBe(true);
+  });
+
+  it('matches by external load id', () => {
+    expect(matchesSearchTermRouted(routedRow(), 'carga-94-dock')).toBe(true);
+  });
+
+  it('matches by route code — the whole reason this is a separate matcher', () => {
+    expect(matchesSearchTermRouted(routedRow(), 'pr-2026-0042')).toBe(true);
+  });
+
+  it('matches by driver name', () => {
+    expect(matchesSearchTermRouted(routedRow(), 'juan')).toBe(true);
+  });
+
+  it('does not match an unrelated term', () => {
+    expect(matchesSearchTermRouted(routedRow(), 'sodimac')).toBe(false);
+  });
+
+  it('does not crash on a null driver/pickup point', () => {
+    const bare = routedRow({ driver_name: null, pickup_point: null });
+    expect(matchesSearchTermRouted(bare, 'anything')).toBe(false);
+    expect(matchesSearchTermRouted(bare, '')).toBe(true);
   });
 });
 
