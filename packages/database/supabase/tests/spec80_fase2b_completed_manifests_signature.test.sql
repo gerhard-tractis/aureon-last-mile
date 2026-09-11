@@ -58,21 +58,31 @@ ON CONFLICT (id) DO NOTHING;
 
 -- 20260814000001's trg_ensure_manifest_for_order already created a manifests
 -- row per load the moment its order was inserted.
+--
+-- reception_status = 'received' on all three (spec-94 fase 1): get_completed_
+-- manifests() no longer partitions on status='completed' alone, it requires
+-- reception_status='received' (or the old-flow arm, which needs
+-- reception_status IS NULL -- unreachable here because
+-- trg_manifest_set_reception_status, spec-08, still live, auto-fills
+-- reception_status='awaiting_reception' the instant status transitions to
+-- 'completed' with reception_status NULL. Setting 'received' explicitly is
+-- what actually happens when a load is received at the hub, which is what
+-- "Completados" means post spec-94.
 UPDATE public.manifests
    SET status = 'completed', completed_at = NOW(), total_packages = 5, total_orders = 1,
-       signature_operator = NULL
+       signature_operator = NULL, reception_status = 'received'
  WHERE operator_id = '00000000-0000-4000-8000-0000000080b0'
    AND external_load_id = 'CARGA-80B-1';
 
 UPDATE public.manifests
    SET status = 'completed', completed_at = NOW(), total_packages = 8, total_orders = 1,
-       signature_operator = 'https://storage.example/sig-80b-2.png'
+       signature_operator = 'https://storage.example/sig-80b-2.png', reception_status = 'received'
  WHERE operator_id = '00000000-0000-4000-8000-0000000080b0'
    AND external_load_id = 'CARGA-80B-2';
 
 UPDATE public.manifests
    SET status = 'completed', completed_at = NOW(), total_packages = 3, total_orders = 1,
-       signature_operator = NULL,
+       signature_operator = NULL, reception_status = 'received',
        labels_printed_at = NOW(), labels_printed_by = '00000000-0000-4000-8000-0000000080b1'
  WHERE operator_id = '00000000-0000-4000-8000-0000000080b0'
    AND external_load_id = 'CARGA-80B-3';
