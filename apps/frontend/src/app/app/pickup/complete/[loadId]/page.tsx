@@ -17,7 +17,7 @@ import { useRouteManifests } from '@/hooks/pickup/useRouteManifests';
 import { useManifestCompletionContext } from '@/hooks/pickup/useManifestCompletionContext';
 import { useCloseManifest } from '@/hooks/pickup/useCloseManifest';
 import { dedupeNotFoundScans } from '@/lib/pickup/reviewCloseGate';
-import { summarizePendingRouteManifests } from '@/lib/pickup/manifestCloseSummary';
+import { summarizePendingRouteManifests, custodyNoticeCopy } from '@/lib/pickup/manifestCloseSummary';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { useSyncQueue } from '@/hooks/useSyncQueue';
 import { retryBlockedManifest } from '@/hooks/useOfflineQueue';
@@ -35,6 +35,26 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+
+// B2, ronda 2 de review de spec-95 fase 6 — el mismo esqueleto servía dos
+// veces (manifiesto sin cargar, o `scans`/`missingPackages` pausados);
+// compartido en vez de duplicado para no volver a inflar el archivo.
+function CompletionSkeleton() {
+  return (
+    <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
+      <Skeleton className="h-6 w-48" />
+      <Skeleton className="h-16 w-full" />
+      <div className="grid grid-cols-2 gap-3">
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-20 w-full" />
+      </div>
+      <Skeleton className="h-24 w-full" />
+      <Skeleton className="h-40 w-full" />
+    </div>
+  );
+}
 
 export default function CompletionPage() {
   const params = useParams();
@@ -86,8 +106,14 @@ export default function CompletionPage() {
     });
   };
 
-  const { data: scans = [] } = usePickupScans(manifestId, operatorId);
-  const { data: missingPackages = [] } = useMissingPackages(
+  // B2, ronda 2 de review de spec-95 fase 6 — SIN `= []`, igual que
+  // `documents` más abajo: una query pausada (`networkMode:'online'`, sin
+  // señal) da `data===undefined` con `isLoading`/`isError` en `false`, y un
+  // `= []` lo convertía en "0 verificados" dentro del aviso que TRANSFIERE
+  // CUSTODIA. Gateado explícito más abajo (mismo patrón que
+  // `review/[loadId]/page.tsx:199-204`).
+  const { data: scans } = usePickupScans(manifestId, operatorId);
+  const { data: missingPackages } = useMissingPackages(
     operatorId,
     loadId,
     manifestId
@@ -125,9 +151,13 @@ export default function CompletionPage() {
   // on a real match), but `useRouteManifests.ts:139` — the precedent this
   // comment already cites — filters `!s.package_id` before adding to its
   // Set, and this code did not. Matched here rather than left diverging.
+  // `?? []` interno: las reglas de hooks no permiten un `return`
+  // condicional antes de un `useMemo`. No filtra la mentira de "0
+  // verificados" — el `return` que gatea por presencia de dato, más abajo
+  // antes de `isClosed`, es lo que impide pintar estos números pausados.
   const verifiedCount = useMemo(() => {
     const packageIds = new Set<string>();
-    for (const s of scans) {
+    for (const s of scans ?? []) {
       if (s.scan_result === 'verified' && s.package_id) packageIds.add(s.package_id);
     }
     return packageIds.size;
@@ -135,17 +165,19 @@ export default function CompletionPage() {
 
   // 5i — same dedupe rule close_manifest applies server-side (H3): distinct
   // not_found barcodes, not a row count.
-  const unexpectedCount = useMemo(() => dedupeNotFoundScans(scans).length, [scans]);
+  const unexpectedCount = useMemo(() => dedupeNotFoundScans(scans ?? []).length, [scans]);
 
   const routeSummary = useMemo(
     () => (manifestId ? summarizePendingRouteManifests(routeManifests, manifestId) : null),
     [routeManifests, manifestId]
   );
 
+  const missingCount = missingPackages?.length ?? 0;
+
   const precision = useMemo(() => {
-    const total = verifiedCount + missingPackages.length;
+    const total = verifiedCount + missingCount;
     return total > 0 ? Math.round((verifiedCount / total) * 100) : 0;
-  }, [verifiedCount, missingPackages.length]);
+  }, [verifiedCount, missingCount]);
 
   const elapsed = useMemo(() => {
     if (!manifestStartedAt) return '\u2014';
@@ -182,20 +214,14 @@ export default function CompletionPage() {
   });
 
   if (!manifestId) {
-    return (
-      <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
-        <Skeleton className="h-6 w-48" />
-        <Skeleton className="h-16 w-full" />
-        <div className="grid grid-cols-2 gap-3">
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-20 w-full" />
-        </div>
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-40 w-full" />
-      </div>
-    );
+    return <CompletionSkeleton />;
+  }
+
+  // B2 — gatea por PRESENCIA de dato, no por `isLoading`/`isError`; mismo
+  // patrón que `review/[loadId]/page.tsx:199-204` (bloqueante 1, spec-80
+  // fase 2 ronda 3, PR #686). Ver el comentario junto a `scans` arriba.
+  if (scans === undefined || missingPackages === undefined) {
+    return <CompletionSkeleton />;
   }
 
   if (isClosed) {
@@ -221,29 +247,38 @@ export default function CompletionPage() {
     <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
       <PickupStepBreadcrumb current="complete" />
 
-      {/* Gold header */}
+      {/* Gold header — spec-95 fase 6, mock `5f`: título arriba, subtítulo
+          `CARGA-… · <cliente>` debajo (antes iba al revés). */}
       <div className="bg-accent text-accent-foreground dark:bg-accent-muted dark:text-accent p-4 -mx-4 rounded-none">
-        <p className="text-xs opacity-80">{loadId}</p>
-        <p className="font-semibold text-base mt-0.5">Firma y finalización</p>
+        <p className="font-semibold text-base">Firma y finalización</p>
+        {/* M3 — `font-mono`, mock (`Recogida.dc.html:793`): JetBrains Mono
+            es lo que distingue un id de carga en el resto de la app. */}
+        <p className="font-mono text-xs opacity-80 mt-0.5">
+          {retailerName ? `${loadId} · ${retailerName}` : loadId}
+        </p>
       </div>
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 gap-3">
         <MetricCard icon={CheckCircle} label="Verificados" value={verifiedCount} />
-        <MetricCard icon={XCircle} label="Faltantes (con nota)" value={missingPackages.length} />
+        {/* spec-95 fase 6, mock `5f` — dos líneas: en una se cortaba con
+            elipsis (defecto que encontró el recorrido de QA). */}
+        <MetricCard icon={XCircle} label={'Faltantes\n(con nota)'} value={missingPackages.length} />
         <MetricCard icon={Target} label="Precisión" value={`${precision}%`} />
         <MetricCard icon={Shield} label="Duración" value={elapsed} />
       </div>
 
-      {/* Legal Notice */}
+      {/* Legal Notice — mock `5f`: cuenta las dos mitades (verificados a
+          custodia de Aureon, faltantes a nombre del local) con las cifras
+          reales. Copy en `custodyNoticeCopy` (manifestCloseSummary.ts), no
+          inline — B3: un string quemado aquí no lo detecta ningún test de
+          esta página con cifras siempre iguales; el unitario sí varía. */}
       <div className="bg-status-warning-bg border border-status-warning-border rounded-lg p-3">
         <p className="text-sm text-text font-medium">
           Aviso de transferencia de custodia
         </p>
         <p className="text-xs text-text-secondary mt-1">
-          Al firmar, el operador confirma la recepción de los paquetes verificados.
-          A partir de este momento, el operador asume la responsabilidad legal
-          sobre la mercancía.
+          {custodyNoticeCopy(verifiedCount, missingPackages.length)}
         </p>
       </div>
 
@@ -286,6 +321,11 @@ export default function CompletionPage() {
         `enqueueManifestPhoto` (`lib/offline/photos.ts`, spec-81 fase 5) y
         drena junto con la firma. Verificado antes de dejar esta línea tal
         cual — ver el spec.
+
+        spec-95 fase 6 — reconsiderado, sigue SIN condicionarse a
+        `sync.status`: promete qué pasa SI se pierde señal, no afirma que
+        ahora mismo no hay señal. `SIN RED` en el mock es el escenario
+        dibujado, no una condición de visibilidad.
       */}
       <div className="flex items-center gap-3 p-3 rounded-lg bg-status-warning-bg border border-status-warning-border">
         <p className="text-sm text-status-warning-text">

@@ -96,6 +96,43 @@ export function backupPhotosLabel(
   return total === 1 ? '1 foto' : `${total} fotos`;
 }
 
+/**
+ * Ronda 2 de review de spec-95 fase 6 (B3, M1, M2) — el aviso de
+ * transferencia de custodia de `5f`, extraído de `page.tsx` para que un
+ * test unitario pueda variar las cifras (lo único que mata el hardcodeo de
+ * un string fijo — un valor quemado en la página pasaba sus propias
+ * pruebas porque siempre veían las mismas dos cifras del `beforeEach`).
+ *
+ * Concordancia singular/plural con el mismo criterio que
+ * `pendingLoadsLabel` / `reviewCloseGate.ts` (`missingHeadingLabel`,
+ * `closeButtonLabel`): "1 paquete verificado pasa", no "1 paquetes
+ * verificado pasan". El mock (`5f`, 39/3) no cubre el singular ni el cero
+ * — se deriva de esa convención ya existente en la app, no del mock.
+ *
+ * `missingCount === 0` omite la segunda frase entera: es el camino feliz
+ * (`reviewCloseGate.ts:83`, "pasa directo a 5f" cuando no falta nada), y
+ * "0 faltantes quedan a nombre del local hasta que se resuelvan" no dice
+ * nada real.
+ */
+export function custodyNoticeCopy(
+  verifiedCount: number,
+  missingCount: number,
+): string {
+  const verifiedNoun =
+    verifiedCount === 1 ? 'paquete verificado' : 'paquetes verificados';
+  const verifiedVerb = verifiedCount === 1 ? 'pasa' : 'pasan';
+  const verifiedSentence = `Al firmar, ${verifiedCount} ${verifiedNoun} ${verifiedVerb} a custodia de Aureon.`;
+
+  if (missingCount === 0) return verifiedSentence;
+
+  const missingNoun = missingCount === 1 ? 'faltante' : 'faltantes';
+  const missingVerb = missingCount === 1 ? 'queda' : 'quedan';
+  const missingReflexive = missingCount === 1 ? 'se resuelva' : 'se resuelvan';
+  const missingSentence = `${missingCount} ${missingNoun} ${missingVerb} a nombre del local hasta que ${missingReflexive}.`;
+
+  return `${verifiedSentence} ${missingSentence}`;
+}
+
 export function summarizePendingRouteManifests(
   manifests: PendingRouteManifest[],
   closedManifestId: string,

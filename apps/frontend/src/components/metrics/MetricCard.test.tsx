@@ -54,4 +54,29 @@ describe('MetricCard', () => {
     const valueEl = container.querySelector('[data-value]');
     expect(valueEl?.className).toContain('font-mono');
   });
+
+  // spec-95 fase 6 — el mock de `5f` dibuja "FALTANTES (CON NOTA)" en dos
+  // líneas porque en una se cortaba con elipsis (`truncate`). Un `\n`
+  // dentro del label rompe la línea donde el llamador decida, en vez de
+  // dejar que el ancho de la tarjeta decida por elipsis.
+  // B4, ronda 2 de review de spec-95 fase 6 (bloqueante) — comprobar sólo
+  // `textContent` y la AUSENCIA de `truncate` deja pasar quitar
+  // `whitespace-pre-line` sin que nada lo note (el `\n` sigue en el DOM sin
+  // importar el CSS). Se añade la aserción positiva de la clase.
+  it('breaks a multi-line label at an embedded newline instead of truncating it', () => {
+    render(<MetricCard label={'Faltantes\n(con nota)'} value="3" />);
+    const label = screen.getByText('Faltantes (con nota)');
+    expect(label.textContent).toBe('Faltantes\n(con nota)');
+    expect(label.className).toContain('whitespace-pre-line');
+    expect(label.className).not.toContain('truncate');
+  });
+
+  // m2, ronda 2 de review — `truncate` llevaba `overflow-hidden`; un label
+  // futuro de una sola línea y sin `\n` que sea más ancho que la tarjeta
+  // debe seguir recortándose por CSS en vez de desbordar el layout.
+  it('keeps clipping overflow even without `truncate` (a long single-line label does not spill out of the card)', () => {
+    render(<MetricCard label="UN LABEL MUY LARGO SIN SALTOS DE LINEA" value="1" />);
+    const label = screen.getByText('UN LABEL MUY LARGO SIN SALTOS DE LINEA');
+    expect(label.className).toContain('overflow-hidden');
+  });
 });
