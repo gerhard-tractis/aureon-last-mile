@@ -74,22 +74,30 @@ test.describe('spec-95 ronda 2 — Recogida mobile (5a, 5c, 5d)', () => {
     test.setTimeout(60_000);
     await driver.goto('/app/pickup');
 
-    await expect(driver.getByRole('button', { name: 'Alfa Retail · 2', exact: true }))
-      .toBeVisible();
-    await expect(driver.getByRole('button', { name: 'Beta Comercial · 1', exact: true }))
-      .toBeVisible();
-    await expect(driver.getByRole('button', { name: 'Todos · 3', exact: true }))
-      .toBeVisible();
+    // QA is a shared environment — other sessions/operators can leave rows
+    // for a retailer of the same name in the same bucket, so the fixture's
+    // absolute counts ("Alfa Retail · 2") are not guaranteed. Read each
+    // chip's own count from its label instead of asserting a number, then
+    // check the invariant the fase 8 review actually found broken: a
+    // chip's count used to be the union across all four tabs, so pressing
+    // it could open a table showing more or fewer rows than the label
+    // claimed. Assert the number on the chip MATCHES what the table
+    // actually renders when the chip is pressed.
+    const alfaChip = driver.getByRole('button', { name: /^Alfa Retail · \d+$/ });
+    await expect(alfaChip).toBeVisible();
+    const alfaLabel = (await alfaChip.textContent()) ?? '';
+    const alfaCount = Number(alfaLabel.match(/· (\d+)$/)?.[1]);
+    expect(alfaCount, `chip label was "${alfaLabel}"`).toBeGreaterThan(0);
+    await alfaChip.click();
+    await expect(driver.getByTestId('manifest-row')).toHaveCount(alfaCount);
 
-    // The bug the fase 8 review found: a chip's count used to be the union
-    // across all four tabs, so "Alfa Retail · 2" could open a table showing
-    // more or fewer than 2 rows. Assert the number MATCHES what the table
-    // actually renders when the chip is pressed, not just that it exists.
-    await driver.getByRole('button', { name: 'Alfa Retail · 2', exact: true }).click();
-    await expect(driver.getByTestId('manifest-row')).toHaveCount(2);
-
-    await driver.getByRole('button', { name: 'Beta Comercial · 1', exact: true }).click();
-    await expect(driver.getByTestId('manifest-row')).toHaveCount(1);
+    const betaChip = driver.getByRole('button', { name: /^Beta Comercial · \d+$/ });
+    await expect(betaChip).toBeVisible();
+    const betaLabel = (await betaChip.textContent()) ?? '';
+    const betaCount = Number(betaLabel.match(/· (\d+)$/)?.[1]);
+    expect(betaCount, `chip label was "${betaLabel}"`).toBeGreaterThan(0);
+    await betaChip.click();
+    await expect(driver.getByTestId('manifest-row')).toHaveCount(betaCount);
   });
 
   test('opens the route from the mobile screen at 390px', async () => {
