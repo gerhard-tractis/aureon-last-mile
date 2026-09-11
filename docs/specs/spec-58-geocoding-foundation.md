@@ -86,11 +86,11 @@ The two are near-identical in practice, but the poll is suspect: the Show Route 
 | Fase | Delivers | Token |
 |---|---|---|
 | 0 | Precision mapping: which MapTiler response field carries match granularity | `[done]` |
-| 1 | `orders` geocode columns, queue index, reset trigger, `geocode_cache` | `[pending]` |
+| 1 | `orders` geocode columns, queue index, reset trigger, `geocode_cache` | `[done]` |
 | 2 | `chile_comunas` centroids, 347 rows with provenance | `[pending]` |
 | 3 | Address normalisation v1 + cache read/write. No network. | `[pending]` |
 | 4 | MapTiler adapter behind the interface, circuit breaker, env | `[pending]` |
-| 5 | `geocode.enrich` queue, cron, batch claim, retry ladder, quota | `[pending]` |
+| 5 | `geocode.enrich` queue, cron, batch claim, retry ladder, quota | `[blocked]` |
 | 6 | Accuracy gate on 200 sampled production addresses | `[blocked]` |
 | 7 | Backfill of the existing order history | `[blocked]` |
 
@@ -251,11 +251,23 @@ La custodia el usuario. **Todavía no está en ningún fichero del VPS** (ni `/h
 
 ---
 
-### Fase 1 — `orders` geocode columns and `geocode_cache` `[pending]`
+### Fase 1 — `orders` geocode columns and `geocode_cache` `[done]`
 
 **Depende de:** ninguna
 
-**Archivos:** `packages/database/supabase/migrations/<ts>_spec58_geocoding_schema.sql` (nueva), `packages/database/supabase/tests/spec58_geocoding.sql` (nuevo), `packages/database/src/database.types.ts`
+**Archivos:** `packages/database/supabase/migrations/20261010000001_spec58_geocoding_schema.sql`, `packages/database/supabase/tests/spec58_geocoding.sql`, `packages/database/src/database.types.ts`
+
+> Implementado por: `implementer` — rama `feat/spec-58-fase-1-esquema`, SHA 2f82f73 (implementación) + bfeab71 (correcciones de review)
+> Review: `reviewer` (Opus) — 7 hallazgos, 1 bloqueante: dos de las ocho asignaciones del reset (`geocode_attempts`, `geocode_next_attempt_at`) no las cubría ningún assert, porque el fixture las dejaba en su DEFAULT y la aserción pasaba sobre un cero que ya era cero. Cerrado en bfeab71 y mutation-verificado: borrando esas dos líneas la suite da `pass=18 fail=2` (no 1 — TEST 10 también dependía de ellas), restaurado a `pass=20 fail=0`. Dos hallazgos son de **spec, no de implementación**, y quedan abiertos: el `DEFAULT 'pending'` frente al gate de la Fase 7 (ver el bloqueo de la Fase 5) y la ausencia de CHECKs en `geocode_cache` (ver abajo).
+> QA: PR #807 merged 2026-09-11T16:29:07Z. `e2e-qa` n/a — esta fase no despliega pantalla. Los tests SQL no corren en CI, así que la evidencia es la corrida local con `scripts/pgtap-local.sh`: `pass=20 fail=0`, más cinco mutaciones aplicadas y revertidas contra el contenedor.
+> Downstream: revisado spec-59 y spec-60 — sin cambios. Ambos consumen `orders.latitude/longitude` y `geocode_precision`; las columnas aterrizaron con los nombres y tipos que los dos daban por supuestos.
+
+#### Lo que quedó abierto, dicho aquí para que no se redescubra
+
+- **`geocode_cache` no lleva ninguno de los CHECKs que sí lleva `orders`**: sin rango, sin null-island, y `geocode_precision` sin el enum. La caché es de donde la Fase 3 copia a `orders`, así que una fila envenenada falla más tarde, en el INSERT a `orders`, con el constraint de `orders` y sin rastro de dónde vino. El spec no los pedía; es desviación de spec, no de implementación. La Fase 3 los añade cuando escriba la caché de verdad.
+- **`updated_at` en `geocode_cache` no tiene trigger que lo mantenga**, a diferencia de `set_orders_updated_at`. La Fase 3 lo escribe a mano o la columna miente.
+- **El reset no dispara en tres caminos**, los tres conformes al spec: poner `comuna` a NULL (la normalización sólo actúa `IF NEW.comuna IS NOT NULL`, así que `comuna_id` conserva el valor viejo y no hay cambio que detectar); pasar de una comuna sin match a otra sin match (ambas resuelven `comuna_id` NULL); y escribir `comuna_id` directamente sin mencionar `comuna` (hoy no existe ese camino — el único `SET comuna_id =` vivo es `add_comuna_alias`, que también escribe `comuna`).
+- **El check de null-island no ataja un par transpuesto.** Verificado: `(-70.65, -33.44)` —Providencia con lat/lng dados vuelta— pasa todos los checks y aterriza en el Atlántico Sur. Deliberado: `orders` no está restringida a direcciones chilenas, a diferencia de los centroides de la Fase 2. El comentario de la migración dice exactamente eso; antes prometía lo contrario.
 
 #### Changed: `public.orders`
 
@@ -548,11 +560,30 @@ Against a mocked `fetch`: a Chilean address fixture resolving `exact`; a localit
 
 ---
 
-### Fase 5 — The `geocode.enrich` worker and its state machine `[pending]`
+### Fase 5 — The `geocode.enrich` worker and its state machine `[blocked]`
 
 **Depende de:** spec-58 fase 4
 
 **Archivos:** `apps/agents/src/orchestration/queues.ts`, `apps/agents/src/orchestration/queues.test.ts`, `apps/agents/src/orchestration/workers.ts`, `apps/agents/src/orchestration/workers.test.ts`, `apps/agents/src/orchestration/schedulers.ts`, `apps/agents/src/orchestration/schedulers.test.ts`, `apps/agents/src/agents/geocode/enrich.ts` (nuevo), `apps/agents/src/agents/geocode/enrich.test.ts` (nuevo)
+
+> Bloqueo: se intentó dar la fase por despachable tras el merge de la fase 1 y no se puede — `geocode_status` nace `DEFAULT 'pending'`, así que las órdenes históricas quedan dentro del índice parcial y del `WHERE` de claim de esta fase, y además con `geocode_next_attempt_at` NULL ordenan **primero** por el `NULLS FIRST`; verificado contra `20261010000001_spec58_geocoding_schema.sql:17` (el DEFAULT) y contra el `WHERE` de claim de esta misma sección, y el tamaño real del corpus (~112k despachos) está medido en producción — 2026-09-11 — desbloquea: usuario (elegir entre backfillear el histórico a un estado no encolable en una migración, o un corte por `created_at` en la consulta de claim; ver abajo)
+
+#### La decisión que bloquea esta fase
+
+El gate de la Fase 7 existe para que un backfill de decenas de miles de órdenes no ocurra sin que alguien lo autorice. Tal como está el esquema, **ocurriría solo**: en cuanto esta fase mergee, el cron empieza a drenar el histórico a 200 filas por corrida, pagadas al proveedor, empezando por las más viejas. El gate sería un comentario en un documento mientras lo que vigila corre por su cuenta.
+
+No es riesgo de la Fase 1 —sin worker no hay drenaje ni gasto— pero es un hueco de **spec**, no de implementación: la Fase 1 construyó exactamente lo que este spec decía.
+
+| Opción | Qué hace | Coste |
+|---|---|---|
+| **A — backfill a un estado no encolable, en migración** | Las filas existentes reciben un estado que la consulta de claim ignora; la Fase 7 las enciende deliberadamente | Un UPDATE sobre ~112k filas en la migración |
+| **B — corte por `created_at` en la consulta de claim** | El worker sólo toma órdenes posteriores a la migración; la Fase 7 retira el corte | Una fecha mágica viviendo en el worker |
+
+Recomendación: **A**. Deja la decisión en los datos y no en una constante que alguien borra más adelante sin saber por qué, y convierte el trabajo de la Fase 7 en «encender estas filas», que es la forma que debería tener una fase con gate.
+
+Y un dato para el presupuesto de la Fase 7, medido al revisar esta fase: cada escritura de geocode dispara `audit_orders_changes`, que guarda un `before`/`after` completo de la orden en `audit_logs`. Un backfill de 112k órdenes escribe 112k filas de auditoría además de las propias. También mueve `updated_at` en las 112k, así que cualquier consulta de «modificado recientemente» se desplaza.
+
+---
 
 Add `'geocode.enrich'` to the exported `QueueName` union at `orchestration/queues.ts:5` **and** to `QUEUE_CONFIGS` at `:20` (`Record<QueueName, QueueConfig>` will not compile otherwise), `attempts: 3, backoffDelay: 60_000`. Worker in `orchestration/workers.ts`, scheduler in `orchestration/schedulers.ts`:
 
