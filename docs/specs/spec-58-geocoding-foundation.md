@@ -470,16 +470,32 @@ export interface GeocodeQuery {
  *  orchestration layer that "En qué capa se decide" deliberately keeps it out of. */
 export type GeocodeMatchClass =
   | 'exact'              // house number matched AND comuna cross-check passed
-  | 'coarse'             // provider answered at locality/region granularity
-  | 'wrong_comuna'       // house number matched but context[] names another comuna
+  | 'coarse'             // no house number — whatever context[] says about the comuna
+  | 'wrong_comuna'       // house number PRESENT but context[] names another comuna
   | 'uncrosscheckable';  // a point, but no comuna to check against, or no municipality.* in context[]
+
+// The coarse / wrong_comuna boundary is load-bearing and easy to get backwards.
+// `wrong_comuna` REQUIRES `feature.address` to be present. A comuna mismatch with
+// no house number is `coarse`, full stop — even though context[] does name another
+// comuna. Both take the same disposition in the ladder, so getting it wrong is not
+// a behaviour bug; it corrupts the Fase 6 metric instead. All four of Fase 0's
+// measured mismatches had NO house number, so classifying them `wrong_comuna`
+// would fill the very counter the cross-check is on trial for with cases the
+// cross-check did not decide — and absolve it using the evidence that it was
+// unnecessary.
 
 export interface GeocodeResult {
   latitude: number;
   longitude: number;
   matchClass: GeocodeMatchClass;
   /** Derived, kept because it is what lands in the column:
-   *  'exact' when matchClass === 'exact', otherwise 'approximate'. */
+   *  'exact' when matchClass === 'exact', otherwise 'approximate'.
+   *  Never write this by hand — derive it with precisionOf(matchClass), exported
+   *  from this file and unit-tested over all four classes. A hand-built result
+   *  carrying matchClass:'uncrosscheckable' with precision:'exact' would not
+   *  merely draw a bad pin: the cache write predicate is the match class, but
+   *  anything that reads `precision` to decide durability freezes an unverified
+   *  point into the one structure this spec admits it cannot cheaply undo. */
   precision: 'exact' | 'approximate';
   source: string;
   raw?: unknown;
@@ -491,11 +507,17 @@ export interface GeocodingProvider {
 }
 ```
 
-`apps/agents/src/providers/geocoding/maptiler.ts` — country-biased to `cl`, proximity-biased to the comuna centroid from Fase 2, `exact` vs `approximate` decided by **Fase 0's measured rule**: `feature.address` present **and** the `municipality.*` entry of `context[]` resolving to the requested comuna. Not `place_type`, which Fase 0 measured returning `['address']` for results in the wrong comuna, and not a `relevance` floor, which Fase 0 measured failing to separate the cases at all — there is no threshold that accepts the correct 0.667 match without also accepting the 1.0 and 0.994 street centroids.
+`apps/agents/src/providers/geocoding/maptiler.ts` — country-biased to `cl`, proximity-biased to the comuna centroid from Fase 2 **when a comuna is supplied** (it is optional — see the interface), `exact` vs `approximate` decided by **Fase 0's measured rule**: `feature.address` present **and** the `municipality.*` entry of `context[]` resolving to the requested comuna. Not `place_type`, which Fase 0 measured returning `['address']` for results in the wrong comuna, and not a `relevance` floor, which Fase 0 measured failing to separate the cases at all — there is no threshold that accepts the correct 0.667 match without also accepting the 1.0 and 0.994 street centroids.
 
 **The request must carry `User-Agent: aureon-geo`.** Fase 0 measured this as an allowlist on that exact string: `Mozilla/5.0`, `curl/8.0`, `x` and no header at all each return `HTTP 403`. Not optional politeness — it is the difference between a working adapter and one that 403s on every request. This applies to the **server** key only; spec-59's browser tile key is referrer-restricted and cannot carry a User-Agent at all.
 
+**Ask for one feature and classify it: `limit=1`, verdict on `features[0]`.** Measured 2026-09-11, because this decides the match class and therefore the Fase 6 number. Re-running Fase 0's three false positives with `limit=5`: in **none** of them did a deeper candidate carry a house number. `Colon 1000, Concepcion` returned Chiguayante then Hualqui; `Arturo Prat 100, La Union` returned Valdivia, then La Florida, then two comuna-level entries; `Ruta G-60 km 12, Curacavi` returned Melipilla, then María Pinto, then Curacaví at comuna level. So the tempting alternative — fetch several and pick the first whose `municipality` matches, turning the cross-check into something that *improves* results rather than only rejecting them — **buys nothing here and risks selecting a worse point**. It costs the same single call, so it can be revisited; it is not being adopted on the evidence available.
+
+Two of those deeper candidates came back with **no `municipality.*` entry at all**, which is the first direct observation that `uncrosscheckable` is a real response shape and not a defensive hypothesis.
+
 **Percent-encode the address into the path.** Fase 0 measured an unescaped `/` (as in `S/N`, the commonest Chilean form for "no street number") returning `HTTP 404` rather than an empty match. Use `encodeURIComponent`, and carry a test with `S/N` in it.
+
+**A query with no comuna is the weakest query the system makes**, and it is worth saying next to the code rather than leaving to be deduced: no comuna text, no proximity bias, and no way to cross-check what comes back. Its result is precisely what the `uncrosscheckable` row decides to keep. Keeping it is still right — the alternative is not a centroid but NULL, because with no `comuna_id` there is no centroid to write — but nobody should mistake it for a verified point.
 
 **The comuna arrives already canonical.** `GeocodeQuery.comuna` carries the canonical name resolved from `orders.comuna_id` by Fase 5; the adapter compares it to `context[].municipality` with Fase 3's text normalisation. `normalize_comuna_id()` is a Postgres function and this layer does not talk to Supabase — see Fase 0's "En qué capa se decide". Wrapped in the existing `CircuitBreaker` so a provider outage degrades to centroid fallback instead of stalling the queue.
 
@@ -543,7 +565,7 @@ Add `'geocode.enrich'` to the exported `QueueName` union at `orchestration/queue
 #### Resolution order
 
 1. `geocode_cache` hit on `(address_hash, normalisation_version)` → use it, bump `hit_count` / `last_used_at`. No network call. A cache hit is always `resolved`, because only `exact` results are ever cached.
-2. MapTiler → `source='maptiler'`, precision per Fase 0's mapping. **Written to the cache only when `precision='exact'`.**
+2. MapTiler → `source='maptiler'`, precision per Fase 0's mapping. **Written to the cache only when `matchClass === 'exact'`** — keyed on the match class, never on the derived `precision`.
 3. Comuna centroid → `source='comuna_centroid'`, `precision='approximate'`, `geocode_status='fallback'`. **Never written to the cache.**
 
 **Only `exact` results are cached.** Caching a coarse answer would silently defeat the retry this state machine promises: step 1 would short-circuit every subsequent attempt, the row would re-read the same approximate value on every run without a single network call, and it would land `unresolvable` while the spec claimed it was being retried. The same reasoning that has always excluded centroids applies to a provider's locality-level match — both are "we do not really know where this is", and neither should be frozen into the cache.
@@ -649,6 +671,8 @@ Run the resolver against a sample of **200 real production `delivery_address` va
 | Provider hard failures | ≈ 0 % |
 | **`wrong_comuna`** — house number matched, `context[]` named another comuna | **no threshold: this is the measurement the comuna cross-check is on trial for** |
 | `uncrosscheckable` — a point, but nothing to check it against | report only |
+
+**A count of zero does not license withdrawing the check.** With n=200 and a rare event, zero cannot separate "never happens" from "happens once in 500" — and one in 500 across ~61k orders is roughly 120 sharp pins in the wrong region. Withdrawing on a zero would be the mirror image of the error Fase 0 just corrected by hand: *not having seen it is not evidence of absence*. Fase 7 backfills tens of thousands of addresses and yields a far better estimate for free, so a zero here licenses **"keep as specified, re-count at backfill scale"** — not removal. Only a materially non-zero count justifies acting now, in either direction.
 
 **The `wrong_comuna` count is not decoration, and it is the reason this table grew.** Fase 0 established that the comuna cross-check decided **zero** verdicts in 20 probes: every false positive it caught was already caught by the missing house number. The check is currently kept on an asymmetric argument, not on evidence. This is where the evidence comes from — and the number decides one of three things: the check stays as specified, it relaxes to comparing the **region** instead of the comuna (if the misses are mostly boundary cases or differing administrative labels), or it is withdrawn as cost without benefit.
 
