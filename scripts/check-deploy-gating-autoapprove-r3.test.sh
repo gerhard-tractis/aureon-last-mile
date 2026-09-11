@@ -159,6 +159,30 @@ assert_contains "never writes auth_hook= to \$GITHUB_OUTPUT" \
 assert_contains "never writes pg_net= to \$GITHUB_OUTPUT" \
   "names the unwritten pg_net output" "$DIAGNOSTIC_WF"
 
+# ── B1/G1 (2026-09-10, round 4): the round-3 negative-character-class anchor
+# excluded letters/digits/_ but not `.` or `-` — both are legal right after a
+# YAML/bash identifier without being part of it. `outputs.pg_net.x` (a
+# property access on the string 'true', which Actions evaluates to null —
+# renders empty) and `outputs.pg_net-v2` (parsed as subtraction from an
+# unknown named-value — a runtime failure, not a silent empty, but still
+# breaks the workflow with every guard here green) both survived. Fixed with
+# a positive terminator instead of patching the character class again.
+DOT_SUFFIX_OUTPUTS='    outputs:
+      auth_hook: ${{ steps.filter.outputs.auth_hook }}
+      pg_net: ${{ steps.filter.outputs.pg_net.x }}'
+DOT_SUFFIX_WF="$(full_wf "$CHANGES_STEPS" "[changes, deploy-qa, e2e-qa]" "$DOT_SUFFIX_OUTPUTS")"
+assert_exit 1 "output field followed by a property access (.x) fails" "$DOT_SUFFIX_WF"
+assert_contains "does not reference steps.<id>.outputs.pg_net exactly" \
+  "names the dotted pg_net match" "$DOT_SUFFIX_WF"
+
+DASH_SUFFIX_OUTPUTS='    outputs:
+      auth_hook: ${{ steps.filter.outputs.auth_hook }}
+      pg_net: ${{ steps.filter.outputs.pg_net-v2 }}'
+DASH_SUFFIX_WF="$(full_wf "$CHANGES_STEPS" "[changes, deploy-qa, e2e-qa]" "$DASH_SUFFIX_OUTPUTS")"
+assert_exit 1 "output field followed by a dash (-v2) fails" "$DASH_SUFFIX_WF"
+assert_contains "does not reference steps.<id>.outputs.pg_net exactly" \
+  "names the dashed pg_net match" "$DASH_SUFFIX_WF"
+
 echo
 echo "  $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

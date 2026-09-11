@@ -16,6 +16,18 @@ export function resolveGateEnv(gate) {
     : gate.environment;
 }
 
+// round 4 (2026-09-10) review diagnosis: rounds 3 and 4 each enumerated by
+// NEGATION the set of bad characters ((?![A-Za-z0-9_]), then discovering
+// `.` and `-` weren't excluded either) instead of requiring the good shape
+// POSITIVELY. That loop doesn't end on its own — round 5 finds the next
+// character. Fixed here by requiring a positive terminator: whatever comes
+// right after `outputs.<field>` must be one of the tokens that legally
+// follow it inside a GitHub Actions `${{ }}` expression (closing braces, a
+// comparison/boolean operator, a closing paren, or end of string) — not
+// "not a word character", which `.` and `-` both satisfy without being
+// valid there.
+const TERMINATOR = String.raw`(?:\s*\}\}|\s*==|\s*\|\||\s*&&|\s*\)|$)`;
+
 // review round 2026-09-10, item 3 — `changes.outputs.<outputKey>` (e.g.
 // `${{ steps.filter.outputs.auth_hook }}`) names a step by `id:`, but
 // nothing verified that id actually resolves to a real step, let alone one
@@ -24,35 +36,35 @@ export function resolveGateEnv(gate) {
 // `steps.filter.outputs.auth_hook` — and pg_net alongside it — silently
 // went dead.
 //
-// review round 3 (2026-09-10) hardened this after two more surviving
-// mutants against the real deploy.yml:
+// round 3 hardened the id-match with a negative-character-class end anchor
+// (rejected an unanchored substring match like `auth_hook_v2`); round 4
+// found the class was incomplete (`.x`, `-v2` both survived) and replaced
+// it with the positive TERMINATOR above instead of patching the class
+// again. It now ERRORS on a non-match instead of silently returning [] —
+// the caller only invokes this once it already knows outputValue is
+// non-empty, so a failed match means the value doesn't name a real
+// steps.<id>.outputs.<field> reference for THIS field.
 //
-// G1 — the id-match regex had no end anchor, so `outputs.auth_hook_v2`
-// satisfied a check for `auth_hook` (it's a substring match, not an exact
-// field match). Now anchored with a negative lookahead so a same-prefix
-// field name cannot pass. And it now ERRORS on a non-match instead of
-// silently returning [] — the caller only invokes this once it already
-// knows outputValue is non-empty, so a failed anchored match means the
-// value names something other than a real steps.<id>.outputs.<field>
-// reference for THIS field.
-//
-// G2 — the "does this step compute <field>=" check matched the STRING
-// "<field>=" anywhere in the step's run:, including inside an unrelated
-// diagnostic echo (this same round's own force_db log line mentions both
-// `auth_hook=${AUTH_HOOK}` and `pg_net=${PG_NET}` without writing either to
-// $GITHUB_OUTPUT). Now requires `echo "<field>=` — anchored to the START of
-// an echo's quoted string, which a message that only CONTAINS "<field>="
-// further into its own text does not satisfy.
+// round 4 ALSO found `githubOutputSinks`' original block regex
+// (`/\{([\s\S]*?)\}\s*>>.../`) treated the FIRST `{` anywhere in the run —
+// including the inline `matches() { ... }` helper's own braces — as a
+// block opener, then non-greedily searched all the way to the real output
+// block's closer, silently swallowing everything in between (including a
+// field's write line moved OUTSIDE the real block, which is exactly the
+// mutation this was meant to catch). Anchored `{`/`}` to standalone lines
+// (own line, only whitespace besides the brace) instead — the shape this
+// repo's real deploy.yml uses for its output block, and NOT the shape of
+// an inline one-liner function definition.
 export function checkOutputStepBinding(changesJob, outputValue, outputKey) {
   const errors = [];
   const value = String(outputValue ?? '');
-  const idMatch = new RegExp(`steps\\.([A-Za-z0-9_-]+)\\.outputs\\.${outputKey}(?![A-Za-z0-9_])`)
+  const idMatch = new RegExp(`steps\\.([A-Za-z0-9_-]+)\\.outputs\\.${outputKey}${TERMINATOR}`)
     .exec(value);
   if (!idMatch) {
     errors.push(
       `changes.outputs.${outputKey} ("${value}") does not reference steps.<id>.outputs.${outputKey} ` +
-      `exactly — a same-prefix field name (e.g. ${outputKey}_v2) reads as empty just the same, ` +
-      `silently resolving approve-production's environment to 'production-auto'`
+      `exactly — a longer/different field name (e.g. ${outputKey}_v2, ${outputKey}.x) reads as empty ` +
+      `just the same, silently resolving approve-production's environment to 'production-auto'`
     );
     return errors;
   }
@@ -66,7 +78,7 @@ export function checkOutputStepBinding(changesJob, outputValue, outputKey) {
     );
     return errors;
   }
-  if (!new RegExp(`echo\\s+"${outputKey}\\s*=`).test(String(boundStep.run ?? ''))) {
+  if (!writesFieldToGithubOutput(String(boundStep.run ?? ''), outputKey)) {
     errors.push(
       `changes.outputs.${outputKey} references steps.${stepId}, but that step's run: never writes ` +
       `${outputKey}= to $GITHUB_OUTPUT (mentioning it elsewhere, e.g. in a diagnostic echo, does not ` +
@@ -74,4 +86,35 @@ export function checkOutputStepBinding(changesJob, outputValue, outputKey) {
     );
   }
   return errors;
+}
+
+// round 4 review, M2/M3 — the round-3 predicate (`echo "<field>=` anywhere
+// in the step) was satisfied by a diagnostic echo that never reaches
+// $GITHUB_OUTPUT at all (M2: moving the real write OUTSIDE the redirected
+// block still "mentions" the field), and rejected the legitimate
+// `printf '%s\n' "<field>=$X" >> "$GITHUB_OUTPUT"` form GitHub's own docs
+// recommend for multiline values (M3). Fixed by finding the actual spans of
+// text that get redirected into $GITHUB_OUTPUT — either a `{ ... }` block
+// closed with `} >> "$GITHUB_OUTPUT"` (the shape this repo's real
+// deploy.yml uses today) or a single `echo`/`printf` line ending in
+// `>> "$GITHUB_OUTPUT"` — and only then checking for the field inside those
+// spans. A heredoc (`cat <<EOF >> "$GITHUB_OUTPUT"`) is NOT recognised; a
+// step that needs one for these fields should say so in a comment, since
+// this guard can't see it.
+function githubOutputSinks(run) {
+  const sinks = [];
+  // `{`/`}` each alone on their own line (whitespace aside) — not
+  // `matches() { ... }`, an inline one-liner whose braces are not this
+  // shape and must not be mistaken for it (see the comment above).
+  const blockRe = /^[ \t]*\{[ \t]*$\n([\s\S]*?)^[ \t]*\}\s*>>\s*"?\$GITHUB_OUTPUT"?[ \t]*$/gm;
+  let m;
+  while ((m = blockRe.exec(run))) sinks.push(m[1]);
+  const lineRe = /^[ \t]*((?:echo|printf)\b.*)>>\s*"?\$GITHUB_OUTPUT"?\s*$/gm;
+  while ((m = lineRe.exec(run))) sinks.push(m[1]);
+  return sinks;
+}
+
+function writesFieldToGithubOutput(run, outputKey) {
+  const writeRe = new RegExp(`(?:echo\\s+"|printf\\s+(?:'[^']*'\\s+)?")${outputKey}\\s*=`);
+  return githubOutputSinks(run).some((sink) => writeRe.test(sink));
 }
