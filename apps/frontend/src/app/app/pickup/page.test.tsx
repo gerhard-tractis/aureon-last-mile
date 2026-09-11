@@ -91,6 +91,15 @@ vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => mockUseOperatorId(),
 }));
 
+// spec-94 fase 3 — RoutedManifestTable now calls this hook itself (for
+// "Quitar de la ruta"), which calls useQueryClient() internally. This page
+// test never wraps in QueryClientProvider (every other query-backed hook on
+// this page is mocked the same way), so the real hook would throw "No
+// QueryClient set" the moment the routed tab renders a row.
+vi.mock('@/hooks/pickup/useRemoveManifestFromRoute', () => ({
+  useRemoveManifestFromRoute: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
 // 3j's crew picker.
 vi.mock('@/hooks/pickup/useCrewCandidates', () => ({
   useCrewCandidates: () => ({ data: [], isLoading: false }),
