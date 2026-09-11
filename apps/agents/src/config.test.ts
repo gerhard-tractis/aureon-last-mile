@@ -19,6 +19,8 @@ const OPTIONAL_VARS = [
   'WA_ACCESS_TOKEN',
   'WA_VERIFY_TOKEN',
   'WA_APP_SECRET',
+  'MAPTILER_API_KEY',
+  'MAPTILER_MONTHLY_QUOTA',
 ];
 
 // Ports have defaults, so they are neither required nor undefined-when-unset.
@@ -100,6 +102,33 @@ describe('loadConfig', () => {
     expect(config.WA_ACCESS_TOKEN).toBe('wa-token');
     expect(config.WA_VERIFY_TOKEN).toBe('wa-verify');
     expect(config.WA_APP_SECRET).toBe('wa-secret');
+  });
+
+  describe('MAPTILER_API_KEY / MAPTILER_MONTHLY_QUOTA', () => {
+    // spec-58 Fase 4: a geocoding key must not be able to take down the agent
+    // suite, so both are optional — the worker boots and resolves to
+    // centroids when the key is absent.
+    it('boots without MAPTILER_API_KEY or MAPTILER_MONTHLY_QUOTA', async () => {
+      Object.assign(process.env, FULL_ENV);
+      delete process.env.MAPTILER_API_KEY;
+      delete process.env.MAPTILER_MONTHLY_QUOTA;
+
+      const { loadConfig } = await import('./config');
+      const config = loadConfig();
+      expect(config.MAPTILER_API_KEY).toBeUndefined();
+      expect(config.MAPTILER_MONTHLY_QUOTA).toBeUndefined();
+    });
+
+    it('populates MAPTILER_API_KEY and MAPTILER_MONTHLY_QUOTA when set', async () => {
+      Object.assign(process.env, FULL_ENV);
+      process.env.MAPTILER_API_KEY = 'maptiler-test-key';
+      process.env.MAPTILER_MONTHLY_QUOTA = '100000';
+
+      const { loadConfig } = await import('./config');
+      const config = loadConfig();
+      expect(config.MAPTILER_API_KEY).toBe('maptiler-test-key');
+      expect(config.MAPTILER_MONTHLY_QUOTA).toBe(100000);
+    });
   });
 
   it('rejects a short BULL_BOARD_PASSWORD', async () => {

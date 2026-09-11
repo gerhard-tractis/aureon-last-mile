@@ -16,6 +16,11 @@ export class CircuitBreaker<T> {
   private state: CircuitBreakerState = 'closed';
   private failureCount = 0;
   private openedAt: number | null = null;
+  // Set only by trip(). A normal failure-threshold open re-arms after
+  // options.recoveryTimeout; an explicit trip re-arms after its own finite
+  // latch instead, which is deliberately independent of recoveryTimeout —
+  // see trip()'s doc comment.
+  private tripLatchUntil: number | null = null;
   private readonly options: CircuitBreakerOptions;
 
   constructor(
@@ -32,6 +37,22 @@ export class CircuitBreaker<T> {
 
   getFailureCount(): number {
     return this.failureCount;
+  }
+
+  /**
+   * Open the circuit immediately, independent of failureCount/failureThreshold,
+   * and re-arm to half-open after exactly `latchMs` — not `recoveryTimeout`,
+   * and not "until restart". Callers use this for failures that are known-bad
+   * rather than merely repeated (e.g. a refused API credential): the normal
+   * threshold-based open is a guess that the provider is unwell; trip() is a
+   * certainty that this exact cause will not clear on its own before `latchMs`
+   * has passed. A latch that never re-armed would turn a transient cause
+   * (credential rotated, quota reset) into a permanently dead provider.
+   */
+  trip(latchMs: number): void {
+    this.state = 'open';
+    this.openedAt = Date.now();
+    this.tripLatchUntil = Date.now() + latchMs;
   }
 
   async execute(...args: unknown[]): Promise<T> {
@@ -52,7 +73,17 @@ export class CircuitBreaker<T> {
   }
 
   private checkRecovery(): void {
-    if (this.state === 'open' && this.openedAt !== null) {
+    if (this.state !== 'open') return;
+
+    if (this.tripLatchUntil !== null) {
+      if (Date.now() >= this.tripLatchUntil) {
+        this.state = 'half-open';
+        this.tripLatchUntil = null;
+      }
+      return;
+    }
+
+    if (this.openedAt !== null) {
       const elapsed = Date.now() - this.openedAt;
       if (elapsed >= this.options.recoveryTimeout) {
         this.state = 'half-open';
@@ -63,6 +94,7 @@ export class CircuitBreaker<T> {
   private onSuccess(): void {
     this.failureCount = 0;
     this.openedAt = null;
+    this.tripLatchUntil = null;
     this.state = 'closed';
   }
 

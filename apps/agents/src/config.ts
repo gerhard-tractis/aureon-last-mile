@@ -41,6 +41,13 @@ const configSchema = z.object({
   WA_ACCESS_TOKEN: z.string().optional(),
   WA_VERIFY_TOKEN: z.string().optional(),
   WA_APP_SECRET: z.string().optional(),
+
+  // spec-58 Fase 4: MapTiler geocoding. Both optional — a geocoding key must
+  // not be able to take down the agent suite. Absent, the worker boots and
+  // Fase 5 resolves everything to comuna centroids instead of refusing to
+  // start.
+  MAPTILER_API_KEY: z.string().min(1).optional(),
+  MAPTILER_MONTHLY_QUOTA: z.coerce.number().int().positive().optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;
