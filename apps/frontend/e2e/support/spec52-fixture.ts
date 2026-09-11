@@ -63,15 +63,19 @@ export const RECEPTIONIST = {
 export const PLATE = 'E2E52AA';
 
 /**
- * Accessible names of the two scanner inputs. spec52's own spec still keeps
- * local copies of both (its `PICKUP_SCANNER`/`RECEPTION_SCANNER` consts) —
- * left as-is rather than switched over to these, to avoid touching a passing
- * suite for this task. `PICKUP_SCANNER_LABEL` is used by
- * `reception-mobile-fixture.ts`'s `openRouteForReception`; nothing imports
- * `RECEPTION_SCANNER_LABEL` yet — exported ahead of Task 25's reception spec,
- * which will need it for its own scanning steps.
+ * Accessible names of the two scanner inputs. These are THE definition — the
+ * spec files import them instead of keeping their own literals.
+ *
+ * That changed on 2026-09-11, and this is why: spec-95 fase 5 (#784) tradujo
+ * el aria-label de `ScannerInput.tsx` al español, y las dos copias del literal
+ * inglés viejo (aquí, y en `spec52-pickup-reception-end-to-end.spec.ts`) se
+ * quedaron atrás. spec52 y reception-mobile quedaron en rojo contra QA en
+ * cada merge posterior y, como el gate de E2E frena los jobs de despliegue a
+ * producción, también quedó frenado cada deploy. Un literal duplicado es
+ * cómo un renombrado pasa el review: el grep del string viejo encuentra el
+ * componente, se arregla, y las copias del test son invisibles para él.
  */
-export const PICKUP_SCANNER_LABEL = 'Barcode scanner input';
+export const PICKUP_SCANNER_LABEL = 'Campo de escaneo';
 export const RECEPTION_SCANNER_LABEL = 'Escáner de recepción';
 
 /** Two clients, three cargas. */
@@ -358,6 +362,50 @@ export async function signIn(
   await page.locator('button[type="submit"]').click();
   // Generous: on a cold dev server this is the first compile of /app.
   await page.waitForURL(/\/app(\/|$)/, { timeout: 90_000 });
+}
+
+/**
+ * Reads the JWT `@supabase/ssr` stored in cookies after `signIn()` and
+ * decodes its `app_metadata.claims` — the shape
+ * `custom_access_token_hook` writes (spec-88 fase 3). This is the assertion
+ * that closes the gap that fase left open: `signIn()` on its own only
+ * proves the login form redirected to `/app`, which a *degraded* hook
+ * (its own `EXCEPTION WHEN OTHERS ... RETURN event` branch) would still do
+ * — a JWT with no `operator_id`/`role`/`permissions` still authenticates.
+ * Reading the claims is the only way to prove the hook actually ran.
+ *
+ * `@supabase/ssr@0.5.2` (browser client, cookie storage) always writes the
+ * session `base64-`-prefixed under a cookie named `sb-<ref>-auth-token`,
+ * chunked into `.0`/`.1`/... if the value is long. This does not hardcode
+ * `<ref>` (self-hosted QA derives it from the API hostname, not a Supabase
+ * project id) — it matches any cookie name of that shape instead.
+ *
+ * The `base64-` prefix strip below is NOT tolerating two formats — this
+ * version of `@supabase/ssr` never writes the value without it. If a future
+ * bump ever did, stripping nothing here would feed non-base64url text into
+ * `Buffer.from(..., 'base64url')` and `JSON.parse` would throw — loud, not
+ * silent, which is the point.
+ */
+export async function getAccessTokenClaims(page: Page): Promise<Record<string, unknown>> {
+  const cookies = await page.context().cookies();
+  const chunks = cookies
+    .filter((c) => /^sb-.+-auth-token(\.\d+)?$/.test(c.name))
+    .sort((a, b) => {
+      const ai = Number(a.name.split('.')[1] ?? -1);
+      const bi = Number(b.name.split('.')[1] ?? -1);
+      return ai - bi;
+    });
+  if (chunks.length === 0) {
+    throw new Error('getAccessTokenClaims: no sb-*-auth-token cookie found — not signed in?');
+  }
+  let raw = chunks.map((c) => decodeURIComponent(c.value)).join('');
+  if (raw.startsWith('base64-')) raw = raw.slice('base64-'.length);
+  const sessionJson = Buffer.from(raw, 'base64url').toString('utf8');
+  const session = JSON.parse(sessionJson) as { access_token: string };
+  const accessToken = session.access_token;
+  const payload = accessToken.split('.')[1];
+  const claimsJson = Buffer.from(payload, 'base64url').toString('utf8');
+  return JSON.parse(claimsJson) as Record<string, unknown>;
 }
 
 /** Types a barcode into a focused scanner input and submits it. */

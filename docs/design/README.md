@@ -18,7 +18,7 @@ Ocurrió el 2026-09-08 con spec-82 fase 1: el agente no pudo decidir dónde iban
 
 | Fichero | Proyecto | Pantallas |
 |---|---|---|
-| `Recogida.dc.html` | `4656dcbc-00da-4548-a4da-b53e614264c1` | **`5a`–`5i`**, y solo esas: `5a` es el escritorio, `5b`–`5i` el móvil de cuadrilla |
+| `Recogida.dc.html` | `4656dcbc-00da-4548-a4da-b53e614264c1` | **`5a`–`5i` más `5f2`**, y solo esas: `5a` es el escritorio, el resto el móvil de cuadrilla |
 
 Verificable en el propio fichero:
 
@@ -26,8 +26,13 @@ Verificable en el propio fichero:
 grep -oE 'dv-opt" id="[^"]*"' docs/design/Recogida.dc.html
 ```
 
-devuelve exactamente nueve artboards, `5a` a `5i`, y la etiqueta de turno del documento lo
-confirma: «Recogida · escritorio (5a) y móvil de cuadrilla (5b–5i)».
+devuelve **diez** artboards tras la ronda del 2026-09-10: `5a`–`5i` más `5f2`, el diálogo
+irreversible de transferencia de custodia, que cuelga de `5f`.
+
+> La etiqueta de turno del documento sigue diciendo «Recogida · escritorio (5a) y móvil de
+> cuadrilla (5b–5i)» — **no se actualizó** al añadir `5f2`, así que el `grep` de arriba es la
+> única cuenta fiable de las dos. Antes de esa ronda eran nueve y esta misma sección lo
+> afirmaba; la corrección es de la cuenta, no del método.
 
 > **Corrección (2026-09-08).** La primera versión de esta tabla afirmaba que el fichero cubría
 > además `1a/1d/1l/1z` (móvil del conductor). **Era falso** — salió de un `grep` mío demasiado
@@ -43,6 +48,13 @@ confirma: «Recogida · escritorio (5a) y móvil de cuadrilla (5b–5i)».
 
 No se copia `support.js`: es el runtime generado que renderiza el documento, no contenido de
 diseño.
+
+## Feedback hacia el diseño
+
+`mock-feedback-recogida.md` recoge lo contrario de este directorio: lo que la
+implementación aprendió y el mock todavía no sabe — capacidades construidas que
+`5a`–`5i`/`5f2` no dibujan, pantallas que el mock pide y están aplazadas con su razón,
+y ambigüedades del propio mock que sólo se pueden resolver en diseño.
 
 ## Cómo se actualiza
 

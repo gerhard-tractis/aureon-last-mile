@@ -97,6 +97,44 @@ name: Production Backfill — loaded_route_id (spec-87 fase 4)
 # as data, never spliced into the script text.
 #
 # NEVER touches the VPS. Production is managed Supabase — no SSH, no docker.
+#
+# IPv4: THE POOLER, NOT THE DIRECT CONNECTION
+# --------------------------------------------------------------
+# The dry_run of this workflow (run 34520594735) died on its first query:
+# `db.<ref>.supabase.co:5432` (Supabase's direct connection) resolves to an
+# IPv6-only address, and GitHub-hosted runners have no IPv6 route —
+# "Network is unreachable" every time. The fix is Supabase's pooler
+# (Supavisor), which is dual-stack: `aws-0-<region>.pooler.supabase.com`.
+#
+# The region is not written down anywhere in this repo, and hardcoding it
+# would silently rot the moment the project moved regions — so the first
+# step below resolves it at runtime from the Supabase Management API using
+# the SUPABASE_ACCESS_TOKEN secret this job already has (same secret
+# `verify-prod-migrations` in deploy.yml uses to link the Supabase CLI), via
+# `scripts/resolve-supabase-pooler-host.sh` (unit-tested without network
+# access or credentials — see resolve-supabase-pooler-host.test.sh).
+#
+# TRANSACTION MODE (6543), NOT SESSION MODE (5432)
+# --------------------------------------------------------------
+# This workflow's whole design (see "TWO MODES" above) is built on each
+# `psql -c` invocation being its OWN connection and its own autocommitted
+# transaction — nothing here relies on state surviving from one `psql`
+# process to the next, and every multi-statement `-c` string (a `SET
+# statement_timeout` followed by one query) is sent as a single simple-query
+# message, so it runs inside one implicit transaction on whichever backend
+# Supavisor hands it — exactly what transaction mode supports. Transaction
+# mode also multiplexes many short-lived client connections over a small
+# pool of real Postgres backends, which is the right shape for a loop that
+# can open on the order of 100 connections in a row (see the batch_size
+# arithmetic above) — session mode would instead reserve a dedicated backend
+# per connection for the pooler's whole session lifetime. The one thing
+# transaction mode does NOT support — server-side prepared statements and
+# session-scoped state spanning multiple client connections — is never used
+# here.
+#
+# The pooler also changes the connection user: `postgres` becomes
+# `postgres.<project-ref>` (Supavisor routes by encoding the project ref into
+# the username, since one pooler endpoint serves many projects).
 
 concurrency:
   # Round-2 review correction: an earlier version of this block used
@@ -145,11 +183,38 @@ jobs:
     environment: production
     timeout-minutes: 30
     steps:
+      - name: Check out the repo
+        # `resolve-supabase-pooler-host.sh` lives in this repo, so the workspace
+        # has to exist before the step that runs it. Neither of these two
+        # workflows had a checkout before #750 — they only ever shelled out to
+        # `psql`, so nothing on disk was needed and its absence was invisible.
+        # The first real dry_run after #750 failed with exit 127,
+        # "No such file or directory".
+        uses: actions/checkout@v4
+
       - name: Install postgresql-client
         run: |
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -yqq postgresql-client
+
+      - name: Resolve Supabase pooler host (IPv4 — see workflow header)
+        id: resolve-pooler
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          HTTP_STATUS=$(curl -sS -o project.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            "https://api.supabase.com/v1/projects/${{ secrets.SUPABASE_PROJECT_REF }}")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "::error::Management API returned HTTP ${HTTP_STATUS} while resolving the project region"
+            rm -f project.json
+            exit 1
+          fi
+          POOLER_HOST=$(bash "$GITHUB_WORKSPACE/scripts/resolve-supabase-pooler-host.sh" < project.json)
+          rm -f project.json
+          echo "pooler_host=${POOLER_HOST}" >> "$GITHUB_OUTPUT"
 
       - name: Validate batch_size
         env:
@@ -164,9 +229,10 @@ jobs:
       - name: Dimension the backlog (always runs, writes nothing)
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
         run: |
           set -euo pipefail
-          CONN="sslmode=require host=db.${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co port=5432 dbname=postgres user=postgres"
+          CONN="sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}"
           # statement_timeout bounds the same full-dispatches-table sweep
           # populate() pays for real in mode=execute. A green result here is
           # real evidence that sweep survives at production scale — a red
@@ -231,9 +297,10 @@ jobs:
         if: ${{ inputs.mode == 'execute' }}
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
         run: |
           set -euo pipefail
-          CONN="sslmode=require host=db.${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co port=5432 dbname=postgres user=postgres"
+          CONN="sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}"
           psql "$CONN" -c "
             SET statement_timeout = '900s';
             SELECT public.spec79_populate_loaded_route_backfill_candidates() AS newly_staged;
@@ -244,9 +311,10 @@ jobs:
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           BATCH_SIZE: ${{ inputs.batch_size }}
+          POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
         run: |
           set -euo pipefail
-          CONN="sslmode=require host=db.${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co port=5432 dbname=postgres user=postgres"
+          CONN="sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}"
           TOTAL_UPDATED=0
           BATCH_NUM=0
           # Upper bound scaled to BATCH_SIZE, not a fixed constant: a fixed
@@ -297,9 +365,10 @@ jobs:
         if: ${{ inputs.mode == 'execute' }}
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
         run: |
           set -euo pipefail
-          CONN="sslmode=require host=db.${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co port=5432 dbname=postgres user=postgres"
+          CONN="sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}"
           echo "Candidate orders remaining (must be 0):"
           psql "$CONN" -c "SELECT COUNT(*) AS staged_candidate_orders_remaining FROM public.spec79_loaded_route_backfill_candidates;"
           echo "Total packages still missing loaded_route_id (the remainder is the deliberately-untouched ambiguous set):"

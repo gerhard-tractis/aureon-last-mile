@@ -1,0 +1,163 @@
+# spec-93 fase 4 — línea base de divergencias QA <-> producción.
+#
+# Este fichero es el contrato del guardarraíl determinista
+# (.github/workflows/qa-prod-parity.yml + scripts/qa-prod-parity-compare.mjs):
+# una divergencia entre QA y producción SÓLO se deja pasar si está declarada
+# aquí, con su motivo y con qué clase de cambio queda sin cobertura. Cualquier
+# otra divergencia rompe el check.
+#
+# Formato (leído por scripts/qa-prod-parity-baseline.mjs — no es YAML
+# genérico, ver el comentario de cabecera de ese fichero. En particular: NO
+# admite bloques `|`/`>` multilínea — cada valor va en una sola línea
+# entrecomillada, aunque quede larga):
+#
+#   excluded_surfaces:
+#     - id: <identificador de la superficie>
+#       reason: "por qué no es comparable en absoluto"
+#   accepted_divergences:
+#     - surface: <superficie>
+#       key: <clave dentro de la superficie>
+#       qa: "<valor medido en QA>"
+#       production: "<valor medido en producción>"
+#       reason: "por qué se acepta"
+#       uncovered_change_class: "qué clase de cambio pasa por este agujero sin ejercitarse"
+#
+# Un valor "qa" o "production" de "<absent>" significa que esa superficie no
+# declaró nada en absoluto en ese lado (no una cadena vacía) — ver la
+# convención ABSENT de qa-prod-parity-compare.mjs.
+#
+# Cerrar o aceptar una divergencia nueva es decisión de la fase 3 de spec-93,
+# NUNCA de quien construyó este guardarraíl (fase 4) — este fichero sólo
+# aplica lo que la fase 3 ya decidió.
+
+# NOTA sobre las particiones diarias de realtime.messages_* (fila 12 del
+# inventario de fase 1): NO están aquí como excluded_surfaces. Cada fila que
+# el comparador ve tiene surface="realtime_publication" — igual que todas las
+# demás filas de esa superficie — así que una exclusión a nivel de superficie
+# no podría filtrar SÓLO las particiones sin apagar realtime_publication
+# entera. El filtro real vive en el SQL de scripts/measure-qa-surfaces.sh y
+# scripts/measure-prod-surfaces.sh (WHERE NOT (schemaname = 'realtime' AND
+# tablename LIKE 'messages\_%')), a los dos lados. Una entrada aquí habría
+# sido decorativa — no silencia nada porque nunca hay nada que filtrar
+# (review round 1, Menores).
+excluded_surfaces:
+  # La fase 1 lo midió explícitamente: producción es el gateway gestionado de
+  # Supabase, no Kong. No hay ningún endpoint de producción con el que
+  # comparar las rutas — la fila entera es no-comparable, no ausente. QA SÍ
+  # mide sus rutas de Kong (measure-qa-surfaces.sh) precisamente para que
+  # esta exclusión silencie hechos reales en vez de ser decorativa — el
+  # reporte del comparador dice cuántos.
+  - id: kong_routes
+    reason: "producción es el gateway gestionado de Supabase, no Kong — no existe un endpoint de producción con el que comparar (spec-93 fase 1, fila 11)"
+
+accepted_divergences:
+  # Las cinco filas de abajo son las medidas el 2026-09-10 y listadas en el
+  # cuerpo de spec-93 fase 4 ("Divergencias ya medidas que la línea base
+  # inicial tendrá que contemplar"). Se aceptan aquí tal cual se midieron —
+  # decidir si se CIERRAN en vez de aceptarse es trabajo de la fase 3, no de
+  # esta fase, y este fichero no prejuzga esa decisión: sólo la hace visible
+  # y exigible en CI mientras siga vigente.
+  - surface: auth
+    key: disable_signup
+    qa: "true"
+    production: "false"
+    reason: "QA bloquea el alta libre a propósito, para no ensuciar Musan con cuentas creadas por accidente durante pruebas manuales; producción sí permite alta libre (medido 2026-09-10)"
+    uncovered_change_class: "un cambio en la política de alta de cuentas de producción (activar o desactivar el self-signup) no se ejercita nunca contra QA, porque QA corre con el valor contrario fijo"
+
+  - surface: auth
+    key: mailer_autoconfirm
+    qa: "true"
+    production: "false"
+    reason: "QA auto-confirma el email para no depender de un servidor de correo real en las pruebas E2E; producción exige confirmación real (medido 2026-09-10)"
+    uncovered_change_class: "el flujo real de confirmación de email (el enlace, su expiración, un email que nunca llega) no lo ejercita nunca e2e-qa — el login post-signup en QA nunca pasa por ese paso"
+
+  - surface: auth
+    key: mfa_totp_enroll_enabled
+    qa: "<absent>"
+    production: "true"
+    reason: "QA nunca declaró esta variable — no está apagada a propósito, nadie la configuró; producción la tiene activada (medido 2026-09-10)"
+    uncovered_change_class: "cualquier cambio en la política de enrolamiento MFA de producción (o un bug en custom_access_token_hook que dependa de si MFA está activo) no tiene ninguna prueba en QA que lo toque"
+
+  - surface: auth
+    key: mfa_totp_verify_enabled
+    qa: "<absent>"
+    production: "true"
+    reason: "mismo caso que mfa_totp_enroll_enabled — variable nunca declarada en QA, activa en producción (medido 2026-09-10)"
+    uncovered_change_class: "la verificación TOTP en el login (el segundo factor en sí) no se ejercita nunca en QA"
+
+  - surface: auth
+    key: refresh_token_rotation_enabled
+    qa: "<absent>"
+    production: "true"
+    reason: "mismo patrón — variable nunca declarada en QA, activa en producción (medido 2026-09-10)"
+    uncovered_change_class: "la rotación de refresh tokens (y cualquier regresión que invalide una sesión de más, o que deje uno reutilizable cuando no debería) no la ejercita ninguna prueba en QA — las sesiones de e2e-qa nunca rotan un refresh token porque la rotación está apagada ahí"
+
+  # Las nueve filas de abajo son las que la corrida 34545563792 (fase 4, primera
+  # comparación real) reportó como UNDECLARED y que spec-93 fase 3b decidió
+  # ACEPTAR — el resto de lo que esa corrida encontró se CERRÓ en código en vez
+  # de declararse aquí (ver esa fase para el detalle: el alias
+  # hook_custom_access_token_enabled, postgrest/db_extra_search_path, y
+  # storage_bucket/raw-files).
+
+  - surface: extensions
+    key: pgtap
+    qa: "1.3.3"
+    production: "<absent>"
+    reason: "instalada a propósito SÓLO en QA (spec-93 fase 3, primera tanda) para correr los tests pgTAP del repo contra una base real — una extensión de testing no pinta en producción"
+    uncovered_change_class: "ninguno — no hay comportamiento de producción que dependa de pgtap; es infraestructura de pruebas, no una superficie que un cambio de producción pueda tocar"
+
+  - surface: extensions
+    key: pg_net
+    qa: "0.20.3"
+    production: "<absent>"
+    reason: "instalada por el bootstrap de la imagen self-hosted (infra/supabase-qa/volumes/db/webhooks.sql:3, CREATE EXTENSION IF NOT EXISTS pg_net), no a mano; ninguna migración la usa hoy (verificado: grep -rlE 'net.http_(post|get)' packages/database/supabase/migrations/ no encuentra nada) — QA tiene de más, no de menos"
+    uncovered_change_class: "dirección peligrosa, no benigna: una futura migración que use net.http_post/net.http_get aplicaría en verde contra QA (que ya tiene la extensión desde el bootstrap) y fallaría al aplicarse en producción (que no la tiene) — nada en QA ejercita nunca esa ruta de fallo porque QA nunca puede reproducir la ausencia de la extensión"
+
+  - surface: edge_function
+    key: main
+    qa: "present"
+    production: "<absent>"
+    reason: "`main` es el router del runtime de edge functions autohospedado que corre en QA (supabase-qa-edge-functions); producción usa el runtime gestionado de Supabase, que no tiene ni necesita ese router — es forma del entorno, no una función de negocio desplegada de más"
+    uncovered_change_class: "ninguno — no hay lógica de negocio en `main` que un cambio de producción pudiera divergir; es el punto de entrada del runtime self-hosted en sí"
+
+  - surface: roles
+    key: postgres
+    qa: "memberof=anon,authenticated,authenticator,pg_create_subscription,pg_monitor,pg_read_all_data,pg_signal_backend,service_role,supabase_functions_admin,supabase_privileged_role,supabase_realtime_admin"
+    production: "memberof=anon,authenticated,authenticator,pg_create_subscription,pg_monitor,pg_read_all_data,pg_signal_backend,service_role,supabase_privileged_role"
+    reason: "QA es self-hosted, así que el rol `postgres` también pertenece a `supabase_functions_admin` (el rol que corre el runtime de edge functions self-hosted) y a `supabase_realtime_admin` (administra la publicación de realtime, que en producción gestiona la propia plataforma) — ninguno de los dos roles existe del lado de producción"
+    uncovered_change_class: "ninguno — la pertenencia extra de `postgres` en QA es consecuencia directa de correr el runtime de edge functions y realtime self-hosted, no una diferencia de permisos que un cambio de producción pueda introducir o quitar"
+
+  - surface: roles
+    key: supabase_functions_admin
+    qa: "memberof=-"
+    production: "<absent>"
+    reason: "el rol que administra el runtime de edge functions self-hosted (supabase-qa-edge-functions) sólo existe en QA — producción es el runtime gestionado, sin este rol"
+    uncovered_change_class: "ninguno — es un rol de infraestructura del self-hosting, no una superficie de permisos de negocio que un cambio de producción pueda tocar"
+
+  - surface: roles
+    key: cli_login_postgres
+    qa: "<absent>"
+    production: "memberof=postgres"
+    reason: "rol que crea el Supabase CLI para autenticarse contra producción (proyecto gestionado); QA no pasa por el CLI de Supabase para nada equivalente, así que nunca se crea ahí"
+    uncovered_change_class: "ninguno — es un rol de tooling de acceso al proyecto gestionado, no algo que el código de la aplicación use o que un cambio de producción pueda alterar"
+
+  - surface: gucs
+    key: app.settings.jwt_secret
+    qa: "<redacted, presence only>"
+    production: "<absent>"
+    reason: "QA es self-hosted PostgREST/GoTrue y necesita el secreto JWT disponible como GUC de sesión (PGRST_APP_SETTINGS_JWT_SECRET) para que las funciones SQL puedan leerlo; producción gestiona su secreto JWT por otra vía dentro de la plataforma gestionada, nunca como un GUC de Postgres"
+    uncovered_change_class: "ninguno — es forma del entorno self-hosted; el valor del secreto en sí nunca se compara aquí (redactado), sólo su presencia"
+
+  - surface: postgrest
+    key: db_use_legacy_gucs
+    qa: "false"
+    production: "<absent>"
+    reason: "variable del PostgREST self-hosted de QA (PGRST_DB_USE_LEGACY_GUCS); confirmado contra una corrida real de /v1/projects/{ref}/postgrest (run 34539233402) que la Management API de producción NO expone esta clave bajo ningún nombre — sólo devuelve db_extra_search_path, db_pool, db_pool_acquisition_timeout, db_schema, max_rows — así que no es un alias mal mapeado, es un campo que ese endpoint gestionado nunca expone"
+    uncovered_change_class: "un cambio de esta variable en el PostgREST self-hosted de QA no tiene ningún equivalente medible en producción — no hay forma de comparar este ajuste específico contra el entorno gestionado con las herramientas actuales"
+
+  - surface: postgrest
+    key: db_anon_role
+    qa: "anon"
+    production: "<absent>"
+    reason: "mismo caso que db_use_legacy_gucs — confirmado contra la misma corrida real (34539233402) que /v1/projects/{ref}/postgrest no expone esta clave bajo ningún nombre"
+    uncovered_change_class: "un cambio de esta variable en el PostgREST self-hosted de QA no tiene ningún equivalente medible en producción — no hay forma de comparar este ajuste específico contra el entorno gestionado con las herramientas actuales"

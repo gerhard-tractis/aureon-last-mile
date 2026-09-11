@@ -18,6 +18,15 @@ import {
   manifestIsBlocked,
   manifestRetryEta,
 } from '@/lib/offline/queue-blocking';
+import { PICKUP_QUEUE_WAKE_EVENT } from '@/lib/offline/wake-event';
+
+// M-2, review del PR #712 — re-exporta la constante importada arriba (no un
+// segundo `export … from` contra el módulo — ronda 4, menor: esa forma
+// duplicaba la referencia al módulo origen sin usar el binding local pese a
+// que el resto de este fichero sí lo usa, `window.addEventListener`/
+// `dispatchEvent` más abajo). `complete/[loadId]/page.tsx` (el otro
+// productor del evento) sigue importándolo desde aquí sin cambios.
+export { PICKUP_QUEUE_WAKE_EVENT };
 
 /**
  * spec-81 fase 2 — el drenador de `pickup_queue`.
@@ -93,6 +102,19 @@ export type OfflineQueueSender = (entry: PickupQueueEntry) => Promise<OfflineQue
  * propio `AbortSignal.timeout(60_000)` sobre la llamada — así que ESTE
  * valor sólo necesita superar ESE, con margen. 90s deja 30s de margen sobre
  * los 60s del sender.
+ *
+ * Excepción declarada, spec-81 fase 5 — `manifest_photo`
+ * (`lib/offline/photos.ts`, `sendManifestPhoto`) NO impone su propio
+ * `AbortSignal.timeout`, así que el límite real de esa subida es el default
+ * del `fetch` del navegador (~300s), muy por encima de este valor — en
+ * cualquier otro tipo de esta cola eso sería el mismo bug que B4 corrigió
+ * arriba. Es deliberado sólo para `manifest_photo`: la ruta de subida es
+ * determinista (`operator_id/manifest_id/sheet-N-<client_operation_id>.jpg`)
+ * y sube con `upsert: true`, así que reclamar esta entrada como huérfana
+ * (`reclaimStale`) y reintentar ANTES de que la primera petición en vuelo
+ * termine es inofensivo — el segundo intento sube al MISMO objeto, no crea
+ * un duplicado, a diferencia de `close_manifest`, que muta
+ * `signature_operator_name` en el servidor y sí necesita el timeout propio.
  */
 export const RECLAIM_STALE_MS = 90_000;
 
@@ -503,28 +525,6 @@ export function useOfflineQueue(
 
   return { drainNow: drain };
 }
-
-/**
- * M-1, ronda 5 de review del PR #679 (mayor) — `retryBlockedManifest`
- * despertaba al drenador con `window.dispatchEvent(new Event('online'))`.
- * `online` es un evento GLOBAL con siete suscriptores reales en la app
- * (`Providers.tsx`: React Query's `onlineManager`; `useSyncQueue.ts`;
- * `scanStore.ts`; y otros) — tocar "REQUIERE AYUDA" sin señal de verdad les
- * mentía a TODOS ellos a la vez: React Query reanudaba mutaciones pausadas y
- * refetcheaba contra un dispositivo sin cobertura, el chip de sync pintaba
- * "online" en verde, Recepción se marcaba online. Y nada se autocorregía:
- * el navegador nunca iba a disparar el `offline` real que los devolviera a
- * la realidad, porque el estado de red real nunca cambió — la app creía que
- * había señal el resto de la sesión. Medido por el reviewer:
- * `navigator.onLine === false` pero `SyncChip.status === 'online'` y
- * `onlineManager.isOnline() === true` tras un solo tap.
- *
- * Este evento propio (`CustomEvent`, no reutiliza el tipo `'online'`) tiene
- * exactamente UN suscriptor: el propio `useOfflineQueue`, más arriba en
- * este archivo. "Hay trabajo nuevo que intentar ahora, no esperes al
- * próximo backoff" sin fingir que la red volvió.
- */
-export const PICKUP_QUEUE_WAKE_EVENT = 'aureon:pickup-queue-wake';
 
 /**
  * Decisión del usuario, 2026-09-08 (ronda 4 de review del PR #679, B-1) —

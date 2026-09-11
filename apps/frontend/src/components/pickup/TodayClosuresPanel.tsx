@@ -1,7 +1,7 @@
 'use client';
 
 import { Check, TriangleAlert } from 'lucide-react';
-import type { CompletedManifest } from '@/hooks/pickup/useManifests';
+import type { ClosureRow } from '@/hooks/pickup/pickupSummary';
 
 /**
  * spec-54 phase 4.4 — "Cierres de hoy" (mock `5a`, right column bottom).
@@ -23,7 +23,7 @@ function timeLabel(iso: string): string {
   return new Date(iso).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
 }
 
-export function TodayClosuresPanel({ rows }: { rows: CompletedManifest[] }) {
+export function TodayClosuresPanel({ rows }: { rows: ClosureRow[] }) {
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-border bg-surface">
       <header className="flex flex-none items-baseline gap-2 border-b border-border px-4 py-3.5">

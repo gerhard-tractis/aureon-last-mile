@@ -30,4 +30,15 @@ describe('RouteMapPlaceholder', () => {
     const link = screen.getByRole('link', { name: /abrir navegaci/i });
     expect(link.className).toMatch(/min-h-\[(4[4-9]|5[0-9]|6[0-9])px\]/);
   });
+
+  // spec-95 fase 3 — decisión del usuario, 2026-09-10: el mock dibuja
+  // "4,2 km · 11 min" y esta fase NO lo implementa. Ni el arco conducido
+  // (diferido a un spec de routing futuro) ni una distancia Haversine en
+  // línea recta (no es lo que conduce el operario). Este test congela esa
+  // ausencia — si alguien la agrega sin revisar la decisión, esto lo avisa.
+  it('never renders a distance or ETA figure — not implemented by decision, not by omission', () => {
+    render(<RouteMapPlaceholder pickupLocation="Av. Providencia 1234, Providencia" />);
+    expect(screen.queryByText(/km/i)).toBeNull();
+    expect(screen.queryByText(/\bmin\b/i)).toBeNull();
+  });
 });

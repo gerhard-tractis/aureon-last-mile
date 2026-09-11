@@ -22,7 +22,14 @@ import { cn } from '@/lib/utils';
 
 interface StageData {
   key: StageKey;
-  count: number;
+  /**
+   * null when the caller genuinely does not know the count yet (loading,
+   * offline/paused, or errored) — spec-86 fase 3, ronda 2 (#715): a tile that
+   * shows "0" while its query hasn't resolved reads as "confirmed empty",
+   * indistinguishable from an honest zero. Rendered as "—", same convention
+   * as packageCount below.
+   */
+  count: number | null;
   delta: string;
   health: HealthStatus;
   /**
@@ -65,7 +72,7 @@ const HEALTH_TEXT: Record<HealthStatus, string> = {
 
 const ORDERED_KEYS: StageKey[] = [
   'pickup', 'reception', 'consolidation', 'docks',
-  'delivery', 'returns', 'reverse',
+  'delivery', 'returns', 'reverse', 'discrepancies',
 ];
 
 export function StageRail({ stages, activeStage, onStageChange }: StageRailProps) {
@@ -82,9 +89,10 @@ export function StageRail({ stages, activeStage, onStageChange }: StageRailProps
         </span>
       </div>
 
-      {/* 2 columns on phones, 4 on tablets, 7 on desktop — the breakpoints the
-          old StageStrip used, kept so nothing regresses on small screens. */}
-      <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-7">
+      {/* 2 columns on phones, 4 on tablets, 8 on desktop (spec-86 fase 3 added
+          Discrepancias as the 8th tile) — the breakpoints the old StageStrip
+          used, kept so nothing regresses on small screens. */}
+      <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-8">
         {ORDERED_KEYS.map((key, i) => {
           const stage =
             stageMap.get(key) ??
@@ -127,7 +135,7 @@ export function StageRail({ stages, activeStage, onStageChange }: StageRailProps
               </div>
 
               <span className="font-mono text-[25px] font-bold leading-none text-text">
-                {stage.count}
+                {stage.count ?? '—'}
               </span>
 
               {/* The mock sized this slot for a token like "+18". computeStageHealth

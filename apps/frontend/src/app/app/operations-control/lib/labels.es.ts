@@ -6,6 +6,7 @@ export const STAGE_KEYS = [
   'delivery',
   'returns',
   'reverse',
+  'discrepancies',
 ] as const;
 
 export type StageKey = typeof STAGE_KEYS[number];
@@ -18,6 +19,7 @@ export const STAGE_LABELS: Record<StageKey, string> = {
   delivery:      'Reparto',
   returns:       'Reingresos',
   reverse:       'Cambios y Devoluciones',
+  discrepancies: 'Discrepancias',
 };
 
 export const REASON_LABELS: Record<string, string> = {

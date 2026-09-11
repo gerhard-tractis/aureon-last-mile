@@ -3,15 +3,19 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { ScanResultPopup } from './ScanResultPopup';
 
 describe('ScanResultPopup', () => {
+  // Review de fase 5, B2 — el título en español usa la frase canónica del
+  // mock (`5d`) y de `ScanHistoryList.tsx:53` — antes, el historial decía
+  // "NO ESTÁ EN LA CARGA" y este popup, encima, decía "Package Not
+  // Included" en inglés para el mismo evento.
   it('renders when visible', () => {
     render(<ScanResultPopup visible={true} onDismiss={vi.fn()} />);
-    expect(screen.getByText('Package Not Included')).toBeInTheDocument();
+    expect(screen.getByText('NO ESTÁ EN LA CARGA')).toBeInTheDocument();
   });
 
   it('does not render when not visible', () => {
     render(<ScanResultPopup visible={false} onDismiss={vi.fn()} />);
     expect(
-      screen.queryByText('Package Not Included')
+      screen.queryByText('NO ESTÁ EN LA CARGA')
     ).not.toBeInTheDocument();
   });
 

@@ -1,22 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSSRClient } from '@/lib/supabase/server';
 import { z } from 'zod';
+import { pickupLocationSchema, slaConfigSchema } from '../pickupPointApiSchemas';
 
 // RF-2: Zod schemas. All fields optional — see /api/pickup-points/route.ts
 // for the full rationale (DB constraints relaxed in 20260428000005).
-const pickupLocationSchema = z.object({
-  name: z.string().optional(),
-  address: z.string().optional(),
-  comuna: z.string().optional(),
-  contact_name: z.string().optional(),
-  contact_phone: z.string().optional(),
-});
-
 const updatePickupPointSchema = z.object({
   name: z.string().optional(),
   code: z.string().optional(),
   tenant_client_id: z.string().uuid().optional(),
   pickup_locations: z.array(pickupLocationSchema).optional(),
+  sla_config: slaConfigSchema.optional(),
   is_active: z.boolean().optional(),
 });
 
@@ -63,10 +57,15 @@ export async function PUT(
       );
     }
 
-    // RF-5: Check record exists before updating
+    // RF-5: Check record exists before updating. Also carries the CURRENT
+    // sla_config (review round 2, B3): that column's documented shape
+    // (20260318000004:64-66) is {max_delivery_hours, pickup_cutoff_time,
+    // delivery_window, penalty_per_failure_clp} — this form only ever
+    // edits pickup_cutoff_time, and a blind overwrite of the whole object
+    // would silently erase whichever of the other three were already set.
     const { data: existing } = await supabase
       .from('pickup_points')
-      .select('id')
+      .select('id, sla_config')
       .eq('id', id)
       .is('deleted_at', null)
       .single();
@@ -110,6 +109,13 @@ export async function PUT(
     if (validation.data.code !== undefined) updates.code = trimToNull(validation.data.code);
     if (validation.data.tenant_client_id !== undefined) updates.tenant_client_id = validation.data.tenant_client_id || null;
     if (validation.data.pickup_locations !== undefined) updates.pickup_locations = validation.data.pickup_locations;
+    if (validation.data.sla_config !== undefined) {
+      // Merge, not overwrite (B3): only the keys sent are touched. `null`
+      // on a key is itself the write (B2's explicit "clear this"), so it is
+      // spread in as-is rather than filtered out.
+      const currentSlaConfig = (existing as { sla_config?: Record<string, unknown> }).sla_config ?? {};
+      updates.sla_config = { ...currentSlaConfig, ...validation.data.sla_config };
+    }
     if (validation.data.is_active !== undefined) updates.is_active = validation.data.is_active;
 
     const { data: point, error } = await supabase

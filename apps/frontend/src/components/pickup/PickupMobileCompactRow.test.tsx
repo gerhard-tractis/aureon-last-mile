@@ -104,3 +104,45 @@ describe('PickupMobileCompactRow — completed', () => {
     ).toBeInTheDocument();
   });
 });
+
+// spec-80 fase 2b — a manifest `trg_route_receptions_status_sync` closed
+// WITHOUT a signature (spec-80 fase 1's H1 rescue). It is status
+// 'completed' but must read as needing attention, not as done — a
+// distinct visual language from the plain "completed" chip above, per
+// this fase's decision to reuse RouteManifestList's row-state pattern
+// rather than invent a fourth one.
+describe('PickupMobileCompactRow — needsSignature', () => {
+  it('shows FALTA FIRMA instead of COMPLETADA', () => {
+    render(
+      <PickupMobileCompactRow
+        variant="needsSignature"
+        manifest={manifest({
+          external_load_id: 'CARGA-99808',
+          status: 'completed',
+          signature_operator: null,
+          completed_at: new Date('2026-08-13T07:31:00').toISOString(),
+          discrepancy_count: 1,
+        })}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('FALTA FIRMA')).toBeInTheDocument();
+    expect(screen.queryByText('COMPLETADA')).toBeNull();
+    expect(
+      screen.getByText(byFullText('CARGA-99808 · 1 notas · cerrada 07:31')),
+    ).toBeInTheDocument();
+  });
+
+  it('opens the manifest on tap, same as any other row', async () => {
+    const onOpen = vi.fn();
+    render(
+      <PickupMobileCompactRow
+        variant="needsSignature"
+        manifest={manifest({ status: 'completed', signature_operator: null })}
+        onOpen={onOpen}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button'));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+});

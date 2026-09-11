@@ -4,6 +4,16 @@ import type { ScanRecord } from '@/hooks/pickup/usePickupScans';
 interface ScanHistoryListProps {
   scans: ScanRecord[];
   maxItems?: number;
+  /**
+   * M2, ronda 4 de review del PR #727 — `scans` llega `[]` sin red porque
+   * `usePickupScans` (query de red) queda pausada, no porque no haya
+   * historial. `scans.length === 0` por sí solo no puede distinguir "nada
+   * escaneado todavía" de "no lo sé sin conexión" — el mismo tercer estado
+   * que ya obliga `scanned: number | null` en `PickupFlowHeader` y
+   * `scansUnknown` en `ManifestDetailList`. Sin esta prop (el default,
+   * `false`), el comportamiento no cambia para ningún llamador existente.
+   */
+  scansUnknown?: boolean;
 }
 
 /**
@@ -18,12 +28,20 @@ interface ScanHistoryListProps {
  * this screen's scan mutation has no offline write path today, so there is
  * no queued row to honestly render here.
  */
-export function ScanHistoryList({ scans, maxItems = 5 }: ScanHistoryListProps) {
+export function ScanHistoryList({
+  scans,
+  maxItems = 5,
+  scansUnknown = false,
+}: ScanHistoryListProps) {
   const recentScans = scans.slice(0, maxItems);
 
   if (recentScans.length === 0) {
     return (
-      <p className="text-sm text-text-secondary text-center py-4">No scans yet</p>
+      <p className="text-sm text-text-secondary text-center py-4">
+        {scansUnknown
+          ? 'Sin conexión: no se puede mostrar el historial de escaneos.'
+          : 'Sin escaneos todavía'}
+      </p>
     );
   }
 

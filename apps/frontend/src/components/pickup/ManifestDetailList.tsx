@@ -13,6 +13,14 @@ interface ManifestDetailListProps {
   isLoading: boolean;
   isError: boolean;
   onRetry: () => void;
+  /**
+   * spec-82 fase 2, revisión B2 (ronda 3) — `true` cuando `scans` llega
+   * vacío porque la lectura de red está pausada (sin conexión), no porque
+   * nada se haya verificado. Sin esto, "0/N verified" fabrica un cero sobre
+   * trabajo que sí existe. Optativo, por defecto `false` — ningún llamador
+   * existente cambia de comportamiento.
+   */
+  scansUnknown?: boolean;
 }
 
 export function ManifestDetailList({
@@ -22,6 +30,7 @@ export function ManifestDetailList({
   isLoading,
   isError,
   onRetry,
+  scansUnknown = false,
 }: ManifestDetailListProps) {
   const totalPackages = useMemo(
     () => orders.reduce((sum, o) => sum + o.packages.length, 0),
@@ -42,10 +51,10 @@ export function ManifestDetailList({
     <Card>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm">Orders & Packages</CardTitle>
+          <CardTitle className="text-sm">Órdenes y bultos</CardTitle>
           {!isLoading && !isError && orders.length > 0 && (
             <span className="text-xs text-text-secondary">
-              {verifiedCount}/{totalPackages} verified
+              {scansUnknown ? '—' : verifiedCount}/{totalPackages} verificados
             </span>
           )}
         </div>
@@ -61,15 +70,15 @@ export function ManifestDetailList({
 
         {isError && (
           <div className="text-center py-4">
-            <p className="text-sm text-status-error mb-2">Failed to load manifest details</p>
-            <Button size="sm" variant="outline" onClick={onRetry} aria-label="Retry">
-              Retry
+            <p className="text-sm text-status-error mb-2">No se pudieron cargar los datos del manifiesto</p>
+            <Button size="sm" variant="outline" onClick={onRetry} aria-label="Reintentar">
+              Reintentar
             </Button>
           </div>
         )}
 
         {!isLoading && !isError && orders.length === 0 && (
-          <p className="text-sm text-text-muted text-center py-4">No orders found for this load</p>
+          <p className="text-sm text-text-muted text-center py-4">No se encontraron órdenes para esta carga</p>
         )}
 
         {!isLoading && !isError && orders.map(order => (
@@ -78,6 +87,7 @@ export function ManifestDetailList({
             order={order}
             scans={scans}
             onManualVerify={onManualVerify}
+            scansUnknown={scansUnknown}
           />
         ))}
       </CardContent>

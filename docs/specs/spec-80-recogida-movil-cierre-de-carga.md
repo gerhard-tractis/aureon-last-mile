@@ -2,8 +2,8 @@
 
 > **Related:** [spec-81](spec-81-recogida-cola-offline.md) (la cola que cumple el «SIN RED» que estas pantallas prometen), [spec-82](spec-82-recogida-movil-asignacion-y-ruta.md) (`5b`/`5c`, lo que precede a este cierre), [spec-83](spec-83-recogida-escritorio-datos-faltantes.md) (escritorio `5a`), [spec-54](spec-54-ui-rebrand.md) (rebranding; su fase 4.4 cubrió sólo el escritorio de Recogida), [spec-47](spec-47-pickup-route-and-consolidated-reception.md) (**introdujo la regresión que este spec cierra**), [spec-19](spec-19-pickup-visual-polish.md) (dueño actual de la pantalla de Firma), [spec-55](spec-55-carton-expansion.md) (bultos generados que cuentan como verificables)
 
-**Status:** in progress
-**Verify:** unit, e2e-qa
+**Status:** awaiting_user_test — las nueve fases `[done]`; queda la verificación de cámara en dispositivo real, que es de una persona
+**Verify:** unit, sql, e2e-qa
 **Downstream:** spec-81-recogida-cola-offline.md, spec-82-recogida-movil-asignacion-y-ruta.md, spec-83-recogida-escritorio-datos-faltantes.md, spec-84-movil-conductor-home-y-prueba-de-entrega.md, spec-86-discrepancias-de-recepcion.md
 
 > **Nota (2026-09-07).** La decisión de enum que la fase 1 tenía abierta
@@ -607,9 +607,37 @@ Con 0 faltantes la pantalla no bloquea: pasa directo a `5f`.
 > origen. Queda para una fase nueva o para spec-85/86; no se abre número aquí
 > por decisión del orquestador — anotado para que no se pierda.
 
-### Fase 2b — entrada de rescate para móvil (Completados sin escritorio) `[pending]`
+### Fase 2b — entrada de rescate para móvil (Completados sin escritorio) `[done]`
 
-**Archivos:** `apps/frontend/src/components/pickup/PickupMobileActiveRoute.tsx`, `+ test` (el diseño exacto de dónde vive la entrada está sin decidir — ver el primer punto de abajo; puede sumar un fichero de pantalla hermana no nombrado aquí)
+> Implementado por: `implementer` — rama `feat/spec-80-fase-2b-rescate-movil`, SHA `622c603`, PR #737 (mergeado como `4e81eaa`).
+> Review: `reviewer` adversarial, **cuatro rondas**. El hallazgo que cambió el diseño entero fue de la ronda 2: la entrada NO podía vivir en `PickupMobileActiveRoute`, porque `trg_route_receptions_status_sync` (`20260812000006:181-193`) pone `manifests.status='completed'` **y** `pickup_routes.status='received'` en el mismo bloque, mientras `get_my_active_pickup_route` filtra por `status='in_progress'` — la pantalla donde se había decidido colgarla **no existe en el momento en que nace el rescate**. Se movió a la rama sin-ruta. La ronda 4 cerró dos aserciones vacuas: la de aislamiento por operador (el fixture M9 nunca tuvo `pickup_route_id`, así que el `JOIN` lo descartaba antes de llegar a la cláusula de operador — demostrado aplicando `WHERE (m.operator_id = me.op OR TRUE)` contra el `prosrc` vivo y obteniendo 6/6 en verde) y la del tile `CERRADAS`.
+> QA: PR #737 merged 2026-09-10T09:23:50Z, CI verde en ambos jobs de Lint/Type-Check/Test/Build. pgTAP local 52/52 sobre las dos suites nuevas más las cuatro hermanas de `close_manifest` y spec-83. **`e2e-qa` no ejercita esta pantalla** — es la rama sin-ruta del móvil, que el fixture de e2e no alcanza; la comprobación contra la base de QA queda abierta.
+> Downstream: revisado spec-81, spec-82, spec-83 y spec-86 — **sin cambios**. La nueva RPC `get_signature_rescue_manifests()` se acotó por pertenencia a la cuadrilla más una ventana de 30 días, y es `SECURITY INVOKER` con `REVOKE ... FROM anon` — más estricta que sus hermanas, alineada con lo que spec-88 fase 5 dejó escrito.
+
+**Dos cosas que este trabajo dejó medidas y valen fuera de la fase:**
+
+1. **Renumerar migraciones tiene coste invisible en local.** Las dos de esta rama chocaron en prefijo con spec-88 fase 5 y spec-83 fase 2 al rebasar (`20261002000001` y `20261003000001`), y CI lo cazó — `schema_migrations.version` es PRIMARY KEY, así que un duplicado aborta **todo** deploy. Renumeradas a `20261004000001` y `20261005000001`. Pero el contenedor pgTAP local **no** lo caza: quedaron dos filas huérfanas bajo los prefijos viejos, y como `apply` salta por versión, las migraciones legítimas de las otras ramas se declaraban `skipped` sin haberse aplicado nunca. Verde sobre nada. Al renumerar hay que borrar las filas viejas y confirmar `applied=N` con los nombres nuevos.
+2. **Una aserción de aislamiento multi-tenant puede ser vacua sin que se note.** La forma de comprobarlo no es leer el test: es relajar la cláusula que dice proteger (`OR TRUE`) contra la definición viva de la función y ver si el test sigue en verde. Si sigue, la fila que creías estar excluyendo ya la descartaba otra cosa antes.
+
+
+**Depende de:** spec-80 fase 1, spec-80 fase 2
+
+**Archivos:** (actualizado en la ronda 2 — ver la nota de esa ronda más abajo para el porqué del
+cambio de ubicación) `apps/frontend/src/components/pickup/PickupMobileView.tsx` (la entrada real,
+rama sin-ruta), `apps/frontend/src/components/pickup/RescueManifestsSection.tsx` + test (nuevo,
+extraído de la fila `needsSignature`), `apps/frontend/src/components/pickup/
+ManifestsAvailabilityNotice.tsx` + test (nuevo, estado loading/unknown/error/known),
+`apps/frontend/src/components/pickup/PickupMobileCompactRow.tsx` + test (variante `needsSignature`),
+`apps/frontend/src/components/pickup/RouteManifestList.tsx` (tipo `RouteManifestRow`, campo nuevo
+`signature_operator`), `apps/frontend/src/components/pickup/PickupMobileActiveRoute.tsx` + test
+(revertido a su forma pre-fase, con la exclusión de `rescueLoads` como defensa en profundidad),
+`apps/frontend/src/hooks/pickup/useManifests.ts` (`CompletedManifest.signature_operator`),
+`apps/frontend/src/lib/pickup/pickupMobileHelpers.ts` + test (`needsSignatureRescue`, `rescueLoads`
+en `splitLoads`), `apps/frontend/src/lib/pickup/pickupPageHelpers.ts` + test
+(`manifestsAvailability`, `rescueRowsFromCompleted`), `apps/frontend/src/app/app/pickup/page.tsx` +
+test (wiring: `onOpenRescueManifest` → `review/[loadId]`, `rescueManifests`, `rescueAvailability`),
+migración `packages/database/supabase/migrations/20261004000001_spec80_fase2b_completed_manifests_signature.sql`
++ test pgTAP (`get_completed_manifests` gana `signature_operator`).
 
 > El PR #682 (spec-82 fase 1) ya mergeó (`2026-09-08T17:16:39Z`) — la única dependencia que
 > tenía esta fase ya no bloquea. Toca la misma familia de componentes (`PickupMobileActiveRoute.tsx`
@@ -621,11 +649,310 @@ ya cerró sin firma (rescate de H1, fase 1) — sin escritorio y sin teclear la 
 escritorio esa entrada ya existe (Completados → escanear → revisión → firma); en móvil no hay
 pestaña Completados en absoluto.
 
-- [ ] Diseñar dónde vive la entrada: ¿una pestaña/filtro dentro de `PickupMobileActiveRoute.tsx`,
-      o una pantalla hermana fuera de la ruta activa? El mock de Recogida no dibuja este estado —
-      es un hallazgo a escalar antes de construir, no licencia para inventar el diseño aquí.
-- [ ] Tests primero.
-- [ ] Cablear a `review/[loadId]` (fase 2, ya construida) como destino final.
+**Decisión (2026-09-10, escalada y tomada por el usuario): una pestaña/filtro dentro de
+`PickupMobileActiveRoute.tsx`, no una pantalla hermana.** Razón: una pantalla hermana necesita su
+propio punto de entrada, y el punto de entrada es justo lo que no existe — resolver «no hay forma
+de llegar» creando otro sitio al que tampoco se sabe llegar no resuelve nada. Además la cuadrilla
+ya está *dentro* de la ruta activa cuando descubre que le falta firmar algo — es donde mira. El
+mock no dibuja este estado (no hay diseño que contradecir), pero sí hay un patrón local: la fila de
+manifiesto ya distingue estados visualmente (`RouteManifestList` con el chip `COMPLETADA`,
+`PickupMobileCompactRow` con sus variantes `remaining`/`completed`) — se reutiliza ese lenguaje en
+vez de inventar uno nuevo: la fila de rescate es una tercera variante de `PickupMobileCompactRow`
+(`needsSignature`), con chip **`FALTA FIRMA`** en rojo (`status-error`) en vez de `COMPLETADA` en
+verde, agrupada en una sección propia **«Pendientes de firma»** — visible siempre que exista al
+menos una, no detrás de un tap oculto, porque el problema que se resuelve es exactamente que la
+cuadrilla no sabe que debe buscarla.
+
+**Definición usada para "necesita rescate", y por qué no la otra.** El manifiesto ya es
+`status: 'completed'` (lo puso `trg_route_receptions_status_sync`), así que `isManifestComplete`
+(`verified_count >= total_packages`) no sirve para distinguirlo de uno cerrado con firma — ambos
+pueden estar en cualquier estado de verificación. La señal real es `manifests.signature_operator
+IS NULL` (la misma columna que `close_manifest`, fase 1, usa como guard de "ya firmado"). Nueva
+función pura `needsSignatureRescue` en `pickupMobileHelpers.ts`: `status === 'completed' &&
+signature_operator === null`. **Deliberadamente estricta en `null`, no en falsy**: un
+`RouteManifestRow` cuyo caller nunca pidió esta columna trae `signature_operator: undefined`, y
+tratarlo igual que `null` habría marcado como rescate cada manifiesto completado de cualquier otro
+consumidor del mismo tipo — la trampa que este mismo spec ya tuvo que cerrar una vez en la fase 2
+(el gate de faltantes leyendo `undefined` como "cero"). `splitLoads` gana un cuarto cubo,
+`rescueLoads`, separado de `completedLoads`: un manifiesto de rescate **no** cuenta en el KPI
+`CERRADAS` (no está realmente cerrado sin firma) ni se mezcla con las filas verdaderamente
+completadas.
+
+**La trampa de "no lo sé" vs "no hay nada", aplicada aquí.** `page.tsx` ya hacía
+`useRouteManifests(...).data ?? []`; bajo `networkMode: 'online'` (el default del repo) una query
+sin red queda `paused` con `data: undefined`, y ese `?? []` la convierte en una lista vacía
+indistinguible de una ruta sin manifiestos — que para el banner de rescate significa decirle a la
+cuadrilla que no hay nada que firmar cuando en realidad no se pudo comprobar. Nuevo helper puro
+`isManifestsUnknown(hasActiveRoute, manifestsIsPending)` en `pickupPageHelpers.ts` (usa
+`isPending` del hook, equivalente a `data === undefined` pero sin destructurar el objeto query
+completo), pasado como `manifestsUnknown` hasta `PickupMobileActiveRoute`, que en ese caso
+sustituye tanto el estado vacío "Ruta completa"/"Sin manifiestos" como el silencio del banner de
+rescate por un aviso explícito: *"No pudimos comprobar tus cargas — revisa tu conexión."*
+
+**Cableado a `review/[loadId]`.** El manifiesto de rescate ya está `status: 'completed'` — no hay
+nada que escanear ni que escribir antes de navegar (a diferencia de `handleRouteManifestOpen`, que
+sí llama a `openPendingManifest`, un no-op aquí de todas formas). Nuevo `onOpenRescueManifest` en
+`page.tsx` navega directo a `/app/pickup/review/[loadId]` (el gate `5e` de la fase 2, que pasa de
+largo cuando no hay faltantes) — evita el paso de re-escaneo que la fila `completed` ordinaria
+seguiría exigiendo vía `handleRouteManifestOpen`/`scan/[loadId]`. Prop opcional con fallback a
+`onOpenRouteManifest` para no romper compatibilidad hacia atrás.
+
+**Alcance más amplio que el declarado originalmente.** El punto original decía "Archivos: sólo
+`PickupMobileActiveRoute.tsx` + test". En la práctica, dar a esa pantalla el dato que necesita
+(`signature_operator`) y la lógica pura que lo interpreta (`needsSignatureRescue`, `rescueLoads`,
+`isManifestsUnknown`) obliga a tocar el hook que trae los datos, el tipo compartido, el componente
+de fila que ya existe (`PickupMobileCompactRow`, para no inventar una fila nueva de cero) y el
+`page.tsx` que orquesta la navegación — el flujo `app → components → hooks → lib` de
+`docs/architecture.md` no permite resolverlo en un solo fichero. **No se tocó `RouteManifestList`
+más allá de un campo opcional nuevo en su tipo exportado** (PR #727, spec-82 fase 2, está en vuelo
+sobre ese mismo componente añadiendo el chip `DESCARGAR` — no se tocó su JSX ni su lógica de
+render).
+
+- [x] Diseñar dónde vive la entrada: pestaña/filtro dentro de `PickupMobileActiveRoute.tsx` — ver
+      decisión arriba.
+- [x] Tests primero (TDD real, salida roja confirmada antes de cada implementación).
+- [x] Cablear a `review/[loadId]` (fase 2, ya construida) como destino final.
+
+> **Ronda 2 de review (PR #737, 2026-09-10) — la decisión de arriba era falsa, y el error es del
+> orquestador, no de quien la ejecutó.** No se borra el texto de la decisión original: queda arriba
+> como fue escrita, y esto es la corrección sobre ella, con la razón.
+>
+> **B1 — la pantalla donde se puso la entrada deja de existir en el instante en que nace el
+> rescate.** `trg_route_receptions_status_sync` (`20260812000006:181-193`) hace, en el MISMO
+> bloque: `UPDATE manifests SET status='completed' WHERE pickup_route_id = NEW.pickup_route_id` Y
+> `UPDATE pickup_routes SET status='received' WHERE id = NEW.pickup_route_id`. Y
+> `get_my_active_pickup_route` (`20260820000005:49`) sólo devuelve rutas `status='in_progress'`.
+> Es decir: en el momento exacto en que un manifiesto queda `completed` sin firma, la ruta entera
+> pasa a `received`, `useActivePickupRoute` deja de devolverla, `PickupMobileActiveRoute` no se
+> monta, y la sección «Pendientes de firma» que la ronda 1 puso ahí **no existe** cuando hace
+> falta. El bug que esta fase existía para arreglar seguía sin arreglarse, con tests verdes encima.
+>
+> El argumento que motivó la decisión original — *«la cuadrilla ya está dentro de la ruta activa
+> cuando descubre que le falta firmar»* — es falso contra el esquema real, y no se verificó antes
+> de escribirlo. Y la alternativa que se descartó (pantalla hermana, rechazada por «necesitaría su
+> propio punto de entrada») resulta que **ya tiene uno**: `PickupMobileView.tsx`, rama sin-ruta
+> (antes de esta ronda, línea ~147) — exactamente donde cae la cuadrilla una vez que su ruta pasó a
+> `received`. Igual que hace escritorio: su pestaña Completados lee `get_completed_manifests`, de
+> **ámbito operador**, no de la ruta — nunca depende de que una ruta siga abierta.
+>
+> **Corrección aplicada:** la entrada se movió de `PickupMobileActiveRoute.tsx` (revertido a su
+> forma anterior a esta fase, salvo que `splitLoads` sigue excluyendo un rescate de `completedLoads`
+> como defensa en profundidad barata — ver el doc-comment del archivo) a `PickupMobileView.tsx`,
+> en la rama sin-ruta, visible tanto a un líder sin ruta (3j) como a un picker (no-route), porque
+> `get_completed_manifests` (ahora con `signature_operator` añadido, migración
+> `20261004000001_spec80_fase2b_completed_manifests_signature.sql`, `CREATE OR REPLACE` sobre la
+> última definición vigente — `20260917000002`, spec-83) es de ámbito operador y no depende de qué
+> ruta esté abierta. `rescueRowsFromCompleted` (`pickupPageHelpers.ts`) filtra y mapea esas filas a
+> la forma `RouteManifestRow` que `PickupMobileCompactRow`/`RescueManifestsSection` ya sabían
+> renderizar — la variante `needsSignature` y el chip `FALTA FIRMA` de la ronda 1 se conservan
+> intactos, sólo cambió de dónde vienen los datos.
+>
+> **B2 + M4 — la señal de "no lo sabemos" tenía dos huecos, no uno.** `isManifestsUnknown` de la
+> ronda 1 sólo miraba `isPending`, que también es `true` durante una carga inicial ORDINARIA
+> (`fetchStatus: 'fetching'`) y **no** captura un `isError` real (reintentos agotados, `data:
+> undefined`, `isPending: false`) — probado contra TanStack Query 5.90.21. Consecuencia: (a) cada
+> apertura normal de la pantalla mostraba «revisa tu conexión» during 200-800ms, entrenando a la
+> cuadrilla a ignorar exactamente el aviso que sí importa; (b) un fallo real después de agotar
+> reintentos se leía como «conocido, nada que rescatar» — lo opuesto de lo que pasó. Reemplazado por
+> `manifestsAvailability({isPending, isError, fetchStatus})` → `'loading' | 'unknown' | 'error' |
+> 'known'`, con `ManifestsAvailabilityNotice.tsx` renderizando las tres primeras de forma distinta
+> (skeleton silencioso / aviso de red / error con reintentar) y nada para `'known'`.
+>
+> **M3 — el cableado en `page.tsx` no tenía ni un test que lo alcanzara.** Los 8 mutantes de la
+> ronda 1 caían todos en `lib`/componentes; tres mutaciones en la costura `app→components`
+> sobrevivían contra las 30 pruebas de entonces: el destino `review/`↔`scan/`, la prop
+> `rescueAvailability` fijada a `'known'`, y `onOpenRescueManifest` re-apuntado al handler de
+> `scan/`. `page.test.tsx` gana un describe dedicado (`el destino real de la entrada de rescate`)
+> que ejercita las tres cosas contra un fixture sin ruta activa (el escenario real de B1); los tres
+> mutantes de arriba, reproducidos a mano después, mueren todos.
+>
+> **M5 — quedó resuelto por construcción, no parcheado.** El escenario que lo motivaba (ruta con un
+> manifiesto en curso Y uno rescatable a la vez) es imposible: el mismo `UPDATE` de
+> `trg_route_receptions_status_sync` cierra TODOS los manifiestos de la ruta a la vez que la marca
+> `received` — no puede quedar uno "en curso" junto a uno "rescatable" en la misma ruta viva. Al
+> mover la entrada fuera de `PickupMobileActiveRoute`, la contradicción que M5 señalaba en `5i` deja
+> de tener un caso real que la dispare.
+>
+> **Hallazgo menor, declarado y no cerrado en esta ronda:** saltarse `scan/` para ir directo a
+> `review/[loadId]` es correcto (el manifiesto ya está `completed`, no queda nada que escanear),
+> pero un manifiesto que el trigger cerró típicamente tiene **0 `pickup_scans`** — la cuadrilla
+> nunca lo escaneó porque el hub ya terminó de recibirlo. `reviewCloseGate.ts` calcularía
+> `missingCount` sobre esa base y el CTA «Cerrar con N faltantes» registraría como discrepancias
+> bultos que el hub **ya recibió físicamente**. El diseño empuja en la dirección correcta (el CTA
+> primario dorado sigue siendo «Seguir escaneando», no el de cerrar), pero no impide el error. No se
+> resuelve aquí — requeriría que `review/[loadId]` supiera distinguir «nunca se escaneó porque nadie
+> lo intentó» de «nunca se escaneó porque el hub ya lo recibió sin pasar por aquí», una decisión de
+> producto fuera del alcance de esta fase.
+>
+> Archivos nuevos/tocados en esta ronda, además de los ya listados arriba:
+> `packages/database/supabase/migrations/20261004000001_spec80_fase2b_completed_manifests_signature.sql`,
+> `packages/database/supabase/tests/spec80_fase2b_completed_manifests_signature.test.sql`,
+> `apps/frontend/src/hooks/pickup/useManifests.ts` (`CompletedManifest.signature_operator`),
+> `apps/frontend/src/components/pickup/RescueManifestsSection.tsx` + test (nuevo, extraído de la
+> JSX de la ronda 1),
+> `apps/frontend/src/components/pickup/ManifestsAvailabilityNotice.tsx` + test (nuevo).
+> pgTAP: `spec80_fase2b_completed_manifests_signature.test.sql` 4/4 vía `pgtap-local.sh`
+> (contenedor compartido `spec52-pg`) — mutado a mano reemplazando `m.signature_operator` por
+> `NULL::TEXT` en el `SELECT` (ejecutado directo contra el contenedor, sin pasar por el bookkeeping
+> de `schema_migrations`, que de otro modo salta el archivo por nombre ya "aplicado" y da un falso
+> verde); mata 1/4. Vitest: 946/946 en
+> `src/lib/pickup src/components/pickup src/app/app/pickup src/hooks/pickup` (101 archivos).
+> `tsc --noEmit` y `eslint` limpios. Mutation-testing adicional de esta ronda: 6 mutantes sobre
+> `manifestsAvailability`/`rescueRowsFromCompleted` (orden de guard `isError`, colapso
+> `paused`→`unknown` fijo, filtro `!== null` invertido, `pickup_location` a `null`), los 6 mueren;
+> 3 mutantes sobre el cableado de `page.tsx` (los de M3), los 3 mueren.
+
+> **Ronda 3 de review (PR #737, 2026-09-10) — la corrección de la ronda 2 cambió «inalcanzable»
+> por «sin cota», y dos huecos de wiring quedaron sin test.**
+>
+> **A1 — la lista de rescate no tenía cota: ni fecha, ni ruta, ni cuadrilla.**
+> `rescueRowsFromCompleted` filtraba sobre TODO lo que devolvía `get_completed_manifests()` — sin
+> `LIMIT`, sin ventana temporal, operador entero. Medido: 40 manifiestos cerrados hace 6 meses sin
+> firma se pintaban como filas rojas «FALTA FIRMA» en cada apertura del móvil, y no era casualidad:
+> `signature_operator` sólo lo escribe `close_manifest`, que existe desde `20260913000002` — todo
+> lo cerrado antes tiene el campo NULL. Y cada fila era accionable: `close_manifest` sólo comprueba
+> operador, no pertenencia a ruta ni cuadrilla, así que cualquier picker podía firmar una carga
+> ajena de hace meses, registrando discrepancias `missing` que alimentan cifras de indemnización
+> sobre un bulto que nadie puede ya investigar.
+>
+> **Dos cotas, decididas (2026-09-10, orquestador) y aplicadas server-side, en un RPC nuevo, no en
+> `get_completed_manifests`** (esa función sigue operador-ancha a propósito — la usa la pestaña
+> Completados de escritorio, y acotarla le habría cambiado el contrato):
+> 1. **Pertenencia** — sólo manifiestos cuya ruta tuvo a este usuario de `driver_id` o en
+>    `pickup_route_crew`, **alguna vez**, no "todavía activo": `pickup_route_crew.removed_at` se
+>    marca en cuanto la ruta deja de estar `in_progress` (`20260820000002`), así que para cuando
+>    existe un rescate esa columna YA está puesta en cada fila de cuadrilla de esa ruta — exigir
+>    `removed_at IS NULL` no habría encontrado nunca una ruta cerrada.
+> 2. **Ventana de 30 días** sobre `completed_at`, cinturón adicional: aunque la pertenencia ya
+>    acote, el histórico legado no debe reaparecer nunca.
+>
+> Nuevo RPC `get_signature_rescue_manifests()` (migración `20261005000001`, plantilla: el patrón
+> "driver OR crew" de `get_my_active_pickup_route`, `20260820000005`, el único RPC existente que ya
+> resuelve "¿está este usuario en esta ruta?"), nuevo hook `useSignatureRescueManifests` — **no**
+> reutiliza `useCompletedManifests`. `rescueRowsFromCompleted` se mantiene igual (mapeo puro,
+> reutilizable sobre cualquier fuente con esa forma), pero ahora consume esta fuente acotada, no la
+> operador-ancha.
+>
+> **A2 — "resuelto por construcción" cubría sólo la mitad.** Es correcto que el trigger cierra
+> TODOS los manifiestos de una ruta a la vez, así que un rescate nunca convive con un manifiesto
+> `in_progress` de la MISMA ruta — verificado, sigue siendo cierto. Lo que no se seguía: un rescate
+> de la ruta A sí convive con una ruta B activa al día siguiente, y la ronda 2 sólo renderizaba la
+> sección en la rama sin-ruta de `PickupMobileView` — con una ruta B abierta, la carga sin firmar
+> de A quedaba invisible toda la jornada (reaparecía de noche, así que no bloqueaba, pero era un
+> hueco real, y **sin ningún test que fijara la decisión**). **Decidido: se muestra también con
+> ruta activa** — una carga sin firmar de ayer no deja de importar porque hoy haya una ruta nueva.
+> La sección se renderiza ahora tanto en `PickupMobileView.tsx` (rama sin-ruta) como dentro de
+> `PickupMobileActiveRoute.tsx` (rama con-ruta), las dos alimentadas por la MISMA prop
+> `rescueManifests`/`rescueAvailability` desde `page.tsx` — no es el bug de la ronda 1 otra vez
+> porque la fuente de datos ya está correctamente acotada (A1), no es route-scoped.
+>
+> **A3 — el botón «Reintentar» del estado de error no estaba cableado.**
+> `ManifestsAvailabilityNotice` sólo renderiza «Reintentar» si recibe `onRetry`, y ni
+> `PickupMobileView` ni (la ahora también renderizante) `PickupMobileActiveRoute` se lo pasaban —
+> tras agotar reintentos, la cuadrilla veía el mensaje de error sin ninguna acción. El test de la
+> ronda 2 ejercitaba `onRetry` pasándolo directo al componente aislado, sin probar que el llamador
+> real lo propagara — un verde sobre comportamiento inalcanzable. Corregido: `onRetryRescue` nuevo,
+> cableado desde `page.tsx` (`refetch` del hook nuevo) hasta ambas ramas, con tests de extremo a
+> extremo (no sólo a nivel de `ManifestsAvailabilityNotice`) que hacen clic en el botón real y
+> comprueban que el `refetch` correcto se invoca.
+>
+> **Menores:**
+> - La migración `20261004000001` (ronda 2) había perdido, al reescribir sobre la plantilla de
+>   spec-83, tres comentarios que esa plantilla marcaba como necesarios para que nadie los borre
+>   por "redundantes": el aviso de "defense in depth, not load-bearing" sobre `d.operator_id`, el
+>   de "redundante por `discrepancy_source_matches_operation`", y la justificación de
+>   `COUNT(DISTINCT)` (una reversión explícita de una ronda anterior de spec-83). El SQL era
+>   idéntico — sólo se perdió el aviso. Restaurados en el mismo fichero (no mergeado aún, así que se
+>   edita directo, no con otra migración encima).
+> - **Mutante SQL preexistente, declarado y no cerrado**: `WHERE operator_id = ... OR TRUE` en
+>   `get_completed_manifests`/`get_signature_rescue_manifests` no lo mata ningún test pgTAP, porque
+>   los tests corren como `postgres` y `SECURITY INVOKER` + RLS (que sí lo bloquearía con un rol
+>   real) se saltan con ese rol. No es una fuga viva en producción, pero el no-negociable del repo
+>   es `operator_id` en toda consulta con un test que lo fije, y ninguna de las dos funciones lo
+>   tiene. No se cierra aquí — está fuera del alcance de esta ronda.
+> - El bug del harness pgTAP (`apply` salta por nombre de migración, nunca por contenido — un
+>   mutante puede dar falso verde si no se aplica directo contra el contenedor) y su segundo vector
+>   (`docker exec -i psql -f /ruta` sin `MSYS_NO_PATHCONV=1` desde Git Bash falla en silencio si el
+>   stderr se descarta) quedan fuera de esta fase — el orquestador los despacha aparte.
+>
+> **Archivos nuevos/tocados en esta ronda:**
+> `packages/database/supabase/migrations/20261005000001_spec80_fase2b_signature_rescue_manifests.sql`
+> (nuevo RPC), `packages/database/supabase/tests/spec80_fase2b_signature_rescue_manifests.test.sql`
+> (nuevo, 6/6), `packages/database/supabase/migrations/20261004000001_...` (comentarios restaurados,
+> mismo SQL), `apps/frontend/src/hooks/pickup/useManifests.ts`+test (`useSignatureRescueManifests`),
+> `apps/frontend/src/app/app/pickup/page.tsx`+test (fuente de datos nueva, `onRetryRescue`, sección
+> visible con ruta activa), `apps/frontend/src/components/pickup/PickupMobileView.tsx`+test
+> (`onRetryRescue`, pasa las props de rescate también a `PickupMobileActiveRoute`),
+> `apps/frontend/src/components/pickup/PickupMobileActiveRoute.tsx`+test (vuelve a renderizar
+> `RescueManifestsSection`/`ManifestsAvailabilityNotice`, ahora con la fuente correcta).
+>
+> pgTAP: `spec80_fase2b_signature_rescue_manifests.test.sql` 6/6, mutado a mano contra el
+> contenedor (3 mutantes: ventana de 30 días quitada, `OR EXISTS`→`AND EXISTS`,
+> `signature_operator IS NULL`→`(... OR TRUE)` — los 3 mueren). `spec80_fase2b_completed_
+> manifests_signature.test.sql` sigue 4/4 tras restaurar los comentarios (SQL sin cambios).
+> Vitest: 958/958 en `src/lib/pickup src/components/pickup src/app/app/pickup src/hooks/pickup`
+> (101 archivos). `tsc --noEmit` y `eslint` limpios. Mutation-testing de wiring: 2 mutantes (quitar
+> `onRetryRescue` de `page.tsx`, quitar las props de rescate de la llamada a
+> `PickupMobileActiveRoute` dentro de `PickupMobileView.tsx`), ambos matan al menos un test en
+> `page.test.tsx` y/o `PickupMobileView.test.tsx`.
+
+> **Ronda 4 de review (PR #737, 2026-09-10) — mergeable, dos asserts corregidos.**
+>
+> **1. La aserción de tenant del pgTAP era vacua.** `M9` (la carga de otro operador) nunca tenía
+> `pickup_route_id`, así que el `JOIN` a `pickup_routes` ya la excluía por sí solo — la aserción
+> nunca llegaba a ejercitar `WHERE m.operator_id = me.op`. Verificado por la ronda 4: con
+> `WHERE (m.operator_id = me.op OR TRUE)` aplicado directo contra el contenedor y confirmado en el
+> `prosrc` vivo, el fichero seguía 6/6 en verde. Corregido: `M9` ahora cuelga de una ruta nueva,
+> `R9`, en el operador ajeno, cuyo `driver_id` es **el mismo uid** que Ana (no hay FK que ate
+> `driver_id` al `operator_id` de su propia ruta, así que el fixture es válido) — la pertenencia
+> SÍ coincidiría; sólo el filtro de operador la detiene. Repetida la misma mutación después de la
+> corrección: **5/6**, sólo esa aserción falla. Restaurado el SQL real, 6/6, comprobado contra el
+> `prosrc` vivo en ambos sentidos.
+>
+> **2. Nada fijaba el tile `CERRADAS` contra los rescates.** `value={completedLoads.length +
+> rescueManifests.length}` sobrevivía porque hoy las dos fuentes son disjuntas por construcción,
+> no por contrato probado. Nuevo test: una carga genuinamente cerrada en la ruta actual
+> (`completedLoads.length === 1`) más un rescate no relacionado (`rescueManifests.length === 1`)
+> debe seguir leyendo «1», nunca «2» — un rescate no es, por definición, algo que esta ruta cerró.
+> Confirmado que mata el mutante exacto que citó la review (`"CERRADAS2"` sin el fix).
+>
+> **Tres notas atendidas:**
+> - **Colocación:** el bloque de rescate se movió de antes de los tiles/hero a **después** —
+>   la carga de ayer sigue imposible de no ver, pero ya no empuja el trabajo de hoy (ni, en la
+>   primera carga, el skeleton) hacia abajo. De acuerdo con el criterio de la ronda 4; no hubo
+>   objeción que hacer.
+> - **`useManifests.ts:100`** decía «measured in QA: 40 six-month-old closures» — no fue QA, fue
+>   un fixture sintético en el contenedor pgTAP local. Corregido ahí y en el comentario equivalente
+>   de la migración `20261005000001` (comentarios de cabecera del script, fuera del cuerpo `$$` —
+>   no tocan `prosrc`).
+> - **Riesgo futuro declarado, no resuelto:** si una fase futura añade "quitar a un picker de la
+>   cuadrilla a mitad de ruta" como un `removed_at` manual (distinto del automático que
+>   `trg_pickup_route_crew_sync` estampa al cerrar la ruta), `get_signature_rescue_manifests`
+>   seguiría dándole el rescate — `c.deleted_at IS NULL` sólo cubre el borrado suave de la fila.
+>   Una línea de comentario en la migración deja la trampa escrita para quien construya esa fase.
+>
+> **Norma aplicada, no retroactiva:** la ronda 3 editó `20261004000001` (comentarios dentro del
+> cuerpo `$$`, cambiando `prosrc`) para reponer comentarios perdidos — inocuo porque esa migración
+> nunca se aplicó fuera de este contenedor local (no mergeada), pero mientras el bug del harness
+> (`apply` salta por nombre de migración, no por contenido — #740) siga sin mergear, cualquier
+> entorno que YA la hubiera aplicado se saltaría el cambio sin verlo. Confirmado como norma para
+> este PR en adelante: lo que toca una migración **ya mergeada/aplicada en algún entorno** va en
+> una migración nueva, nunca editando la existente. `20261004000001` y `20261005000001` siguen
+> siendo ediciones directas legítimas en esta ronda porque ninguna de las dos ha mergeado a `main`
+> todavía — no se deshace lo ya hecho, sólo se declara la regla para lo que sigue.
+>
+> **Archivos tocados en esta ronda:** `packages/database/supabase/tests/spec80_fase2b_signature_
+> rescue_manifests.test.sql` (fixture M9/R9 corregido), `packages/database/supabase/migrations/
+> 20261005000001_...` (comentario de riesgo futuro + wording "measured in QA" corregido, ambos
+> ediciones directas — la migración no ha mergeado), `apps/frontend/src/hooks/pickup/useManifests.ts`
+> (wording corregido), `apps/frontend/src/components/pickup/PickupMobileActiveRoute.tsx`+test
+> (reposicionado; test nuevo que pinea `CERRADAS`).
+>
+> pgTAP: `spec80_fase2b_signature_rescue_manifests.test.sql` 6/6 — mutado a mano
+> (`WHERE (m.operator_id = me.op OR TRUE)`, aplicado y verificado contra el `prosrc` vivo del
+> contenedor, no vía `apply`): mata 1/6 (antes de la corrección del fixture no mataba ninguno).
+> Vitest: 959/959 en `src/lib/pickup src/components/pickup src/app/app/pickup src/hooks/pickup`
+> (101 archivos). `tsc --noEmit` y `eslint` limpios.
 
 ### Fase 3 — `5f` firma y fotos `[done]`
 
@@ -889,8 +1216,48 @@ CREATE TABLE public.manifest_documents (
 > `UNIQUE` de tabla → falla con `duplicate key value violates unique
 > constraint`) — las tres corridas dentro de transacciones con `ROLLBACK`,
 > nunca persistidas en el contenedor compartido.
+>
+> **Downstream (2026-09-09, spec-81 fase 5 aterrizó):** el riesgo que esta
+> fase dejó declarado — `useUploadManifestDocument` sube directo al bucket
+> sin ruta offline, y si `upload` falla el archivo se pierde — queda cerrado
+> **a nivel de infraestructura**: `lib/offline/photos.ts`
+> (`enqueueManifestPhoto`/`sendManifestPhoto`) da a las fotos la misma cola
+> IndexedDB + drenado con reintento que ya tiene `close_manifest`, con el
+> mismo contrato de "fila huérfana imposible" que este hook ya cumplía del
+> lado online. **No cerrado todavía en esta pantalla:** `ManifestPhotoStrip`
+> sigue llamando a `useUploadManifestDocument` directo — spec-81 fase 5 no
+> tocó ese fichero a propósito (coordinación explícita con esta fase 4, en
+> vuelo en paralelo). «Las fotos también» (`5f`) es verdad para quien
+> conecte la captura real a `enqueueManifestPhoto`, pero **no lo es todavía
+> en el código que corre hoy** — sigue siendo el mismo hueco declarado aquí
+> hasta que esa conexión se haga, en esta fase o en la que toque después
+> `ManifestPhotoStrip.tsx`.
 
-### Fase 4 — `5g`/`5h` cámara y revisión `[pending]`
+### Fase 4 — `5g`/`5h` cámara y revisión `[done]`
+
+> Implementado por: implementer — rama `feat/spec-80-fase-4-camara-revision`, SHA `73c0637` (PR #713, mergeado como `01ba23b`).
+> Review: reviewer — **cuatro rondas**. Los dos que cambiaron el resultado: el obturador disparaba antes de existir el stream y producía un JPEG negro de 1,5 MB (`video.videoWidth || 1080` convertía «sin señal» en un lienzo válido), y `open={false}` apagaba la cámara pero dejaba el overlay `fixed inset-0` con `aria-modal` tapando la PWA entera.
+> QA: PR #713 merged 2026-09-09T19:20Z, CI verde. **`e2e-qa` no cubre esta superficie** (es cámara en dispositivo) — la verificación en hardware sigue abierta, ver abajo.
+> Downstream: revisado spec-81 fase 5 — sin cambios; el conflicto de coordinación se resolvió conservando ambos párrafos. Revisado spec-80 fase 6 — **la creó este trabajo**: `5g`/`5h` se entregan sin cablear a propósito.
+
+**El arreglo que cerró M-A vale como regla, no como parche.** El guard original
+miraba `videoWidth === 0` para detectar una pista muerta, y **un navegador real
+nunca pone eso a cero**: el `<video>` se queda congelado con el último frame.
+Así que el obturador seguía activo y la foto que salía era **plausible** —
+posiblemente de la hoja anterior, guardada como la siguiente. Se sustituyó por
+`isVideoReady(video, track)`, **una sola función usada tanto para habilitar
+como para deshabilitar**, escuchando `ended`/`mute`/`unmute` y
+`visibilitychange`. Ninguna transición puede quedarse coja, ni las que alguien
+añada mañana.
+
+**Queda `awaiting_user_test` — sólo lo cierra una persona con el teléfono:**
+fotografiar una hoja A4 firmada a distancia de brazo y **comparar el visor con
+lo que sale en `5h`** (el `<video>` va con `object-cover`, que **recorta**: las
+guías de esquina pueden mentir sobre lo que entra en el JPEG); bloquear la
+pantalla o abrir otra app y volver, confirmando que el visor se reanuda **y el
+obturador vuelve a estar activo**; revocar el permiso con `5g` abierta; y el
+LED de la cámara tras cerrar.
+
 
 **Archivos:** `components/pickup/ManifestCameraSheet.tsx`, `components/pickup/PhotoReviewSheet.tsx`
 
@@ -899,16 +1266,275 @@ El mock dice «expo-camera», que es la app Expo dormida (`apps/mobile`, ver `ls
 `5g`: encuadre a pantalla completa, «Encuadra la hoja completa, con la firma visible», tira de `YA CAPTURADAS`, botón **Listo**.
 `5h`: revisión con la pregunta del mock — «¿Se lee la firma? Una foto borrosa no sirve como respaldo» — y **Repetir** / **Usar foto**.
 
-- [ ] Tests con `getUserMedia` mockeado.
+- [x] Tests con `getUserMedia` mockeado.
 - [ ] Verificación en dispositivo real: `awaiting_user_test`, la cierra una persona con el teléfono.
 
-### Fase 5 — `5i` carga cerrada `[pending]`
+> **M4 (accesibilidad, seguimiento no bloqueante, PR #713) — no gatea el cierre de esta fase.** Trampa de foco y manejo de `Escape`/atrás de Android en `5g`/`5h`; `role="dialog"`/`aria-modal` ya están. Ronda 4 de review: vivía como `- [ ]` de esta checklist, lo que bloqueaba `[done]` de fase 4 por un cableado (5g/5h → `ManifestPhotoStrip`) que pertenece a una fase todavía sin número — movido a prosa sin checkbox precisamente para no atarlo a esa dependencia inexistente. Se retoma cuando se cree la fase que hace ese cableado.
+
+**Pendiente aparte del checklist de arriba — con dueño: lo cierra quien cablee `5g`/`5h` a `ManifestPhotoStrip.tsx` (M3, review del PR #712; nota de coordinación: este párrafo vive separado de la lista de checkboxes a propósito, para no chocar con la línea que #713 modifica).** `#713` entrega `5g`/`5h` **sin cablear**: `onUsePhoto` le pasa el `File` capturado al caller, y `ManifestPhotoStrip.tsx` queda intacto, con su `<input>` oculto — a propósito, para que la decisión de subir-o-encolar la tome quien una las dos piezas, no quien construyó la cámara. Esa unión debe llamar a `enqueueManifestPhoto` (`lib/offline/photos.ts`, spec-81 fase 5 — blob a IndexedDB, subida diferida con reintento, huérfano imposible), no a `useUploadManifestDocument` directo (la ruta ONLINE, sin salida sin señal): es lo que hace verdad «Las fotos también» (`5f`) en el código que corre, no sólo en la infraestructura que exista para recibirla.
+
+> **Ronda 2 de review del PR #713 — bloqueante cerrado, más seguimientos.**
+> B1 (bloqueante): el obturador estaba habilitado desde el primer render, antes
+> de que `getUserMedia` resolviera — un toque durante el diálogo de permiso del
+> sistema producía un canvas 1080×1440 sin señal (negro sólido, ~1.5MB, `File`
+> "válido") entregado como si fuera el respaldo fotográfico. Corregido: el
+> obturador se gatea con `videoReady` (derivado de `loadedmetadata` +
+> `videoWidth/videoHeight > 0`), y `handleShutter` rechaza defensivamente
+> `videoWidth === 0` en vez de sustituirlo por un tamaño por defecto.
+> M2: `PhotoReviewSheet.onUsePhoto`/`photo` se estrechó de `File | Blob` a
+> `File` — es lo único que `ManifestCameraSheet` produce, y `File | Blob` no
+> compilaba contra `useUploadManifestDocument`.
+> M3: el fallback (`<input capture>`) ahora valida tamaño (10MiB) y mime
+> contra la lista del bucket `manifests`
+> (`20260430000001_create_manifests_storage_bucket.sql`) **en la captura**,
+> no al drenar la cola de spec-81 horas después sin nadie para repetir la foto.
+> M1 (seguimiento, no bloqueante): `ManifestCameraSheet` acepta `open` para
+> quien siga la convención local de Radix (montado siempre); documentado que
+> `5g`/`5h` nunca deben montarse/abrirse a la vez.
+> M4 (seguimiento, no bloqueante): ambas pantallas llevan `role="dialog"`/
+> `aria-modal`, pero siguen sin trampa de foco ni manejo de `Escape`/atrás de
+> Android — queda declarado como hueco, no resuelto aquí.
+> El icono `Zap` decorativo del header de `5g` (parecía un control sin
+> función) se quitó en vez de implementarse.
+> Mutation-testing repetido tras los arreglos, incluidos los 5 mutantes que la
+> ronda 2 señaló como sobrevivientes (calidad JPEG, `capture`, bytes del
+> `File`, mime derivado del blob real, y los nuevos guards de B1/M1/M3) —
+> todos mueren contra su test.
+>
+> **Ronda 3 de review del PR #713 — B2 cerrado (bloqueante), M-A y M-B
+> cerrados, menores cerrados.** B1/M3/`capture="environment"` verificados
+> vivos por mutación en esta ronda (dos correcciones del reviewer a su
+> propia ronda 2, a favor de la implementación: el mutante de `capture`
+> **sí** moría, y la lista de MIME de `manifestPhotoValidation.ts` es la
+> segunda copia del bucket, no la tercera — `photos.ts` de spec-81 sólo
+> tiene el tope de bytes).
+> B2 (bloqueante): `open` paraba el stream pero el JSX nunca lo consultaba —
+> `open={false}` dejaba un overlay `fixed inset-0 z-50` negro, con
+> `aria-modal="true"`, tapando la PWA entera. Arreglado con
+> `if (!open) return null` después de todos los hooks.
+> M-A: el chequeo de dimensiones no detecta una pista muerta a mitad de
+> sesión (un navegador real no pone `videoWidth`/`videoHeight` a 0 cuando la
+> pista termina — se queda congelado en el último frame, lo que producía una
+> foto PLAUSIBLE pero de la hoja equivocada, no una foto negra obvia).
+> Arreglado escuchando `ended`/`mute` en las pistas y `visibilitychange` en
+> el documento para devolver `videoReady` a `false`; el chequeo de
+> dimensiones queda como defensa en profundidad, no como detector principal.
+> M-B: un `file.type` vacío (varios WebViews de Android, para el resultado
+> de `capture`) se trataba como formato rechazado sin salida posible.
+> Arreglado infiriendo el mime por la extensión antes de rechazar
+> (`lib/pickup/manifestPhotoValidation.ts`, extraído de
+> `ManifestCameraSheet.tsx` para poder testear la validación sin DOM y
+> mantener el componente bajo 300 líneas).
+> Menores cerrados: `>`→`>=` en el tope de 10MiB, `accept="image/*"`,
+> `setVideoReady(false)` en la limpieza del efecto (el estado de React
+> sobrevive a que el JSX devuelva `null`, no es un desmontaje),
+> `role="dialog"`/`aria-modal` sin test en ambas pantallas,
+> `useEffect(..., [photo]) → []` en `PhotoReviewSheet.tsx`, el solapamiento
+> de la leyenda de encuadre con el mensaje de error del fallback (ambos
+> `absolute ... bottom-[26px]`, la leyenda vivía fuera del ternario), y el
+> JSDoc de `PhotoReviewSheet.tsx` que afirmaba "sin `role=dialog`" tres
+> líneas por encima del `role="dialog"` ya añadido en la ronda 2.
+> El hueco M4 pasó de prosa suelta dentro de este blockquote a un `- [ ]`
+> (ronda 4: movido otra vez, ver más abajo — no tenía fase de destino real).
+> Mutation-testing repetido sobre cada guard nuevo de esta ronda (B2, los
+> tres detectores de M-A, M-B, y los 6 menores señalados) — verificado uno a
+> uno que cada uno muere contra su test; no leído como "no queda ningún
+> mutante vivo en el fichero" (la ronda 4 encontró más).
+>
+> **Ronda 4 de review del PR #713 — el único bloqueante era que los dos
+> detectores reversibles no tenían su contrario.** `visibilitychange` sólo
+> tenía la rama `hidden`: al volver de segundo plano el obturador quedaba
+> deshabilitado para siempre, porque `loadedmetadata` no vuelve a disparar
+> (es de una vez por carga). Igual con `mute` sin `unmute` — iOS silencia la
+> pista en una interrupción (llamada, bloqueo de pantalla) y la devuelve
+> viva con `unmute`; sin el listener, el visor se movía de nuevo pero el
+> botón quedaba gris permanentemente. Ambos casos tenían salida hoy (cerrar
+> y reabrir), por eso no bloqueaban, pero eran indescubribles.
+> Arreglado con `isVideoReady(video, track)` (extraído a
+> `lib/pickup/cameraReadiness.ts`, 7 tests propios): deriva de dimensiones +
+> `track.readyState === 'live'` + `!track.muted`, y es la misma función que
+> usan las tres rutas de habilitación (`loadedmetadata`, `unmute`, `visible`)
+> y las tres de deshabilitación (`ended`, `mute`, `hidden`) — ninguna rama
+> tiene ida sin vuelta.
+> M-B: un fichero con `type` vacío y sin extensión resoluble (algunos
+> DocumentsProvider de Android) ya no es un callejón sin salida — se asume
+> JPEG, válido porque esta función sólo se llama desde el fallback de
+> captura. Documentado y no resuelto (alcanzabilidad baja, sin magic-byte
+> sniffing a propósito): un `File` con `type` vacío, nombre de imagen y
+> contenido real distinto se reetiqueta igual — Supabase Storage valida el
+> Content-Type declarado, no los bytes.
+> Menores cerrados: spies sobre `document.addEventListener`/
+> `removeEventListener` y sobre `track.removeEventListener` confirmando que
+> la limpieza del efecto hace exactamente lo que dice (antes la suite
+> quedaba verde sin ellos); `getVideoTracks()` vs `getTracks()` distinguido
+> con streams que devuelven tracks distintos por cada método; el eje del
+> alto del guard defensivo de `handleShutter` cubierto por separado; el
+> título del test de dimensiones del canvas corregido para no afirmar que
+> prueba el default `|| 1080` (sigue siendo equivalente-por-diseño: el guard
+> de arriba ya lo hace inalcanzable, y eso es correcto, no un hueco).
+> El hueco M4 se sacó de la checklist de fase 4 (no debía gatear su cierre
+> por una dependencia — el cableado a `ManifestPhotoStrip` — que vive en una
+> fase todavía sin número) y quedó como nota sin checkbox más arriba.
+> Mutation-testing repetido sobre los cinco arreglos de esta ronda — todos
+> mueren contra su test correspondiente.
+>
+> **Ronda 4 aprobada — mergeable sin condiciones.** Verificado por el
+> reviewer: las dos transiciones de vuelta (`mute → unmute`, `hidden →
+> visible`) dan `true`; el mutante que delató el bug original muere; y tres
+> sondas de falso positivo salen limpias (`visible` tras `ended` no
+> rehabilita, `unmute` de la pista del ciclo anterior tampoco, `visible`
+> antes de que `getUserMedia` resuelva tampoco). Extraer `isVideoReady`
+> como fuente única para habilitar y deshabilitar cerró la clase entera de
+> bug, no sólo los dos casos reportados.
+>
+> **Tres lagunas de cobertura anotadas, no perseguidas — código hoy
+> correcto, test que no lo distingue de una versión rota:**
+> - `handleTrackUp` puesto a `setVideoReady(true)` a pelo (sin re-derivar)
+>   pasa la suite completa: el test de `unmute` sólo cubre el camino feliz
+>   (dimensiones ya válidas), no distingue "re-deriva con `isVideoReady`"
+>   de "pone `true` sin más".
+> - `trackRef.current = null` en la limpieza del efecto no está cubierto —
+>   misma laguna: falta el caso "evento disparado por una pista que ya no
+>   es la actual" (p.ej. tras un ciclo `open` cerrar/reabrir).
+> - `resolveMimeForEmptyType` (`lib/pickup/manifestPhotoValidation.ts`) es
+>   más ancha que su JSDoc: `factura.pdf`/`VID_001.mp4` con `type` vacío
+>   también se aceptan como `image/jpeg`, no sólo `IMG_0042` sin extensión
+>   — un `null` por extensión desconocida es indistinguible de un `null`
+>   por no tener extensión. El `type` explícito sigue mandando (alcanzabilidad
+>   baja), pero la documentación promete menos de lo que el código hace.
+>   Cierre si algún día importa: `?? (tieneExtensión ? null : 'image/jpeg')`.
+
+### Fase 5 — `5i` carga cerrada `[done]`
+
+> Implementado por: implementer — rama `feat/spec-80-fase-5-carga-cerrada`, SHA `1a1b63d` (PR #726, mergeado como `b4a0137`), más el seguimiento en `feat/spec-80-fase-5-carga-cerrada-seguimiento`, SHA `f0f6159` (PR #728, `6c38d60`).
+> Review: reviewer — **dos rondas más un seguimiento**. El hallazgo que cambió el resultado: **las seis cifras del acta podían sustituirse por constantes con los 23 tests en verde**, e intercambiar «Faltantes» y «Ajenos» también pasaba — los tests buscaban los números sueltos en toda la pantalla, sin anclar a su fila.
+> QA: PRs #726 y #728 merged, CI verde en ambos. **`e2e-qa` no ejercita esta pantalla**; la comprobación contra la base queda abajo.
+> Downstream: revisado spec-81 fase 4 — la reversión del bloque «Guardado en el teléfono» **eliminó una colisión** que existía entre las dos ramas.
+
+**Dos correcciones que importan más que el diff.** El cliente contaba
+`Verificados` por **filas de escaneo** y el servidor por **paquetes distintos**
+(`COUNT(DISTINCT ps.package_id)`); con dos miembros de cuadrilla escaneando el
+mismo bulto sin señal —cosa que nada impide, porque el índice único va por
+`client_operation_id`— la pantalla decía 40 y el servidor registraba 39. **El
+conductor le habría enseñado al cliente una cifra que el servidor contradice.**
+Y el bloque «Guardado en el teléfono» prometía «0 fotos esperan señal» de forma
+**estructural** —nada encola fotos todavía— justo donde el operario querría
+saber si su evidencia fotográfica está a salvo: se **quitó**, no se maquilló.
+
+**Queda `awaiting_user_test`:** cerrar una carga con faltantes e inesperados
+reales y **contrastar las cuatro filas de `5i` contra `psql`** sobre el
+manifiesto; y pulsar «Volver a mis recogidas» **en menos de 10 segundos**, para
+ver si la carga recién cerrada reaparece como «Siguiente manifiesto ·
+Verificar» (pasados 10 s el síntoma se cura solo por `staleTime`, así que hay
+que ir rápido a propósito).
+
+
+> **Decisión del usuario (2026-09-09) sobre «Ver resumen de la carga».** El
+> mock dibuja ese texto pero no dice a dónde lleva, y no existe ninguna
+> pantalla de resumen de carga en el código. El PR #726 lo entregó como
+> `<span>` no interactivo — literal del mock — en vez de inventar una ruta.
+>
+> **Respuesta textual: «podría quererlo sí, pero por ahora anótalo como un
+> nice to have, no se evalúa siquiera antes de terminar todos los specs
+> abiertos».**
+>
+> **Consecuencia: nada que hacer, y nada que abrir.** No es una fase, no es un
+> `[ ]`, y no bloquea el cierre de nada. Si algún día se evalúa, el punto de
+> partida es que **el `<span>` actual es correcto**: un control que parece
+> llevar a algún sitio y no lleva es peor que un texto, y así lo midió el
+> review del #726.
+
 
 **Archivos:** `app/app/pickup/complete/[loadId]/page.tsx` (estado post-cierre), o ruta hermana
 
 Resumen del mock: Verificados / Faltantes / Ajenos a la carga / Respaldo «N fotos · N firmas». **Vuelve a `5c`** (`/app/pickup/route/active`), no a `/app/pickup` como hoy, y ofrece «Sigue en PR-…, N cargas pendientes».
 
 El bloque «Guardado en el teléfono — N registros y N fotos esperan señal» es de spec-81; hasta entonces se omite.
+
+> **Ronda 2 de review del PR #726 (2026-09-09) — cuatro correcciones al código, tres notas
+> declaradas para quien construya el resto de esta fase o el bloque de spec-81 arriba
+> descrito.**
+>
+> **B1 (cerrado):** las cuatro filas del acta (`ManifestClosedSummary.tsx`) no tenían ni un
+> test que las anclara a su propia fila — `getByText('39')`/`getByText('3')`/`getByText('1')`
+> son consultas globales; intercambiar los *bindings* de `Faltantes` y `Ajenos a la carga`
+> dejaba 8/8 en verde. Corregido con `data-testid` por fila + `within(row)`, y una aserción de
+> cifras reales añadida también a nivel de página (una de las tres rutas de cierre).
+>
+> **B2 (cerrado):** `verifiedCount` contaba filas de `pickup_scans`, no paquetes distintos —
+> `close_manifest` usa `COUNT(DISTINCT ps.package_id)` a propósito, porque el único índice
+> único de la tabla es sobre `client_operation_id`, no sobre `(manifest_id, package_id)`: dos
+> miembros de la cuadrilla del mismo manifiesto, ambos sin señal, escaneando el mismo bulto,
+> producen dos filas `verified` para el mismo paquete. Corregido a `new Set(...).size`, la
+> misma regla que `useRouteManifests.ts` ya aplicaba.
+>
+> **B3 (cerrado, quitado en vez de defendido):** una primera versión sí construyó el bloque
+> «Guardado en el teléfono» contra la instrucción explícita de arriba, y encima
+> `pickupPhotoCount` era **estructuralmente siempre 0** — `enqueueManifestPhoto` (spec-81 fase
+> 5) no tiene ningún llamador en producción todavía; `ManifestPhotoStrip`/
+> `useManifestDocuments.ts` siguen subiendo directo al bucket. Un cierre offline justo después
+> de fotografiar el papel firmado habría mostrado «0 fotos esperan señal» cuando en realidad
+> esas fotos ya subieron o se perdieron en la ventana que `complete/[loadId]/page.tsx` ya
+> documenta — la pantalla afirmando tranquilidad sobre la evidencia justo donde no la hay.
+> Quitado por completo (componente, página, y el soporte que se había añadido en `lib/db.ts`/
+> `useSyncQueue.ts` para separar registros de fotos). **Nota para quien lo construya de verdad
+> en spec-81:** los contadores que ya existen (`getPendingPickupCount`/`blockedCount`) son por
+> operador/dispositivo, no por carga — coherente con el badge global "REQUIERE AYUDA" de esta
+> misma pantalla, pero **no** coherente con una tarjeta titulada con un `loadId` concreto:
+> cerrar la carga A con 6 escaneos de la carga B todavía en cola mostraría «6 registros esperan
+> señal» bajo «Carga cerrada · CARGA-A», atribuyéndole a la carga equivocada un backlog que no
+> es suyo. Ese bloque necesita un conteo con ámbito de manifiesto, no el mismo que ya usa
+> `sync.blockedCount`.
+>
+> **B4 (cerrado):** «Ver resumen de la carga» era un `<Button variant="outline">` con
+> `onClick` que hacía `scrollIntoView` sobre la propia tarjeta, ya visible y ya en el tope de
+> la pantalla — efecto visible cero, indistinguible de un control vivo que no hace nada al
+> pulsarlo. El mock (`Recogida.dc.html`) dibuja este elemento como un `<span>`, no como un
+> botón, y no define ningún destino. Convertido a un `<span>` no interactivo, literal del mock,
+> sin `onClick` ni rol de botón. Ningún destino real existe hoy en el código para ese texto;
+> si el usuario quiere una pantalla de resumen real detrás, es una decisión de producto nueva,
+> no una que esta fase deba inventar.
+>
+> **Declarado, no resuelto en esta ronda — `5i` y `5c` usan definiciones distintas de
+> "pendiente".** `summarizePendingRouteManifests` (esta fase) filtra por
+> `status !== 'completed'`; `/app/pickup/route/active` (`isManifestComplete`,
+> `lib/pickup/manifestProgress.ts`) filtra por `verified_count >= total_packages`. Una carga
+> ya escaneada pero sin firmar hace que `5i` diga «1 carga pendiente» y, un toque después,
+> `5c` diga «Todo verificado» — dos pantallas consecutivas del mismo flujo contradiciéndose
+> sobre el mismo dato. No se unifica aquí porque tocaría la definición que usa la pantalla
+> activa de ruta (fuera del alcance de esta fase); queda como hallazgo para quien toque
+> cualquiera de las dos definiciones a continuación.
+
+> **Seguimiento (2026-09-09, PR corto tras la ronda 2) — tres puntos más, dos en código, uno
+> declarado.**
+>
+> **En código:** `unexpectedCount`, `photosCount` y `signaturesCount` no tenían ninguna
+> aserción anclada a nivel de página — sólo `verified`/`missing` la ganaron en la ronda 2 (B1).
+> Sustituir los tres por constantes en `page.tsx` dejaba las 24/24 pruebas del archivo en
+> verde. Test nuevo con valores todos distintos entre sí (1 ajeno, 3 fotos, 2 firmas —
+> firma del cliente incluida, para no confundir el default de 1 firma con una constante).
+> Mutado uno por uno: cada constante muere contra su propia aserción.
+>
+> Además, `verifiedCount` (B2, ronda 2) tenía una divergencia de paridad con el `RPC`: SQL's
+> `COUNT(DISTINCT ps.package_id)` descarta los `NULL`; el `Set` de JS de la ronda 2 los cuenta
+> como miembro propio. No alcanzable hoy (`pickup_scans` sólo escribe `package_id` sobre un
+> match real), pero el propio precedente que ese código cita —`useRouteManifests.ts:139`—
+> filtra `!s.package_id` antes de sumarlo, y la versión de la ronda 2 no. Igualado.
+>
+> **Declarado, no resuelto — la consecuencia de producto de la nota sobre la caché sin
+> invalidar (ronda 2, corrección del comentario en `manifestCloseSummary.ts`).** El comentario
+> ya no miente, pero no decía la consecuencia real: `useRouteManifests` (`routeManifests`,
+> consumida tanto por `summarizePendingRouteManifests` en `5i` como por `/app/pickup/route/
+> active`) tiene `staleTime: 10_000`. Nada en `close_manifest` ni en `page.tsx` invalida esa
+> query al cerrar. Si el operario pulsa «Volver a mis recogidas» y vuelve a `5c` en menos de
+> 10 segundos, esa pantalla puede seguir viendo la carga recién cerrada como si no lo estuviera
+> — «Siguiente manifiesto · Verificar» sobre una carga que el mismo operario acaba de firmar.
+> Pasados los 10 segundos, el síntoma se cura solo (la próxima lectura de la query ya no está
+> "stale" y refleja el estado real). No es un bug de esta fase por sí solo — es el mismo
+> `staleTime` que ya gobierna esa pantalla para cualquier otro escritor — pero esta fase es la
+> primera que hace plausible volver a `5c` en ese margen (antes se navegaba a `/app/pickup`,
+> una pantalla distinta). Candidato de arreglo si algún día importa:
+> `queryClient.invalidateQueries(['pickup', 'route-manifests', routeId])` en `onClosed`.
 
 ---
 
@@ -980,3 +1606,203 @@ Releído cada spec downstream contra lo que **realmente** se mergeó en esta fas
   ayuda con la subida al bucket en sí). **Quien copie este patrón en un spec futuro
   hereda esta misma decisión** — si la evidencia necesita ser literalmente inmutable
   (no sólo auditada), ese spec necesita un RPC, no este patrón.
+
+### Fase 6 — cablear `5g`/`5h` a `ManifestPhotoStrip` (que «Las fotos también» sea verdad) `[done]`
+
+> Implementado por: `implementer` — rama `feat/spec-80-fase-6-cablear-fotos`, SHA `bc2e93c`, PR #736 (mergeado como `f83d9fd`); más el seguimiento en `fix/spec-80-fase-6-seguimiento`, SHA `1a52876`, PR #743.
+> Review: `reviewer` adversarial, **cuatro rondas en #736 y dos en #743**. Las que cambiaron el resultado: la tira leía una query pausada por `networkMode:'online'` como si el servidor hubiera dicho «cero» (`data: undefined` + `= []`), y la pantalla de cierre afirmaba «Respaldo: 0 fotos» sobre fotos vivas en IndexedDB. En #743, el mutante que pasa `loadId` donde va `manifestId` **sobrevivía 30/30** porque el test mockeaba el hook sin mirar nunca sus argumentos.
+> QA: PRs #736 y #743 merged, CI verde en ambos. **`e2e-qa` no cubre esta superficie** — es cámara en dispositivo; la verificación en hardware sigue abierta y es de una persona.
+> Downstream: revisado spec-81 y spec-82 — sin cambios. La decisión de producto nueva (servidor desconocido ⇒ la fila no afirma un número) queda escrita arriba, no en comentarios de código.
+
+**Por qué existió esta fase, que es la lección:** se afirmó que las fotos «también» estaban cableadas y que faltaba «un prop de distancia». Era falso — `enqueueManifestPhoto` tenía **cero llamadores en producción**, verificado con `git log --follow` y grep. Y la fase 5 (#726) había declarado como deuda en el spec que el contador de fotos sería «estructuralmente 0» **porque no había llamador**; esta fase le puso el llamador y **nadie revisó la premisa**. Por eso el seguimiento de #743 se arregló en vez de declararse: una deuda escrita que nadie revisa es cómo nace la fase siguiente.
+
+**Hueco abierto y declarado, que vale para las dos fases:** ningún test del repo comprueba la **premisa sobre TanStack Query** — que con `networkMode:'online'` una query pausada o en error dé de verdad `data: undefined`. Los tests se lo dan a mano. Si ese comportamiento por defecto cambiara, seguirían todos en verde y la pantalla volvería a decir «0 fotos».
+
+
+**Por qué existe esta fase y no un párrafo suelto (2026-09-09).** Esto llevaba
+tres PRs viviendo como «pendiente con dueño» en prosa, fuera de todo checklist
+— o sea, sin fase, sin token, y por tanto **invisible para el hook que reparte
+trabajo**. Nadie iba a tropezar con ello nunca. Se le preguntó al usuario y
+delegó: «haz lo que creas que debas hacer». Le doy número.
+
+**El problema, en una frase: `5f` promete en pantalla «Todo queda en el
+teléfono y se sube al recuperar señal. **Las fotos también.**» y eso es falso
+hoy en el código que corre.**
+
+Lo que sí es verdad: la infraestructura existe y está mergeada
+(`enqueueManifestPhoto`, `lib/offline/photos.ts`, spec-81 fase 5 — blob a
+IndexedDB, subida diferida con reintento, renumerado ante colisión, huérfano
+imposible). Lo que falta es **que alguien la llame**: `ManifestPhotoStrip.tsx`
+sigue usando `useUploadManifestDocument` directo, la ruta online, sin salida
+sin señal.
+
+Y `5g`/`5h` (fase 4, mergeada en #713) entregan la captura **sin cablear** a
+propósito: `onUsePhoto` devuelve el `File` al llamante para que la decisión de
+subir-o-encolar la tomara quien uniera las dos piezas. Esta fase es esa unión.
+
+**Es exactamente la clase de fallo que esta sesión pasó el día cazando:** una
+pantalla que promete al operario algo que el código no hace. Aquí es peor que
+en otros casos, porque lo que se pierde es la evidencia fotográfica del
+traspaso de custodia — el respaldo de una eventual indemnización.
+
+- [x] `ManifestPhotoStrip` llama a `enqueueManifestPhoto`, **no** a
+      `useUploadManifestDocument`.
+- [x] La captura entra por `5g`/`5h` (`onUsePhoto` entrega un `File`, que **es**
+      un `Blob`: encaja sin reconversión).
+- [x] `externalLoadId` se pasa al encolar — sin él, el chip de sync (spec-81
+      fase 4) no puede decirle al operario **qué carga** abrir cuando una foto
+      queda muerta.
+- [x] Test que ejercite capturar → encolar, más un drenado reconstruido a
+      mano (sin `onManifestDocumentsChanged` real — no es punta a punta),
+      confirmando que la foto no se pierde
+      (`photos-capture-flow.test.ts`; wording corregido ronda 4 de review
+      del PR #736 para decir lo que el test mide, no más).
+- [x] Verificado: con el cableado hecho, la leyenda de `5f` («Las fotos
+      también») ya es verdad — no hizo falta cambiarla.
+
+**Archivos:** `apps/frontend/src/components/pickup/ManifestPhotoStrip.tsx` (+ test),
+`apps/frontend/src/app/app/pickup/complete/[loadId]/page.tsx` (montaje de `5g`/`5h`).
+
+**Depende de:** ninguna — spec-81 fase 5 (`enqueueManifestPhoto`) y spec-80
+fase 4 (`5g`/`5h`) están **mergeadas**. Se puede tomar hoy.
+
+**Ronda 2 de review del PR #736 (2026-09-10) — decisiones y hallazgos.**
+
+- **Decisión de producto: `toast.success` al encolar una foto, no un
+  contador de cola en la tira.** Sin señal, `manifest-photo-count`
+  (`documents.length`) sólo cuenta lo que el SERVIDOR ya confirmó — tras
+  encolar la primera hoja sigue en "0", sin ningún otro aviso, y un operario
+  puede leer eso como "no se guardó" y repetir la foto (filas duplicadas de
+  2-4 MB contra el tope de 200 MB, `MAX_UNCONFIRMED_PHOTO_BYTES_PER_OPERATOR`).
+  Se añadió un `toast.success(...)` en `handleUsePhoto`, mismo precedente
+  que `useCloseManifest.ts` (`toast.success` cuando el cierre queda
+  encolado, no sólo online). Deliberadamente NO se cuenta la cola local en
+  la tira: eso exigiría leer `pickup_queue` desde este componente, con
+  riesgo de que ese contador y el del servidor discreparan — el mismo
+  problema que costó una ronda de review en spec-81 fase 5. Ningún criterio
+  de aceptación de esta fase pedía un indicador — la desviación es de este
+  spec, no un hallazgo de código sin resolver.
+- **Ronda 3 de review — el texto del toast, y por qué ya no se gatea por
+  conectividad.** El pedido inicial (ronda 2, del usuario) fue que el
+  mensaje saliera SÓLO sin señal. La implementación no lo hizo, y el
+  revisor lo marcó como hallazgo — con razón, según el código: `:95` no
+  consultaba `navigator.onLine` ni nada equivalente. Pero el usuario retiró
+  su propio pedido al verlo señalado, por una razón que no había pesado al
+  pedirlo: desde esta fase, `enqueueManifestPhoto` es la ÚNICA ruta — ya no
+  existe la subida online directa que `useUploadManifestDocument` ofrecía.
+  El encolado ocurre siempre, con o sin señal, así que "la foto se guardó"
+  nunca es falso en ningún camino; lo único que podía mentir era la
+  SEGUNDA mitad ("se sube al recuperar señal" — con señal, el drenador la
+  sube un segundo después, no "al recuperar" nada). Gatear el texto con
+  `navigator.onLine`/`onlineManager` habría sido dos redacciones que
+  mantener sincronizadas y una rama más que probar, por una diferencia que
+  al operario no le importa. Se cambió el texto a **"Foto guardada. Se sube
+  sola."** — cierto en los dos caminos, sin prometer una espera que online
+  no existe, y sin negar el encolado que sí ocurre siempre.
+- **`loadLabel` cae al `manifestId` (un UUID) cuando `externalLoadId` no se
+  pasa** (`ManifestPhotoStrip.tsx`, props de `5g`/`5h`). Es el mismo
+  fallback que el PR #725 (spec-81 fase 4) descartó por decisión del
+  usuario para el chip de sync. Hoy inalcanzable en producción —
+  `complete/[loadId]/page.tsx` siempre pasa `externalLoadId={loadId}` — pero
+  el prop sigue siendo opcional en el tipo; si algún día se monta
+  `ManifestPhotoStrip` sin él, `5g`/`5h` mostrarían un UUID en vez de
+  "CARGA-99814".
+  - [ ] Decidir si `loadLabel` debe dejar de tener fallback a `manifestId`
+        (mismo criterio que el chip de sync, PR #725) o si es aceptable
+        para una pantalla presentacional — hoy inalcanzable, sin llamador
+        real que lo dispare.
+- **`useUploadManifestDocument` (`hooks/pickup/useManifestDocuments.ts`) es
+  código muerto** desde esta fase — sin llamadores de producción, con su
+  propia suite de tests que sigue pasando. Borrarlo excedía el alcance
+  declarado de esta fase (`**Archivos:**` arriba no lo incluye), pero
+  "fuera de alcance" caduca: sin un ítem que lo diga, el próximo que lo lea
+  lo toma como una ruta de subida legítima.
+  - [ ] Borrar `useUploadManifestDocument` y su test de
+        `hooks/pickup/useManifestDocuments.ts`/`.test.ts` — verificar antes
+        que sigue sin llamadores (`grep -rn useUploadManifestDocument
+        apps/frontend/src`).
+- **Un tercer mensaje sin limpiar, mismo defecto que el de M-menor de la
+  ronda 2 (prefijo `"recogida offline queue: "` mostrado crudo en un
+  `toast.error` del conductor).** `enqueueManifestPhoto` delega en
+  `enqueue` (`lib/offline/queue.ts:75`) para el tope de 500 filas sin
+  confirmar, y ESE mensaje sigue llevando el prefijo — llega igual de crudo
+  al mismo `toast.error` de `ManifestPhotoStrip.tsx`. No se toca en esta
+  fase porque `queue.ts` también lo usa desde `useCloseManifest.ts`
+  (`close_manifest`), fuera del alcance de esta fase.
+  - [ ] Limpiar el prefijo de `queue.ts:75` (o decidir mantenerlo) — afecta
+        tanto a `ManifestPhotoStrip` como a la firma del manifiesto.
+
+**Seguimiento del PR #736 (PR #743, 2026-09-10) — la deuda de la ronda 4 de
+arriba, cerrada; una decisión de producto nueva que no vivía en ningún
+sitio salvo comentarios de código.**
+
+La ronda 4 de review de #736 había corregido el `undefined` de
+`useManifestDocuments` (query en pausa por `networkMode:'online'` — un
+500/RLS transitorio al montar) en UN lector (`ManifestPhotoStrip`,
+`manifest-photo-count`). `ManifestClosedSummary` (`5i`, "Respaldo") leía la
+MISMA query con un `= []` de conveniencia y seguía convirtiendo ese
+`undefined` en "0 fotos" — con hojas ya confirmadas por el servidor, en la
+pantalla que cierra el traspaso de custodia. #726 había declarado esto
+mismo como deuda una fase antes; nadie volvió a mirarlo. Se corrige aquí,
+no se vuelve a declarar.
+
+- **Decisión de producto:** cuando el conteo del SERVIDOR es desconocido
+  (`serverPhotosCount: number | null`, `null` = no se sabe, nunca 0), la
+  fila "Respaldo" no afirma un número — pinta `—`, mismo símbolo que
+  `manifest-photo-count`. Lo encolado sin confirmar (`queuedPhotosCount`)
+  es aparte y SIEMPRE se conoce (sale de IndexedDB, no de la red): con
+  servidor ilegible y algo en cola, la fila dice "N en cola (resto
+  desconocido)" en vez de un `—` que ocultaría lo que sí consta.
+  Implementado en `backupPhotosLabel`
+  (`apps/frontend/src/lib/pickup/manifestCloseSummary.ts`) — tres estados
+  distinguibles, mutation-verificados por separado: servidor conocido,
+  servidor desconocido sin cola, servidor desconocido con cola.
+- **Cerrado también en esta ronda:** `useQueuedManifestPhotoCount` ya
+  limpiaba su `setInterval` al desmontar pero ningún test lo afirmaba
+  (riesgo concreto: trabajo que sobrevive al desmontaje termina enviando
+  con el JWT del siguiente conductor); y el mismo hook no tenía bandera de
+  cancelación para una lectura en vuelo del `manifestId` VIEJO cuando
+  "Sigue en PR-…" avanza al siguiente manifiesto de la ruta sin remontar
+  (mismo segmento de Next). Ambos, `let ignore` en el efecto, ambos
+  mutation-verificados por separado.
+- **Costura `page → hook` sin pinchar, encontrada en la ronda 2 de review
+  de este mismo PR (#743):** `page.test.tsx` mockeaba `useManifestDocuments`
+  y `useQueuedManifestPhotoCount` sin afirmar nunca sus argumentos — pasar
+  `loadId` (el código externo) donde va `manifestId` (el UUID) sobrevivía
+  30/30, y hubiera producido exactamente el síntoma que esta ronda existe
+  para cerrar (`queuedManifestPhotoCount` filtra por `manifestId`; con el
+  id equivocado no casa ninguna fila jamás). Cerrado con el mismo
+  tratamiento que `mockManifestPhotoStripProps` ya aplicaba a la tira.
+- **Discrepancia conocida y deliberada, documentada aquí porque no vivía en
+  ningún sitio con ese nombre:** `5f` (`manifest-photo-count`, la tira)
+  pinta SÓLO el conteo del servidor — decisión de la ronda 2 de #736,
+  para no arriesgar que ese contador y el de la cola discreparan
+  (`ManifestPhotoStrip.tsx:103-114`). `5i` ("Respaldo") SÍ suma la cola.
+  Con 3 hojas confirmadas + 2 encoladas, `5f` dice "3" y `5i` dice "5
+  fotos" — mismo manifiesto, números distintos, cada uno correcto para lo
+  que mide. No es un bug de esta ronda; es la consecuencia visible de dos
+  decisiones ya tomadas en fases distintas, dejada sin nombre hasta ahora.
+- **Ventana de sobreconteo, real pero menor, no cerrada aquí:**
+  `photos-send.ts` dispara `onManifestDocumentsChanged` justo tras el
+  `insert` en `manifest_documents` y ANTES de marcar la entrada local
+  `sent`. Si el poll de 2s de `useQueuedManifestPhotoCount` cae en esa
+  ventana, "Respaldo" cuenta la misma foto dos veces (una vez confirmada
+  por el servidor, una vez todavía en la cola local) — se autocorrige en
+  el siguiente tick (≤2s) y miente por EXCESO, la dirección menos
+  peligrosa de las dos (nunca hace parecer perdida una foto que no lo
+  está). No se cierra en esta ronda — el fix está en el orden de
+  `photos-send.ts`, fuera del alcance de esta fase.
+- **Hueco de test declarado, no cerrado:** ningún test del repo comprueba
+  la premisa sobre la que se apoyan tanto la ronda 4 de #736 como esta
+  ronda — que TanStack Query con `networkMode:'online'` (el default del
+  repo) devuelve de verdad `data: undefined`, y no `data: []` ni
+  `placeholderData`, cuando una query queda en pausa o falla. Los tests
+  existentes lo simulan a mano (`mockUseManifestDocuments.mockReturnValue({
+  data: undefined })`); si el comportamiento real de la librería cambiara,
+  esos tests seguirían en verde y la pantalla volvería a decir "0 fotos"
+  sin que ningún guard lo detectara. Es el cimiento de ambas fases — se
+  deja anotado, no se cierra aquí.
+- **Nit de concordancia, cerrado:** `backupPhotosLabel(1, 0)` devolvía
+  `"1 fotos"`; ahora `"1 foto"`, misma regla que `pendingLoadsLabel` ya
+  aplica para "1 carga pendiente".
+

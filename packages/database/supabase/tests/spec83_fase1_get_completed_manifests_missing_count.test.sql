@@ -109,24 +109,35 @@ ON CONFLICT (id) DO NOTHING;
 -- row per load the moment its order was inserted (ids unpredictable).
 -- CARGA-83-1 also carries a real label print, to kill a mutant that swaps
 -- the LEFT JOIN users for a NULL literal (round-2 finding).
+--
+-- reception_status = 'received' on all four (spec-94 fase 1): get_completed_
+-- manifests() no longer partitions on status='completed' alone -- see the
+-- same note in spec80_fase2b_completed_manifests_signature.test.sql for why
+-- reception_status IS NULL is not reachable here (trg_manifest_set_
+-- reception_status, spec-08, auto-fills it the instant status transitions to
+-- 'completed').
 UPDATE public.manifests
    SET status = 'completed', completed_at = NOW(), total_packages = 44, total_orders = 1,
-       labels_printed_at = NOW(), labels_printed_by = '00000000-0000-4000-8000-0000000083f1'
+       labels_printed_at = NOW(), labels_printed_by = '00000000-0000-4000-8000-0000000083f1',
+       reception_status = 'received'
  WHERE operator_id = '00000000-0000-4000-8000-0000000083f0'
    AND external_load_id = 'CARGA-83-1';
 
 UPDATE public.manifests
-   SET status = 'completed', completed_at = NOW(), total_packages = 38, total_orders = 1
+   SET status = 'completed', completed_at = NOW(), total_packages = 38, total_orders = 1,
+       reception_status = 'received'
  WHERE operator_id = '00000000-0000-4000-8000-0000000083f0'
    AND external_load_id = 'CARGA-83-2';
 
 UPDATE public.manifests
-   SET status = 'completed', completed_at = NOW(), total_packages = 10, total_orders = 1
+   SET status = 'completed', completed_at = NOW(), total_packages = 10, total_orders = 1,
+       reception_status = 'received'
  WHERE operator_id = '00000000-0000-4000-8000-0000000083f0'
    AND external_load_id = 'CARGA-83-3';
 
 UPDATE public.manifests
-   SET status = 'completed', completed_at = NOW(), total_packages = 5, total_orders = 1
+   SET status = 'completed', completed_at = NOW(), total_packages = 5, total_orders = 1,
+       reception_status = 'received'
  WHERE operator_id = '00000000-0000-4000-8000-0000000083f0'
    AND external_load_id = 'CARGA-83-4';
 

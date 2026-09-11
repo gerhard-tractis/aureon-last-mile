@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CameraIntake } from '@/components/pickup/CameraIntake';
@@ -8,12 +8,8 @@ import { type ManifestRow } from '@/components/pickup/ManifestTable';
 import { PickupDesktopHeader } from '@/components/pickup/PickupDesktopHeader';
 import { PickupDesktopView, type TabKey } from '@/components/pickup/PickupDesktopView';
 import { PickupMobileView } from '@/components/pickup/PickupMobileView';
-import {
-  usePendingManifests,
-  useCompletedManifests,
-  useInTransitManifests,
-} from '@/hooks/pickup/useManifests';
-import { clientBreakdown, completedToday, pendingTotals } from '@/hooks/pickup/pickupSummary';
+import { usePickupManifestTabs } from '@/hooks/pickup/usePickupManifestTabs';
+import { completedToday, pendingTotals } from '@/hooks/pickup/pickupSummary';
 import { useActivePickupRoute } from '@/hooks/pickup/useActivePickupRoute';
 import { useStartPickupRoute } from '@/hooks/pickup/useStartPickupRoute';
 import { useAddManifestToRoute } from '@/hooks/pickup/useAddManifestToRoute';
@@ -29,7 +25,13 @@ import {
   attachManifestsToRoute,
   partialAttachMessage,
 } from '@/lib/pickup/attachManifestsToRoute';
-import { matchesSearchTerm, pendingToRows, totalsToRows } from '@/lib/pickup/pickupPageHelpers';
+import {
+  matchesClient,
+  matchesSearchTerm,
+  matchesSearchTermRouted,
+  rowsForTab,
+  clientCountsForTab,
+} from '@/lib/pickup/pickupPageHelpers';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { toast } from 'sonner';
 
@@ -39,12 +41,9 @@ import { toast } from 'sonner';
  * Two columns: the manifests to collect on the left, the route being assembled
  * and today's closures on the right. Below 1280px (`xl`) they stack.
  *
- * Not rendered, because the data does not exist:
- *   - the pickup window column and the urgency it colours rows by
- *     (get_pending_manifests returns no window)
- *   - "cierre de retiros 18:00" in the subtitle, for the same reason
- *   - estimated vehicle occupancy (no capacity on `vehicles`, no volume on
- *     `packages`)
+ * spec-94 fase 2 — a fourth tab (routed manifests, cubo 2) plus its query,
+ * row mapping and rescue wiring now live in `usePickupManifestTabs.ts`, not
+ * here: this file was already at the 300-line CLAUDE.md limit.
  *
  * spec-54 mock 3h — below `lg` (1024px) this swaps entirely for
  * `PickupMobileView`'s phone card layout instead of squeezing the table
@@ -91,43 +90,40 @@ function PickupPageContent() {
     router.replace(`${pathname}?${params.toString()}`);
   };
 
-  const { data: pending } = usePendingManifests(operatorId);
-  // item 8 — mobile (3h) has no "en tránsito" tab and never reads this
-  // data, so it's skipped entirely on a phone instead of fetched and
-  // discarded. useCompletedManifests stays unconditional: mobile's header
-  // needs closures.length even without the desktop's completed tab/table.
-  const { data: inTransit } = useInTransitManifests(operatorId, !isBelowLg);
-  const { data: completed } = useCompletedManifests(operatorId);
-
-  // spec-61 Task 5 — `isError` is read, not just `data`. After React Query
-  // exhausts its retries a FAILED lookup leaves `data` undefined, which is
-  // indistinguishable from "no route": this screen then told a leader who
-  // HAS an open route that they do not, and left "Iniciar ruta" enabled on
-  // both the mobile and the desktop path. Task 4 made the same fix on
-  // route/active/page.tsx.
   const {
-    data: activeRoute,
-    isError: activeRouteUnknown,
-    refetch: refetchActiveRoute,
-  } = useActivePickupRoute(operatorId);
+    pending, routed, inTransit, completed,
+    pendingRows, routedRows, inTransitRows, completedRows,
+    rescueManifests, rescueAvailability, refetchRescue,
+  } = usePickupManifestTabs(operatorId, isBelowLg);
+
+  // spec-61 Task 5 — `isError` is read: a FAILED lookup leaves `data`
+  // undefined, indistinguishable from "no route".
+  const { data: activeRoute, isError: activeRouteUnknown, refetch: refetchActiveRoute } = useActivePickupRoute(operatorId);
   const { data: activeManifests = [] } = useRouteManifests(activeRoute?.id ?? null, operatorId);
   const startMut = useStartPickupRoute(operatorId);
   const addMut = useAddManifestToRoute(operatorId);
 
-  const pendingRows: ManifestRow[] = useMemo(() => pendingToRows(pending ?? []), [pending]);
-  const inTransitRows: ManifestRow[] = useMemo(() => totalsToRows(inTransit ?? []), [inTransit]);
-  const completedRows: ManifestRow[] = useMemo(() => totalsToRows(completed ?? []), [completed]);
+  const totals = pendingTotals(pending);
+  // ronda 4 (review fase 2): TRES fuentes, no dos -- un cierre en el andén
+  // (cubo 2) cuya ruta pasa a in_transit (cubo 3) desaparecería de este
+  // panel si sólo se leyeran cubo 2 y cubo 4.
+  const closures = completedToday(completed, routed, inTransit);
+  // spec-94 fase 2 — the union of all four cubes, not just pending: a
+  // retailer with every load already routed would otherwise lose its
+  // filter chip exactly when it's needed.
+  // spec-95 fase 8, review round 1 (B1) — the count is per ACTIVE cube, not
+  // the union: the union only decides which chips exist (spec-94 fase 2),
+  // hanging a count off it printed a number the tab pill and the footer
+  // both disagreed with. See clientCountsForTab's own docstring.
+  const clients = clientCountsForTab(tab, pending, routed, inTransit, completed);
 
-  const totals = pendingTotals(pending ?? []);
-  const closures = completedToday(completed ?? []);
-  const clients = clientBreakdown(pending ?? []).map((c) => c.name);
-
-  const rowsForTab =
-    tab === 'pending' ? pendingRows : tab === 'in_transit' ? inTransitRows : completedRows;
-
-  const visibleRows = rowsForTab
-    .filter((r) => !selectedClient || r.retailerName === selectedClient)
+  const visibleRows = rowsForTab(tab, pendingRows, inTransitRows, completedRows)
+    .filter((r) => matchesClient(r.retailerName, selectedClient))
     .filter((r) => matchesSearchTerm(r, searchTerm));
+
+  const visibleRoutedRows = routedRows
+    .filter((r) => matchesClient(r.retailer_name, selectedClient))
+    .filter((r) => matchesSearchTermRouted(r, searchTerm));
 
   const selectedManifests = pendingRows.filter((r) => r.id && selectedIds.has(r.id));
 
@@ -147,10 +143,17 @@ function PickupPageContent() {
   };
 
   const handleRowOpen = async (row: ManifestRow) => {
-    await openPendingManifest(createSPAClient(), operatorId!, row.externalLoadId, {
-      orderCount: row.orderCount,
-      packageCount: row.packageCount,
-    });
+    // spec-94 fase 1 review: `counts` is included ONLY when both are real
+    // numbers. A NULL here (get_pending_manifests' arm2 — a manifest whose
+    // orders are all soft-deleted) means "unknown", and openPendingManifest
+    // writes whatever it's given straight to manifests.total_orders/
+    // total_packages — passing a fabricated 0 would permanently overwrite
+    // the real intake total. See openPendingManifest.ts's own docstring.
+    const counts =
+      row.orderCount !== null && row.packageCount !== null
+        ? { orderCount: row.orderCount, packageCount: row.packageCount }
+        : undefined;
+    await openPendingManifest(createSPAClient(), operatorId!, row.externalLoadId, counts);
     router.push(`/app/pickup/scan/${encodeURIComponent(row.externalLoadId)}`);
   };
 
@@ -168,6 +171,8 @@ function PickupPageContent() {
     await openPendingManifest(createSPAClient(), operatorId!, loadId);
     router.push(`/app/pickup/scan/${encodeURIComponent(loadId)}`);
   };
+
+  const goToReview = (loadId: string) => router.push(`/app/pickup/review/${encodeURIComponent(loadId)}`);
 
   /**
    * Creates the route, then attaches the ticked manifests to it.
@@ -232,6 +237,10 @@ function PickupPageContent() {
           onToggleSelect={toggle}
           selectedManifests={selectedManifests}
           onOpenRouteManifest={(loadId) => { void handleRouteManifestOpen(loadId); }}
+          rescueManifests={rescueManifests}
+          rescueAvailability={rescueAvailability}
+          onOpenRescueManifest={goToReview}
+          onRetryRescue={() => { void refetchRescue(); }}
           operatorId={operatorId}
           role={role}
           currentUserId={userId}
@@ -257,6 +266,8 @@ function PickupPageContent() {
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
           pendingRows={pendingRows}
+          routedRows={routedRows}
+          visibleRoutedRows={visibleRoutedRows}
           inTransitRows={inTransitRows}
           completedRows={completedRows}
           visibleRows={visibleRows}

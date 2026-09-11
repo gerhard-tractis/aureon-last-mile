@@ -41,27 +41,42 @@ describe('CrewSelect', () => {
 
   it('renders every candidate as a toggle row named after the person', () => {
     render(<CrewSelect {...baseProps()} />);
-    expect(screen.getByRole('checkbox', { name: 'Ana Pérez' })).toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: 'Bruno Díaz' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Ana Pérez, auxiliar' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Bruno Díaz, conductor' })).toBeInTheDocument();
+  });
+
+  /**
+   * Review round 1 (spec-95 fase 4) — `aria-label` REPLACES the accessible
+   * name; it does not merge with the visible `<span>` role text next to it.
+   * A screen reader user got the name and never the role, silently, because
+   * `getByRole(..., { name: 'Ana Pérez' })` (above) kept matching an
+   * aria-label that had simply never grown the role suffix. This asserts
+   * the exact composed name so that regression fails here again, not just
+   * by chance in the test above.
+   */
+  it('composes the accessible name out of the name AND the role, not just the visible span', () => {
+    render(<CrewSelect {...baseProps()} />);
+    expect(screen.queryByRole('checkbox', { name: 'Ana Pérez' })).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Ana Pérez, auxiliar' })).toBeInTheDocument();
   });
 
   it('reflects which rows are already ticked', () => {
     render(<CrewSelect {...baseProps()} value={['crew-2']} />);
-    expect(screen.getByRole('checkbox', { name: 'Bruno Díaz' })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: 'Ana Pérez' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Bruno Díaz, conductor' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Ana Pérez, auxiliar' })).not.toBeChecked();
   });
 
   it('adds a person on tap', async () => {
     const onChange = vi.fn();
     render(<CrewSelect {...baseProps()} onChange={onChange} />);
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Ana Pérez' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Ana Pérez, auxiliar' }));
     expect(onChange).toHaveBeenCalledWith(['crew-1']);
   });
 
   it('removes a person on a second tap', async () => {
     const onChange = vi.fn();
     render(<CrewSelect {...baseProps()} value={['crew-1', 'crew-2']} onChange={onChange} />);
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Ana Pérez' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Ana Pérez, auxiliar' }));
     expect(onChange).toHaveBeenCalledWith(['crew-2']);
   });
 
@@ -80,12 +95,21 @@ describe('CrewSelect', () => {
    */
   it('counts the ticked rows under an ACOMPAÑANTES header, never EQUIPO', () => {
     render(<CrewSelect {...baseProps()} value={['crew-1', 'crew-2']} />);
-    expect(screen.getByText('ACOMPAÑANTES · 2')).toBeInTheDocument();
+    expect(screen.getByText('ACOMPAÑANTES')).toBeInTheDocument();
+    expect(screen.getByText('2 de 2')).toBeInTheDocument();
+  });
+
+  // spec-95 fase 4 — el mock (`5b`) pide "N de M", no un conteo suelto: N
+  // ticados sobre M candidatos totales, no sobre los seleccionados.
+  it('counts as "N de M" against the full candidate roster, not a bare count', () => {
+    render(<CrewSelect {...baseProps()} value={['crew-1']} />);
+    expect(screen.getByText('1 de 2')).toBeInTheDocument();
   });
 
   it('counts zero, not the candidate list, when nothing is ticked', () => {
     render(<CrewSelect {...baseProps()} />);
-    expect(screen.getByText('ACOMPAÑANTES · 0')).toBeInTheDocument();
+    expect(screen.getByText('ACOMPAÑANTES')).toBeInTheDocument();
+    expect(screen.getByText('0 de 2')).toBeInTheDocument();
   });
 
   // `users.full_name` is nullable. A row with no name is still a real person
@@ -98,7 +122,7 @@ describe('CrewSelect', () => {
       isLoading: false,
     });
     render(<CrewSelect {...baseProps()} />);
-    expect(screen.getByRole('checkbox', { name: 'Sin nombre' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Sin nombre, auxiliar' })).toBeInTheDocument();
   });
 
   /**
@@ -127,11 +151,30 @@ describe('CrewSelect', () => {
     // All twenty are still present and reachable — the fix is scrolling, not
     // hiding people from the leader.
     expect(screen.getAllByRole('checkbox')).toHaveLength(20);
-    expect(screen.getByRole('checkbox', { name: 'Persona 19' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Persona 19, auxiliar' })).toBeInTheDocument();
 
-    const list = screen.getByRole('checkbox', { name: 'Persona 0' }).parentElement!;
+    const list = screen.getByRole('checkbox', { name: 'Persona 0, auxiliar' }).parentElement!;
     expect(list.className).toContain('max-h-[45vh]');
     expect(list.className).toContain('overflow-y-auto');
+  });
+
+  // spec-95 fase 4 — el mock (`5b`) muestra el rol de cada persona a la
+  // derecha de su fila: pickup_crew -> "auxiliar", pickup_leader/ops_leader
+  // -> "conductor". El campo `role` ya viaja en CrewCandidate
+  // (useCrewCandidates.ts:6, seleccionado en :31); esto sólo lo traduce.
+  it("shows each person's role, translated, at the right of their row", () => {
+    render(<CrewSelect {...baseProps()} />);
+    expect(screen.getByText('auxiliar')).toBeInTheDocument();
+    expect(screen.getByText('conductor')).toBeInTheDocument();
+  });
+
+  it('translates ops_leader to conductor as well, same as pickup_leader', () => {
+    mockUseCrewCandidates.mockReturnValue({
+      data: [{ id: 'crew-4', full_name: 'Coni Leiva', role: 'ops_leader' }],
+      isLoading: false,
+    });
+    render(<CrewSelect {...baseProps()} />);
+    expect(screen.getByText('conductor')).toBeInTheDocument();
   });
 
   it('says the roster is empty when nobody else is registered', () => {
@@ -147,5 +190,49 @@ describe('CrewSelect', () => {
     mockUseCrewCandidates.mockReturnValue({ data: undefined, isLoading: true });
     render(<CrewSelect {...baseProps()} />);
     expect(screen.queryByText('No hay compañeros registrados')).toBeNull();
+  });
+
+  // Review round 1 (spec-95 fase 4) — the counter used to render OUTSIDE the
+  // `isLoading` branch, off `rows = candidates ?? []`. While loading it read
+  // "0 de 0" directly above a body that says "Cargando compañeros…" — a
+  // number promising an empty roster next to a message saying the opposite.
+  it('shows a dash, not "0 de 0", while candidates are still loading', () => {
+    mockUseCrewCandidates.mockReturnValue({ data: undefined, isLoading: true });
+    render(<CrewSelect {...baseProps()} />);
+    expect(screen.queryByText('0 de 0')).toBeNull();
+    expect(screen.getByText('—')).toBeInTheDocument();
+  });
+
+  /**
+   * Review round 1 (spec-95 fase 4) — `value` is state the PARENT owns;
+   * `rows` comes from a query with a 5-minute `staleTime`. If a ticked
+   * person is soft-deleted or has their role changed elsewhere while this
+   * screen sits open, the next refetch drops them from `rows` but `value`
+   * still carries their id — the counter would read "2 de 1" and that
+   * stale id would still ride along to `start_pickup_route`. CrewSelect
+   * prunes `value` against the fetched roster instead of just capping the
+   * DISPLAYED count, because the id leaving `rows` means the person is no
+   * longer a valid crew member, not just a display glitch.
+   */
+  it('drops a ticked id that no longer exists in the fetched roster', () => {
+    const onChange = vi.fn();
+    render(<CrewSelect {...baseProps()} value={['crew-1', 'ghost-id']} onChange={onChange} />);
+    expect(onChange).toHaveBeenCalledWith(['crew-1']);
+  });
+
+  it('leaves onChange untouched when every ticked id is still in the roster', () => {
+    const onChange = vi.fn();
+    render(<CrewSelect {...baseProps()} value={['crew-1', 'crew-2']} onChange={onChange} />);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  // Pruning against an incomplete roster (candidates still `undefined`
+  // while loading) would wipe out every ticked id on first render, before
+  // the real data ever arrives.
+  it('does not prune anything while candidates are still loading', () => {
+    mockUseCrewCandidates.mockReturnValue({ data: undefined, isLoading: true });
+    const onChange = vi.fn();
+    render(<CrewSelect {...baseProps()} value={['crew-1']} onChange={onChange} />);
+    expect(onChange).not.toHaveBeenCalled();
   });
 });

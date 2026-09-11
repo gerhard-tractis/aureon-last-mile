@@ -1,0 +1,716 @@
+# spec-95 — Recogida: la ronda 2 del mock, y el chip que por fin tiene regla
+
+**Status:** completed
+**Verify:** unit, e2e-qa
+**Downstream:** spec-94-recogida-cuatro-estados.md, spec-82-recogida-movil-asignacion-y-ruta.md, spec-83-recogida-escritorio-datos-faltantes.md
+
+## Qué es esto
+
+El 2026-09-10 se recorrió Recogida en QA con `admin@musan.com` contra los nueve
+artboards de `docs/design/Recogida.dc.html` y se escribió
+`docs/design/mock-feedback-recogida.md`: lo que la implementación había aprendido
+y el mock todavía no sabía. El diseñador respondió con una ronda nueva — subió
+ese documento al propio proyecto de Claude Design (`uploads/mock-feedback-recogida.md`)
+y devolvió **diez** artboards: `5a`–`5i` más `5f2`, nuevo.
+
+Este spec implementa esa ronda. No es un diff visual más: seis de los puntos que
+cierra estaban declarados como divergencias **abiertas** en specs anteriores, y
+uno de ellos estaba declarado como **imposible de implementar** tal y como estaba
+dibujado.
+
+## Fuente de verdad
+
+| Fuente | Qué aporta |
+|---|---|
+| `docs/design/Recogida.dc.html`, artboards `5a`–`5i` y `5f2` | **Canónico.** Geometría, jerarquía y copy |
+| `docs/design/mock-feedback-recogida.md` | Qué pidió esta ronda y por qué |
+| `docs/design/README.md` | La regla de desempate y cómo se refresca la copia |
+
+Sigue vigente: **el mock manda en diseño, el spec manda en comportamiento.** Si
+discrepan, se implementa el mock y la discrepancia se escribe aquí.
+
+## Lo que esta ronda desbloquea
+
+**El chip de grupo de `5c` ya tiene regla.** `spec-82` fase 1 lo declaró
+indeterminable, y con razón: en el mock viejo, Falabella llevaba `EN RUTA`,
+Ripley **nada**, Paris un botón «Ver carga» y Sodimac `COMPLETADA` — cuatro cosas
+distintas en el mismo slot, con Ripley tan «en ruta» como Falabella. No había
+predicado derivable de los datos.
+
+La ronda 2 lo resuelve por diseño: **regla única `PENDIENTE` / `EN RUTA` /
+`COMPLETADA` en todos los grupos**, y desaparece el botón «Ver carga». Ripley pasa
+a `EN RUTA`, Paris a `PENDIENTE`. Eso ya es un predicado, y por eso la fase 1 de
+este spec puede tomarse sin ninguna decisión de producto pendiente.
+
+**El pie de `5c` ya acomoda `Cancelar ruta`.** `spec-82` fase 1 anotó que ese
+botón «no tiene contraparte en el mock» y que cualquier decisión futura sobre esa
+barra tendría que resolverlo. La ronda 2 dibuja un pie de **dos filas** que lo
+incluye.
+
+## Lo que sigue aparcado, y no se toca aquí
+
+- **Barra de ocupación estimada** (`5a`). Sigue dibujada en el mock y sigue
+  `[parked]` en `spec-83` fase 3 por decisión del usuario (2026-09-09): «No hay
+  capacity para esto ahora». El mock la conserva a propósito; este spec **no** la
+  implementa.
+- **Andén en la tarjeta de `5c`.** `spec-82` fase 4 sigue abierta, y la pregunta
+  no es dónde guardarlo sino si el alta del punto de recogida lo captura.
+- **Asignación real** («MANIFIESTOS ASIGNADOS A TI»). La ronda 2 acepta el texto
+  actual «MANIFIESTOS POR RETIRAR», así que `spec-82` fase 3 deja de bloquear
+  nada visual.
+- **Distancia y ETA en el panel de mapa de `5c`** («4,2 km · 11 min»). Decisión
+  del usuario, 2026-09-10: se implementa dirección y navegación, y la cifra queda
+  aparcada. Ver fase 3.
+
+## Orden respecto a trabajo que ya existe
+
+Dos colisiones reales, las dos decididas por el usuario el 2026-09-10:
+
+1. **`5a` va después de `spec-94` fase 1.** El `5a` nuevo añade una séptima
+   columna `ETIQUETAS` con acción Imprimir por fila; `spec-94` fase 1 reescribe
+   las cuatro RPC de escritorio y dice explícitamente que re-templa esa misma
+   columna de `spec-53` junto a `missing_count` y `signature_operator`. Quien
+   fuera segundo reescribiría al primero. Queda expresado en el
+   `**Depende de:**` de la fase 8.
+2. **`5d` va después del fix de ancho móvil.** PR #772
+   (`fix/recogida-escaneo-viewport-movil`) toca `scan/[loadId]/page.tsx`,
+   `PackageRow.tsx` y `ManifestNotDownloadedNotice.tsx` — los tres ficheros de la
+   fase 5 — y arregla que la pantalla se maquetaba a 672px sobre un teléfono de
+   375px. Se abrió precisamente para que la fase 5 se construya encima y no lo
+   pierda. **Al escribir esta línea (2026-09-10) el PR seguía abierto con CI en
+   curso** — quien tome la fase 5 lo comprueba con `gh pr view 772 --json
+   state,mergedAt` antes de empezar, y si no está mergeado, no empieza.
+
+---
+
+## Fases
+
+| Fase | Qué entrega | Depende de |
+|---|---|---|
+| **1 — `5c` chip único y agrupación** | La regla `PENDIENTE`/`EN RUTA`/`COMPLETADA` por grupo de cliente | — |
+| **2 — `5c` cabecera y pie** | Tarjeta de estado de ruta y pie de dos filas | fase 1 |
+| **3 — `5c` panel de mapa** | Dirección real + «Abrir navegación»; la cifra aparcada | fase 2 |
+| **4 — `5b` cuadrilla y vehículo** | `ACOMPAÑANTES` con rol y contador, selector con ícono | — |
+| **5 — `5d` escaneo** | Cabecera, campo siempre enfocado, lista de órdenes, y los cuatro textos en inglés | — |
+| **6 — `5f` firma** | Cabecera, rejilla de cuatro cifras, aviso, firma opt-in | — |
+| **7 — `5f2` diálogo** | La confirmación irreversible como hoja inferior | fase 6 |
+| **8 — `5a` escritorio** | Buscador, `ETIQUETAS`, panel de vehículo, «Cargar más» | spec-94 fase 1 |
+| **9 — `5g` flash** | El botón que el mock ya dibujaba y la app no tiene | — |
+
+> **Trampa al invocar `check-phase-overlap.mjs` sobre este spec.** El `faseMatch`
+> del target se compara como **subcadena** contra la línea del heading
+> (`check-phase-overlap-parse.mjs:57`), y aquí casi todos los headings llevan el
+> id de un artboard: `5a`, `5c`, `5f2`… Así que `…#5` **no** resuelve a la fase 5,
+> resuelve a la **fase 1**, cuyo heading contiene `` `5c` ``. Se comprobó el
+> 2026-09-10: `#1` y `#5` devolvían la misma superficie y el guard reportaba un
+> conflicto duro inexistente entre ambas. Hay que pasar **`#Fase 5`**, no `#5`.
+> Con el selector correcto: las fases 1, 4, 5, 6 y 9 salen despachables en
+> paralelo, sin conflicto duro.
+
+### Fase 1 — `5c` chip único y agrupación por cliente `[done]`
+
+**Depende de:** ninguna
+
+**Archivos:** `apps/frontend/src/components/pickup/RouteManifestList.tsx`, `apps/frontend/src/components/pickup/RouteManifestCard.tsx`, `apps/frontend/src/lib/pickup/routeManifestGrouping.ts`, y sus tests
+
+Hoy `route/active/page.tsx` trabaja sobre una **lista plana** de manifiestos:
+`NextManifestCard` / `UpcomingManifestList` / `RouteManifestList` no agrupan por
+cliente. `spec-82` fase 1 verificó que agrupar por `retailer_name` es barato — el
+campo ya viaja en `RouteManifestRow` — y que lo caro era la semántica, no el
+`groupBy`. La semántica ya está.
+
+- [ ] Agrupar por `retailer_name`, con la cabecera del mock: nombre, `N puntos · M paquetes`.
+- [ ] Chip por grupo con la regla única. Definir el predicado **en un solo sitio** y testearlo como unidad, no repartido por el render:
+  - `COMPLETADA` — todas las cargas del grupo cerradas.
+  - `EN RUTA` — alguna carga con escaneo empezado (`verified_count > 0`) **y esa misma carga sin cerrar**.
+  - `PENDIENTE` — el resto, incluido el grupo vacío y el caso en que la única carga con escaneos ya cerró.
+- [ ] Que desaparezca el botón «Ver carga» del slot de cabecera de grupo.
+- [ ] TDD: el predicado primero, con un caso por rama y uno de frontera (grupo vacío).
+
+> **Regla A, «por progreso» — decisión del usuario/diseñador, 2026-09-11.**
+> La primera redacción de esta fase pedía, para `EN RUTA`, «alguna carga con
+> escaneo empezado **y ninguna pendiente de descarga**». Era una lectura
+> equivocada de este spec, no del mock: al implementarla, el diff contra `5c`
+> daba `PENDIENTE` en **Falabella y Ripley**, donde el mock dibuja `EN RUTA`.
+>
+> Al revisarlo con el mock delante apareció que **el mock era el inconsistente**.
+> El diseñador lo confirmó, textual: «hoy el mock quedó inconsistente. Apliqué
+> "sin cerrar = EN RUTA" y por eso Ripley lo lleva, pero entonces Paris también
+> debería llevarlo — los cuatro grupos están igual de dentro de la ruta activa.»
+>
+> De las dos reglas candidatas, ambas derivables de los datos, se eligió la de
+> progreso sobre la de siguiente parada **porque no duplica información**: un
+> chip `SIGUIENTE` a nivel de grupo repetiría la pastilla `SIGUIENTE` que ya
+> lleva la tarjeta destacada, y el operario ya ve ahí su próxima parada.
+>
+> **La descarga pendiente no entra en el predicado.** Es ortogonal al progreso y
+> se sigue resolviendo por manifiesto con el chip `DESCARGAR` de `spec-82`
+> fase 2, que esta fase no toca.
+>
+> **Pendiente aguas arriba:** bajo la regla A, Ripley es `PENDIENTE`. El
+> artboard `5c` todavía lo dibuja `EN RUTA`. Hasta que se rebaje otra vez el
+> mock, esa celda discrepa **a propósito** — no es un hallazgo nuevo y no hay
+> que volver a reportarlo.
+
+> **Desviaciones de alcance, declaradas.** (1) `RouteManifestCard.tsx` es nuevo:
+> agregar la agrupación empujó `RouteManifestList.tsx` por encima de las 300
+> líneas y la regla no es negociable, así que la tarjeta por manifiesto se
+> extrajo. **La extracción NO fue neutra** —la primera redacción de esta línea
+> decía «sin cambio de comportamiento» y era falsa contra el diff, lo encontró el
+> review—: el título de la fila pasó de `retailer_name` a `pickup_location`,
+> deliberadamente, porque el retailer ahora vive en la cabecera de grupo y
+> repetirlo en cada fila era ruido. Para no perder información cuando
+> `pickup_location` es null (frecuente: «Null when not captured at intake») el
+> título cae a `pickup_location || retailer_name || 'Sin punto de recogida'`.
+> Un tercer fichero, `lib/pickup/routeManifestGrouping.ts`, saca la agrupación
+> pura del componente siguiendo la capa que `pickupStartRouteGrouping.ts` ya usa
+> para `3j`. Líneas finales: 251 / 187 / 75. (2) **No se tocó
+> `PickupMobileClientGroup.tsx`**, pese a estar en el `**Archivos:**` original:
+> pertenece a la pantalla `3j` (selección pre-ruta, modelo
+> `StartRouteClientGroup`/`ManifestRow`), una superficie de datos distinta de la
+> de `5c` (`RouteManifestRow`); reutilizarlo habría mezclado dos modos
+> —selección y progreso— en un componente ya ajustado a su pantalla.
+> (3) `route/active/page.tsx` tampoco necesitó cambios: sigue pasando el mismo
+> contrato a `RouteManifestList`.
+
+> **Divergencias con `5c` declaradas, no arregladas aquí.** Las encontró el
+> review comparando artboard y código lado a lado:
+>
+> 1. **La cabecera de grupo del mock lleva un control de plegado** (chevron abajo
+>    en `EN RUTA`, a la derecha en `PENDIENTE`/`COMPLETADA`) y los grupos que no
+>    están en ruta se dibujan **plegados**. La implementación no pinta chevron y
+>    expande siempre. Plegar es comportamiento nuevo, no un ajuste visual — va a
+>    su propia fase o a la fase 2, que ya toca esta pantalla.
+> 2. **El subtítulo del grupo cerrado no es «M paquetes»**: Sodimac dice
+>    `1 punto · cerrada 07:31`. Aquí la desviación es **del spec**, cuyo criterio
+>    pedía `N puntos · M paquetes` para los cuatro casos por igual.
+> 3. Efecto de (1): en un grupo de un solo manifiesto cerrado se pintan **dos
+>    chips `COMPLETADA`** (fila + cabecera). En el mock no ocurre porque el grupo
+>    está plegado. Un test congela hoy ese duplicado — si se implementa (1), hay
+>    que revisarlo.
+
+> Implementado por: implementer — rama `feat/spec-95-fase-1-chip-unico-agrupacion`,
+> SHAs `c3b8b37` (agrupación y chip), `3164d9a` (regla A tras la decisión del
+> diseñador), `86e83d2` (hallazgos 1-4 del review).
+> Review: reviewer (opus) — dos rondas sobre `c686fe4..e93029d`. Ronda 1
+> encontró **un bug real** (`packageCount` sumaba `total_packages ?? 0`,
+> presentando una suma parcial como total del grupo, contra el contrato escrito
+> en `manifestProgress.ts:44-47`) y **tres mutaciones supervivientes**
+> (`pointCount` por filas, fallback de `retailer_name`, el `?? 0`). Las cuatro
+> cerradas en `86e83d2`; el orquestador reverificó a mano dos de ellas
+> (`||`→`??` mata un test; `every`→`some` en `completada` mata dos).
+> QA: PR #779 merged 2026-09-11T02:04Z, `gh pr checks 779` verde. Suite dirigida
+> 113 ficheros / 1113 tests; `tsc` limpio. **`e2e-qa` no se leyó por separado en
+> esta fase** — se declara el hueco en vez de afirmar lo que no se comprobó.
+> Downstream: revisado spec-94 y spec-83 — **sin cambios** (ninguno menciona
+> `RouteManifestList`/`RouteManifestCard`/`routeManifestGrouping`; spec-94 es
+> escritorio y spec-83 también). **spec-82 sí queda desactualizado y se corrige
+> en este mismo PR**: su línea 240-242 afirmaba que
+> «`NextManifestCard`/`UpcomingManifestList`/`RouteManifestList` trabajan sobre
+> una lista plana» y que agrupar era «la reconstrucción que esta fase no es» —
+> `RouteManifestList` ya agrupa por cliente desde `a89cada`.
+
+### Fase 2 — `5c` cabecera de ruta y pie de dos filas `[done]`
+
+**Depende de:** spec-95 fase 1
+
+**Archivos:** `apps/frontend/src/app/app/pickup/route/active/page.tsx`, `apps/frontend/src/components/pickup/RouteProgressHeader.tsx`, `apps/frontend/src/components/pickup/CancelRouteButton.tsx`, `apps/frontend/src/components/pickup/CloseRouteButton.tsx`, `apps/frontend/src/components/pickup/RouteManifestPanel.tsx`, `apps/frontend/src/components/pickup/RouteFooterTopRow.tsx`, `apps/frontend/src/lib/pickup/routeManifestSearch.ts`, y sus tests
+
+La cabecera que ya existe **se conserva**: `spec-82` fase 1 la declaró «más rica
+que la pastilla compacta del mock», y la ronda 2 le da la razón — el mock nuevo
+dibuja exactamente eso (código de ruta, `12/28`, barra y las tres cifras
+`VERIFICADOS` / `RESTAN` / `MANIFIESTOS`). Esta fase la alinea, no la reescribe.
+
+- [ ] Cabecera al layout del mock, sin perder ningún dato de los que ya muestra.
+- [ ] Pie de **dos filas**: arriba `Buscar`, `Ver manifiesto`, `Digitalizar`, `+`; abajo `Cerrar ruta` (primario) y `Cancelar ruta`.
+- [ ] `Digitalizar manifiesto` pasa del inline a la fila fija — el punto que `spec-82` fase 1 dejó **abierto** por minimizar el diff, y que esta fase cierra por tocar la barra igualmente.
+- [ ] `Cancelar ruta` conserva su comportamiento de `spec-61` Task 5 intacto; sólo cambia de sitio.
+
+> **`Buscar` es una decisión de producto que este spec no cubría.** El mock
+> sólo dibuja el ícono en la fila; qué hace no lo define ni el mock ni ningún
+> spec anterior. Se cableó como **filtro inline**, reutilizando el patrón que
+> ya existe en `PickupMobileActiveRoute` y `PickupMobileStartRoute` — mismo
+> `matchesQuery`, mismo `aria-label`, mismo gate. La alternativa era dejar un
+> botón muerto, que es justo el defecto que el review de la fase 4 encontró en
+> el chevron. Dos sub-decisiones: abrir la búsqueda **expande** la lista;
+> cerrarla **no** la colapsa pero sí limpia la query.
+>
+> **Divergencias con `5c`, declaradas:** (1) el mock (`Recogida.dc.html:568-571`)
+> dibuja `Cerrar ruta` y `Cancelar ruta` **en la misma fila**; aquí van
+> apilados, para que un mis-tap no caiga en el destructivo. (2) el mock pone
+> `Ver manifiesto` estático y se conservó el label dinámico
+> (`Ver los N manifiestos`), porque el mock no dibuja estado colapsado y perder
+> el contador sería peor.
+>
+> **Lo que el review encontró, y que no era estilo:** bajo búsqueda,
+> `groupManifestStatus` corría sobre el **subconjunto filtrado**, así que un
+> grupo con una carga cerrada y otra sin tocar se pintaba `COMPLETADA` en
+> cuanto buscabas la cerrada. El precedente que se copió **ya había pagado ese
+> mismo bug en su propia ronda de review**. Ahora el estado y los contadores se
+> calculan siempre sobre el grupo completo y el filtro sólo decide qué filas se
+> pintan.
+>
+> **Y el mismo fallo de reserva que la fase 5:** el pie creció a tres filas
+> (~184-200px) mientras `pb-40` seguía reservando 160px, dejando la última fila
+> de manifiesto bajo la barra fija. Es la tercera vez esta noche que una fase
+> crece un pie fijo sin subir su `pb-*`. Ahora `pb-56`, con test sobre la clase.
+>
+> **Deuda:** `page.tsx` en 367 líneas, sobre el límite de 300 — ya estaba en 366
+> antes de que este spec la tocara.
+
+> Implementado por: implementer — rama `feat/spec-95-fase-2-cabecera-y-pie`,
+> SHAs `f99cc55` + `09db65e` (los nueve hallazgos del review).
+> Review: reviewer (opus), una ronda. Encontró que **bajo búsqueda el chip de
+> grupo mentía** (`groupManifestStatus` sobre el subconjunto filtrado → un grupo
+> con una carga cerrada y otra sin tocar se pintaba `COMPLETADA`), que `pb-40`
+> ya no cubría un pie de ~184-200px, y que se había caído el `scrollIntoView`
+> que el precedente añadió en su propia ronda 3. Nueve mutaciones reproducidas,
+> las nueve mueren; el orquestador reverificó H1 a mano (26 tests caen).
+> QA: PR #785 merged 2026-09-11T04:26Z, `gh pr checks 785` sin checks en rojo.
+> 91 ficheros / 1004 tests. **`e2e-qa` no se leyó por separado** — hueco declarado.
+> Downstream: revisado spec-82 (fase 1, que dejó `Digitalizar manifiesto` y
+> `Cancelar ruta` como puntos abiertos sobre esta barra) — **ambos quedan
+> cerrados por esta fase**, anotado allí. spec-61 Task 5 revisado: `Cancelar
+> ruta` sólo cambia de sitio, diálogo y RPC intactos (`git diff` vacío).
+
+### Fase 3 — `5c` panel de mapa `[done]`
+
+**Depende de:** spec-95 fase 2
+
+**Archivos:** `apps/frontend/src/components/pickup/RouteMapPlaceholder.tsx`, `apps/frontend/src/app/app/pickup/route/active/page.tsx`, `apps/frontend/src/hooks/pickup/useNextManifestPickupAddress.ts`, `apps/frontend/src/lib/pickup/nextManifestSelection.ts`, y sus tests
+
+El mock cuelga el panel de la carga siguiente y muestra dirección, distancia y
+ETA. **Sólo se implementan dirección y navegación.**
+
+- [ ] Dirección real del punto de recogida desde `pickup_locations` (el JSONB ya trae `address`, y `NextManifestCard.tsx:13` ya demuestra que se leen campos suyos más allá de los tres del formulario).
+- [ ] Botón «Abrir navegación» con la posición del punto.
+- [ ] **No se pinta ninguna distancia ni ETA.** Queda declarado aquí, no inventado.
+
+> **Decisión del usuario (2026-09-10), textual en la pregunta que la originó:**
+> sólo dirección y navegación; «4,2 km · 11 min» queda aparcado con su razón,
+> igual que la barra de ocupación. El cálculo por arco conducido está diferido a
+> un spec de routing futuro; una distancia en línea recta tampoco sirve, porque
+> no es lo que conduce el operario y el mock no dice cuál de las dos dibuja.
+
+> **No hay lat/lng — Haversine no era sólo indeseable, era imposible.** Al
+> decidir esta fase se evaluó «distancia en línea recta» como alternativa a la
+> cifra del mock, dando por hecho que las coordenadas ya estaban en
+> `pickup_locations`. **No están.** El comentario de la migración
+> (`20260318000004:68`) documenta el contrato como
+> `[{name, address, comuna, lat, lng, …}]`, pero `pickupLocationSchema`
+> —el validador del **camino de escritura**, en
+> `api/pickup-points/pickupPointApiSchemas.ts:16-24`— no tiene `lat` ni `lng`:
+> nada en la app los escribe nunca. Así que no hay ruta hacia ninguna distancia,
+> ni recta ni conducida. La decisión del usuario (sólo dirección y navegación)
+> era la única implementable.
+>
+> **La dirección no sale de `manifests`.** Esa tabla no tiene
+> `pickup_point_id`; el join real pasa por `orders`, igual que
+> `deriveTotalPackages` ya hace para `total_packages`. Queda escrito para que la
+> próxima fase no lo redescubra.
+>
+> **Cuando no hay dirección, no se pinta un botón muerto.** Si falta cualquier
+> eslabón —orden inexistente, `pickup_point_id` nulo, `pickup_locations` vacío,
+> o sin `address`— el hook resuelve a `null` explícito y
+> `RouteMapPlaceholder` **no** renderiza «Abrir navegación»: sólo queda «Mapa no
+> disponible». Es la lección del chevron de la fase 4.
+>
+> **Deuda de tipos declarada:** `orders.pickup_point_id` faltaba en
+> `lib/types.ts` pese a existir desde `20260329000001` — misma deriva del
+> generador ya documentada para `fleet_vehicles.capacity_packages`. Añadido a
+> mano; sin eso `tsc` falla con `SelectQueryError`.
+
+> Implementado por: implementer — rama `feat/spec-95-fase-3-panel-de-mapa`, SHA `8a1bf9e`.
+> Review: **sin revisión adversarial** — se cerró directo tras verificación del
+> orquestador (mutaciones propias y suite completa). Se declara el hueco en vez
+> de implicar una revisión que no hubo.
+> QA: PR #788 merged 2026-09-11, sin checks en rojo. 1057 tests de `pickup`;
+> `verify.sh` local verde. **`e2e-qa` no se leyó por separado.**
+> Downstream: revisado spec-83 (dueño del escritorio) y spec-82 — **sin
+> cambios**: esta fase sólo lee una dirección ya existente y no altera ninguna
+> RPC ni contrato que ellos describan.
+
+### Fase 4 — `5b` cuadrilla y selector de vehículo `[done]`
+
+**Depende de:** ninguna
+
+**Archivos:** `apps/frontend/src/components/pickup/CrewSelect.tsx`, `apps/frontend/src/components/pickup/VehicleSelect.tsx`, `apps/frontend/src/components/pickup/PickupMobileStartRoute.tsx`, `apps/frontend/src/hooks/pickup/useCrewCandidates.ts`, y sus tests
+
+El bloque `ACOMPAÑANTES` ya existe (`spec-61`) — era lo que el mock viejo no
+dibujaba. La ronda 2 lo incorpora y le añade dos cosas que hoy no tiene.
+
+- [ ] Contador `N de M` en la cabecera del bloque, en vez de `· 0`.
+- [ ] **Rol por persona** a la derecha de cada fila (`auxiliar`, `conductor`).
+- [ ] Selector de vehículo con ícono de camión y chevron, conservando el placeholder «Patente» y **sin preselección** — el mock de esta ronda ya no muestra una patente elegida.
+- [ ] No se toca el título ni el eyebrow: la ronda 2 acepta «Recogidas de hoy» y «MANIFIESTOS POR RETIRAR» tal cual están.
+
+> **El rol sí estaba en los datos.** `useCrewCandidates.ts` ya declaraba
+> `role` y lo seleccionaba de `users` — se verificó antes de implementar, no
+> hubo que parar.
+>
+> **Tres roles, dos palabras — es una lectura, no una cita.** El mock rotula
+> `auxiliar` / `conductor`, pero `useCrewCandidates` trae **tres** roles. El
+> mapa es `pickup_crew → auxiliar` y `pickup_leader`/`ops_leader → conductor`,
+> y lo que lo justifica es `ROUTE_LEADER_ROLES` (`permissions.ts:98-103`): esos
+> dos pueden abrir ruta y `pickup_crew` no. **No** lo justifica
+> `ROLE_DEFAULT_PERMISSIONS`, donde `pickup_leader` es idéntico a `pickup_crew`
+> — el comentario original citaba ese artefacto y era falso; lo encontró el
+> review. Si el diseñador quiere una tercera palabra para `ops_leader`, es
+> decisión suya y el mock no la distingue hoy.
+>
+> **La costura está cerrada por tipos, no por vigilancia.** `CREW_ROLES` vive
+> una sola vez, alimenta el `.in(...)` de la consulta y tipa
+> `CrewCandidate.role`; las etiquetas son un `Record<CrewRole, string>`
+> exhaustivo. Verificado: añadir `'warehouse_staff'` a la lista **rompe la
+> compilación** (`TS2741`) hasta que alguien decida su palabra — en vez de
+> rotularlo «conductor» en silencio, que es lo que hacía el `else` atrapa-todo.
+
+> Implementado por: implementer — rama `feat/spec-95-fase-4-cuadrilla-y-vehiculo`,
+> SHAs `29ca22e` (contador y rol), `34751b1` (ícono y chevron), `8c417f8` +
+> `2df42e9` (los ocho hallazgos del review).
+> Review: reviewer (opus) — una ronda. **Tres mutaciones sobrevivían** en
+> `VehicleSelect` porque los tests comprobaban sólo *presencia* del icono
+> (borrar `pl-10 pr-10`, `pointer-events-none` o `aria-hidden` dejaba 10/10 en
+> verde), el **chevron dibujaba una affordance no cableada** —la lista no se
+> podía cerrar sin elegir patente— y el **rol no llegaba al lector de pantalla**
+> porque `aria-label` sustituye el nombre accesible. Los ocho cerrados; el
+> orquestador reverificó dos a mano (quitar `pointer-events-none` del
+> `className` mata un test; añadir un rol a `CREW_ROLES` da `TS2741`).
+> QA: PR #780 merged 2026-09-11, `gh pr checks 780` verde. Suite dirigida 84
+> ficheros / 753 tests; `tsc` y `eslint` limpios. **`e2e-qa` no se leyó por
+> separado** — hueco declarado, no maquillado.
+> Downstream: revisado spec-52, spec-66 y spec-83 — **sin cambios** (spec-66
+> sólo fija que `ops_leader` esté en `ROUTE_LEADER_ROLES` y en el gate del RPC,
+> y eso no se tocó; spec-52 y spec-83 citan `VehicleSelect` por el flujo de
+> patente, que sigue igual). **spec-61 sí queda desactualizado y se corrige en
+> este mismo PR**: su decisión del 2026-08-21 fija el formato `ACOMPAÑANTES · N`
+> y ahora la cabecera es `ACOMPAÑANTES` + `N de M`.
+
+### Fase 5 — `5d` escaneo, y los cuatro textos en inglés `[done]`
+
+**Depende de:** ninguna
+
+**Archivos:** `apps/frontend/src/app/app/pickup/scan/[loadId]/page.tsx`, `apps/frontend/src/components/pickup/ScanHistoryList.tsx`, `apps/frontend/src/components/pickup/ScannerInput.tsx`, `apps/frontend/src/components/pickup/ManifestDetailList.tsx`, `apps/frontend/src/components/pickup/PackageRow.tsx`, `apps/frontend/src/components/pickup/ScanScreenFooter.tsx`, `apps/frontend/src/components/pickup/ScanResultPopup.tsx`, `apps/frontend/src/components/pickup/OrderCard.tsx`, `apps/frontend/src/lib/pickup/openPendingManifest.ts`, y sus tests
+
+La ronda 2 **adopta** lo que la app ya tenía y el mock viejo no dibujaba: miga de
+pan, temporizador de sesión, «Imprimir etiquetas» y la lista de órdenes y bultos.
+Así que esta fase es sobre todo de orden y de copy.
+
+- [ ] Cabecera al layout del mock: miga de pan, temporizador e «Imprimir etiquetas».
+- [ ] **Campo de escaneo siempre enfocado** donde el mock viejo ponía «Escanear siguiente». El mock nuevo ya lo dibuja así: el lector de QA es una pistola que teclea el código y **no manda Enter** (`ScanField`/`useScannerAutoSubmit`), así que un botón de «escanear» nunca fue el gesto real.
+- [ ] Lista de órdenes y bultos con `n/m` y acción por bulto, **sobre** el historial, per mock.
+- [ ] Pie de un solo «Continuar a revisión» más la entrada manual de código.
+- [ ] **Los cuatro textos en inglés**, que viven en estos mismos ficheros y por eso entran aquí y no en una fase suya:
+  - `ScanHistoryList.tsx:43` — `'No scans yet'`
+  - `ScannerInput.tsx:83` — `placeholder="Scan barcode..."`
+  - `ManifestDetailList.tsx:54` — `Orders & Packages`, y `:57` — `{n}/{m} verified`
+  - `PackageRow.tsx:150` — `Mark Verified`
+
+> **Orden:** esta fase se construye **encima** de PR #772, que arregla el ancho
+> de esta misma pantalla (672px sobre un teléfono de 375px) en tres de estos
+> cinco ficheros. No se revierte ninguno de sus `w-full` ni el `flex-wrap` de
+> `PackageRow` — son load-bearing y están comentados como tal en el código.
+
+> Implementado por: implementer — rama `feat/spec-95-fase-5-escaneo-y-textos`,
+> SHAs `89855e0`, `d4be835`, `56d1bb2` (ampliación de alcance) y `f5af355`.
+> Review: reviewer (opus), una ronda. **El pie creció ~62px y nadie subió el
+> `pb-28`** — los últimos ~52px del historial quedaban bajo una barra `fixed`,
+> la misma clase de fallo que PR #772 acababa de cerrar. Y el «commit de
+> traducciones» seguía diciendo `"Package Not Included"` a pantalla completa en
+> **cada** escaneo `not_found`, teniendo el mock la frase canónica dos bloques
+> más abajo. Cerrados; el orquestador reverificó el `pb-44` a mano.
+> QA: PR #784 merged 2026-09-11T04:22Z, sin checks en rojo. 89 ficheros / 957
+> tests. **`e2e-qa` no se leyó por separado** — hueco declarado.
+> Downstream: revisado spec-80 — **queda afectado y se anota allí**: `DURACIÓN`
+> en `5f` pasa a medirse desde que se abre la pantalla de escaneo; antes no se
+> medía nunca para la cuadrilla. spec-81 revisado — sin cambios, la cola offline
+> no se tocó.
+
+### Fase 6 — `5f` firma y finalización `[done]`
+
+**Depende de:** ninguna
+
+**Archivos:** `apps/frontend/src/app/app/pickup/complete/[loadId]/page.tsx`, `apps/frontend/src/components/metrics/MetricCard.tsx`, `apps/frontend/src/components/pickup/ClientSignatureSection.tsx`, `apps/frontend/src/lib/pickup/manifestCloseSummary.ts`, y sus tests
+
+La ronda 2 **adopta** las tres cosas que la app tenía y el mock no dibujaba: la
+rejilla de cifras, el aviso legal y la firma del cliente opt-in.
+
+- [ ] Cabecera `Firma y finalización` con `CARGA-… · <cliente>` debajo.
+- [ ] Rejilla de cuatro cifras, con **`FALTANTES (CON NOTA)` en dos líneas** — el mock lo dibuja así precisamente porque en una sola se cortaba, que es el defecto que el recorrido de QA encontró.
+- [ ] `DURACIÓN` con el valor real; hoy pinta `—`.
+- [ ] Tarjeta de aviso de transferencia de custodia, con el copy del mock.
+- [ ] Casilla «Agregar firma del cliente» con la etiqueta `opcional` a la derecha.
+- [ ] `TU FIRMA` sin campo de nombre, como ya está.
+- [ ] La leyenda ámbar de offline: decidir y **escribir** si es condicional a estar sin red. Hoy se muestra siempre. `spec-80` fase 3 (ronda 2) dejó anotado que la promesa «Las fotos también» sólo es completa con `spec-81` fase 5 — no prometer de más en el copy.
+
+> **`DURACIÓN` NO se resuelve aquí — se movió a la fase 5, y la razón importa.**
+> El criterio original de esta fase («`DURACIÓN` con el valor real; hoy pinta
+> `—`») se cerró en la ronda 1 con una cita SQL que **apuntaba a otra tabla**:
+> `20260625000001:279` y `20260812000006:88` escriben `route_receptions`, no
+> `manifests`. Lo encontró el review. La causa raíz es que **ninguna migración
+> escribe `manifests.started_at`**; su único escritor es
+> `lib/pickup/openPendingManifest.ts:50`, y el flujo de la cuadrilla
+> (`route/active/page.tsx:131` → escaneo) **nunca lo llama**. Por eso
+> `DURACIÓN` es `—` **siempre** para la cuadrilla, no a veces — verificado en QA
+> el 2026-09-10 con 1 de 28 escaneado. `openPendingManifest.ts:8-11` ya avisaba
+> de esta misma regresión en el camino móvil: volvió a pasar en otra pantalla.
+> El arreglo vive en la fase 5, que es dueña de la pantalla de escaneo.
+>
+> **El aviso de custodia dejó de poder mentir.** Al volverlo dinámico, las
+> cifras entraban con `= []` por defecto: una query en pausa
+> (`networkMode:'online'`) pintaba «los **0** paquetes verificados pasan a
+> custodia de Aureon» encima del botón de firmar. Es el bloqueante 1 de spec-80
+> fase 2 ronda 3, ya escrito en `review/[loadId]/page.tsx:199-204`, y este mismo
+> fichero ya había quitado un `= []` por esa razón. Ahora se gatea por presencia
+> de dato.
+>
+> **El copy vive en `lib/`, no en la página.** Hardcodearlo pasaba 34/34 porque
+> el test afirmaba el string exacto con las cifras del `beforeEach`.
+> `custodyNoticeCopy()` en `manifestCloseSummary.ts` lo hace testeable variando
+> cifras — y de paso resuelve la pluralización, que **sí tenía precedente** en
+> la pantalla de al lado (`reviewCloseGate.ts:73,92-94`), y el caso de 0
+> faltantes, que es el camino feliz y decía «Los 0 faltantes quedan … hasta que
+> se resuelvan».
+>
+> **Divergencias de formato con `5f`, declaradas y NO arregladas** (ninguna
+> estaba en el checklist de esta fase): valor de `VERIFICADOS` en verde y
+> `FALTANTES` en rojo en el mock, el código pinta todo en `text-text`; el mock
+> no lleva iconos en las tarjetas y el código sí; el mock no lleva banda dorada
+> en la cabecera; título 19px contra `text-base`.
+>
+> **Deuda declarada:** `page.tsx` queda en **380 líneas**, por encima del límite
+> de 300. Ya estaba en 340 antes de esta fase; la ronda 2 lo bajó de 399
+> extrayendo `CompletionSkeleton` y `custodyNoticeCopy`. Sigue siendo deuda y no
+> se disimula.
+
+> Implementado por: implementer — rama `feat/spec-95-fase-6-firma-y-finalizacion`,
+> SHAs `52b100f` + `e0fff58`.
+> Review: reviewer (opus), **dos rondas; la primera devolvió NO mergeable.**
+> El aviso de custodia podía afirmar cifras falsas (las cuentas entraban con
+> `= []`, y una query en pausa pintaba «los **0** paquetes verificados pasan a
+> custodia» encima del botón de firmar), hardcodear el copy pasaba 34/34, y
+> borrar `whitespace-pre-line` pasaba 43/43. También destapó que la cita SQL
+> que cerraba `DURACIÓN` apuntaba a `route_receptions`, no a `manifests` — de
+> ahí salió el bug real que arregló la fase 5.
+> QA: PR #782 merged 2026-09-11T03:14Z, sin checks en rojo. Suite completa
+> 668 ficheros / 6644 tests. **`e2e-qa` no se leyó por separado** — hueco
+> declarado.
+> Downstream: revisado spec-80 (fase 3, que construyó esta pantalla) y spec-81
+> (fase 2, la cola offline) — **sin cambios**: ninguna rama de `handleComplete`
+> ni de la cola se tocó, verificado sobre el diff.
+
+### Fase 7 — `5f2` la confirmación irreversible `[done]`
+
+**Depende de:** spec-95 fase 6
+
+**Archivos:** `apps/frontend/src/app/app/pickup/complete/[loadId]/page.tsx`, y sus tests
+
+El diálogo ya existe («¿Confirmar transferencia de custodia? … Esta acción es
+irreversible»). `5f2` lo rediseña como **hoja inferior** y le añade datos.
+
+- [ ] Hoja inferior con tirador, no diálogo centrado.
+- [ ] Copy del mock, que cuenta las dos mitades: los verificados que pasan a custodia y los faltantes que quedan registrados.
+- [ ] Resumen `Firmas` / `Respaldo` (nombres de quien firma, número de fotos).
+- [ ] Botones `Sí, cerrar la carga` (primario) y `Volver a revisar`.
+- [ ] **No se toca ninguna rama de `handleComplete`.** La cola offline de `spec-81` fase 2 queda intacta; esto es la capa de confirmación, no el cierre.
+
+> Implementado por: implementer — rama `feat/spec-95-fase-7-dialogo-irreversible`,
+> SHAs `44c67da` + `ce17817`.
+> Review: reviewer (opus), una ronda, **NO mergeable**. La migración
+> `AlertDialog` → `Sheet` había movido el **foco inicial al botón irreversible**
+> (Radix fuerza el foco al cancel; `Sheet` no), perdido `role="alertdialog"` y
+> añadido un control «Close» en inglés. Dos mutaciones sobrevivían sobre
+> criterios de la propia fase. Cerrados; el orquestador reverificó
+> `role="alertdialog"` a mano.
+> QA: PR #787 merged 2026-09-11, sin checks en rojo. Suite completa 669
+> ficheros / 6707 tests. **`e2e-qa` no se leyó por separado.**
+> Downstream: revisado spec-80 (fase 3, dueña de esta pantalla) y spec-81
+> (fase 2, la cola offline) — **sin cambios**, verificado sobre el diff con
+> `--numstat`: ninguna rama de `handleComplete` ni de la cola se tocó.
+
+### Fase 8 — `5a` escritorio `[done]`
+
+**Depende de:** spec-94 fase 1
+
+> **Bloqueo resuelto 2026-09-11.** Dependía de `spec-94` fase 1; ese spec
+> quedó `completed` en `main` (PRs #786/#791/#792) con la migración
+> `20261008000001`. `check-phase-overlap.mjs` pasó de exit 4 a **exit 0**.
+
+**Archivos:** `apps/frontend/src/components/pickup/PickupDesktopView.tsx`, `apps/frontend/src/components/pickup/PickupDesktopHeader.tsx`, `apps/frontend/src/components/pickup/ClientFilter.tsx`, `apps/frontend/src/components/pickup/ManifestTable.tsx`, `apps/frontend/src/components/pickup/PickupRouteDraftPanel.tsx`, `apps/frontend/src/components/pickup/StartRouteButton.tsx`, y sus tests
+
+`spec-83` fase 4 diffeó cuatro de los ocho componentes que pintan `5a` y lo dijo:
+«`5a` no está completamente revisado». Esta fase cubre los cuatro que faltaban.
+
+- [ ] Buscador de la cabecera pasa a ser el **global** (orden/paquete/RUT); el del módulo baja a su propia barra sobre los chips, con su copy del mock.
+- [ ] Chips de cliente con **conteos** y la etiqueta `CLIENTE` delante.
+- [ ] Séptima columna `ETIQUETAS` con acción `Imprimir` por fila — sobre el contrato que deje `spec-94` fase 1, no sobre el de hoy.
+- [ ] Panel de vehículo pasa a decir «Se elige al confirmar la ruta. La cuadrilla la asigna quien la lidera» — el mock **adopta** el modelo de `spec-61` en vez de pedir el picker inline, y desaparece el conductor. Cierra la divergencia 2 de `spec-83` fase 4.
+- [ ] CTA `Iniciar ruta de retiro` (se queda) más secundario `Ver QR de la ruta`. Cierra la divergencia 3 de `spec-83` fase 4.
+- [ ] «Mostrando 7 de 12 · Cargar más» en vez de paginación con Anterior/Siguiente.
+- [ ] **No** se implementa la barra de ocupación: sigue `[parked]` en `spec-83` fase 3.
+
+
+> **Por qué esto es un bloqueo real y no burocracia.** `5a` añade la séptima
+> columna `ETIQUETAS` sobre la tabla de escritorio, y `spec-94` fase 1 reescribe
+> las cuatro RPC que la alimentan, re-templando explícitamente esa misma columna
+> de `spec-53` junto a `missing_count` y `signature_operator`
+> (`spec-94:202-203`). Construir `ETIQUETAS` contra el contrato de hoy es
+> trabajo que se tira. El orden lo decidió el usuario el 2026-09-10
+> («spec-94 fase 1 primero»), y el guard lo aplica en vez de la prosa.
+
+
+> **«Ver QR de la ruta» NO se implementa en el panel BORRADOR — decisión del
+> usuario, 2026-09-11.** El mock lo dibuja en ese pie, pero **ahí la ruta
+> todavía no existe**, así que «ver su QR» no es una operación posible: lo único
+> que el botón podía hacer era **crearla**, convirtiendo un verbo de lectura en
+> uno de escritura. Con `start_pickup_route` imponiendo una ruta activa por
+> conductor, quien sólo quería enseñar el QR al receptor se quedaba con una ruta
+> abierta cuya única salida es `Cancelar ruta` — y el destino, por diseño,
+> le habría mostrado `0 paquetes` (cuenta `pickup_scans` cuando aún no hay
+> `route_receptions`), que esa misma pantalla ya documenta como bug arreglado
+> una vez. La afordancia correcta **ya existe** en `ActiveRouteBanner.tsx:50`,
+> sobre la ruta en curso, que es donde el mock también la dibuja
+> (`Recogida.dc.html:85`). Regla de desempate del spec: el mock manda en diseño,
+> **el spec manda en comportamiento**.
+>
+> **Los chips cuentan el cubo visible, no la unión.** Contar la unión de los
+> cuatro cubos —correcto cuando el chip sólo existía o no (spec-94 fase 2)— se
+> vuelve una cifra falsa al colgarle un número: `Todos · 23` convivía con
+> `Pendientes · 12` en la misma tarjeta, y `Falabella · 10` abría una lista de
+> 4. El mock los dibuja coincidiendo. La **unión sigue decidiendo qué chips
+> existen** (para no perder el de un retailer todo-ruteado); sólo el conteo sale
+> del cubo activo.
+>
+> **La cabecera `ETIQUETAS` se gatea como su acción.** `labelsEnabled` viene de
+> `useEnabledModules`, que devuelve `?? false`: sin el gate, un operador sin el
+> módulo veía una columna titulada y permanentemente vacía, y cualquiera veía un
+> parpadeo en carga en frío.
+>
+> **Corrección de registro:** el comentario y el test decían que la cabecera
+> pintaba 7 `<span>` sobre un grid de 8. **Es falso** — `4bd1c02` pinta ocho, el
+> último vacío. Las columnas estaban alineadas; sólo faltaba el texto. El
+> orquestador repitió esa afirmación antes de comprobarla.
+>
+> **Divergencias con `5a`, declaradas:** la insignia de atajo `/` de la barra de
+> búsqueda no se implementó; los chips del mock son `border-radius:6px` y el
+> código usa `rounded-full` (preexistente). **La barra de ocupación no se
+> implementa** — sigue `[parked]` en `spec-83` fase 3.
+>
+> **Deuda:** `page.tsx` queda en 309 líneas, sobre el límite de 300.
+
+> Implementado por: implementer — rama `feat/spec-95-fase-8-escritorio`,
+> SHAs `b3ac0bf`, `7bc64f7`, `c2019e8`, `1f1650d`, `0e15b07` y `390766a`
+> (correcciones del review).
+> Review: reviewer (opus), una ronda, **veredicto NO mergeable**. Tres
+> bloqueantes: los chips contaban la **unión** de los cuatro cubos mientras la
+> tabla muestra uno (`Todos · 23` junto a `Pendientes · 12`, y `Falabella · 10`
+> abriendo una lista de 4); la cabecera `ETIQUETAS` se pintaba **sin** el gate
+> de módulo que su propia acción sí respeta; y «Ver QR de la ruta» creaba una
+> ruta desde el panel BORRADOR. Además **cuatro mutaciones sobrevivían**,
+> incluida la misma máscara `Math.min` ya cerrada para `tab` y `searchTerm`
+> pero no para `selectedClient`. Todo cerrado; el orquestador reverificó a mano
+> que reintroducir el conteo por unión mata 4 tests.
+> QA: PR #796 merged 2026-09-11, `gh pr checks 796` con 0 checks en rojo.
+> 97 ficheros / 1156 tests; `tsc` y `eslint` limpios. **`e2e-qa` no se leyó por
+> separado** — hueco declarado, como en las otras ocho fases.
+> Downstream: **spec-83 queda desactualizado y se corrige en este mismo PR** —
+> su fase 4 declaraba que «`5a` no está completamente revisado … sólo la porción
+> de esos 4 archivos», y esta fase cubre los cuatro que faltaban. Revisado
+> spec-94 (`completed`) — **sin cambios**: esta fase consume sus RPC sin
+> alterarlas, verificado contra la migración `20261008000001`.
+
+### Fase 9 — `5g` el botón de flash `[done]`
+
+**Depende de:** ninguna
+
+**Archivos:** `apps/frontend/src/components/pickup/ManifestCameraSheet.tsx`, `apps/frontend/src/hooks/pickup/useTorch.ts`, y sus tests
+
+`5g` ya calzaba casi pixel a pixel; lo único que faltaba era el flash, y el mock
+ya lo dibujaba antes de esta ronda.
+
+- [ ] Botón de flash arriba a la derecha de la hoja de cámara.
+- [ ] Degradar en silencio donde el dispositivo no lo soporte — no mostrar un control muerto.
+
+---
+
+> Implementado por: implementer — rama `feat/spec-95-fase-9-flash-camara`,
+> SHAs `20d8ac4` (flash con degradación silenciosa) + `0466273` (los cinco
+> hallazgos del review).
+> Review: reviewer (opus), una ronda, **veredicto NO mergeable** —
+> `'torch' in capabilities` daba `true` con `torch: false`, que es como los
+> dispositivos sin linterna se declaran, y **cinco mutaciones sobrevivían**.
+> Los cinco cerrados; el orquestador reverificó B1 a mano (reponer
+> `'torch' in capabilities` mata un test).
+> QA: PR #783 merged 2026-09-11, `gh pr checks 783` sin ningún check en rojo.
+> 70 tests sobre la superficie + 190 en pantallas contiguas. **`e2e-qa` no se
+> leyó por separado** — hueco declarado, no maquillado.
+> Downstream: revisado spec-80 (fase 4, que construyó esta hoja) y spec-81 —
+> **sin cambios**: ninguno afirma nada sobre capacidad de flash ni sobre
+> `applyConstraints`, y la extracción a `useTorch.ts` no cambió la API de
+> `ManifestCameraSheet` que ambos describen.
+
+## Riesgos
+
+**El predicado del chip se inventa igualmente.** Es el riesgo principal y ya
+ocurrió una vez en esta misma pantalla. La fase 1 lleva instrucción explícita de
+parar y declarar antes que adivinar.
+
+**`5a` se toma antes que `spec-94` fase 1.** El `**Depende de:**` lo bloquea en
+`check-phase-overlap.mjs` (exit 4), así que el guard lo atrapa; el riesgo real es
+que alguien lo quite para desatascarse.
+
+**Las fases 5 y 6/7 tocan pantallas contiguas del mismo flujo.** No comparten
+ficheros — `scan/[loadId]` frente a `complete/[loadId]` — así que se pueden
+despachar en paralelo, pero un cambio de copy en una debería mirarse contra la
+otra.
+
+**`5e`, `5h` y `5i` no se tocan.** `5e` calzaba casi exacto. `5h` y `5i` siguen
+**sin verificar**: `5h` necesita una captura de cámara real y `5i` exige confirmar
+el diálogo irreversible, que en QA consume el fixture. Cerrarlos es trabajo de una
+persona con el teléfono en la mano, no de este spec.
+
+> **`torch: false` NO es soporte — el bloqueante que encontró el review.**
+> La primera implementación usaba `'torch' in capabilities`, que es **true**
+> cuando la clave existe con valor `false` — y `torch: false` es exactamente
+> cómo Chromium declara «esta pista no tiene linterna» (cámara frontal de
+> Android, webcam de escritorio). El resultado era el **botón muerto que
+> además miente**: se pintaba, el operario lo tocaba, `applyConstraints`
+> resolvía, `aria-pressed` pasaba a `true`, y no había luz. Justo lo que esta
+> fase existía para evitar. Ahora `capabilities?.torch === true`.
+>
+> **`advanced` no es confirmación del dispositivo.** Por spec de Media Capture
+> los `ConstraintSet` avanzados son *best-effort*: el UA **salta** los que no
+> puede satisfacer y la promesa **resuelve**, así que la rama `.catch` nunca
+> corría. Se usa un `{ torch }` básico, que sí produce `OverconstrainedError`.
+>
+> **La pista puede morir con el flash encendido.** `mute` apaga el flash en la
+> UI conservando el botón (la capacidad sigue ahí); `ended` apaga **y** retira
+> el botón (la pista no vuelve). Antes, `aria-pressed` se quedaba en `true`
+> para siempre con el hardware apagado.
+>
+> **Decisión de UX fuera del mock, declarada:** el mock es estático y no dibuja
+> estado «encendido». Se añadió `aria-pressed` y relleno del ícono para que el
+> operario sepa si el flash quedó activo. El `aria-label` es fijo («Flash»), no
+> alterna — alternar nombre **y** `aria-pressed` hace que un lector diga
+> «Apagar flash, pulsado», que es redundante y contradictorio.
+>
+> La lógica vive en `hooks/pickup/useTorch.ts` (capa `components → hooks`), lo
+> que devolvió `ManifestCameraSheet.tsx` a 299 líneas, bajo el límite de 300.
+
+> **Fase 5 — decisiones y desviaciones.** La ampliación de alcance
+> (`openPendingManifest`) es la que arregla `DURACIÓN`: ningún escritor fijaba
+> `manifests.started_at` en el camino de la cuadrilla. Verificado dos veces —
+> es el **único** escritor de `in_progress`, y añadirle `operator_id` al
+> `UPDATE` no puede vaciarlo porque el `id` sale de un `SELECT` filtrado por ese
+> mismo valor. La duración pasa a medirse desde que **se abre la pantalla de
+> escaneo**: decisión de producto, escrita aquí y no sólo en un commit.
+>
+> **Divergencias con `5d`, declaradas:** bajo «ÓRDENES Y BULTOS» el mock muestra
+> el conteo de **órdenes** y el código la **fracción verificada** (se mantuvo la
+> fracción); el mock dibuja una insignia `LECTOR LISTO` que no se añadió.
+>
+> **Deuda:** `page.tsx` queda en 459 líneas, sobre el límite de 300 — ya estaba
+> en 450 antes de esta fase. Y el efecto que fija `started_at` se re-dispara con
+> cada vaivén `online↔syncing`: coste de red redundante y una carrera de
+> milisegundos, **sin** pérdida de dato (el guard por `status === 'pending'` es
+> correcto y está testeado).

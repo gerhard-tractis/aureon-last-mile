@@ -2,17 +2,29 @@
 
 import { Check, Printer } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getPickupWindowStatus, formatPickupWindowLabel } from '@/lib/pickup/pickupWindowStatus';
 
 /**
  * spec-54 phase 4.4 — the manifest table on Recogida (mock `5a`).
  *
- * The mock's last column is a pickup window ("09:00–13:00", "cierra 12:30" in
- * red), with the row's left border coloured by how close that close-time is.
- * get_pending_manifests returns no pickup window, so neither is rendered:
- * inventing a deadline on the screen that decides what the crew collects next
- * would be worse than leaving the column out. The border instead carries
- * scan progress, which is real.
+ * spec-83 fase 2 adds the VENTANA column the mock always asked for, once
+ * `get_pending_manifests` started returning `pickup_window_start/end` and
+ * `pickup_cutoff_time`. It is a column with its own semaphore, deliberately
+ * NOT a third meaning on the row's left border — that border already carries
+ * two *row states* (selection, scan-in-progress/merma); the window is a
+ * *pickup-point datum* that changes on its own with the clock. See spec-83
+ * fase 2 for the full reasoning against a shared channel.
+ *
+ * The semaphore has three states, not two: `sin_datos` is not `dentro_de_plazo`.
+ * As of this phase no pickup point has a window configured, so defaulting an
+ * absent deadline to "green" would assert something false, not just omit it.
  */
+
+const WINDOW_STATUS_STYLES: Record<string, { dot: string; text: string }> = {
+  sin_datos: { dot: 'bg-border-strong', text: 'text-text-muted' },
+  dentro_de_plazo: { dot: 'bg-status-success', text: 'text-status-success-text' },
+  cerca_del_cierre: { dot: 'bg-status-warning', text: 'text-status-warning-text' },
+};
 
 export interface ManifestRow {
   /** NULL until a manifests row exists for the load (spec-53). */
@@ -20,16 +32,36 @@ export interface ManifestRow {
   externalLoadId: string;
   pickupPoint: string | null;
   retailerName: string | null;
-  orderCount: number;
-  packageCount: number;
+  /** spec-94 fase 1/2 — nullable: a pending load whose orders are ALL
+   * soft-deleted has no live aggregate to count (get_pending_manifests'
+   * arm2 falls back to the nullable manifests.total_orders/total_packages).
+   * Render as "—", never coalesce to 0 before a write — see
+   * useManifests.ts's PendingManifest doc. */
+  orderCount: number | null;
+  packageCount: number | null;
   /** Verified scans so far. >0 means collection is under way. */
   verifiedCount?: number;
+  /** spec-83 fase 2 — pickup point's own window. NULL/undefined means "not
+   * configured", never "no deadline" — see pickupWindowStatus.ts. */
+  pickupWindowStart?: string | null;
+  pickupWindowEnd?: string | null;
+  /** spec-83 fase 2 — sla_config.pickup_cutoff_time, stricter than the
+   * window end when both are set. */
+  pickupCutoffTime?: string | null;
 }
 
-// The mock has six columns. The seventh is ours: spec-53 label printing lives
-// on this row today, and a redesign that quietly dropped it would be a
-// functional regression, not a visual change.
-const GRID = 'grid grid-cols-[22px_118px_1fr_104px_72px_72px_32px] gap-3';
+// The mock originally had six columns; spec-53 added a seventh (label
+// printing) and spec-83 fase 2 adds the eighth (pickup window). The header
+// row always had eight aligned cells — the eighth was blank over the print
+// button. spec-95 fase 8 gives it its own text, ETIQUETAS (5a:110), gated
+// by `labelsEnabled` exactly like the print action itself (review round 1,
+// B3): an operator without the module must not see a column heading that
+// never does anything. The underlying data (labels_printed_at/
+// labels_printed_by_name) is untouched by spec-94 fase 1's re-template of
+// the four RPCs: those two columns are re-templated verbatim, not renamed
+// (spec-94:260-261, migration 20261008000001 lines 97-98/207-208/389-390/
+// 479-480).
+const GRID = 'grid grid-cols-[22px_118px_1fr_104px_72px_72px_96px_64px] gap-3';
 
 interface ManifestTableProps {
   rows: ManifestRow[];
@@ -43,6 +75,9 @@ interface ManifestTableProps {
   /** Opens the load's scan flow. The row click is selection, so opening needs
    *  its own affordance — it is the main action on this screen. */
   onOpen?: (row: ManifestRow) => void;
+  /** Injected for deterministic tests. Defaults to the real clock — the
+   * semaphore reads how close "now" is to the close time. */
+  now?: Date;
 }
 
 export function ManifestTable({
@@ -53,6 +88,7 @@ export function ManifestTable({
   labelsEnabled = false,
   onPrintLabels,
   onOpen,
+  now,
 }: ManifestTableProps) {
   const selectable = !!selectedIds && !!onToggle;
 
@@ -70,7 +106,8 @@ export function ManifestTable({
         <span>Cliente</span>
         <span className="text-right">Órdenes</span>
         <span className="text-right">Paq.</span>
-        <span />
+        <span>Ventana</span>
+        <span className="text-right">{labelsEnabled ? 'Etiquetas' : ''}</span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -157,12 +194,32 @@ export function ManifestTable({
                 </span>
 
                 <span className="text-right font-mono text-[11.5px] font-semibold text-text">
-                  {row.orderCount}
+                  {row.orderCount ?? '—'}
                 </span>
 
                 <span className="text-right font-mono text-[11.5px] font-semibold text-text">
-                  {row.packageCount}
+                  {row.packageCount ?? '—'}
                 </span>
+
+                {(() => {
+                  const windowInput = {
+                    pickupWindowStart: row.pickupWindowStart,
+                    pickupWindowEnd: row.pickupWindowEnd,
+                    pickupCutoffTime: row.pickupCutoffTime,
+                  };
+                  const status = getPickupWindowStatus(windowInput, now);
+                  const style = WINDOW_STATUS_STYLES[status];
+                  return (
+                    <span
+                      data-testid="pickup-window"
+                      data-status={status}
+                      className="flex items-center gap-1.5 truncate text-[11px]"
+                    >
+                      <span aria-hidden className={cn('h-1.5 w-1.5 flex-none rounded-full', style.dot)} />
+                      <span className={cn('truncate', style.text)}>{formatPickupWindowLabel(windowInput)}</span>
+                    </span>
+                  );
+                })()}
 
                 {labelsEnabled && row.id && onPrintLabels ? (
                   <button

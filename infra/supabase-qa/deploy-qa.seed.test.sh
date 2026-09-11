@@ -28,7 +28,10 @@ check() { # $1 name, $2 expected exit, $3 actual exit
 }
 
 check_contains() { # $1 name, $2 haystack, $3 needle
-  if printf '%s' "$2" | grep -q -- "$3"; then
+  # Here-string, not `printf | grep -q`: with pipefail, grep -q exiting early
+  # kills printf with SIGPIPE and the pipeline reports 141, so a matching
+  # assertion randomly FAILs. Same fix as deploy-qa.functions.test.sh.
+  if grep -q -- "$3" <<< "$2"; then
     pass=$((pass + 1)); echo "  ok   $1"
   else
     fail=$((fail + 1)); echo "  FAIL $1 — expected to find '$3' in:"

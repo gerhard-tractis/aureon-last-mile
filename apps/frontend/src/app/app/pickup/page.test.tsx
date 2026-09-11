@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, within, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import PickupPage from './page';
 import type { RouteCrewMember } from '@/hooks/pickup/useActivePickupRoute';
 
@@ -46,16 +47,42 @@ const mockInTransit = [
     total_packages: 14,
     reception_status: 'awaiting_reception',
     updated_at: new Date().toISOString(),
+    // ronda 4 (review fase 2) — get_in_transit_manifests now returns these
+    // too (a load closed at the dock whose route then moved to in_transit
+    // still needs "Cierres de hoy"). Null/0 here: this default fixture
+    // load hasn't closed.
+    closed_at: null,
+    missing_count: 0,
   },
 ];
+// spec-94 fase 2 — the routed tab's fixture (cubo 2). Empty by default so
+// every pre-existing test (none of which cares about it) is unaffected.
+const mockRouted: unknown[] = [];
 
 const mockUsePendingManifests = vi.fn();
 const mockUseCompletedManifests = vi.fn();
 const mockUseInTransitManifests = vi.fn();
+// spec-80 fase 2b (ronda 3) — the rescue banner's real, SEPARATE data
+// source (get_signature_rescue_manifests, scoped to this user + 30 days),
+// not useCompletedManifests (operator-wide, unbounded — desktop's history
+// tab). Defaults to an empty, resolved state so every pre-existing test in
+// this file (none of which cares about the rescue banner) is unaffected.
+const mockUseSignatureRescueManifests = vi.fn();
+const mockRefetchRescue = vi.fn();
 vi.mock('@/hooks/pickup/useManifests', () => ({
   usePendingManifests: (...args: unknown[]) => mockUsePendingManifests(...args),
   useCompletedManifests: (...args: unknown[]) => mockUseCompletedManifests(...args),
   useInTransitManifests: (...args: unknown[]) => mockUseInTransitManifests(...args),
+  useSignatureRescueManifests: (...args: unknown[]) => mockUseSignatureRescueManifests(...args),
+}));
+
+// spec-94 fase 1/2 — the fourth query, get_routed_manifests (cubo 2).
+// Mocked at the module boundary like its siblings above, so the real
+// useRoutedManifests.ts (which imports PICKUP_QUERY_OPTIONS from
+// useManifests.ts, itself mocked without that export) never actually runs.
+const mockUseRoutedManifests = vi.fn();
+vi.mock('@/hooks/pickup/useRoutedManifests', () => ({
+  useRoutedManifests: (...args: unknown[]) => mockUseRoutedManifests(...args),
 }));
 
 // spec-61 Task 5: this page now reads `role` (3j vs the crew screen, and
@@ -63,6 +90,15 @@ vi.mock('@/hooks/pickup/useManifests', () => ({
 const mockUseOperatorId = vi.fn();
 vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => mockUseOperatorId(),
+}));
+
+// spec-94 fase 3 — RoutedManifestTable now calls this hook itself (for
+// "Quitar de la ruta"), which calls useQueryClient() internally. This page
+// test never wraps in QueryClientProvider (every other query-backed hook on
+// this page is mocked the same way), so the real hook would throw "No
+// QueryClient set" the moment the routed tab renders a row.
+vi.mock('@/hooks/pickup/useRemoveManifestFromRoute', () => ({
+  useRemoveManifestFromRoute: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 // 3j's crew picker.
@@ -155,8 +191,17 @@ vi.mock('@/components/pickup/CameraIntake', () => ({
   CameraIntake: () => <div data-testid="camera-intake" />,
 }));
 
+// spec-95 fase 8, review round 1 (B1) — renders the `clients` prop instead
+// of swallowing it, so this file can assert the per-tab count end to end,
+// not just at pickupPageHelpers.test.ts's unit level.
 vi.mock('@/components/pickup/ClientFilter', () => ({
-  ClientFilter: () => null,
+  ClientFilter: ({ clients }: { clients: { name: string; count: number }[] }) => (
+    <div data-testid="client-filter">
+      {clients.map((c) => (
+        <span key={c.name}>{c.name} · {c.count}</span>
+      ))}
+    </div>
+  ),
 }));
 
 // Now actually wired: the real button pops a vehicle dialog, which this
@@ -201,7 +246,16 @@ describe('PickupPage', () => {
     mockUsePendingManifests.mockReturnValue({ data: mockPending, isLoading: false });
     mockUseCompletedManifests.mockReturnValue({ data: mockCompleted, isLoading: false });
     mockUseInTransitManifests.mockReturnValue({ data: mockInTransit, isLoading: false });
+    mockUseRoutedManifests.mockReturnValue({ data: mockRouted, isLoading: false });
     mockUseRouteManifests.mockReturnValue({ data: [], isLoading: false });
+    mockRefetchRescue.mockClear();
+    mockUseSignatureRescueManifests.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+      fetchStatus: 'idle',
+      refetch: mockRefetchRescue,
+    });
   });
 
   describe('Header', () => {
@@ -227,6 +281,28 @@ describe('PickupPage', () => {
     });
   });
 
+  // spec-95 fase 8, review round 1 (B1) — the chip count has to match the
+  // cube on screen. Fixture: Easy has 1 row in pending AND 1 in completed;
+  // Sodimac only in pending; Falabella only in in_transit (0 in pending).
+  // The default tab is 'pending'.
+  describe('Client chips count the active tab, not the union (B1)', () => {
+    it('counts Easy by its pending row only, not pending+completed', () => {
+      render(<PickupPage />);
+      expect(screen.getByText('Easy · 1')).toBeInTheDocument();
+    });
+
+    it('still lists Falabella (from in_transit) with a zero, not missing entirely', () => {
+      render(<PickupPage />);
+      expect(screen.getByText('Falabella · 0')).toBeInTheDocument();
+    });
+
+    it('has both chips summing to 2, the pending tab\'s own row count', () => {
+      render(<PickupPage />);
+      expect(screen.getByText('Easy · 1')).toBeInTheDocument();
+      expect(screen.getByText('Sodimac · 1')).toBeInTheDocument();
+    });
+  });
+
   describe('KPI tiles', () => {
     it('reports manifests, orders, packages and today closures', () => {
       render(<PickupPage />);
@@ -243,25 +319,83 @@ describe('PickupPage', () => {
   });
 
   describe('Tabs', () => {
-    it('renders the three tabs in Spanish with counts', () => {
+    // spec-94 fase 2 — renamed to match "El modelo de estados": Por retirar
+    // / En punto de retiro / Camino a bodega / En bodega. Internal TabKeys
+    // (pending/routed/in_transit/completed) are unchanged — only these
+    // Spanish literals moved.
+    it('renders the four tabs in Spanish with counts', () => {
       render(<PickupPage />);
-      expect(screen.getByRole('button', { name: 'Pendientes · 2' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'En tránsito · 1' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Completados · 1' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Por retirar · 2' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'En punto de retiro · 0' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Camino a bodega · 1' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'En bodega · 1' })).toBeInTheDocument();
     });
 
     it('shows in-transit manifests when that tab is selected', async () => {
       render(<PickupPage />);
       expect(screen.queryByText('CARGA-INT-1')).not.toBeInTheDocument();
-      await userEvent.click(screen.getByRole('button', { name: 'En tránsito · 1' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Camino a bodega · 1' }));
       expect(screen.getByText('CARGA-INT-1')).toBeInTheDocument();
     });
 
     it('offers selection only on the pending tab', async () => {
       render(<PickupPage />);
       expect(screen.getAllByTestId('manifest-row')[0]).toHaveAttribute('aria-checked');
-      await userEvent.click(screen.getByRole('button', { name: 'Completados · 1' }));
+      await userEvent.click(screen.getByRole('button', { name: 'En bodega · 1' }));
       expect(screen.getAllByTestId('manifest-row')[0]).not.toHaveAttribute('aria-checked');
+    });
+
+    // spec-94 fase 2 — the routed tab renders through RoutedManifestTable,
+    // not ManifestTable, and shows its own row shape (route code, driver,
+    // "abierta hace").
+    //
+    // Review ronda 2 (fase 3) — RoutedManifestTable now calls
+    // useQueryClient() directly (for the stale-error refetch, decisión B),
+    // so this render needs a real QueryClient — the only test in this file
+    // that reaches RoutedManifestTable.
+    it('shows the routed table, not ManifestTable, on the routed tab', async () => {
+      mockUseRoutedManifests.mockReturnValue({
+        data: [
+          {
+            id: 'r1',
+            external_load_id: 'CARGA-ROUTED-1',
+            retailer_name: 'Ripley',
+            total_orders: 2,
+            total_packages: 6,
+            created_at: new Date().toISOString(),
+            pickup_point: 'Ripley Costanera',
+            labels_printed_at: null,
+            labels_printed_by_name: null,
+            route_code: 'PR-2026-0099',
+            route_started_at: new Date().toISOString(),
+            driver_name: 'Marcela R.',
+            route_status: 'in_progress',
+            closed_at: null,
+            missing_count: 0,
+            verified_count: 1,
+            // Ronda 2 de review — hallazgo real: sin este campo, la fila
+            // renderiza href="/app/pickup/route/undefined/qr" y nada lo
+            // afirmaba. route-99 elegido para que la aserción de abajo no
+            // pueda confundirse con un accidente de otro campo del fixture.
+            pickup_route_id: 'route-99',
+          },
+        ],
+        isLoading: false,
+      });
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={qc}>
+          <PickupPage />
+        </QueryClientProvider>,
+      );
+      await userEvent.click(screen.getByRole('button', { name: 'En punto de retiro · 1' }));
+      expect(screen.getByText('CARGA-ROUTED-1')).toBeInTheDocument();
+      expect(screen.getByText('PR-2026-0099')).toBeInTheDocument();
+      expect(screen.queryAllByTestId('manifest-row')).toHaveLength(0);
+      expect(screen.getByRole('link', { name: 'QR de entrega' })).toHaveAttribute(
+        'href',
+        '/app/pickup/route/route-99/qr',
+      );
     });
   });
 
@@ -307,6 +441,69 @@ describe('PickupPage', () => {
       render(<PickupPage />);
       const panel = screen.getByText('Cierres de hoy').closest('section')!;
       expect(within(panel).getByText('CARGA-000')).toBeInTheDocument();
+    });
+
+    // ronda 4 (review fase 2) — this is the wiring test the reviewer named
+    // explicitly: with mockRouted empty by default, dropping the second
+    // argument to completedToday(completed, routed, inTransit) at page.tsx
+    // stayed green everywhere else. Assert the StatTile AND the panel
+    // content, not just that a function got called with something.
+    it('includes a load closed at the dock (routed, cubo 2) in the StatTile and the panel, with its missing_count', () => {
+      mockUseRoutedManifests.mockReturnValue({
+        data: [
+          {
+            id: 'r-dock',
+            external_load_id: 'CARGA-DOCK-CLOSED',
+            retailer_name: 'Ripley',
+            total_orders: 3,
+            total_packages: 6,
+            created_at: new Date().toISOString(),
+            pickup_point: 'Ripley Costanera',
+            labels_printed_at: null,
+            labels_printed_by_name: null,
+            route_code: 'PR-2026-0011',
+            route_started_at: new Date().toISOString(),
+            driver_name: 'Marcela R.',
+            route_status: 'in_progress',
+            closed_at: new Date().toISOString(),
+            missing_count: 3,
+            verified_count: 6,
+          },
+        ],
+        isLoading: false,
+      });
+      render(<PickupPage />);
+      const tiles = screen.getAllByTestId('stat-tile');
+      const tile = (label: string) => tiles.find((t) => t.textContent?.startsWith(label))!;
+      // 1 (mockCompleted's CARGA-000) + 1 (the routed closure just added).
+      expect(tile('Completados hoy')).toHaveTextContent('2');
+      const panel = screen.getByText('Cierres de hoy').closest('section')!;
+      expect(within(panel).getByText('CARGA-DOCK-CLOSED')).toBeInTheDocument();
+      expect(within(panel).getByText(/3 faltantes/)).toBeInTheDocument();
+    });
+
+    // Same wiring test for the third source (cubo 3) — the one the review
+    // found missing entirely on the first pass of this fase.
+    it('includes a load closed at the dock whose route moved to in_transit (cubo 3) in the StatTile and the panel', () => {
+      mockUseInTransitManifests.mockReturnValue({
+        data: [
+          {
+            ...mockInTransit[0],
+            id: 't-dock',
+            external_load_id: 'CARGA-TRANSIT-CLOSED',
+            closed_at: new Date().toISOString(),
+            missing_count: 2,
+          },
+        ],
+        isLoading: false,
+      });
+      render(<PickupPage />);
+      const tiles = screen.getAllByTestId('stat-tile');
+      const tile = (label: string) => tiles.find((t) => t.textContent?.startsWith(label))!;
+      expect(tile('Completados hoy')).toHaveTextContent('2');
+      const panel = screen.getByText('Cierres de hoy').closest('section')!;
+      expect(within(panel).getByText('CARGA-TRANSIT-CLOSED')).toBeInTheDocument();
+      expect(within(panel).getByText(/2 faltantes/)).toBeInTheDocument();
     });
   });
 
@@ -496,6 +693,108 @@ describe('PickupPage', () => {
       expect(written.started_at).toEqual(expect.any(String));
       // The regression this round fixes: total_packages must never be
       // coerced from null to 0 by this write.
+      expect(written).not.toHaveProperty('total_orders');
+      expect(written).not.toHaveProperty('total_packages');
+    });
+  });
+
+  // ronda 4 (review fase 2), bloqueante 2 — this exact regression had NO
+  // test before this round: `page.tsx`'s handleRowOpen guard
+  // (`row.orderCount !== null && row.packageCount !== null`) could be
+  // reverted to `row.orderCount!`/`row.packageCount!` and all 6634 tests
+  // stayed green, because nothing here exercised handleRowOpen's write at
+  // all. Desktop equivalent of the mobile regression test above — clicking
+  // a row's load id (not the row itself, which only toggles selection)
+  // opens the scan flow and writes through openPendingManifest.
+  describe('Desktop — opening a manifest never writes a fabricated total (ronda 4 review, bloqueante 2)', () => {
+    const originalMatchMedia = window.matchMedia;
+
+    function chainResolving(data: unknown[]) {
+      const chain: Record<string, ReturnType<typeof vi.fn>> = {};
+      for (const m of ['select', 'eq', 'is', 'update']) {
+        chain[m] = vi.fn().mockReturnValue(chain);
+      }
+      chain.limit = vi.fn().mockResolvedValue({ data, error: null });
+      return chain;
+    }
+
+    function mockDesktop() {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: vi.fn().mockImplementation((query: string) => ({
+          matches: false,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        })),
+      });
+    }
+
+    afterEach(() => {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    });
+
+    it('does not include total_orders/total_packages when order_count is null (pending tab)', async () => {
+      mockDesktop();
+      mockUsePendingManifests.mockReturnValue({
+        data: [{ ...mockPending[0], order_count: null, package_count: null }],
+        isLoading: false,
+      });
+      const manifestsChain = chainResolving([{ id: 'db-id-1', status: 'pending' }]);
+      mockSupabaseFrom.mockReturnValue(manifestsChain);
+
+      render(<PickupPage />);
+      await userEvent.click(screen.getByRole('button', { name: 'CARGA-001' }));
+
+      expect(mockPush).toHaveBeenCalledWith('/app/pickup/scan/CARGA-001');
+      expect(manifestsChain.update).toHaveBeenCalledTimes(1);
+      const written = manifestsChain.update.mock.calls[0][0];
+      expect(written).toMatchObject({ status: 'in_progress' });
+      expect(written).not.toHaveProperty('total_orders');
+      expect(written).not.toHaveProperty('total_packages');
+    });
+
+    it('includes total_orders/total_packages when order_count is a real number (pending tab)', async () => {
+      mockDesktop();
+      // mockPending[0] carries order_count: 5, package_count: 12.
+      const manifestsChain = chainResolving([{ id: 'db-id-1', status: 'pending' }]);
+      mockSupabaseFrom.mockReturnValue(manifestsChain);
+
+      render(<PickupPage />);
+      await userEvent.click(screen.getByRole('button', { name: 'CARGA-001' }));
+
+      expect(manifestsChain.update).toHaveBeenCalledTimes(1);
+      const written = manifestsChain.update.mock.calls[0][0];
+      expect(written).toMatchObject({ total_orders: 5, total_packages: 12 });
+    });
+
+    // The actual bloqueante: a load NEVER opened (still 'pending' in the
+    // DB) that shows up on the in_transit tab because its route moved on
+    // without it ever being scanned. Before this round's fix,
+    // totalsToRows coalesced its NULL totals to 0 before handleRowOpen's
+    // guard ever saw them.
+    it('does not include total_orders/total_packages for a never-opened load shown on the in_transit tab', async () => {
+      mockDesktop();
+      mockUseInTransitManifests.mockReturnValue({
+        data: [{ ...mockInTransit[0], total_orders: null, total_packages: null }],
+        isLoading: false,
+      });
+      const manifestsChain = chainResolving([{ id: 'db-id-2', status: 'pending' }]);
+      mockSupabaseFrom.mockReturnValue(manifestsChain);
+
+      render(<PickupPage />);
+      await userEvent.click(screen.getByRole('button', { name: 'Camino a bodega · 1' }));
+      await userEvent.click(screen.getByRole('button', { name: 'CARGA-INT-1' }));
+
+      expect(manifestsChain.update).toHaveBeenCalledTimes(1);
+      const written = manifestsChain.update.mock.calls[0][0];
       expect(written).not.toHaveProperty('total_orders');
       expect(written).not.toHaveProperty('total_packages');
     });
@@ -721,6 +1020,163 @@ describe('PickupPage', () => {
         expect(screen.getByText(/marca los manifiestos de la tabla/i)).toBeInTheDocument(),
       );
       expect(screen.queryAllByTestId('draft-manifest')).toHaveLength(0);
+    });
+  });
+
+  /**
+   * spec-80 fase 2b (ronda 2) — M3 from the review: three mutants survived
+   * against this file because nothing here exercised the rescue wiring at
+   * the `app` layer (destination, and the loading/unknown/error passthrough)
+   * — every prior test for this fase lived in lib/components only. The
+   * scenario is deliberately the one B1 proved is the REAL one: no active
+   * route (trg_route_receptions_status_sync already flipped it to
+   * 'received'), rescue-shaped rows coming from useCompletedManifests
+   * (operator-wide), rendered on mobile in the no-route branch.
+   */
+  describe('spec-80 fase 2b (ronda 2) — el destino real de la entrada de rescate', () => {
+    const originalMatchMedia = window.matchMedia;
+    afterEach(() => {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    });
+    function mockBelowLg(isBelowLg: boolean) {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: vi.fn().mockImplementation((query: string) => ({
+          matches: query.includes('1023px') ? isBelowLg : false,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        })),
+      });
+    }
+
+    const rescueRow = {
+      id: 'c-rescue',
+      external_load_id: 'CARGA-RESCUE',
+      retailer_name: 'Falabella',
+      total_orders: 4,
+      total_packages: 8,
+      completed_at: new Date().toISOString(),
+      pickup_point: 'Bodega Norte',
+      signature_operator: null,
+    };
+
+    beforeEach(() => {
+      mockBelowLg(true);
+      mockUseOperatorId.mockReturnValue({
+        operatorId: 'op-1',
+        role: 'pickup_crew',
+        permissions: [],
+        userId: 'user-me',
+      });
+      // No active route — B1's real scenario. get_my_active_pickup_route
+      // does not return a route once trg_route_receptions_status_sync has
+      // flipped it to 'received'.
+      mockActiveRoute = null;
+    });
+
+    it('navigates to review/[loadId], NOT scan/[loadId], on tap', async () => {
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
+        data: [rescueRow],
+        isPending: false,
+        isError: false,
+        fetchStatus: 'idle',
+      });
+      render(<PickupPage />);
+      await userEvent.click(screen.getByText('FALTA FIRMA').closest('button')!);
+      expect(mockPush).toHaveBeenCalledWith('/app/pickup/review/CARGA-RESCUE');
+      expect(mockPush).not.toHaveBeenCalledWith('/app/pickup/scan/CARGA-RESCUE');
+    });
+
+    it('shows the network-pause notice, not the rescue list, while genuinely paused with no signal', () => {
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
+        data: [rescueRow],
+        isPending: true,
+        isError: false,
+        fetchStatus: 'paused',
+      });
+      render(<PickupPage />);
+      expect(screen.getByText(/no pudimos comprobar/i)).toBeInTheDocument();
+      expect(screen.queryByText('FALTA FIRMA')).toBeNull();
+    });
+
+    it('does not show the connection warning during an ordinary initial load', () => {
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
+        data: undefined,
+        isPending: true,
+        isError: false,
+        fetchStatus: 'fetching',
+      });
+      render(<PickupPage />);
+      expect(screen.queryByText(/no pudimos comprobar/i)).toBeNull();
+    });
+
+    it('shows a distinct error notice once retries are exhausted, not "known, nothing to rescue"', () => {
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
+        data: undefined,
+        isPending: false,
+        isError: true,
+        fetchStatus: 'idle',
+      });
+      render(<PickupPage />);
+      expect(screen.getByText(/no pudimos cargar/i)).toBeInTheDocument();
+      expect(screen.queryByText('FALTA FIRMA')).toBeNull();
+    });
+
+    it('shows nothing extra once resolved with no rescue-shaped manifest', () => {
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
+        data: [{ ...rescueRow, signature_operator: 'M. Rojas' }],
+        isPending: false,
+        isError: false,
+        fetchStatus: 'idle',
+      });
+      render(<PickupPage />);
+      expect(screen.queryByText('FALTA FIRMA')).toBeNull();
+      expect(screen.queryByText(/no pudimos/i)).toBeNull();
+    });
+
+    // A3 (ronda 3) — the retry button must actually call refetch() on the
+    // scoped rescue query, not on some other one.
+    it('wires "Reintentar" to refetch the rescue query, once retries are exhausted', async () => {
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
+        data: undefined,
+        isPending: false,
+        isError: true,
+        fetchStatus: 'idle',
+      });
+      render(<PickupPage />);
+      await userEvent.click(screen.getByRole('button', { name: /reintentar/i }));
+      expect(mockRefetchRescue).toHaveBeenCalledTimes(1);
+    });
+
+    // A2 (ronda 3) — DECIDED: the rescue banner shows even with an active
+    // route open. A rescue from a PREVIOUS route does not stop mattering
+    // just because today has a new one.
+    it('shows the rescue banner even while a different route is active (A2)', () => {
+      mockActiveRoute = { id: 'route-today', code: 'PR-2026-0099', started_at: new Date().toISOString(), crew: [] };
+      mockUseRouteManifests.mockReturnValue({ data: [], isLoading: false });
+      mockUseSignatureRescueManifests.mockReturnValue({
+        refetch: mockRefetchRescue,
+        data: [rescueRow],
+        isPending: false,
+        isError: false,
+        fetchStatus: 'idle',
+      });
+      render(<PickupPage />);
+      expect(screen.getByText('FALTA FIRMA')).toBeInTheDocument();
     });
   });
 });

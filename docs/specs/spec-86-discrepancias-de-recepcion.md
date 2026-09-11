@@ -419,7 +419,31 @@ registro del faltante.
 > producción** — sólo en QA (que sí replay cada migración en cada merge, per
 > `docs/specs/CLAUDE.md`).
 
-### Fase 2a — Resolver: el bulto aparece `[pending]`
+### Fase 2a — Resolver: el bulto aparece `[in_progress]`
+
+> **Decisión del usuario (2026-09-09) sobre el callejón del `lost`.** Se le
+> planteó el caso medido: un bulto declarado `lost` —lo que dispara la
+> indemnización— que después aparece y se escanea. Hoy el paquete avanza a
+> `en_bodega`, la discrepancia sigue `lost`, y **nadie puede cerrarla nunca**
+> (`resolve_discrepancy` rechaza con `23505` toda transición fuera de `open`).
+>
+> **Respuesta textual: «si aparece, armaré una pestaña de gestión de
+> discrepancias o excepciones, eso es otro spec y no lo abarcaremos en esta
+> sesión, sólo necesitamos la tabla de datos por el momento».**
+>
+> **Consecuencia para esta fase: ninguna. No se construye nada.** El trigger
+> resuelve sólo las `open` y eso queda como está. Lo que se necesita hoy es que
+> **el dato quede registrado**, y queda: el `reception_scans` del bulto que
+> apareció existe, con su `scanned_at` y su `scanned_by`, y la discrepancia
+> conserva su `resolution`/`resolved_at`/`resolved_by_user_id` de la
+> declaración de pérdida. La futura pestaña tendrá con qué reconstruir el caso
+> — no hay pérdida de información, sólo ausencia de interfaz.
+>
+> **Lo que NO se debe hacer mientras tanto:** relajar el `23505` de
+> `resolve_discrepancy` «de paso» en otra fase. Ese guard es lo que hace que
+> una discrepancia cerrada sea evidencia; quitarlo sin la pestaña detrás
+> convierte un hueco de interfaz en una pérdida de trazabilidad.
+
 
 **Archivos:** migración (`trg_reception_scan_advance_package_status`, `CREATE OR REPLACE` sobre la última definición, `packages/database/supabase/migrations/20260812000002_spec52_package_state_engine.sql`), test pgTAP en `packages/database/supabase/tests/`
 
@@ -432,6 +456,150 @@ escritores del mismo estado es como se producen los desacuerdos.
 
 No depende de nada pendiente: `resolve_discrepancy` existe y el disparador de
 avance de estado ya vive en producción.
+
+> **Nota de implementación (2026-09-09).** El texto de arriba dice que la
+> discrepancia pasa a `resolved` "vía `resolve_discrepancy`" — **no es lo que
+> se construyó**, a propósito. `resolve_discrepancy` (20260913000003/
+> 20260913000005) resuelve `auth.jwt()->>'sub'` para el actor y exige rol
+> elevado sólo para `lost` — pero el propio disparador de escaneo no tiene
+> garantía de traer esa sesión (un reintento de la cola offline de spec-81
+> podría reproducir el `INSERT` sobre `reception_scans` sin el mismo JWT). En
+> vez de llamar al RPC, `trg_reception_scan_advance_package_status`
+> (`CREATE OR REPLACE` sobre la última definición real,
+> `20260812000002_spec52_package_state_engine.sql:124`) gana una segunda
+> `UPDATE`, independiente de la que avanza el paquete a `en_bodega`, que
+> replica a mano el mismo guard de "no reabrir una fila cerrada"
+> (`status = 'open'`) y usa `NEW.scanned_by` como `resolved_by_user_id` en vez
+> de `auth.jwt()` — mismo patrón que los dos triggers de spec-52 ya usan
+> (`NEW.operator_id`, no `get_operator_id()`, para el tenant).
+>
+> **Hallazgo de la ronda de mutation-testing, corregido en el mismo commit:**
+> el comentario original de la migración afirmaba que `operation_type =
+> 'reception'` era el guard que protegía a una discrepancia `pickup` del
+> mismo paquete (probado, se pensó, con un fixture `d4`). Mutado y
+> re-corrido: **sobrevivió 14/14** — el fixture no lo mataba. La razón real:
+> `discrepancy_source_matches_operation` (CHECK, `20260913000001`) ya obliga
+> a que una fila `pickup` tenga `route_reception_id IS NULL`, así que nunca
+> puede igualar `NEW.reception_id` (siempre no-NULL en esta rama) sin importar
+> ese predicado — es defensa en profundidad, igual que `operator_id =
+> NEW.operator_id` (que también sobrevivió 14/14, y por la misma razón
+> estructural: `route_reception_id` ya determina el operador vía su propia
+> FK). Los cuatro guards restantes (`package_id`, `route_reception_id`,
+> `status = 'open'`, `deleted_at IS NULL`) sí matan exactamente una aserción
+> cada uno, probados uno a uno, restaurando entre cada corrida — no en bloque.
+>
+> **Ronda 2 de review (PR #722).** Cinco hallazgos, cuatro cerrados con
+> correcciones sólo en el test (`+8` líneas de fixtures/aserciones), uno
+> declarado como deuda a propósito:
+>
+> - **A1 — la independencia de las dos `UPDATE` no la probaba nadie.**
+>   Mutante: encadenar la segunda `UPDATE` a la primera con `IF NOT FOUND THEN
+>   RETURN NEW`. Sobrevivía 14/14. Añadidos `d9` (paquete `extraviado`,
+>   terminal) y `d10` (paquete `asignado`, ya pasado `en_bodega`): en ambos el
+>   avance de estado está bloqueado por `spec52_may_advance_status`, y la
+>   discrepancia debe resolverse igual — un bulto declarado extraviado que
+>   luego aparece y se escanea es exactamente el flujo de esta fase. Mutado y
+>   confirmado: muere **sólo** en las dos aserciones de `d9`/`d10`.
+> - **A2 — el comentario sobre `operator_id` era demostrablemente falso.**
+>   La versión anterior de esta nota (y del test) afirmaba que
+>   `route_reception_id` ya determina el operador vía su propia FK, así que el
+>   guard `operator_id = NEW.operator_id` era inalcanzable. Falso:
+>   `discrepancies.route_reception_id REFERENCES route_receptions(id)`
+>   (`20260913000001:63`) es una FK sobre `id` a secas, sin componente
+>   `operator_id` — nada la ata al tenant de la fila referenciada. Fixture
+>   `d11`: una discrepancia de un operador Z forjada para apuntar a la
+>   `route_reception` del operador A; el usuario de A escanea el mismo
+>   `package_id` (de Z) como recibido en A. Sin el guard, la evidencia de Z se
+>   cierra y queda estampada como resuelta por el usuario de A —
+>   exactamente el tipo de escritura cruzada de tenant contra la tabla que
+>   spec-85 llama "la evidencia contra una indemnización". Mutado y
+>   confirmado: muere **sólo** en las dos aserciones de `d11`. El guard ya
+>   existía y es correcto — sólo el comentario que lo describía como
+>   redundante era incorrecto, y quedaba invitando a que una migración futura
+>   lo quitara "por limpieza". Corregido en la cabecera del test.
+> - **B2 — nadie probaba que un escaneo NO `received` deje la discrepancia
+>   abierta.** Mutante: `NEW.scan_result = 'received'` → `NEW.scan_result IS
+>   NOT NULL`. Sobrevivía toda la suite (ésta, `spec52_state_engine` y
+>   `spec86_fase1` enteras). Añadido `d12`, escaneado como `route_mismatch`
+>   (el caso normal de spec-52, "llegó en otro camión" — mismo fixture que
+>   `d7` en fase 1). El `IF` es preexistente (20260318000001), pero esta fase
+>   le cambia el significado: antes sólo decidía "avanzar estado"; ahora
+>   también decide "cerrar evidencia". Mutado y confirmado: muere en las dos
+>   aserciones de `d12` (paquete Y discrepancia, porque el mismo `IF` gobierna
+>   ambas `UPDATE`).
+> - **C1 — la justificación para no llamar a `resolve_discrepancy()` era
+>   incompleta/parcialmente falsa.** El comentario original decía que "un
+>   reintento de la cola offline de spec-81 podría reproducir el `INSERT`
+>   sin el mismo JWT". Verificado contra el código: esa cola (`db.ts`,
+>   `PickupQueueOperationType`) sólo cubre `pickup_scan | close_manifest |
+>   manifest_photo` — `reception_scans` no tiene cola offline hoy;
+>   `useReceptionScan.ts:48-57` inserta siempre online. **La decisión de no
+>   llamar al RPC es correcta de todos modos, por razones distintas y sí
+>   verificadas:** `resolve_discrepancy` arranca con
+>   `get_operator_id()` y lanza `42501` si es NULL — cualquier `INSERT` sin
+>   JWT de operador (service_role, seed, backfill) abortaría el escaneo
+>   entero; y si la fila ya está `resolved`/`lost`, lanza `23505`
+>   (`DISCREPANCY_ALREADY_RESOLVED`) — un trigger que llamara al RPC
+>   **reventaría el `INSERT` del escaneo** cada vez que la discrepancia ya
+>   estuviera cerrada, justo el caso que hoy es un no-op benigno.
+>   **Corrección (ronda 3):** esta nota decía "no se modificó la migración
+>   (ya mergeada en la ronda 1)" — falso: al escribir esto el PR seguía
+>   `OPEN`, sin mergear (`gh pr view 722`), así que la migración sí se podía
+>   tocar, y la cabecera todavía citaba la razón desmentida de la cola
+>   offline en tres sitios. Corregida en la migración misma (los tres
+>   comentarios que decían "spec-81"/"offline-queue replay" ahora dan las dos
+>   razones reales de arriba); no hubo cambio de comportamiento, sólo de
+>   texto — el próximo que lea la cabecera de la función, no esta nota
+>   enterrada, ve la razón correcta.
+> - **B1 — declarado, no arreglado (decisión de producto, no de esta fase).**
+>   Con una discrepancia `lost`, el paquete pasa a `en_bodega`, pero la
+>   discrepancia **sigue `lost` para siempre**: `resolve_discrepancy` rechaza
+>   cualquier transición fuera de `open` con `23505` ("una discrepancia
+>   cerrada es evidencia"), y esta fase no tiene ningún camino de reapertura.
+>   No es silencioso (fase 3 sigue listando `lost` en el panel, `status <>
+>   'resolved'`) y no es una regresión de esta fase (el estado ya era
+>   alcanzable antes) — pero esta fase sí lo convierte en la única excepción
+>   visible: "el bulto aparece" cierra solo, salvo cuando el bulto era el
+>   caro. Es la misma pregunta que fase 2b (`[parked]`) ya tiene abierta con
+>   el usuario sobre el efecto aguas abajo de `lost`; no se resuelve aquí.
+>
+> Test actualizado: 22/22 (antes 14/14), mismos cuatro guards de la ronda 1
+> reverificados sin cambios (`package_id`→muere sólo aserción 12,
+> `route_reception_id`→sólo 6, `status='open'`→sólo 11, `deleted_at IS
+> NULL`→sólo 13) más los tres mutantes nuevos de arriba, cada uno restaurado
+> antes del siguiente. Regresión repetida sin fallos.
+>
+> Migración: `packages/database/supabase/migrations/20261001000001_spec86_fase2a_resolve_discrepancy_on_reception_scan.sql`
+> (sin cambios de comportamiento en las rondas 2 y 3 — la lógica ya era
+> correcta desde la ronda 1; la ronda 3 sí tocó tres comentarios de la
+> cabecera, ver más abajo).
+> Test pgTAP: `packages/database/supabase/tests/spec86_fase2a_resolve_discrepancy_on_reception_scan.test.sql`
+> (22/22, `psql -tA -f` crudo contra `spec52-pg`, y vía `scripts/pgtap-local.sh`).
+> Regresión sin fallos: `spec52_state_engine`, `spec52_unexpected_count`,
+> `spec52_open_route_reception`, `spec52_migration_reconciliation`,
+> `spec86_fase1_complete_route_reception_discrepancies` (18/18),
+> `spec85_discrepancies_rpcs` (29/29), `spec85_discrepancies_schema`,
+> `spec86_fase3_ops_control_discrepancies_view`.
+>
+> **Ronda 3 de review (PR #722) — mergeable, un único hallazgo real:** la
+> cabecera de la migración seguía citando la razón desmentida en la ronda 2
+> ("un reintento de la cola offline de spec-81…") en tres sitios distintos
+> (líneas 61-67, 76-81 y 104-110 del archivo antes de esta corrección) — la
+> ronda 2 corrigió la razón en esta nota del spec, pero no en la cabecera de
+> la función, que es lo que lee quien la toque después sin bajar hasta esta
+> nota (el mismo patrón que ya costó una ronda en la fase 1 de este spec).
+> Los tres comentarios se reemplazaron por las dos razones reales (`42501`
+> sin JWT de operador, `23505` si la fila ya está cerrada); reaplicado y
+> reverificado: 22/22, regresión de las cuatro suites relacionadas sin
+> fallos. Sin cambio de comportamiento — sólo texto.
+>
+> No se tocó ningún archivo de frontend — esta fase es puramente SQL
+> (trigger existente, ya invocado hoy por `useReceptionScan.ts` en cada
+> `INSERT` a `reception_scans`); no hay `node_modules` en este worktree y no
+> se corrió `npm install`/`ci` por la regla del repo, así que Vitest no se
+> ejecutó aquí — nada en `apps/frontend` cambió.
+>
+> Implementado por: implementer — rama `feat/spec-86-fase-2a-resolver-bulto-aparece`, SHA `6a6c504`.
 
 ### Fase 2b — Perdida e indemnización `[parked]`
 
@@ -487,18 +655,159 @@ que se consideró, no como trabajo pendiente de esta fase.
 > que se decida dónde vive la declaración de `lost`, conviene dejarle el hueco
 > previsto en vez de rehacerla después.
 
-### Fase 3 — Ver: la vista Discrepancias en Ops Control `[pending]`
+### Fase 3 — Ver: la vista Discrepancias en Ops Control `[in_progress]`
 
-**Archivos:** `apps/frontend/src/app/app/operations-control/components/stage-panels/DiscrepanciesPanel.tsx` (nuevo), `apps/frontend/src/app/app/operations-control/components/StageRail.tsx`, `apps/frontend/src/lib/ops-control/stage.ts`, `apps/frontend/src/hooks/ops-control/useDiscrepancies.ts` (nuevo), y sus tests
+**Depende de:** spec-85 fase 2 (`[done]` — RPCs de `discrepancies`)
+
+**Archivos:** `apps/frontend/src/app/app/operations-control/components/stage-panels/DiscrepanciesPanel.tsx` (nuevo), `apps/frontend/src/app/app/operations-control/components/stage-panels/DiscrepancyTable.tsx` (nuevo), `apps/frontend/src/app/app/operations-control/components/StageRail.tsx`, `apps/frontend/src/app/app/operations-control/components/OpsControlDesktop.tsx`, `apps/frontend/src/app/app/operations-control/lib/labels.es.ts`, `apps/frontend/src/hooks/ops-control/useDiscrepancies.ts` (nuevo), `packages/database/supabase/migrations/20260925000001_spec86_fase3_ops_control_discrepancies_view.sql` (nuevo), y sus tests
 
 Lista las discrepancias abiertas con orden, paquete, carga, ruta, quién cerró la
-recepción y desde cuándo está abierta, leyendo `get_discrepancies(
-p_operation_type := 'reception', p_status := 'open')` (spec-85 fase 2). Sigue
-el patrón de panel de etapa que ya existe; no inventa una pantalla nueva.
+recepción y desde cuándo está abierta. Sigue el patrón de panel de etapa que ya
+existe; no inventa una pantalla nueva.
 
 Esto es lo que rescata a `ORD-01` / `ORD-02`: dejan de estar en ningún panel y
 pasan a estar en éste. **No** se las mete en Recepción — no llegaron, y decir
 que están recibidas sería falso.
+
+> **Implementado por:** implementer — rama `feat/spec-86-fase-3-vista-discrepancias`.
+>
+> **Dos afirmaciones del texto de arriba resultaron falsas al verificarlas
+> contra el código y se corrigieron en la implementación, no en el spec:**
+>
+> 1. **`get_discrepancies(p_operation_type := 'reception', p_status := 'open')`
+>    no basta.** Ese RPC (spec-85 fase 2) devuelve las columnas crudas de
+>    `discrepancies` — sin orden, sin paquete, sin carga, sin ruta, sin quién
+>    cerró — que es exactamente lo que este criterio de aceptación pide. Se
+>    creó `get_discrepancies_ops_control(p_status)` (SQL, `STABLE`, mismo
+>    patrón de ACL que `get_discrepancies`) que hace los `LEFT JOIN`
+>    necesarios contra `packages`, `orders`, `manifests`, `pickup_routes`,
+>    `route_receptions` y `users`. La derivación de "carga" para una fila
+>    `reception` no es directa (`route_receptions` no guarda `manifest_id`,
+>    consolida varias cargas) — se deriva vía el `pickup_scan` `'verified'`
+>    del propio paquete, acotado al mismo `pickup_route_id` de esa recepción
+>    (el mismo conjunto contra el que `complete_route_reception`, fase 1,
+>    decide "falta").
+> 2. **`p_operation_type := 'reception'` habría escondido la mitad de la
+>    tabla.** El brief de despacho de esta fase fue explícito en sentido
+>    contrario a este texto: *"La tabla `discrepancies` [...] spec-80 fase 2
+>    las puebla desde el cierre de Recogida [...] spec-86 fase 1 [...] desde
+>    el cierre de Recepción. Tu vista muestra las dos fuentes."* La vista
+>    construida NO filtra por `operation_type` — muestra `pickup` y
+>    `reception` juntas, con una columna "Etapa" que distingue una de otra y
+>    KPIs separados ("De recogida" / "De recepción"). Se documenta aquí
+>    porque diverge del texto original de este mismo criterio de aceptación,
+>    no porque el texto de arriba se haya reescrito con la corrección — queda
+>    tal cual estaba para que quien lo lea vea el error real que tenía.
+>
+> **Decisión de producto no cubierta por el spec:** dónde vive Discrepancias
+> en la UI. Se decidió como un octavo tile en `StageRail` (`ORDERED_KEYS` /
+> `STAGE_KEYS`, ya no 7 sino 8 — `md:grid-cols-8`), no como un panel aparte
+> fuera del "Flujo de la operación". Razón: es exactamente el mismo patrón de
+> navegación que las otras siete colas (clic en la tarjeta → panel a la
+> derecha), y `AtRiskPanel` ya ocupa el hueco de "vista por defecto sin
+> selección" — inventar un tercer mecanismo de acceso sólo para Discrepancias
+> habría sido la pantalla nueva que el spec pide explícitamente evitar. Conteo
+> y salud del tile NO salen del pipeline genérico basado en
+> `get_ops_control_snapshot` (`computeStageHealth`/`stagePackageCount`): una
+> discrepancia no es una orden ni una ruta, y forzarla por ese pipeline habría
+> exigido inventarle campos (`overdue_minutes`, etc.) que no tiene. Usa
+> `useDiscrepancies` directamente, con salud `warn` si hay alguna abierta,
+> `ok` si no.
+>
+> **El hueco heredado de fase 1** (`expected_count`/`route_receptions` y
+> `get_route_reception_snapshot` no filtran borrados; fase 1 sí, así que el
+> cierre puede firmar "faltan 3" y registrar 2): esta vista **no expone**
+> `expected_count`/`received_count` de `route_receptions`, a propósito —
+> mostrar ambos números invitaría a comparar "el cierre dijo N, Discrepancias
+> dice M" en la misma pantalla. Sólo enseña lo que `discrepancies` sabe con
+> certeza, fila por paquete — declarado en el comentario de cabecera de la
+> migración, no escondido.
+>
+> ~~**Divergencia declarada con spec-83:** el panel de cierres de Recogida
+> cuenta merma con `status <> 'resolved'` (un `lost` sigue siendo merma). Esta
+> vista, en cambio, lista únicamente `status = 'open'` por defecto...~~
+> **Corregido en la ronda 2 de review (#715, B1) — esto era un error, no una
+> divergencia deliberada.** `p_status='open'` como igualdad literal excluía
+> `lost` de la cola por defecto: declarar una pérdida real (el disparador de
+> indemnización, spec-85) hacía que la baldosa se pintara en verde justo en
+> ese momento — exactamente el fallo que `20260917000002` (spec-83) ya había
+> identificado y revertido el 2026-09-08, con su propia nota de cabecera
+> explicándolo. Esta fase lo reabrió sin saberlo. `get_discrepancies_ops_control`
+> ahora reinterpreta `p_status='open'` como `status <> 'resolved'` (incluye
+> `lost`); `p_status='resolved'` y `p_status='lost'` siguen siendo igualdad
+> literal, y `NULL` sigue devolviendo todo. Coincide con spec-83, no diverge
+> de él.
+>
+> **Downstream:** revisado spec-85 (no cambia nada de su superficie propia,
+> sólo la consume), spec-83 (su conteo de merma no se toca, y ahora además
+> comparten la misma semántica de "qué cuenta como sin resolver"). Ninguna otra
+> fase de este spec depende de lo aquí construido.
+>
+> **Ronda 3 de review (#715) — mergeable con correcciones, todas aplicadas:**
+> - **M1** — el panel (`DiscrepanciesPanel.tsx`) heredaba `data ?? []` y
+>   afirmaba "Sin discrepancias sin resolver" con tres KPIs en cero mientras
+>   cargaba, offline o con error — justo cuando el usuario hace clic en la
+>   baldosa honesta ("—") del tile precisamente porque no sabe. Ahora
+>   comparte `isDiscrepanciesUnknown` con el tile (extraído a
+>   `useDiscrepancies.ts` para que los dos no puedan volver a discrepar) y
+>   muestra un estado "no se pudo confirmar" en vez de un cero falso.
+> - **M2** — el default (`open` = `<> 'resolved'`) incluye `lost`, pero la
+>   tabla y el KPI seguían diciendo "Abiertas" sin distinguir una fila
+>   `lost` de una `open`. Columna "Estado" nueva (Abierta/Perdida/Resuelta)
+>   y KPI renombrado a "Sin resolver".
+> - **M3** — `LIMIT 500` sin visibilidad tiraba silenciosamente las filas
+>   más viejas (`ORDER BY detected_at DESC`) sin avisar. `total_count`
+>   (`COUNT(*) OVER()`, calculado antes del `LIMIT`) viaja en cada fila;
+>   tile y panel muestran "N de M" cuando hay truncamiento.
+> - **M4** — la afirmación "los nueve `operator_id` se probaron por
+>   separado" era falsa por segunda ronda consecutiva (1/9 realmente
+>   aislado). Corregido con 8 escenarios más, cada uno corrompiendo
+>   exactamente un salto manteniendo el resto válido; verificado mutación
+>   por mutación contra `spec52-pg`. **Corrección de seguimiento (#715,
+>   tercera ronda del mismo argumento cómodo):** el octavo (`rr`) se
+>   declaró aquí como "no aislable" porque `ruta` sólo llega por `prr` — pero
+>   `ruta` no es la única columna que `rr` alimenta: `rr.pickup_route_id`
+>   entra en la correlación del `LATERAL` (`m.pickup_route_id =
+>   rr.pickup_route_id`), que produce `carga`. Aislado sin columnas nuevas:
+>   un manifiesto de A cuyo `pickup_route_id` coincide por casualidad con el
+>   de la ruta de B hace que, sin el filtro de `rr`, `carga` se
+>   MISATRIBUYA a ese manifiesto propio (no una divulgación — el
+>   `external_load_id` filtrado sigue siendo del propio operador, porque
+>   `m.operator_id = get_operator_id()` sigue vigente). **9/9 aíslan
+>   limpiamente**, no 8/8.
+> - **Menores** — los buckets `open`/`lost` se solapan a propósito (anotado
+>   en el `COMMENT` del RPC); `<> 'resolved'` (no una lista) es
+>   deliberadamente permisivo ante estados futuros del enum (mismo criterio
+>   que `20260917000002`); `liveLabel` gana `data-testid` para que
+>   `!== null` no pueda mutarse a `!== undefined` sin que un test lo note;
+>   E2E en QA del criterio de aceptación 3 declarado pendiente arriba, no
+>   ejercido por este PR.
+> pgTAP: 33/33 verde vía `psql -tA -f` crudo (no el wrapper — ver cabecera
+> del test). Vitest: 232/232. `tsc --noEmit` y `eslint` limpios.
+>
+> **Seguimiento post-merge (#715, PR corto, rama `feat/spec-86-fase-3-seguimiento-rr`,
+> sin auto-merge) tras el merge de #715 (`a3caa7b`):**
+> 1. **`rr` corregido** — ver la corrección dentro de M4 arriba. Nueva
+>    migración `20260930000001` (comentario del RPC actualizado, sin cambio
+>    de comportamiento — mismo cuerpo byte a byte, `CREATE OR REPLACE` plano
+>    porque el tipo de retorno no cambia). pgTAP: **34/34** (la 9ª aserción
+>    de aislamiento, `rr` vía `carga`, mutation-tested: sin el filtro de
+>    `rr`, `carga` pasa de `NULL` a `CARGA-RR-LEAK`).
+> 2. **Anotado, no arreglado (por decisión explícita del reviewer):**
+>    `COUNT(*) OVER()` convierte `LIMIT 500` en un tope de TRANSFERENCIA, no
+>    de COSTE — Postgres materializa todas las filas que matchean el filtro
+>    antes de aplicar el `LIMIT`, y cada fila `reception` corre su propio
+>    `LATERAL`; el coste es O(total), no O(500), sobre una cola monótona
+>    creciente. Documentado en el `COMMENT` del RPC (`20260930000001`). Los
+>    KPIs del panel mezclan denominadores bajo truncamiento a propósito
+>    ("Sin resolver" usa `total_count` pre-`LIMIT`, "De recogida"/"De
+>    recepción" cuentan sólo las filas recibidas) — es la versión benigna
+>    del pecado de la ronda 1 porque el 4º KPI lo explica al lado.
+>    Documentado en `DiscrepancyTable.tsx`.
+> 3. **Nit sin acción** (según el reviewer): `Number(rows[0].total_count)`
+>    daría `NaN` si el campo faltara — hoy inalcanzable, la caché de
+>    TanStack es donde podría sobrevivir una forma vieja a un futuro deploy.
+>    No tocado.
 
 ---
 
@@ -551,8 +860,16 @@ que están recibidas sería falso.
   `operator_id`. Se verifican en local con `scripts/pgtap-local.sh` (no corren
   en CI).
 - **Vitest** — la hoja de cierre lista los esperados sin escanear y manda las
-  razones; el panel muestra abiertas y oculta resueltas; `statusStage()` para
-  una orden `verificado` con carga `received`.
+  razones; el panel muestra abiertas y **perdidas** y oculta resueltas
+  (corregido en ronda 2, #715 B1 — un `lost` es acción pendiente, no un cierre
+  limpio); `statusStage()` para una orden `verificado` con carga `received`.
 - **E2E en QA** — replicar `PR-2026-2298`: 24 esperados, 22 escaneados, cerrar,
   y comprobar que las dos órdenes aparecen en Discrepancias en vez de
-  desaparecer.
+  desaparecer. **No verificado todavía** — el criterio de aceptación 3
+  (`ORD-01`/`ORD-02` aparecen en Discrepancias) quedó cubierto por pgTAP y
+  Vitest, pero ningún job de #715 ni de su seguimiento ejerce QA en vivo
+  contra ese escenario real (`Supabase Preview` sale `skipping`, el filtro
+  de rutas del repo que ya esconde fallos de base de datos). **Bloqueado por
+  QA desincronizado de `main`** (deploy falló en un paso ajeno a este spec,
+  ya hay seguimiento en curso — no confundir con nada de lo implementado
+  aquí). Pendiente antes de marcar esta fase `[done]`.

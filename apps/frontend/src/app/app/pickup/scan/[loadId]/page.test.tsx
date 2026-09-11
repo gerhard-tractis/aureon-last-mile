@@ -24,9 +24,27 @@ vi.mock('@/hooks/useSyncQueue', () => ({
   useSyncQueue: (...args: unknown[]) => mockUseSyncQueue(...args),
 }));
 
+// spec-82 fase 2 — inerte por defecto (todo este archivo prueba el flujo
+// EN LÍNEA; el offline vive en page.offline.test.tsx). Sin este mock, el
+// hook real llama a useQuery y este archivo no monta un QueryClientProvider.
+vi.mock('@/hooks/pickup/useOfflineScanSource', () => ({
+  useOfflineScanSource: () => ({ unknown: false, blocked: false, snapshot: null }),
+}));
+
 const mockRetryBlockedManifest = vi.fn();
 vi.mock('@/hooks/useOfflineQueue', () => ({
   retryBlockedManifest: (...args: unknown[]) => mockRetryBlockedManifest(...args),
+}));
+
+// Ampliación de alcance, fase 5 (coordinación 2026-09-10) — esta pantalla es
+// el único punto de entrada real de la cuadrilla al escaneo, y
+// `manifests.started_at` no tenía escritor en ese camino (sólo lo escribe
+// `openPendingManifest`, llamado hoy sólo desde el escritorio). Se mockea el
+// módulo entero para no tener que extender la cadena de Supabase mockeada
+// arriba con el segundo `select`/`update` que hace `openPendingManifest`.
+const mockOpenPendingManifest = vi.fn().mockResolvedValue(undefined);
+vi.mock('@/lib/pickup/openPendingManifest', () => ({
+  openPendingManifest: (...args: unknown[]) => mockOpenPendingManifest(...args),
 }));
 
 const mockToastError = vi.fn();
@@ -124,6 +142,7 @@ vi.mock('next/navigation', () => ({
 
 describe('ScanningPage', () => {
   beforeEach(() => {
+    mockOpenPendingManifest.mockClear();
     manifestFixture.data = { id: 'm1', total_packages: 10, pickup_route_id: null };
     mockUsePickupScans.mockReturnValue({ data: [
       { id: 's1', scan_result: 'verified', package_id: 'p1', barcode_scanned: 'BC001' },
@@ -149,9 +168,9 @@ describe('ScanningPage', () => {
     expect(screen.getByText(/no encontrados? en manifiesto/i)).toBeInTheDocument();
   });
 
-  it('renders "Escaneos recientes" section header', () => {
+  it('renders "Historial de escaneos" section header', () => {
     render(<ScanningPage />);
-    expect(screen.getByText('Escaneos recientes')).toBeInTheDocument();
+    expect(screen.getByText('Historial de escaneos')).toBeInTheDocument();
   });
 
   it('renders "Continuar a revisión" button', () => {
@@ -168,6 +187,42 @@ describe('ScanningPage', () => {
     const { container } = render(<ScanningPage />);
     const wrapper = container.firstElementChild;
     expect(wrapper?.className).toContain('sm:p-6');
+  });
+
+  // Hotfix móvil 2026-09-10 — este wrapper es hijo directo de
+  // `<main className="flex min-h-0 flex-1 flex-col">` (AppLayout). En un
+  // contenedor flex, un item con márgenes AUTO en el eje transversal
+  // (`mx-auto`) deja de estirarse y pasa a medir su tamaño intrínseco,
+  // que `max-w-2xl` fija en 672px. En un teléfono de 375px eso maquetaba
+  // la pantalla entera a 672px: el contenido se salía y aparecía scroll
+  // horizontal. `w-full` devuelve el ancho al 100% del contenedor y
+  // `max-w-2xl` vuelve a ser sólo un techo en escritorio.
+  //
+  // Se comprueba la clase, no la geometría: jsdom no calcula layout, así
+  // que la única forma honesta de fijar este contrato en un test unitario
+  // es sobre la clase que lo produce. La medición real se hizo en un
+  // navegador (375px → 672px antes, 375px después).
+  it('la envoltura de la página ocupa el ancho disponible, no su tamaño intrínseco', () => {
+    const { container } = render(<ScanningPage />);
+    const wrapper = container.firstElementChild;
+    expect(wrapper?.className).toContain('max-w-2xl');
+    expect(wrapper?.className).toContain('w-full');
+  });
+
+  // Review de fase 5, B1 — el pie fijo creció al añadir "Ingresar código a
+  // mano": pt-4(16) + primario h-[60px](60) + space-y-2.5(10) +
+  // secundario py-[15px]+lh+2 bordes(52) + pb-[26px](26) = 164px. La
+  // reserva de scroll (`pb-*` en el wrapper, hotfix spec-54 4cdab86) seguía
+  // en `pb-28` (112px) — 52px cortos. `/app/pickup/scan` está en
+  // MOBILE_IMMERSIVE_PREFIXES, así que AppLayout NO añade el padding del
+  // tabbar que podría haber tapado la diferencia. Sin esta reserva, las
+  // últimas filas de "Historial de escaneos" quedan bajo el pie fijo — que no
+  // ocupa flujo — y no hay forma de desplazarse hasta ellas.
+  it('reserva al menos 164px de scroll bajo el contenido para el pie fijo de dos filas', () => {
+    const { container } = render(<ScanningPage />);
+    const wrapper = container.firstElementChild;
+    expect(wrapper?.className).not.toMatch(/\bpb-28\b/);
+    expect(wrapper?.className).toMatch(/\bpb-44\b/);
   });
 
   describe('spec-53 print labels button', () => {
@@ -291,6 +346,107 @@ describe('ScanningPage', () => {
       expect(mockToastError).toHaveBeenCalledWith(
         'El escaneo no se registró. Verifica tu conexión e inténtalo de nuevo.'
       );
+    });
+  });
+
+  // fase 5 (ronda 2 del mock) — 5d dibuja "ÓRDENES Y BULTOS" ENCIMA de
+  // "HISTORIAL DE ESCANEOS", al revés del orden que tenía la pantalla.
+  describe('orden del mock: lista de órdenes y bultos antes del historial', () => {
+    it('monta manifest-detail antes que el encabezado de Historial de escaneos', () => {
+      render(<ScanningPage />);
+      const manifestDetail = screen.getByTestId('manifest-detail');
+      const historyHeading = screen.getByText('Historial de escaneos');
+      // DOCUMENT_POSITION_FOLLOWING en el resultado de compareDocumentPosition
+      // significa que el nodo argumento (historyHeading) va DESPUÉS del nodo
+      // que llama al método (manifestDetail) en el documento.
+      const position = manifestDetail.compareDocumentPosition(historyHeading);
+      expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+  });
+
+  // fase 5 — el pie del mock lleva, además del botón primario, la entrada
+  // manual de código. `ScannerInput` ya es la superficie de entrada manual
+  // (el operario puede teclear en vez de escanear); este control secundario
+  // le devuelve el foco en vez de abrir un segundo campo que duplicaría la
+  // única fuente de verdad del código.
+  describe('entrada manual de código en el pie', () => {
+    it('muestra "Ingresar código a mano" junto al botón primario', () => {
+      render(<ScanningPage />);
+      expect(screen.getByText('Ingresar código a mano')).toBeInTheDocument();
+    });
+  });
+
+  // Ampliación de alcance, fase 5 — `manifests.started_at` no tiene escritor
+  // en el camino real de la cuadrilla (abre ruta → toca manifiesto → llega
+  // aquí sin pasar por `openPendingManifest`, que sólo llama el escritorio).
+  // Esta pantalla es el punto honesto para marcarlo: aquí empieza el escaneo.
+  describe('fija manifests.started_at al abrir la pantalla de escaneo (ampliación de alcance)', () => {
+    it('llama a openPendingManifest con el operador y la carga cuando hay señal', async () => {
+      render(<ScanningPage />);
+      await waitFor(() =>
+        expect(mockOpenPendingManifest).toHaveBeenCalledWith(
+          expect.anything(),
+          'op-1',
+          'CARGA-001',
+        )
+      );
+    });
+
+    // Review de fase 5, L1 — `void openPendingManifest(...)` sin `.catch`
+    // deja salir un fallo de red como *unhandled rejection* en vez de un
+    // error manejado.
+    it('no deja escapar un unhandled rejection si openPendingManifest falla', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockOpenPendingManifest.mockRejectedValueOnce(new Error('network down'));
+      render(<ScanningPage />);
+      await waitFor(() => expect(consoleError).toHaveBeenCalled());
+      consoleError.mockRestore();
+    });
+
+    it('no llama a openPendingManifest sin conexión (no hay a qué escribir)', async () => {
+      mockUseSyncQueue.mockReturnValue({
+        status: 'offline',
+        queuedCount: 0,
+        recent: [],
+        retryNow: vi.fn(),
+        isRetrying: false,
+      });
+      render(<ScanningPage />);
+      // Deja correr los microtasks pendientes: si el guard estuviera roto,
+      // la llamada ocurriría igual durante este await.
+      await Promise.resolve();
+      expect(mockOpenPendingManifest).not.toHaveBeenCalled();
+    });
+  });
+
+  // Review de fase 5, M3 — "Ingresar código a mano" le devuelve el foco a
+  // `ScannerInput` vía `scannerRef`, pero `focus()` sobre un
+  // `<input disabled>` no hace nada. Se prueba con la MISMA condición que
+  // deshabilita ese input (`page.tsx:399`), sin mockear `ScanScreenFooter`,
+  // para que un cambio en cualquiera de las dos condiciones (mutación
+  // pendiente / sin red) sin actualizar la otra rompa este test.
+  describe('entrada manual deshabilitada cuando el campo de escaneo lo está (M3)', () => {
+    it('deshabilita "Ingresar código a mano" sin conexión', () => {
+      mockUseSyncQueue.mockReturnValue({
+        status: 'offline',
+        queuedCount: 0,
+        recent: [],
+        retryNow: vi.fn(),
+        isRetrying: false,
+      });
+      render(<ScanningPage />);
+      expect(screen.getByRole('button', { name: 'Ingresar código a mano' })).toBeDisabled();
+    });
+
+    it('deshabilita "Ingresar código a mano" mientras hay un escaneo en curso', () => {
+      mockUseScanMutation.mockReturnValue({ mutate: vi.fn(), isPending: true });
+      render(<ScanningPage />);
+      expect(screen.getByRole('button', { name: 'Ingresar código a mano' })).toBeDisabled();
+    });
+
+    it('lo deja habilitado en línea y sin mutación pendiente', () => {
+      render(<ScanningPage />);
+      expect(screen.getByRole('button', { name: 'Ingresar código a mano' })).not.toBeDisabled();
     });
   });
 });

@@ -126,4 +126,45 @@ describe('DigitalizeManifestTrigger', () => {
       queryKey: ['pickup', 'unassigned-manifests'],
     });
   });
+
+  // spec-95 fase 2 — el mock mueve este botón a la fila fija del pie, donde
+  // necesita `flex-1` en vez de `w-full`. Se asierta la clase real, no sólo
+  // que el botón exista: un `className` que se concatenara en vez de
+  // reemplazar dejaría `w-full` conviviendo con `flex-1` y rompería la fila.
+  it('defaults to a full-width button when no className is given', () => {
+    renderTrigger();
+    const button = screen.getByRole('button', { name: /digitalizar manifiesto/i });
+    expect(button.className).toContain('w-full');
+    expect(button.className).not.toContain('flex-1');
+  });
+
+  it('replaces the default width class with the given className', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      React.createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        React.createElement(DigitalizeManifestTrigger, { className: 'flex-1' }),
+      ),
+    );
+    const button = screen.getByRole('button', { name: /digitalizar manifiesto/i });
+    expect(button.className).toContain('flex-1');
+    expect(button.className).not.toContain('w-full');
+  });
+
+  // L2 (review) — un `className` de override no puede tumbar el objetivo
+  // táctil mínimo (44px) del botón: eso pasaba antes, cuando `className`
+  // reemplazaba el string COMPLETO en vez de sólo la parte de ancho.
+  it('conserva min-h-[44px] aunque se pase un className de override', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      React.createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        React.createElement(DigitalizeManifestTrigger, { className: 'flex-1' }),
+      ),
+    );
+    const button = screen.getByRole('button', { name: /digitalizar manifiesto/i });
+    expect(button.className).toContain('min-h-[44px]');
+  });
 });

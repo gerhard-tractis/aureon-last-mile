@@ -256,7 +256,7 @@ existing form, not a new screen. This plan implements the role.
 | **`create-qa-users.sh` does NOT run on deploy** — `deploy-qa.sh:175` deliberately leaves it in `setup-qa.sh:195`, the one-time bootstrap. Adding a row to the script does not create the user in QA; someone must run it on the VPS | cited files, plus `docs/qa-environment.md:196, 270` |
 | QA's whole pickup scenario is built around `qa-pickup-crew@qa.test` (`…0201`) having **no** active route so it lands on `3j` — that is precisely the account this spec blocks | `packages/database/supabase/seed-qa.sql:326-340, 688-693`; login table at `docs/qa-environment.md:131-140` |
 | The nav badge counts pickup work from `manifests.status IN ('pending','in_progress')` and never calls `get_pending_manifests` — Task 7 does not move it | `20260817000001_spec54_nav_counts.sql:43-49` |
-| CI runs no SQL. DB assertions run through the local docker harness; its `run` marks a test failed when the output contains `ERROR` | `scripts/pgtap-local.sh:2-4, 118-133` |
+| CI runs no SQL. DB assertions run through the local docker harness; its `run` marks a test failed on `ERROR:`/`psql: error:`, on a pgTAP `not ok N` assertion, or on a `1..N` plan whose executed `ok`/`not ok` count doesn't match | `scripts/pgtap-local.sh:2-4, 118-` |
 | Migration version prefixes must be unique or every deploy aborts | `scripts/check-migration-versions.sh` |
 
 ### Decisions this plan makes
@@ -304,9 +304,9 @@ read without scrolling. Items 6-9 are implementation choices this plan makes.
 Frontend tests   cd apps/frontend && npx vitest run <path> --maxWorkers=2
 Types            cd apps/frontend && npx tsc --noEmit
 Lint             cd apps/frontend && npx eslint <path>
-DB (local only)  ./scripts/pgtap-local.sh up            # first time only, ~2 min
-                 ./scripts/pgtap-local.sh sync && ./scripts/pgtap-local.sh apply
-                 ./scripts/pgtap-local.sh run <test-basename>
+DB (local only)  bash ./scripts/pgtap-local.sh up            # first time only, ~2 min
+                 bash ./scripts/pgtap-local.sh sync && bash ./scripts/pgtap-local.sh apply
+                 bash ./scripts/pgtap-local.sh run <test-basename>
 ```
 
 `--maxWorkers=2` is not optional — full-parallel vitest flakes on this machine. CI runs the
@@ -375,8 +375,18 @@ existing screen does *except* one thing: once Task 2 merges, `pickup_crew` accou
 longer open a route. Task 2's last step ships the QA leader in the same commit for exactly
 that reason.
 
-Before starting: `./scripts/pgtap-local.sh up` (once), then `./scripts/pgtap-local.sh sync`
-and `./scripts/pgtap-local.sh apply`. Expect `migrations: applied=N skipped=M failed=0`.
+Before starting: `bash ./scripts/pgtap-local.sh up` (once), then `bash ./scripts/pgtap-local.sh sync`
+and `bash ./scripts/pgtap-local.sh apply`. Expect `migrations: applied=N skipped=M changed=0
+unverified=0 orphaned=0 failed=2` and exit 0 — stable across repeated `apply` calls on the
+same container, not just the first one (round 5 review: a third entry here used to depend on
+migration-application ORDER and gave a different, unstable error text on the second `apply`
+against the same container — fixed at the cause, `-1` in `pgtap-local-apply-inner.sh`, not by
+allowlisting the instability). The 2 failures are known base-image fidelity gaps
+(`KNOWN_BASE_IMAGE_FAILURES` in `scripts/pgtap-local-apply-inner.sh`), not migration bugs, and
+don't fail the command. On a pre-existing container (e.g. the shared `spec52-pg`) `unverified`
+may be nonzero instead — that's not this spec's bug, see "Landing note" in
+`docs/runbooks/pgtap-mutation-testing.md` for how to resolve it. A nonzero `changed=` or
+unresolved `unverified=` does fail the command.
 
 ### Task 1.1: `pickup_leader` on the `user_role` enum, alone in its own migration
 
@@ -418,7 +428,7 @@ and `./scripts/pgtap-local.sh apply`. Expect `migrations: applied=N skipped=M fa
 
 - [ ] **Step 2: Run it, verify it fails**
 
-      Run: `./scripts/pgtap-local.sh sync && ./scripts/pgtap-local.sh run spec61_user_role_pickup_leader`
+      Run: `bash ./scripts/pgtap-local.sh sync && bash ./scripts/pgtap-local.sh run spec61_user_role_pickup_leader`
       Expected: `FAIL` with `ERROR: user_role has no pickup_leader value`
 
 - [ ] **Step 3: Minimal implementation**
@@ -458,14 +468,14 @@ and `./scripts/pgtap-local.sh apply`. Expect `migrations: applied=N skipped=M fa
 
 - [ ] **Step 4: Run it, verify it passes**
 
-      Run: `./scripts/pgtap-local.sh sync && ./scripts/pgtap-local.sh apply && ./scripts/pgtap-local.sh run spec61_user_role_pickup_leader`
+      Run: `bash ./scripts/pgtap-local.sh sync && bash ./scripts/pgtap-local.sh apply && bash ./scripts/pgtap-local.sh run spec61_user_role_pickup_leader`
       Expected: `migrations: applied=1 …` then `spec61_user_role_pickup_leader   PASS`
 
 - [ ] **Step 5: Prove the split was necessary (30 seconds, do not skip)**
 
       Run:
       ```
-      ./scripts/pgtap-local.sh psql -c "BEGIN; ALTER TYPE public.user_role ADD VALUE IF NOT EXISTS 'tmp_probe'; SELECT 'tmp_probe'::public.user_role; ROLLBACK;"
+      bash ./scripts/pgtap-local.sh psql -c "BEGIN; ALTER TYPE public.user_role ADD VALUE IF NOT EXISTS 'tmp_probe'; SELECT 'tmp_probe'::public.user_role; ROLLBACK;"
       ```
       Expected: `ERROR: unsafe use of new value "tmp_probe" of enum type user_role`.
       If this ever stops erroring on the target version, the two migrations may be merged —
@@ -639,7 +649,7 @@ fixed at creation (Decision 1): `removed_at` has exactly one writer.
 
 - [ ] **Step 2: Run it, verify it fails**
 
-      Run: `./scripts/pgtap-local.sh sync && ./scripts/pgtap-local.sh run spec61_pickup_route_crew`
+      Run: `bash ./scripts/pgtap-local.sh sync && bash ./scripts/pgtap-local.sh run spec61_pickup_route_crew`
       Expected: `FAIL` with `ERROR: pickup_route_crew does not have RLS enabled`.
       Not "relation does not exist" — the script's first assertion is the
       `pg_class.relrowsecurity` check, which raises its own message before anything
@@ -846,14 +856,14 @@ fixed at creation (Decision 1): `removed_at` has exactly one writer.
 
 - [ ] **Step 5: Run it, verify it passes**
 
-      Run: `./scripts/pgtap-local.sh sync && ./scripts/pgtap-local.sh apply && ./scripts/pgtap-local.sh run spec61_pickup_route_crew`
+      Run: `bash ./scripts/pgtap-local.sh sync && bash ./scripts/pgtap-local.sh apply && bash ./scripts/pgtap-local.sh run spec61_pickup_route_crew`
       Expected: `migrations: applied=1 …` then `spec61_pickup_route_crew   PASS`
 
 - [ ] **Step 6: Re-run the whole pickup DB suite — nothing else may move**
 
       Run:
       ```
-      ./scripts/pgtap-local.sh run spec47_single_active_route_per_driver spec47_pickup_routes_rls \
+      bash ./scripts/pgtap-local.sh run spec47_single_active_route_per_driver spec47_pickup_routes_rls \
         spec47_close_route_creates_route_reception spec47_cancel_route_detaches_manifests \
         spec52_state_engine spec52_reopen_route spec52_route_lock spec52_vehicle_constraints \
         rbac_users_test
@@ -1058,7 +1068,7 @@ the grant is reissued below.
 
 - [ ] **Step 2: Run it, verify it fails**
 
-      Run: `./scripts/pgtap-local.sh sync && ./scripts/pgtap-local.sh run spec61_start_route_leader_gate`
+      Run: `bash ./scripts/pgtap-local.sh sync && bash ./scripts/pgtap-local.sh run spec61_start_route_leader_gate`
       Expected: `FAIL` with `ERROR: a pickup_crew user must not be able to start a route`
 
 - [ ] **Step 3: Minimal implementation**
@@ -1260,7 +1270,7 @@ the grant is reissued below.
 
 - [ ] **Step 4: Run it, verify it passes**
 
-      Run: `./scripts/pgtap-local.sh sync && ./scripts/pgtap-local.sh apply && ./scripts/pgtap-local.sh run spec61_start_route_leader_gate`
+      Run: `bash ./scripts/pgtap-local.sh sync && bash ./scripts/pgtap-local.sh apply && bash ./scripts/pgtap-local.sh run spec61_start_route_leader_gate`
       Expected: `spec61_start_route_leader_gate   PASS`
 
 - [ ] **Step 5: Confirm no other route test regressed**
@@ -1269,7 +1279,7 @@ the grant is reissued below.
       CRLF checkout, since core.autocrlf on a Windows clone turns the trailing
       backslash into `\<CR><LF>`, which is not a valid shell continuation):
       ```
-      ./scripts/pgtap-local.sh run spec52_start_route_text_wrapper spec52_vehicle_constraints spec47_single_active_route_per_driver spec52_migration_reconciliation spec47_migration_invariants route_reception_snapshot_contract
+      bash ./scripts/pgtap-local.sh run spec52_start_route_text_wrapper spec52_vehicle_constraints spec47_single_active_route_per_driver spec52_migration_reconciliation spec47_migration_invariants route_reception_snapshot_contract
       ```
 
       **CORRECTION (post-implementation): the `pass=5 fail=0` originally predicted here was
@@ -1778,7 +1788,7 @@ round trip and carries the crew list Task 6 needs.
 
 - [ ] **Step 2: Run it, verify it fails**
 
-      Run: `./scripts/pgtap-local.sh sync && ./scripts/pgtap-local.sh run spec61_my_active_route`
+      Run: `bash ./scripts/pgtap-local.sh sync && bash ./scripts/pgtap-local.sh run spec61_my_active_route`
       Expected: `FAIL` with `ERROR: function public.get_my_active_pickup_route() does not exist`
 
 - [ ] **Step 3: Minimal implementation**
@@ -1879,7 +1889,7 @@ round trip and carries the crew list Task 6 needs.
 
 - [ ] **Step 4: Run it, verify it passes**
 
-      Run: `./scripts/pgtap-local.sh sync && ./scripts/pgtap-local.sh apply && ./scripts/pgtap-local.sh run spec61_my_active_route`
+      Run: `bash ./scripts/pgtap-local.sh sync && bash ./scripts/pgtap-local.sh apply && bash ./scripts/pgtap-local.sh run spec61_my_active_route`
       Expected: `spec61_my_active_route   PASS`
 
 - [ ] **Step 5: Write the failing hook test**
@@ -2404,6 +2414,13 @@ point is that the message is *actionable*: it must say a route is not open and w
       own screen — the defect is one word standing for two quantities. So this header should
       read `ACOMPAÑANTES · 2` (or `SELECCIONADOS · 2`), leaving `EQUIPO · N` to mean
       "everyone on the trip" in exactly one place. Full reasoning in Task 6, Step 3.
+
+      > **Superseded in FORM by spec-95 fase 4 (PR #780, 2026-09-11).** The header
+      > now reads `ACOMPAÑANTES` with `N de M` beside it — M being the candidates
+      > offered, from mock `5b` («2 de 3»). **The decision below still holds in
+      > substance**: still leader-exclusive, N still counts exactly the checked
+      > rows, and `EQUIPO · N` on `3h` still stays leader-inclusive. Only the
+      > rendering of the count changed, and each row now also carries its role.
 
       **DECIDED 2026-08-21 — `ACOMPAÑANTES · N`.** Take the recommendation. This header
       reads `ACOMPAÑANTES · N`, leader-exclusive, counting exactly the checked rows beneath
@@ -3118,7 +3135,7 @@ change the badge and the list legitimately differ; see Decision 9.
 
 - [ ] **Step 3: Run it, verify it fails**
 
-      Run: `./scripts/pgtap-local.sh sync && ./scripts/pgtap-local.sh run spec61_pending_excludes_routed`
+      Run: `bash ./scripts/pgtap-local.sh sync && bash ./scripts/pgtap-local.sh run spec61_pending_excludes_routed`
       Expected: `FAIL` with `ERROR: a load already on a route must not be offered as available: {LOAD-FREE,LOAD-ROUTED}`
 
 - [ ] **Step 4: Minimal implementation**
@@ -3169,14 +3186,14 @@ change the badge and the list legitimately differ; see Decision 9.
 
 - [ ] **Step 5: Run it, verify it passes**
 
-      Run: `./scripts/pgtap-local.sh sync && ./scripts/pgtap-local.sh apply && ./scripts/pgtap-local.sh run spec61_pending_excludes_routed`
+      Run: `bash ./scripts/pgtap-local.sh sync && bash ./scripts/pgtap-local.sh apply && bash ./scripts/pgtap-local.sh run spec61_pending_excludes_routed`
       Expected: `spec61_pending_excludes_routed   PASS`
 
 - [ ] **Step 6: Check the manifest-list neighbours did not move**
 
       Run:
       ```
-      ./scripts/pgtap-local.sh run spec53_manifest_per_carga spec51_listo_para_despacho_pipeline_position spec55_carton_expansion
+      bash ./scripts/pgtap-local.sh run spec53_manifest_per_carga spec51_listo_para_despacho_pipeline_position spec55_carton_expansion
       cd apps/frontend && npx vitest run src/hooks/pickup/useManifests.test.ts src/app/app/pickup --maxWorkers=2
       ```
       Expected: `── pass=3 fail=0 ──` and all frontend suites PASS. The frontend needs no change

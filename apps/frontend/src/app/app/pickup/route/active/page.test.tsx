@@ -84,6 +84,15 @@ vi.mock('@/hooks/pickup/useRouteManifests', () => ({
   useUnassignedManifests: () => ({ data: [], isLoading: false }),
 }));
 
+// spec-95 fase 3 (mock 5c panel de mapa) — la dirección real ya no sale de
+// `manifest.pickup_location` (siempre NULL en la práctica, ver el docstring
+// del hook); este mock aísla la página del hook real, que se prueba solo en
+// useNextManifestPickupAddress.test.ts.
+const nextManifestAddressMock = vi.fn();
+vi.mock('@/hooks/pickup/useNextManifestPickupAddress', () => ({
+  useNextManifestPickupAddress: (...args: unknown[]) => nextManifestAddressMock(...args),
+}));
+
 const addMutate = vi.fn();
 const closeMutate = vi.fn();
 const removeMutate = vi.fn();
@@ -135,6 +144,8 @@ describe('ActiveRoutePage', () => {
       data: [INCOMPLETE_MANIFEST, COMPLETE_MANIFEST],
       isLoading: false,
     });
+    nextManifestAddressMock.mockReset();
+    nextManifestAddressMock.mockReturnValue({ data: null, isLoading: false });
   });
 
   it('renders route header and the highlighted next manifest', async () => {
@@ -285,6 +296,55 @@ describe('ActiveRoutePage', () => {
     );
   });
 
+  // spec-95 fase 3 (mock 5c panel de mapa) — el panel cuelga de la carga
+  // SIGUIENTE (la primera incompleta), no de la primera del array ni de la
+  // ruta como un todo.
+  it('asks for the pickup address of the highlighted next manifest, not any other one', async () => {
+    wrap(<Page />);
+    await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+    expect(nextManifestAddressMock).toHaveBeenCalledWith('op-1', 'LOAD-1');
+  });
+
+  it('does not ask for a pickup address when the route is already complete', async () => {
+    routeManifestsMock.mockReturnValue({
+      data: [{ ...COMPLETE_MANIFEST, id: 'm3', external_load_id: 'LOAD-3' }],
+      isLoading: false,
+    });
+    wrap(<Page />);
+    await waitFor(() =>
+      expect(screen.getByTestId('route-complete-notice')).toBeInTheDocument(),
+    );
+    expect(nextManifestAddressMock).toHaveBeenCalledWith('op-1', null);
+  });
+
+  // The real address comes from pickup_points.pickup_locations[0].address
+  // (via the hook, mocked here), never from manifests.pickup_location — see
+  // useNextManifestPickupAddress's docstring for why that column is dead.
+  it('renders the real pickup address from the hook, honouring the navigation button', async () => {
+    nextManifestAddressMock.mockReturnValue({
+      data: 'Av. Providencia 1234, Providencia',
+      isLoading: false,
+    });
+    wrap(<Page />);
+    const link = await screen.findByRole('link', { name: /abrir navegaci/i });
+    expect(link).toHaveAttribute(
+      'href',
+      'https://maps.google.com/?q=' + encodeURIComponent('Av. Providencia 1234, Providencia'),
+    );
+  });
+
+  // No fabricated placeholder while the address query is still in flight:
+  // `undefined` (loading) must render exactly like `null` (resolved, no
+  // address) — no button, not a blank-looking one.
+  it('does not render a dead navigation button while the address is still loading', async () => {
+    nextManifestAddressMock.mockReturnValue({ data: undefined, isLoading: true });
+    wrap(<Page />);
+    await waitFor(() =>
+      expect(screen.getByTestId('route-map-placeholder')).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('link', { name: /abrir navegaci/i })).toBeNull();
+  });
+
   // spec-82 phase 1 (mock 5c) — "Digitalizar manifiesto" reuses the OCR
   // intake flow already built for desktop (CameraIntake/useCameraIntake,
   // spec-47); DigitalizeManifestTrigger.test.tsx covers the dialog itself,
@@ -432,6 +492,212 @@ describe('ActiveRoutePage', () => {
       expect(
         screen.getByRole('button', { name: 'Quitar LOAD-1 de la ruta en curso' }),
       ).toBeInTheDocument();
+    });
+  });
+
+  // spec-95 fase 2 (mock 5c) — el pie pasa de una fila a dos: arriba
+  // Buscar/Ver manifiesto/Digitalizar/+, abajo Cerrar ruta/Cancelar ruta.
+  describe('spec-95 fase 2 — pie de dos filas', () => {
+    it('agrupa Buscar, el toggle de manifiestos, Digitalizar manifiesto y + en la fila superior del pie fijo', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      const topRow = screen.getByTestId('route-footer-top-row');
+      expect(within(topRow).getByRole('button', { name: 'Buscar carga' })).toBeInTheDocument();
+      expect(
+        within(topRow).getByRole('button', { name: 'Ver los 2 manifiestos' }),
+      ).toBeInTheDocument();
+      expect(
+        within(topRow).getByRole('button', { name: /digitalizar manifiesto/i }),
+      ).toBeInTheDocument();
+      expect(within(topRow).getByTestId('open-add-manifest')).toBeInTheDocument();
+    });
+
+    it('deja Cerrar ruta y Cancelar ruta en la fila inferior, fuera de la fila superior', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      const topRow = screen.getByTestId('route-footer-top-row');
+      expect(within(topRow).queryByTestId('close-route-button')).toBeNull();
+      expect(within(topRow).queryByTestId('cancel-route-button')).toBeNull();
+      expect(screen.getByTestId('close-route-button')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /cancelar ruta/i })).toBeInTheDocument();
+    });
+  });
+
+  // spec-95 fase 2 — "Buscar" en el mock es un ícono sin contraparte hoy.
+  // Se cablea reusando el mismo patrón ya establecido en PickupMobileActiveRoute
+  // y PickupMobileStartRoute (campo inline que filtra por código/cliente/punto).
+  describe('spec-95 fase 2 — Buscar carga en la ruta activa', () => {
+    beforeEach(() => {
+      routeManifestsMock.mockReturnValue({
+        data: [
+          {
+            ...INCOMPLETE_MANIFEST,
+            id: 'm1',
+            external_load_id: 'LOAD-1',
+            retailer_name: 'Acme',
+            verified_count: 0,
+          },
+          {
+            ...INCOMPLETE_MANIFEST,
+            id: 'm5',
+            external_load_id: 'LOAD-5',
+            retailer_name: 'Beta',
+            verified_count: 0,
+          },
+        ],
+        isLoading: false,
+      });
+    });
+
+    it('el campo de búsqueda está oculto hasta pulsar Buscar', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      expect(screen.queryByRole('searchbox', { name: 'Buscar carga' })).toBeNull();
+    });
+
+    it('Buscar revela un campo que filtra la lista de manifiestos por cliente', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: 'Buscar carga' }));
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar carga' }), {
+        target: { value: 'Acme' },
+      });
+      // Ambas cargas son incompletas, así que LOAD-1 (Acme) también se
+      // pinta en la tarjeta destacada "SIGUIENTE" — el assert se acota a la
+      // lista filtrada. Dentro de esa lista "Acme" aparece dos veces
+      // (cabecera de grupo + fila, porque pickup_location es null y cae a
+      // retailer_name — fallback de spec-95 fase 1), por eso getAllByText.
+      const list = screen.getByTestId('route-manifest-list');
+      expect(list).toBeInTheDocument();
+      expect(within(list).getAllByText('Acme').length).toBeGreaterThan(0);
+      expect(within(list).queryByText('Beta')).toBeNull();
+    });
+
+    it('muestra un aviso de sin resultados en vez de "Sin manifiestos en la ruta" cuando la búsqueda no encuentra nada', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: 'Buscar carga' }));
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar carga' }), {
+        target: { value: 'nada-coincide' },
+      });
+      expect(screen.queryByTestId('route-manifest-list')).toBeNull();
+      expect(screen.getByText(/sin resultados/i)).toBeInTheDocument();
+      expect(screen.queryByText(/sin manifiestos en la ruta/i)).toBeNull();
+    });
+
+    // M3, review — el precedente (PickupMobileActiveRoute.tsx) filtra
+    // "remaining" además del panel; sólo exime la tarjeta hero. Antes de
+    // esta corrección, "Luego" no se tocaba con la búsqueda en absoluto.
+    it('la búsqueda también filtra "Luego", no sólo el panel', async () => {
+      routeManifestsMock.mockReturnValue({
+        data: [
+          { ...INCOMPLETE_MANIFEST, id: 'm1', external_load_id: 'LOAD-1', retailer_name: 'Acme', verified_count: 1 },
+          { ...INCOMPLETE_MANIFEST, id: 'm5', external_load_id: 'LOAD-5', retailer_name: 'Beta', verified_count: 0 },
+        ],
+        isLoading: false,
+      });
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByTestId('upcoming-manifest-list')).toBeInTheDocument());
+      expect(within(screen.getByTestId('upcoming-manifest-list')).getByText('Beta')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Buscar carga' }));
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar carga' }), {
+        target: { value: 'Acme' },
+      });
+      expect(screen.queryByTestId('upcoming-manifest-list')).toBeNull();
+    });
+
+    // L1, review — la mitad no testeada de la decisión de producto: cerrar
+    // Buscar limpia la query (no sólo colapsa el campo). Sin este test,
+    // borrar el `else { setQuery(''); }` de handleToggleSearch pasaba
+    // igual: 27/27.
+    it('cerrar Buscar limpia la query — reabrir no arrastra el texto anterior', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      const buscar = screen.getByRole('button', { name: 'Buscar carga' });
+      fireEvent.click(buscar);
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar carga' }), {
+        target: { value: 'Acme' },
+      });
+      fireEvent.click(buscar); // cierra
+      fireEvent.click(buscar); // reabre
+      expect(screen.getByRole('searchbox', { name: 'Buscar carga' })).toHaveValue('');
+    });
+
+    // L4, review — el botón Buscar debe apuntar, vía aria-controls, al id
+    // REAL del campo que monta RouteManifestPanel — no basta con que cada
+    // componente lo declare por separado, tienen que coincidir en runtime.
+    it('aria-controls de Buscar apunta al id real del campo montado', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      const buscar = screen.getByRole('button', { name: 'Buscar carga' });
+      fireEvent.click(buscar);
+      const input = screen.getByRole('searchbox', { name: 'Buscar carga' });
+      expect(buscar).toHaveAttribute('aria-controls', input.id);
+    });
+
+    // H1, review, ALTO — regresión de extremo a extremo: un grupo con una
+    // carga cerrada (matchea la búsqueda) y otra abierta sin tocar (no
+    // matchea) no puede pintarse COMPLETADA sólo porque la fila visible
+    // esté cerrada.
+    it('el chip de grupo no miente bajo búsqueda (extremo a extremo)', async () => {
+      routeManifestsMock.mockReturnValue({
+        data: [
+          {
+            id: 'a',
+            external_load_id: 'LOAD-A',
+            retailer_name: 'Falabella',
+            pickup_location: 'Mall Plaza Vespucio',
+            total_orders: 1,
+            total_packages: 10,
+            verified_count: 10,
+          },
+          {
+            id: 'b',
+            external_load_id: 'LOAD-B',
+            retailer_name: 'Falabella',
+            pickup_location: 'Parque Arauco',
+            total_orders: 1,
+            total_packages: 5,
+            verified_count: 0,
+          },
+        ],
+        isLoading: false,
+      });
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: 'Ver los 2 manifiestos' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Buscar carga' }));
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar carga' }), {
+        target: { value: 'LOAD-A' },
+      });
+      expect(screen.getByTestId('route-manifest-group-status')).toHaveTextContent('PENDIENTE');
+    });
+  });
+
+  // H2, review, ALTO — el pie fijo creció a tres filas y `pb-40` se quedó
+  // corto. Se asierta la clase real (no sólo que la página renderice) para
+  // que revertir el valor a `pb-40` rompa el test, no sólo el comentario.
+  describe('spec-95 fase 2 — reserva de espacio bajo el pie fijo', () => {
+    it('reserva suficiente padding-bottom para el pie de tres filas', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      expect(screen.getByTestId('active-route-page')).toHaveClass('pb-56');
+    });
+  });
+
+  // M2, review, MEDIO — el orden Cerrar ruta → Cancelar ruta es la
+  // justificación de seguridad completa del bloque (el destructivo va
+  // DEBAJO del CTA de rutina). Comprobado por posición real, no presencia.
+  describe('spec-95 fase 2 — orden del pie inferior', () => {
+    it('Cerrar ruta precede a Cancelar ruta en el DOM', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      const stack = screen.getByTestId('route-footer-stack');
+      const children = Array.from(stack.children) as HTMLElement[];
+      expect(children).toHaveLength(3);
+      expect(children[0]).toHaveAttribute('data-testid', 'route-footer-top-row');
+      expect(children[1]).toHaveAttribute('data-testid', 'close-route-button');
+      expect(children[2]).toHaveAttribute('data-testid', 'cancel-route-button');
     });
   });
 });

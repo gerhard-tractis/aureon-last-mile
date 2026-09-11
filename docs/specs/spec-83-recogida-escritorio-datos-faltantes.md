@@ -189,27 +189,279 @@ con actor y momento.
 > «N faltantes de 0». Viene de spec-54 y está igual en la rama de cierre
 > limpio — va a un barrido de copy, no a esta fase.
 
-### Fase 2 — Ventana `[blocked]`
+### Fase 2 — Ventana `[done]`
 
-**Corrección (2026-09-08):** el modelo (a) — ventana fija por punto de
-recogida — ya lo eligió el esquema (`pickup_locations[].operating_hours`,
-`sla_config.pickup_cutoff_time`); no hay migración de modelo que decidir. Esta
-fase sigue `[blocked]`, pero sólo por la decisión real: qué gana en el borde
-izquierdo de la fila.
+> Implementado por: `implementer` — rama `feat/spec-83-fase-2-ventana`, SHA `40a4322`, PR #738 (mergeado como `8246cbc`).
+> Review: `reviewer` adversarial, **tres rondas**. La que cambió el resultado fue la ronda 2: una casilla de este checklist estaba marcada `[x]` **sin haberse hecho** — el poblado de `operating_hours`/`pickup_cutoff_time`. Lo que existía era el camino de escritura y la lectura, no el dato. La ronda 3 cerró que el formulario tolerase `HH:MM:SS` al cargar, para que un punto guardado con segundos no quedara inescribible.
+> QA: PR #738 merged 2026-09-10T06:04:39Z, CI verde. pgTAP `spec83_fase2_pending_manifests_pickup_window.test.sql` 4/4 `ok`, **verificado con `psql` crudo y no con el resumen de `pgtap-local.sh`** — que es la precaución correcta, porque ese resumen es justo lo que spec-88 estaba arreglando en paralelo. `e2e-qa` no ejercita esta columna.
+> Downstream: revisado spec-80, spec-82 y spec-86 — **sin cambios**. La migración no toca ACL: `get_pending_manifests` nunca tuvo un GRANT explícito y queda fuera del alcance de spec-88.
 
-- [ ] Decidir con el usuario: el borde izquierdo cambia de significado
-      (progreso → proximidad al cierre) o se añaden dos señales distintas.
+**Hueco heredado, y no es de código: la columna sale gris en TODAS las filas.**
+No hay hoy ni un solo punto de retiro con `operating_hours` o
+`pickup_cutoff_time` configurado, ni en QA ni en producción. El esquema los
+admite desde marzo y ahora existen el formulario y las rutas API que los
+escriben, pero **nadie ha cargado el dato**. Hasta que alguien lo haga, el
+semáforo dice `sin_datos` siempre.
+
+Las dos salidas, y ninguna es inventar el dato — mismo criterio que spec-54 ya
+sentó para esta pantalla:
+
+- **(a)** que alguien con el dato real —horario del punto, hora de cierre de
+  retiros del operador— lo cargue punto por punto desde el admin ya construido;
+- **(b)** un seed de QA si se quiere ver la columna en verde o ámbar antes de
+  eso. Si se elige ésta, **el seed debe escribir `HH:MM` estricto, no
+  `HH:MM:SS`**: el formulario ya normaliza al cargar, pero depender de esa
+  tolerancia en vez de escribir el formato limpio desde el origen es acumular
+  una capa que no hace falta.
+
+**Lo que esta fase deja medido y vale fuera de ella:**
+
+1. **`sin_datos` es el default, nunca `dentro_de_plazo`.** Cuando no hay ventana
+   ni cutoff, la columna dice que no sabe. Es la misma regla que la cola offline
+   y la pantalla de cierre han tenido que aprender a la fuerza: **un cero o un
+   verde fabricado sobre un dato ausente es peor que un hueco visible.**
+2. **Dos de cinco mutantes sobrevivieron a la primera pasada** — el `<=` del
+   umbral de 60 minutos (sin ningún caso exactamente en el borde) y una regex de
+   hora debilitada (ningún caso cubría una hora fuera de rango). Se cerraron con
+   un test nuevo cada uno, no se descartaron. Es el argumento de siempre: la
+   suite estaba verde y no veía ni el borde ni la entrada inválida.
+
+
+**Desbloqueada (2026-09-09). El usuario delegó la decisión: «haz lo que creas
+que debas hacer». La tomo yo y queda escrita aquí, no en la cabeza de nadie.**
+
+**Decisión: el borde izquierdo NO gana una tercera señal. La proximidad al
+cierre de ventana va en su propia columna, con semáforo.**
+
+El razonamiento, para que quien lo herede pueda discutirlo con datos y no
+reabrirlo por gusto:
+
+- El borde izquierdo ya carga **dos** significados (`ManifestTable.tsx:103-110`):
+  selección y «en progreso»/merma. Los dos son **estados de la fila** — cosas
+  que le pasan a ese manifiesto ahora.
+- La proximidad al cierre de ventana **no es un estado de la fila**: es un dato
+  del punto de retiro (`operating_hours`, `sla_config.pickup_cutoff_time`) que
+  además cambia solo con el paso del tiempo, sin que nadie toque nada.
+- Un canal visual con tres significados obliga a un árbitro, y un árbitro
+  significa que **una de las tres señales se oculta justo cuando importa**. La
+  merma es dinero y la ventana es tiempo: esconder cualquiera de las dos para
+  mostrar la otra es la decisión equivocada en los dos sentidos.
+
+Los datos van en una columna; los estados, en el borde. El tercer punto del
+checklist ya contemplaba «columna y semáforo» — ahora es la única vía, no una
+alternativa.
+
+- [x] Decidir qué gana el borde izquierdo — **decidido: nada nuevo. El borde
+      conserva selección y merma; la ventana no lo toca.**
 - [ ] Poblar `operating_hours` / `pickup_cutoff_time` donde falten (nadie los
       escribe hoy) y hacer que `get_pending_manifests` los devuelva.
-- [ ] Columna y semáforo, con la decisión del borde ya tomada explícitamente.
+      **Corrección tras review round 2 (2026-09-10): esta casilla estaba
+      marcada `[x]` sin haberse hecho.** Lo que existe es el camino de
+      escritura (formulario admin + rutas API) y la lectura en
+      `get_pending_manifests` — la propia migración lo dice: "no data is
+      written here". Hoy sigue sin haber ni un solo punto de retiro con
+      `operating_hours`/`pickup_cutoff_time` configurado, en QA ni en
+      prod. Consecuencia real tras el merge: la columna VENTANA sale gris
+      (`sin_datos`) en TODAS las filas hasta que un humano abra el
+      formulario punto por punto. Falta, y queda fuera de esta fase por ser
+      trabajo operativo, no de código: (a) que alguien con el dato real
+      (horario real del punto, hora de cierre de retiros del operador) lo
+      cargue fila por fila desde el admin ya construido, o (b) un
+      backfill/seed de QA si se quiere ver la columna en verde/ámbar antes
+      de eso. Ninguna opción es inventar el dato — sigue el mismo criterio
+      que spec-54 ya sentó para esta pantalla. **Nota de review round 3:**
+      si se opta por (b), ese seed debe escribir `HH:MM` estricto, no
+      `HH:MM:SS`. El formulario ya tolera `HH:MM:SS` al cargar (normaliza
+      con `.slice(0, 5)`, fix de la propia ronda 3), así que un seed con
+      segundos ya no deja el punto irreeditable — pero seguir dependiendo
+      de esa normalización en vez de escribir el formato limpio desde el
+      origen es acumular una capa de tolerancia que no hace falta.
+- [x] Columna de ventana con semáforo, sin tocar `border-l-*`.
 
-> Bloqueo: se intentó resolver qué gana el borde izquierdo de la fila y
-> devolvió un choque sin árbitro — verificado en `ManifestTable.tsx:103-110`,
-> que ya usa `border-l-*` para dos señales existentes (selección y "en
-> progreso"/merma); añadirle una tercera (proximidad al cierre de ventana)
-> sin decidir si reemplaza o convive con las otras dos no tiene mock que lo
-> especifique — 2026-09-08 — desbloquea: usuario (qué gana el borde izquierdo
-> cuando ambas señales aplican a la vez).
+**Archivos:** `apps/frontend/src/components/pickup/ManifestTable.tsx` (columna
+nueva, **sin tocar `border-l-*`**), migración para `get_pending_manifests`, y el
+poblado de `operating_hours`/`pickup_cutoff_time`.
+
+**Depende de:** ninguna.
+
+**Implementación (2026-09-10, pendiente de review/QA — la fase queda
+`[in_progress]`, no se cierra aquí):**
+
+- **Lógica pura** — `apps/frontend/src/lib/pickup/pickupWindowStatus.ts`:
+  `getPickupWindowStatus` (tres estados: `sin_datos`/`dentro_de_plazo`/
+  `cerca_del_cierre`; `sin_datos` es el default cuando no hay ventana ni
+  cutoff, nunca `dentro_de_plazo`) y `formatPickupWindowLabel`. El cutoff
+  (`sla_config.pickup_cutoff_time`) gana sobre el fin de ventana cuando
+  ambos existen, por ser el límite operador-wide más estricto. Umbral de
+  "cerca del cierre": 60 minutos — decisión visual mía, el spec la delegó
+  explícitamente.
+- **Lectura** — migración `20261003000001`, plantilla
+  `20260820000006_spec61_pending_manifests_exclude_routed.sql` (confirmada
+  como la más reciente vía `git grep` el 2026-09-10). `get_pending_manifests`
+  añade `pickup_window_start/end` y `pickup_cutoff_time`, derivados de
+  `pickup_points.pickup_locations->0->'operating_hours'` y
+  `pickup_points.sla_config->>'pickup_cutoff_time'`. Sin cambios de ACL — la
+  función nunca tuvo GRANT explícito y no está en el alcance del audit de
+  spec-88.
+- **Escritura** — hoy nadie podía poblar estos campos aunque el esquema los
+  tiene desde marzo. `PickupPointForm.tsx` gana tres campos (Apertura,
+  Cierre, Cierre de retiros), extraídos a `PickupPointLocationFields.tsx` +
+  `pickupPointFormSchema.ts` compartido para no exceder 300 líneas. Las dos
+  rutas API (`/api/pickup-points`, `/api/pickup-points/[id]`) validan y
+  persisten `sla_config` y `pickup_locations[].operating_hours`.
+- **Columna** — `ManifestTable.tsx` gana una octava columna (`GRID` de 7 a 8
+  celdas) con punto de semáforo + etiqueta. `border-l-*` no se tocó — sigue
+  siendo únicamente selección/merma, verificado con un test dedicado.
+- **Tests:** 14 en `pickupWindowStatus.test.ts` (unit, mutation-tested — ver
+  abajo), 9 en `pickupPageHelpers.test.ts` (+2 nuevos), 14 en
+  `ManifestTable.test.tsx` (+5 nuevos), 6 en `PickupPointForm.test.tsx` (+3
+  nuevos), pgTAP `spec83_fase2_pending_manifests_pickup_window.test.sql`
+  (4/4 `ok`, verificado con `psql` crudo, no con el resumen de
+  `pgtap-local.sh`) + `spec61_pending_excludes_routed.sql` actualizado y
+  re-verificado sin fallos.
+- **Mutation testing manual sobre `pickupWindowStatus.ts`, 5 mutantes:**
+  1. `sin_datos → dentro_de_plazo` en el guard de ausencia — muere (4 tests).
+  2. `<=` → `<` en el umbral de 60 min — **sobrevivió** a la suite original
+     (sin caso exactamente en el borde); cerrado con un test a los 60 min
+     exactos y otro a 59:01; ahora muere.
+  3. Invertido el orden de precedencia cutoff/window-end en el `??` — muere.
+  4. Regex de hora debilitada a `/(\d+):(\d+)/` — **sobrevivió** (ningún caso
+     cubría una hora fuera de rango); cerrado con un test para `'25:00'`;
+     ahora muere.
+  5. `&&` → `||` en `formatPickupWindowLabel` (ventana a medio llenar) —
+     **sobrevivió**; cerrado con un test de ventana con sólo el inicio;
+     ahora muere.
+
+  2 de 5 sobrevivieron a la primera pasada. Se cerraron con un test nuevo
+  cada uno, no se descartaron.
+- **Trampa de TanStack Query v5 (`networkMode:'online'` pausando sin red):**
+  no se introdujo una instancia nueva de `pending ?? []` — la única que
+  existe (`page.tsx:117`) es preexistente a esta fase, no se tocó. `sin_datos`
+  se calcula por fila a partir de campos ausentes/`null`, no de la ausencia
+  de la query completa, así que no hereda ese problema, pero tampoco lo
+  arregla: si la query en pausa deja `pendingRows` vacío, la tabla entera se
+  ve vacía, columna de ventana incluida — declarado, no corregido aquí.
+- **Gap cerrado tras review round 2:** ya existen tests para la ruta PUT
+  (`[id]/route.test.ts`, **5 tests**, no 4 como decía una versión anterior
+  de esta nota: 401, 400 por formato inválido, `sla_config` omitido queda
+  intacto, y los dos casos de merge/clear descritos abajo. Ronda 3 añadió
+  dos más: 403 y 400 por hora basura en `operating_hours` a nivel de ruta —
+  7 en total hoy). Ver el resto de esta sección para el detalle de qué
+  encontró cada ronda.
+
+**Review round 2 (2026-09-10) — 3 bloqueantes, 2 menores de datos y 4
+menores de documentación, todos cerrados:**
+
+1. **B1 — `??` con cadena vacía (mutante superviviente confirmado).**
+   `pickupCutoffTime ?? pickupWindowEnd` no cae al `windowEnd` cuando el
+   cutoff es `''` (string vacío no es `null`/`undefined`). Un formulario
+   nuevo con el campo en blanco —el caso más probable en producción durante
+   semanas— dejaba una ventana bien poblada en `sin_datos` con la etiqueta
+   mostrando el rango real al lado: el semáforo contradiciendo el texto.
+   Corregido con `nonBlank()` (trata `''`/espacios como ausente) aplicado en
+   `resolveCloseTime` **y** en `formatPickupWindowLabel`. Tests nuevos:
+   cutoff vacío, cutoff sólo-espacios, y el mismo par para la etiqueta.
+2. **B2 — el PUT no podía borrar un cutoff.** `values.cutoff ? {...} :
+   undefined` en modo edición producía una clave omitida, y la ruta salta
+   toda clave `undefined` — vaciar el campo y guardar no hacía nada, para
+   siempre. Corregido: en modo `edit` el formulario **siempre** envía
+   `sla_config`, con `pickup_cutoff_time: valor || null` — nunca omite la
+   clave. `null` es ahora un valor de escritura válido y distinto de
+   "omitido" en el esquema de la ruta.
+3. **B3 — el PUT machacaba `sla_config` entero.** Un `UPDATE` que sólo
+   cambiaba el nombre borraba silenciosamente `max_delivery_hours` y
+   cualquier otra clave que el formulario no muestra. Corregido: la ruta
+   ahora lee el `sla_config` actual antes de actualizar y hace
+   `{...actual, ...enviado}` — sólo las claves enviadas se tocan.
+4. **Validación de formato en las tres capas.** No existía ninguna. Regex
+   compartida (`TIME_HH_MM_REGEX`, `apps/frontend/src/lib/pickup/timeFormat.ts`)
+   usada en `pickupPointFormSchema.ts` (formulario) y en
+   `pickupPointApiSchemas.ts`, nuevo, compartido entre las dos rutas API —
+   cierra B1 de paso (un cutoff con formato inválido ya no puede ni
+   guardarse) y evita literales tipo "Cierra banana" en la interfaz.
+5. **`HH:MM:SS` cae en `sin_datos`.** El *camino de escritura* exige
+   `HH:MM` estricto (rechaza segundos, para forzar un formato limpio al
+   entrar), pero la *lectura pura* (`parseTimeToday`) ahora tolera un
+   `:SS` final — un dato poblado directamente por SQL (backfill futuro,
+   seed de QA) es más probable en esa forma que en la que este formulario
+   siempre guarda.
+6. **Menores de documentación, todos corregidos en el propio código/migración:**
+   la nota de ACL de la migración tenía la conclusión correcta con la
+   premisa falsa (afirmaba "no default privileges"; medido: sí existen y el
+   `DROP`+`CREATE` los re-concede a `anon`; la seguridad real viene de
+   `SECURITY INVOKER` + RLS, y un llamador anónimo mide
+   `ERROR: permission denied for table manifests`, no un resultado vacío) —
+   corregida. Zona horaria local sin normalizar: anotada en
+   `parseTimeToday`. Ventana ya cerrada (23:00 contra un cierre de 13:00) no
+   tiene un cuarto estado — es decisión de producto, declarada en
+   `getPickupWindowStatus`, no resuelta aquí. `MIN(name)`/`MIN(start)`
+   agregados por separado cuando una carga tiene órdenes en dos puntos:
+   documentado en la migración con el mitigante real (`MIN(end)`/
+   `MIN(cutoff)` son siempre los más estrictos — nunca sobrestima el tiempo
+   disponible, sólo puede mostrar el texto del punto equivocado).
+
+Rama `feat/spec-83-fase-2-ventana`, PR #738. Ronda 1 aprobó lo esencial
+(lógica pura, migración, `spec61_pending_excludes_routed`, borde izquierdo
+intacto, 9/10 mutantes) y encontró B1-B3 más los menores listados arriba,
+todos cerrados en esta ronda con TDD (RED confirmado antes de cada fix). La
+fase sigue `[in_progress]` — evidencia formal de review/QA la añade quien
+corresponda tras verificarla, no quien implementa.
+
+**Review round 3 (2026-09-10) — mergeable, un fix de código y tres notas.**
+
+Confirmó, con evidencia propia y no repetida de la ronda 2: el mutante
+equivalente de B1 lo es de verdad (mutación + razonamiento de tipos + fuerza
+bruta sobre 5832 combinaciones, cero diferencias); aplicar `nonBlank` en la
+etiqueta también era necesario (quitarlo de ahí sólo muere); el merge de
+`sla_config` **aborta** en vez de machacar si la lectura previa falla
+(`update` llamado 0 veces); y cierra un vector no pedido — una clave no
+declarada dentro de `sla_config` la descarta zod y el merge restaura la
+existente, así que un cliente no puede escribir claves arbitrarias por esa
+ruta. 11/12 mutantes muertos, incluido el que sobrevivió en ronda 2.
+
+**Fix de código — normalización de `HH:MM:SS` al cargar el formulario.**
+Un punto poblado con `HH:MM:SS` (el cast natural de una columna `TIME`)
+quedaba **irreeditable**: el schema estricto rechazaba el valor sin tocar en
+CADA submit, incluso uno que sólo cambiaba el nombre — sin salida salvo
+reescribir los tres campos a mano. No se perdía nada (el envío entero se
+rechaza, no se aplica parcial), pero el admin quedaba bloqueado. Corregido
+con `toHHMM()` (`.slice(0, 5)`) en los tres `defaultValues` de
+`PickupPointForm.tsx` — normaliza al cargar, nunca al guardar (el schema de
+escritura sigue exigiendo `HH:MM` estricto). Test nuevo, RED confirmado
+antes del fix. Consecuencia para el punto pendiente de poblado (más
+arriba): si el backfill/seed escribe `HH:MM:SS`, ahora sí es editable desde
+este formulario — pero **el seed debería escribir `HH:MM` estricto de
+todos modos**, para no depender de esta normalización en ningún punto de la
+cadena.
+
+**Notas al spec, no al código:**
+
+1. **Carrera entre administradores, ensanchada por B2.** Sin bloqueo
+   optimista: A abre la ficha a las 10:00 con cutoff `12:30`; B lo cambia a
+   `12:00`; A guarda sólo el nombre a las 10:10 → como en edición **siempre**
+   se reenvía `sla_config`, viaja el `12:30` rancio de A y revierte el
+   cambio de B sin aviso. Si A había vaciado el campo, viaja `null` y
+   **borra** lo que B acababa de poner — esto último es nuevo en esta fase:
+   antes de B2 el blanco no se enviaba, así que no pisaba nada. Es el
+   patrón de todo este formulario (ninguno de sus campos tiene control de
+   concurrencia), y arreglarlo pide bloqueo optimista (ETag/`updated_at`
+   comparado en el PUT) — otra fase, no ésta.
+2. **`pickup_locations` sigue siendo overwrite ciego, ahora asimétrico con
+   `sla_config`.** La misma ruta trata las dos columnas JSONB con criterios
+   opuestos: `sla_config` mergea, `pickup_locations` reemplaza el array
+   entero con lo que el formulario construye — y la ventana vive
+   precisamente en `pickup_locations[0]`. Un punto de retiro con más de una
+   ubicación (el esquema es un array por algo) pierde toda ubicación desde
+   la segunda en adelante en el primer guardado desde este formulario, que
+   sólo edita `[0]`. No se ha visto ese caso en los datos hoy, pero el
+   formulario no lo impide ni lo advierte.
+3. **Nits:** el gate 403 de la ruta PUT funcionaba pero no tenía test
+   afirmándolo — añadido. Ninguna prueba de ruta ejercitaba una hora basura
+   dentro de `operating_hours` (sólo los tests del esquema del formulario lo
+   demostraban) — añadido un test de ruta para `pickup_locations[0]
+   .operating_hours.start = 'banana'`. Y esta misma sección decía "4 tests"
+   donde ya había 5 — corregido, con el conteo actualizado a 7 tras esta
+   ronda.
 
 ### Fase 3 — Ocupación `[parked]`
 
@@ -251,6 +503,15 @@ Tests nuevos para cada uno de los cuatro, TDD confirmando rojo por la razón cor
 - **`ManifestTable` — falta el pie de paginación del mock** (`5a`, líneas 202-208: "7 de 12 · página 1 de 2" + Anterior/Siguiente). No existe paginación en ningún componente de Recogida escritorio hoy. Es comportamiento, no un ajuste visual, así que no se implementa aquí — pero queda declarado para que el siguiente que toque esta pantalla no asuma que ya está.
 - **Nit adjunto:** el badge de merma del mock (`5a:265`) es el glifo `!` en mono 700; el código usa el ícono `TriangleAlert` de `lucide-react`. Cosmético, no tocado.
 - **`5a` la pintan 8 componentes; esta fase diffeó 4.** También la pintan `PickupDesktopView.tsx`, `PickupDesktopHeader.tsx`, `PickupManifestTabs.tsx` y `ClientFilter.tsx` (el mock pone el buscador en la cabecera, `5a:58-64`; el código lo pone bajo los `StatTile`). Es una limitación de los `**Archivos:**` que este spec declaró para la fase, no una omisión de quien la ejecutó — pero **`5a` no está completamente revisado** por esta fase, sólo la porción de esos 4 archivos.
+
+  > **Cerrado por spec-95 fase 8 (PR #796, 2026-09-11).** Esa fase cubrió los
+  > cuatro componentes que faltaban (`PickupDesktopView`, `PickupDesktopHeader`,
+  > `ClientFilter`, `ManifestTable`) más `PickupRouteDraftPanel` y
+  > `StartRouteButton`. También cierra las divergencias 2 y 3 que esta fase
+  > declaró sin tocar: el panel de vehículo **adopta** el modelo de spec-61 (se
+  > elige al confirmar, sin conductor) y el CTA queda como `Iniciar ruta de
+  > retiro`. La barra de ocupación **sigue** `[parked]` en la fase 3 de este
+  > spec — spec-95 no la implementó, a propósito.
 - **Referencias muertas a `1l` corregidas donde se tocó el archivo** (`TodayClosuresPanel.tsx`, `PickupRouteDraftPanel.tsx`, `ManifestTable.tsx` — los tres docstrings y comentarios que decían "mock 1l" ahora dicen `5a`). **Quedan sin tocar** en archivos fuera del alcance de esta fase: `PickupDesktopView.tsx` (docstring y dos comentarios), `PickupDesktopHeader.tsx` (docstring), `PickupMobileView.tsx` (comentario) y `PickupRouteDraftPanel.test.tsx` (comentario de test). El hallazgo de esta fase es que `1l` no existe como artboard independiente — el mock vivo es `5a`.
 
 `ManifestTable.tsx` y `StatTile.tsx` ya coincidían con lo que `5a` pide sin datos nuevos — tipografías, tamaños, paletas de estado y la séptima columna de impresión ya son fieles. **`StatTile.tsx` no se modificó** — se comprobó `git grep StatTile` y lo usan además `distribution/page.tsx`, `reception/page.tsx`, `DistributionMobileView.tsx`, `PickupMobileActiveRoute.tsx`, `ReceptionCounts.tsx` y un componente local homónimo en `DispatchTabletSidePanel.tsx` que no importa el compartido; al no tocarlo, ninguna de esas pantallas ni sus specs quedan afectadas.

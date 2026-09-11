@@ -5,8 +5,9 @@ import { useOpsControlSnapshot } from '@/hooks/ops-control/useOpsControlSnapshot
 import { useAtRiskOrders } from '@/hooks/ops-control/useAtRiskOrders';
 import { useDayPromise } from '@/hooks/ops-control/useDayPromise';
 import { useActiveRoutes } from '@/hooks/useActiveRoutes';
+import { useDiscrepancies, isDiscrepanciesUnknown, totalDiscrepancyCount } from '@/hooks/ops-control/useDiscrepancies';
 import { useStageQuery } from '../lib/useStageQuery';
-import { computeStageHealth } from '../lib/health';
+import { computeStageHealth, type HealthStatus } from '../lib/health';
 import { stagePackageCount } from '../lib/packages';
 import { STAGE_KEYS } from '../lib/labels.es';
 import type { OpsSnapshot } from '@/hooks/ops-control/useOpsControlSnapshot';
@@ -24,8 +25,19 @@ import { DocksPanel } from './stage-panels/DocksPanel';
 import { DeliveryPanel } from './stage-panels/DeliveryPanel';
 import { ReturnsPanel } from './stage-panels/ReturnsPanel';
 import { ReversePlaceholderPanel } from './stage-panels/ReversePlaceholderPanel';
+import { DiscrepanciesPanel } from './stage-panels/DiscrepanciesPanel';
 
-function getItemsForStage(key: StageKey, snapshot: OpsSnapshot): Record<string, unknown>[] {
+// spec-86 fase 3, ronda 2 (#715, menor): 'discrepancies' is deliberately
+// excluded from this function's key type, not just from its switch. The
+// `stages` map below early-returns for 'discrepancies' before ever calling
+// this — Discrepancias is not sourced from get_ops_control_snapshot at all,
+// it comes from useDiscrepancies directly — so a case here would be dead
+// code a reader has to double-check is really unreachable. Excluding it from
+// the type makes the compiler the one checking that, not a comment.
+function getItemsForStage(
+  key: Exclude<StageKey, 'discrepancies'>,
+  snapshot: OpsSnapshot,
+): Record<string, unknown>[] {
   switch (key) {
     case 'pickup':        return snapshot.pickups as Record<string, unknown>[];
     case 'reception':     return snapshot.orders.filter((o) => o['stage'] === 'reception') as Record<string, unknown>[];
@@ -55,14 +67,39 @@ export function OpsControlDesktop({ operatorId, onSelectOrder }: OpsControlDeskt
     useAtRiskOrders(operatorId, new Date(), atRiskPage);
   const promise = useDayPromise(operatorId);
   const { data: activeRoutes, isLoading: routesLoading } = useActiveRoutes(operatorId);
+  const {
+    data: openDiscrepancies,
+    isLoading: discrepanciesLoading,
+    isError: discrepanciesError,
+    fetchStatus: discrepanciesFetchStatus,
+  } = useDiscrepancies(operatorId, 'open');
+  // spec-86 fase 3, ronda 2 (#715, mayor): the other seven tiles are all
+  // covered by the `isLoading && !snapshot` gate below, which blocks the
+  // whole page behind a skeleton until useOpsControlSnapshot resolves. This
+  // tile's data comes from an independent query with its own lifecycle, so
+  // it needs its own "do I actually know the answer" check — without it,
+  // three unrelated states (still loading with no cache; offline, so
+  // TanStack Query's networkMode:'online' leaves the query permanently
+  // `paused`; or a failed RPC after retries) all fall through to
+  // `data === undefined`, which `?? 0` turns into a confident, wrong "0 ·
+  // Sin incidencias · ok" — the exact "looks resolved" failure this fase
+  // exists to close, just moved into the tile that reports on it.
+  // isDiscrepanciesUnknown is shared with DiscrepanciesPanel (ronda 3, M1) —
+  // duplicating this check let the tile and the panel it opens disagree.
+  const discrepanciesUnknown = isDiscrepanciesUnknown({
+    data: openDiscrepancies,
+    isLoading: discrepanciesLoading,
+    isError: discrepanciesError,
+    fetchStatus: discrepanciesFetchStatus,
+  });
 
   if (isLoading && !snapshot) {
     // Geometry matches the loaded layout so the page does not reflow.
     return (
       <div className="flex flex-col gap-[18px]">
         <Skeleton className="h-9 w-64 rounded" />
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-7">
-          {Array.from({ length: 7 }).map((_, i) => (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-8">
+          {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-[92px] rounded-[10px]" />
           ))}
         </div>
@@ -75,7 +112,37 @@ export function OpsControlDesktop({ operatorId, onSelectOrder }: OpsControlDeskt
   }
 
   const now = new Date();
+  const discrepancyRows = openDiscrepancies ?? [];
+  const discrepancyCount = discrepancyRows.length;
+  // Ronda 3 (#715, M3): totalDiscrepancyCount reads total_count off the RPC's
+  // window function — the count BEFORE LIMIT 500. When it exceeds what came
+  // back, the tile says so instead of quietly showing a truncated "N".
+  const discrepancyTotal = totalDiscrepancyCount(discrepancyRows);
+  const discrepancyTruncated = discrepancyTotal > discrepancyCount;
   const stages = STAGE_KEYS.map((key) => {
+    // spec-86 fase 3: Discrepancias' count and health come from
+    // useDiscrepancies, not from the generic snapshot-driven pipeline below —
+    // its items are never part of get_ops_control_snapshot at all (see
+    // getItemsForStage above, which excludes 'discrepancies' from its own
+    // key type rather than special-casing it).
+    if (key === 'discrepancies') {
+      if (discrepanciesUnknown) {
+        return { key, count: null, delta: 'Sin datos', health: 'neutral' as HealthStatus, packageCount: null };
+      }
+      const health: HealthStatus = discrepancyCount > 0 ? 'warn' : 'ok';
+      const delta = discrepancyCount === 0
+        ? 'Sin incidencias'
+        : discrepancyTruncated
+          ? `${discrepancyCount} de ${discrepancyTotal} sin resolver`
+          : `${discrepancyCount} sin resolver`;
+      return {
+        key,
+        count: discrepancyTruncated ? discrepancyTotal : discrepancyCount,
+        delta,
+        health,
+        packageCount: null,
+      };
+    }
     const items = snapshot ? getItemsForStage(key, snapshot) : [];
     const health = computeStageHealth(key, items, now);
     return {
@@ -111,6 +178,7 @@ export function OpsControlDesktop({ operatorId, onSelectOrder }: OpsControlDeskt
       case 'delivery':      return <DeliveryPanel {...props} />;
       case 'returns':       return <ReturnsPanel {...props} />;
       case 'reverse':       return <ReversePlaceholderPanel {...props} />;
+      case 'discrepancies': return <DiscrepanciesPanel {...props} />;
     }
   };
 

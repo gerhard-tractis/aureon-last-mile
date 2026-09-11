@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { STAGE_LABELS, STAGE_KEYS, REASON_LABELS, STATUS_LABELS } from './labels.es';
 
 describe('labels.es', () => {
-  it('exposes the 7 stages in order', () => {
+  it('exposes the 8 stages in order', () => {
     expect(STAGE_KEYS).toEqual([
-      'pickup','reception','consolidation','docks','delivery','returns','reverse',
+      'pickup','reception','consolidation','docks','delivery','returns','reverse','discrepancies',
     ]);
   });
   it('returns Spanish labels for all stages', () => {
@@ -15,6 +15,7 @@ describe('labels.es', () => {
     expect(STAGE_LABELS.delivery).toBe('Reparto');
     expect(STAGE_LABELS.returns).toBe('Reingresos');
     expect(STAGE_LABELS.reverse).toBe('Cambios y Devoluciones');
+    expect(STAGE_LABELS.discrepancies).toBe('Discrepancias');
   });
   it('exposes reason flags in Spanish', () => {
     expect(REASON_LABELS.no_driver).toBe('Sin conductor');

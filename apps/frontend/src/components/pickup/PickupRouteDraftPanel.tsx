@@ -1,6 +1,6 @@
 'use client';
 
-import { X } from 'lucide-react';
+import { Truck, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StartRouteButton } from './StartRouteButton';
 import type { ManifestRow } from './ManifestTable';
@@ -8,14 +8,14 @@ import type { ManifestRow } from './ManifestTable';
 /**
  * spec-54 phase 4.4 — "Nueva ruta de recogida" (mock `5a`, right column top).
  *
- * The mock shows an inline vehicle/driver picker with an estimated vehicle
- * occupancy bar. Neither is rendered here: occupancy needs a vehicle
- * capacity and a package volume, and neither `vehicles` nor `packages`
- * carries one — a guessed percentage on the screen that decides whether a
- * van is full would be actively harmful (spec-83 fase 3). The vehicle
- * itself is picked in `StartRouteButton`'s dialog instead of inline — a
- * spec-61 interaction decision with its own tests, not a missing-data gap,
- * and out of this file's scope to redo.
+ * spec-95 fase 8 (mock `5a:213-215`) closes divergencia 2 of spec-83 fase 4:
+ * the mock no longer draws an inline vehicle/driver picker — it adopts
+ * spec-61's model outright (vehicle picked when the route is confirmed, in
+ * `StartRouteButton`'s dialog; no driver field at all, because the crew is
+ * assigned by whoever leads the route, not chosen here) and says so with a
+ * static line. The estimated-occupancy bar right below it in the mock is
+ * still NOT rendered — it stays `[parked]` in spec-83 fase 3 by the user's
+ * 2026-09-09 decision, and no percentage is invented here either.
  *
  * When a route is already open the panel steps aside — the driver has one
  * active route at a time (start_pickup_route enforces it), so offering to
@@ -55,8 +55,11 @@ export function PickupRouteDraftPanel({
   routeUnknown = false,
   roleUnknown = false,
 }: PickupRouteDraftPanelProps) {
-  const orders = selected.reduce((sum, m) => sum + m.orderCount, 0);
-  const packages = selected.reduce((sum, m) => sum + m.packageCount, 0);
+  // spec-94 fase 1/2 review: orderCount/packageCount are nullable
+  // (get_pending_manifests' arm2). `?? 0` is a display-only approximation
+  // for this draft summary, never written back.
+  const orders = selected.reduce((sum, m) => sum + (m.orderCount ?? 0), 0);
+  const packages = selected.reduce((sum, m) => sum + (m.packageCount ?? 0), 0);
 
   return (
     <section className="flex flex-none flex-col overflow-hidden rounded-[10px] border border-border bg-surface">
@@ -112,6 +115,18 @@ export function PickupRouteDraftPanel({
         </p>
       ) : (
         <>
+          <div className="flex flex-none flex-col gap-2.5 border-b border-border px-4 py-3.5">
+            <span className="font-mono text-[9.5px] font-medium uppercase tracking-[.1em] text-text-secondary">
+              Vehículo
+            </span>
+            <div className="flex items-center gap-2.5 rounded-lg border border-dashed border-border-strong bg-background p-2.5">
+              <Truck className="h-[17px] w-[17px] flex-none text-text-muted" />
+              <span className="text-[11.5px] leading-[1.3] text-text-secondary">
+                Se elige al confirmar la ruta. La cuadrilla la asigna quien la lidera.
+              </span>
+            </div>
+          </div>
+
           <div className="flex flex-none items-center gap-2 border-b border-border bg-background px-4 py-2.5">
             <span className="font-mono text-[9.5px] font-medium uppercase tracking-[.1em] text-text-secondary">
               Manifiestos en la ruta
@@ -137,7 +152,7 @@ export function PickupRouteDraftPanel({
                   </span>
                   <span className="truncate text-[10.5px] leading-none text-text-muted">
                     {m.retailerName ?? 'Sin cliente'}
-                    {m.pickupPoint ? ` · ${m.pickupPoint}` : ''} · {m.packageCount} paq.
+                    {m.pickupPoint ? ` · ${m.pickupPoint}` : ''} · {m.packageCount ?? '—'} paq.
                   </span>
                 </div>
                 <button
@@ -157,6 +172,21 @@ export function PickupRouteDraftPanel({
               {orders} {orders === 1 ? 'orden' : 'órdenes'} · {packages}{' '}
               {packages === 1 ? 'paquete' : 'paquetes'}
             </span>
+            {/* spec-95 fase 8, decisión del usuario 2026-09-11 (B2) — el
+                mock dibuja un secundario "Ver QR de la ruta" aquí
+                (`5a:225`), y deliberadamente NO se implementa: en estado
+                BORRADOR la ruta todavía no existe, así que "ver su QR" no
+                es una operación posible — lo único que podía hacer un
+                botón con ese nombre era CREAR la ruta primero, y con
+                `start_pickup_route` imponiendo una ruta activa por
+                conductor, alguien que sólo quería mostrar el QR se queda
+                con una ruta abierta cuya única salida es Cancelar ruta.
+                La afordancia real ya existe en `ActiveRouteBanner.tsx`,
+                sobre la ruta ya en curso — que es también donde el mock la
+                dibuja para R-2492 (`5a`, banner superior). No se duplica
+                aquí. Regla de desempate del propio spec: el mock manda en
+                diseño, el spec manda en comportamiento — esta es una
+                divergencia de comportamiento. */}
             <StartRouteButton
               operatorId={operatorId}
               isSubmitting={isCreating}

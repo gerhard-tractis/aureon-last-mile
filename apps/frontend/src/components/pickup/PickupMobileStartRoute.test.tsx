@@ -142,7 +142,7 @@ describe('PickupMobileStartRoute', () => {
 
     await userEvent.click(screen.getByLabelText(/Vehículo/i));
     await userEvent.click(screen.getByRole('option', { name: /JKLM-42/ }));
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Ana Pérez' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Ana Pérez, auxiliar' }));
     await userEvent.click(screen.getByRole('button', { name: /iniciar ruta de recogida/i }));
 
     expect(onCreateRoute).toHaveBeenCalledWith('v-1', ['crew-1']);
@@ -155,9 +155,9 @@ describe('PickupMobileStartRoute', () => {
 
     await userEvent.click(screen.getByLabelText(/Vehículo/i));
     await userEvent.click(screen.getByRole('option', { name: /JKLM-42/ }));
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Ana Pérez' }));
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Bruno Díaz' }));
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Ana Pérez' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Ana Pérez, auxiliar' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Bruno Díaz, auxiliar' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Ana Pérez, auxiliar' }));
     await userEvent.click(screen.getByRole('button', { name: /iniciar ruta de recogida/i }));
 
     expect(onCreateRoute).toHaveBeenCalledWith('v-1', ['crew-2']);
@@ -186,7 +186,7 @@ describe('PickupMobileStartRoute', () => {
     // Reachable, and still WORKING -- not merely present in the DOM.
     await userEvent.click(screen.getByLabelText(/Vehículo/i));
     await userEvent.click(screen.getByRole('option', { name: /JKLM-42/ }));
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Persona 19' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Persona 19, auxiliar' }));
     await userEvent.click(screen.getByRole('button', { name: /iniciar ruta de recogida/i }));
     expect(onCreateRoute).toHaveBeenCalledWith('v-1', ['crew-19']);
   });

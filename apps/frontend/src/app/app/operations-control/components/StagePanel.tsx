@@ -21,11 +21,21 @@ interface StagePanelProps {
   pageCount: number;
   onPageChange: (page: number) => void;
   lastSyncAt: Date | null;
+  /**
+   * Footer label for the freshness indicator. Defaults to "Tiempo real",
+   * true for the seven panels backed by useOpsControlSnapshot's Realtime
+   * subscriptions. spec-86 fase 3, ronda 2 (#715, mayor): Discrepancias has
+   * no Realtime subscription on public.discrepancies and was inheriting this
+   * label — and the lastSyncAt of an unrelated channel — anyway, claiming a
+   * freshness it doesn't have. Pass `null` to omit the whole indicator
+   * rather than show a label that isn't true for this panel.
+   */
+  liveLabel?: string | null;
 }
 
 export function StagePanel({
   title, subtitle, deepLink, deepLinkLabel = 'Abrir',
-  kpis, children, page, pageCount, onPageChange, lastSyncAt,
+  kpis, children, page, pageCount, onPageChange, lastSyncAt, liveLabel = 'Tiempo real',
 }: StagePanelProps) {
   return (
     <Card>
@@ -73,10 +83,12 @@ export function StagePanel({
             Siguiente
           </Button>
         </div>
-        <span className="text-xs text-text-muted">
-          Tiempo real
-          {lastSyncAt && <> · {lastSyncAt.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</>}
-        </span>
+        {liveLabel !== null && (
+          <span data-testid="stage-panel-freshness" className="text-xs text-text-muted">
+            {liveLabel}
+            {lastSyncAt && <> · {lastSyncAt.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</>}
+          </span>
+        )}
       </CardFooter>
     </Card>
   );

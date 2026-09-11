@@ -8,8 +8,15 @@ export interface PendingManifest {
   id: string | null;
   external_load_id: string;
   retailer_name: string | null;
-  order_count: number;
-  package_count: number;
+  /** spec-94 fase 1 — nullable since the round-2 review: the UNION ALL's
+   * arm2 (a manifest whose orders are ALL soft-deleted) reads these from
+   * `manifests.total_orders`/`total_packages` (nullable, OCR/manual intake),
+   * NOT the `COUNT(DISTINCT o.id)` SQL aggregate arm1 uses — that source is
+   * a genuine "we never recorded a total" unknown, not zero. NEVER coalesce
+   * with `?? 0` before writing back through `openPendingManifest` — see its
+   * docstring. */
+  order_count: number | null;
+  package_count: number | null;
   created_at: string;
   pickup_point: string | null;
   /** Count of pickup_scans with scan_result='verified' for this load. >0 = in progress. */
@@ -17,6 +24,14 @@ export interface PendingManifest {
   /** spec-53 — set once a label print job has been dispatched for this manifest. */
   labels_printed_at: string | null;
   labels_printed_by_name: string | null;
+  /** spec-83 fase 2 — from pickup_points.pickup_locations[0].operating_hours.
+   * NULL until someone fills it in on the pickup point's admin form — as of
+   * this phase, that is every pickup point in the system. */
+  pickup_window_start: string | null;
+  pickup_window_end: string | null;
+  /** spec-83 fase 2 — pickup_points.sla_config.pickup_cutoff_time. Stricter
+   * than the point's own window when both are set. */
+  pickup_cutoff_time: string | null;
 }
 
 export interface CompletedManifest {
@@ -33,6 +48,13 @@ export interface CompletedManifest {
   /** spec-83 fase 1 — count of this manifest's open-or-resolved 'missing'
    * discrepancies (spec-85). 0 on a clean close. */
   missing_count: number;
+  /** spec-80 fase 2b (ronda 2) — `manifests.signature_operator`. NULL means
+   *  `trg_route_receptions_status_sync` completed this manifest WITHOUT
+   *  ever reaching Firma (the H1 rescue, spec-80 fase 1) — every OTHER row
+   *  here has a real value, since `close_manifest`'s guard 4
+   *  (`OPERATOR_SIGNATURE_REQUIRED`) cannot reach its own `UPDATE` without
+   *  one. See `needsRescueFromCompleted`, `pickupMobileHelpers.ts`. */
+  signature_operator: string | null;
 }
 
 export interface InTransitManifest {
@@ -47,9 +69,20 @@ export interface InTransitManifest {
   pickup_point: string | null;
   labels_printed_at: string | null;
   labels_printed_by_name: string | null;
+  /** spec-94 fase 2 (ronda 4) — `manifests.completed_at` when
+   * `status='completed'`, NULL otherwise. A load closed at the dock whose
+   * route later moves to `in_transit` lands HERE, not in cubo 2 or cubo 4
+   * — "Cierres de hoy" needs this cube too, or that closure (and its
+   * missing_count) vanishes from the panel for the hours the truck is en
+   * route. */
+  closed_at: string | null;
+  missing_count: number;
 }
 
-const PICKUP_QUERY_OPTIONS = {
+// spec-94 fase 2 — exported so useRoutedManifests.ts (a sibling hook file,
+// not this one) shares the same staleTime/refetchInterval instead of
+// drifting to its own copy.
+export const PICKUP_QUERY_OPTIONS = {
   staleTime: 30_000,
   refetchInterval: 60_000,
 } as const;
@@ -74,6 +107,35 @@ export function useCompletedManifests(operatorId: string | null) {
     queryFn: async () => {
       const supabase = createSPAClient();
       const { data, error } = await callRpc<CompletedManifest[]>(supabase, 'get_completed_manifests');
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!operatorId,
+    ...PICKUP_QUERY_OPTIONS,
+  });
+}
+
+/**
+ * spec-80 fase 2b (ronda 3) — the mobile rescue banner's real data source.
+ * NOT the same query as `useCompletedManifests` (operator-wide, unbounded —
+ * correct for desktop's Completados tab): `get_signature_rescue_manifests`
+ * is scoped server-side to THIS user (driver or crew, ever) within the last
+ * 30 days, because `signature_operator` has only ever been written by
+ * `close_manifest` (20260913000002) — unbounded, this surfaced the
+ * operator's entire unsigned history, months of it, burying the one closure
+ * that actually needs today's attention (ronda 3 review — measured against
+ * a local pgTAP fixture, not production QA data: 40 synthetic six-month-old
+ * closures, chosen to show the shape of the problem, not a real count).
+ */
+export function useSignatureRescueManifests(operatorId: string | null) {
+  return useQuery({
+    queryKey: ['pickup', 'manifests', 'signature-rescue', operatorId],
+    queryFn: async () => {
+      const supabase = createSPAClient();
+      const { data, error } = await callRpc<CompletedManifest[]>(
+        supabase,
+        'get_signature_rescue_manifests',
+      );
       if (error) throw error;
       return data ?? [];
     },

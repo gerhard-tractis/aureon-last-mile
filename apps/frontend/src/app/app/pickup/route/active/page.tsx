@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Plus } from 'lucide-react';
+import { onlineManager } from '@tanstack/react-query';
+import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { useActivePickupRoute } from '@/hooks/pickup/useActivePickupRoute';
@@ -13,26 +14,35 @@ import {
 import { useAddManifestToRoute } from '@/hooks/pickup/useAddManifestToRoute';
 import { useRemoveManifestFromRoute } from '@/hooks/pickup/useRemoveManifestFromRoute';
 import { useClosePickupRoute } from '@/hooks/pickup/useClosePickupRoute';
-import { isManifestComplete } from '@/lib/pickup/manifestProgress';
+import {
+  useDownloadedManifestIds,
+  useDownloadManifest,
+} from '@/hooks/pickup/useManifestDownload';
+import { useNextManifestPickupAddress } from '@/hooks/pickup/useNextManifestPickupAddress';
+import { selectNextManifest } from '@/lib/pickup/nextManifestSelection';
+import { matchesRouteManifestQuery, hasActiveRouteSearchQuery } from '@/lib/pickup/routeManifestSearch';
 import { RouteProgressHeader } from '@/components/pickup/RouteProgressHeader';
 import { RouteMapPlaceholder } from '@/components/pickup/RouteMapPlaceholder';
 import { NextManifestCard } from '@/components/pickup/NextManifestCard';
 import { RouteCompleteNotice } from '@/components/pickup/RouteCompleteNotice';
 import { UpcomingManifestList } from '@/components/pickup/UpcomingManifestList';
-import { RouteManifestList } from '@/components/pickup/RouteManifestList';
+import { RouteManifestPanel } from '@/components/pickup/RouteManifestPanel';
+import { RouteFooterTopRow } from '@/components/pickup/RouteFooterTopRow';
 import { AddManifestSheet } from '@/components/pickup/AddManifestSheet';
-import { DigitalizeManifestTrigger } from '@/components/pickup/DigitalizeManifestTrigger';
 import { CloseRouteButton } from '@/components/pickup/CloseRouteButton';
 import { CancelRouteButton } from '@/components/pickup/CancelRouteButton';
 import { toast } from 'sonner';
 
 const MANIFEST_LIST_PANEL_ID = 'route-manifest-list-panel';
+const SEARCH_INPUT_ID = 'route-manifest-search-input';
 
 export default function ActiveRoutePage() {
   const router = useRouter();
   const { operatorId, userId } = useOperatorId();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
 
   const {
     data: route,
@@ -49,6 +59,37 @@ export default function ActiveRoutePage() {
   const addMut = useAddManifestToRoute(operatorId);
   const removeMut = useRemoveManifestFromRoute(operatorId);
   const closeMut = useClosePickupRoute(operatorId);
+  // spec-82 fase 2 (mock 5c) — "DESCARGAR". `downloadedIdsList` puede ser
+  // `undefined` mientras la lectura local no resuelve; el `Set` que arma
+  // `useMemo` conserva ese `undefined` tal cual (nunca `?? []`) para que
+  // RouteManifestList siga sabiendo distinguir "no lo sé todavía" de "nada
+  // descargado" — ver su docstring.
+  const { data: downloadedIdsList } = useDownloadedManifestIds(operatorId);
+  const downloadedIds = useMemo(
+    () => (downloadedIdsList ? new Set(downloadedIdsList) : undefined),
+    [downloadedIdsList],
+  );
+  const downloadMut = useDownloadManifest(operatorId);
+  // B2, ronda 4 — la PÁGINA controla qué filas muestran DESCARGAR
+  // deshabilitado, no `downloadMut.isPending`/`variables` (sólo describe
+  // UNA descarga a la vez; ver el docstring de `downloadingIds` en
+  // RouteManifestList).
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
+
+  // Computed here (before the early returns below), not further down where
+  // the rest of the render logic lives — spec-95 fase 3's map panel needs
+  // `nextManifest.external_load_id` to call a hook, and hooks cannot be
+  // called after a conditional `return`. See selectNextManifest's docstring.
+  const { nextIndex, nextManifest, routeComplete, upcoming } =
+    selectNextManifest(routeManifests);
+
+  // spec-95 fase 3 (mock 5c panel de mapa) — el panel cuelga de la carga
+  // SIGUIENTE, no de toda la ruta; ver el docstring del hook para por qué
+  // la dirección sale de pickup_points y no de manifests.pickup_location.
+  const { data: nextManifestAddress } = useNextManifestPickupAddress(
+    operatorId,
+    nextManifest?.external_load_id ?? null,
+  );
 
   if (routeLoading) {
     return (
@@ -90,23 +131,6 @@ export default function ActiveRoutePage() {
 
   const totalVerified = routeManifests.reduce((s, m) => s + m.verified_count, 0);
 
-  // `useRouteManifests` now orders by created_at ASCENDING (append-only
-  // queue — see the hook), so array position is stable across refetches and
-  // across adding a new manifest from this same screen. "Next" is the first
-  // one genuinely incomplete (a null or zero total_packages counts as
-  // incomplete/unknown, never as done). When nothing is incomplete the route
-  // IS finished — no fallback card that would advertise verification work
-  // that no longer exists.
-  const nextIndex = routeManifests.findIndex((m) => !isManifestComplete(m));
-  const nextManifest = nextIndex === -1 ? null : routeManifests[nextIndex];
-  const routeComplete = routeManifests.length > 0 && nextManifest === null;
-  // Upcoming manifests are the ones AFTER the highlighted one in the same
-  // order — not "everything except it", which could list already-completed
-  // manifests as if they were still ahead.
-  const upcoming = nextManifest
-    ? routeManifests.slice(nextIndex + 1, nextIndex + 4)
-    : [];
-
   const goToScan = (loadId: string) =>
     router.push(`/app/pickup/scan/${encodeURIComponent(loadId)}`);
 
@@ -140,6 +164,59 @@ export default function ActiveRoutePage() {
     );
   };
 
+  // spec-82 fase 2 — "DESCARGAR". `manifestId` marca la fila en
+  // `downloadingIds` (deshabilita SÓLO ese chip); `externalLoadId` es la
+  // clave real de la mutación.
+  //
+  // M1 (decisión del usuario) — sin señal, `networkMode: 'online'` deja la
+  // mutación pausada para siempre sin `onSuccess`/`onError`: se niega de
+  // entrada en vez de colgarse invisible.
+  //
+  // B1, ronda 5 de review del PR #727 — `mutateAsync` + `.finally`, no
+  // `mutate(id, { onSettled })`: los callbacks pasados a `mutate()` no
+  // vuelven a correr si un SEGUNDO `mutate()` arranca antes de que el
+  // primero resuelva (`MutationObserver` desengancha el observer previo en
+  // cada llamada). La promesa de `mutateAsync` es por-invocación y siempre
+  // se asienta. Ver `page.download.concurrent.test.tsx` para el mecanismo
+  // completo y la prueba contra el `useMutation` real.
+  const handleDownload = (manifestId: string, externalLoadId: string) => {
+    if (!onlineManager.isOnline()) {
+      toast.error('Sin conexión: no se puede descargar. Busca señal e inténtalo de nuevo.');
+      return;
+    }
+    setDownloadingIds((prev) => new Set(prev).add(manifestId));
+    downloadMut
+      .mutateAsync(externalLoadId)
+      // Nit, ronda 6 de review del PR #727 — `.then(onSuccess, onError)`
+      // (dos argumentos), no `.then(onSuccess).catch(onError)`: con
+      // `.catch` encadenado, una excepción LANZADA DENTRO de `onSuccess`
+      // (p. ej. si `toast.success` fallara) caería en el mismo `onError` y
+      // mostraría "No se pudo descargar" sobre una descarga que sí quedó
+      // en IndexedDB. La forma de dos argumentos sólo invoca `onError`
+      // cuando la promesa de `mutateAsync` RECHAZA — misma exclusividad
+      // que tenía `mutate(id, { onSuccess, onError })`.
+      .then(
+        () => toast.success(`${externalLoadId} descargada para trabajar sin red`),
+        // Menor, revisión de fase 2 — no repetir el mensaje crudo de
+        // PostgREST (códigos, nombres de columna/constraint) al operario;
+        // no le ayuda a decidir nada y expone detalles internos.
+        () => toast.error(`No se pudo descargar ${externalLoadId}. Inténtalo de nuevo.`),
+      )
+      .finally(() => {
+        setDownloadingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(manifestId);
+          return next;
+        });
+      })
+      // Si el propio `toast.success`/`toast.error` de arriba lanzara, esa
+      // rama de `.then` rechaza y `.finally` reenvía el rechazo — sin este
+      // `.catch` final, quedaría como una promesa no manejada. El chip ya
+      // se liberó (el `.finally` de arriba corre siempre); aquí no queda
+      // nada más que hacer con ese error.
+      .catch(() => {});
+  };
+
   const handleClose = () => {
     closeMut.mutate(
       { routeId: route.id },
@@ -152,19 +229,45 @@ export default function ActiveRoutePage() {
     );
   };
 
+  // spec-95 fase 2 — abrir la búsqueda también revela el panel (si no lo
+  // estaba ya): sin esto, tocar "Buscar" con la lista colapsada tecleaba
+  // contra un panel invisible. Cerrarla NO la vuelve a colapsar — el
+  // conductor pudo haber encontrado lo que buscaba y quiere seguir viendo
+  // la lista completa.
+  const handleToggleSearch = () => {
+    setSearchOpen((open) => {
+      const next = !open;
+      if (next) {
+        setShowAll(true);
+      } else {
+        setQuery('');
+      }
+      return next;
+    });
+  };
+
   const manifestListVisible = routeManifests.length === 0 || showAll;
 
-  // pb-40 (160px), not pb-24: the fixed bar at the foot of this screen now
-  // carries TWO 40px buttons plus p-4/sm:p-6 padding -- ~112px on a phone,
-  // ~128px at `sm`. pb-24 reserved 96px, so the leader (the only person who
-  // sees both buttons) had the last 16-32px of the manifest list permanently
-  // under the bar, on the exact screen where they check what is left to
-  // collect.
+  // M3, review — "Luego" usa el MISMO predicado que el panel (no uno
+  // propio): sólo la tarjeta destacada arriba queda exenta, como en
+  // PickupMobileActiveRoute.tsx.
+  const visibleUpcoming = hasActiveRouteSearchQuery(query)
+    ? upcoming.filter((m) => matchesRouteManifestQuery(m, query))
+    : upcoming;
+
+  // H2, review — el pie ya no son "dos botones de 40px": fila superior
+  // 44px + Cerrar ruta 44px + Cancelar ruta 40px + padding ≈ 184-200px
+  // (teléfono/`sm`). `pb-56` (224px) cubre ambos con margen — si no, la
+  // última fila de manifiestos queda bajo la barra fija.
   return (
-    <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-4 pb-40">
+    <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-4 pb-56" data-testid="active-route-page">
       <RouteProgressHeader route={route} manifests={routeManifests} isLoading={rmLoading} />
 
-      <RouteMapPlaceholder pickupLocation={nextManifest?.pickup_location ?? null} />
+      {/* spec-95 fase 3 (mock 5c) — `nextManifestAddress` es `undefined`
+          mientras la query está en curso; se normaliza a `null` aquí (no
+          antes) para que RouteMapPlaceholder nunca reciba un dato a medio
+          cargar como si fuera una dirección real. */}
+      <RouteMapPlaceholder pickupLocation={nextManifestAddress ?? null} />
 
       {rmLoading ? (
         <div className="flex justify-center py-6">
@@ -177,65 +280,28 @@ export default function ActiveRoutePage() {
           )}
           {routeComplete && <RouteCompleteNotice />}
 
-          <UpcomingManifestList manifests={upcoming} />
+          <UpcomingManifestList manifests={visibleUpcoming} />
 
           {manifestListVisible && (
-            <div id={MANIFEST_LIST_PANEL_ID}>
-              <h2 className="text-sm font-semibold text-text mb-2">
-                Manifiestos en la ruta
-              </h2>
-              <RouteManifestList
-                manifests={routeManifests}
-                onManifestClick={goToScan}
-                // Only wired once operatorId has resolved: useRemoveManifestFromRoute
-                // keys its cache invalidation off it, and a null operatorId
-                // would invalidate queries that match nothing (a trait it
-                // shares with useAddManifestToRoute / useCancelPickupRoute).
-                onRemove={operatorId ? handleRemove : undefined}
-                isRemoving={removeMut.isPending}
-              />
-            </div>
+            <RouteManifestPanel
+              panelId={MANIFEST_LIST_PANEL_ID}
+              searchInputId={SEARCH_INPUT_ID}
+              manifests={routeManifests}
+              searchOpen={searchOpen}
+              query={query}
+              onQueryChange={setQuery}
+              onManifestClick={goToScan}
+              // Only wired once operatorId has resolved: useRemoveManifestFromRoute
+              // keys its cache invalidation off it, and a null operatorId
+              // would invalidate queries that match nothing (a trait it
+              // shares with useAddManifestToRoute / useCancelPickupRoute).
+              onRemove={operatorId ? handleRemove : undefined}
+              isRemoving={removeMut.isPending}
+              downloadedIds={downloadedIds}
+              onDownload={handleDownload}
+              downloadingIds={downloadingIds}
+            />
           )}
-
-          <div className="flex items-center gap-2">
-            {routeManifests.length > 0 && (
-              <Button
-                type="button"
-                variant="secondary"
-                className="flex-1 min-h-[44px]"
-                aria-expanded={showAll}
-                // Only points at a real id: the panel doesn't exist in the
-                // DOM until expanded, and a dangling aria-controls idref is
-                // worse than omitting the attribute.
-                aria-controls={manifestListVisible ? MANIFEST_LIST_PANEL_ID : undefined}
-                onClick={() => setShowAll((v) => !v)}
-              >
-                {showAll
-                  ? 'Ocultar manifiestos'
-                  : routeManifests.length === 1
-                    ? 'Ver el manifiesto'
-                    : `Ver los ${routeManifests.length} manifiestos`}
-              </Button>
-            )}
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="min-h-[44px] min-w-[44px]"
-              aria-label="Agregar manifiesto"
-              data-testid="open-add-manifest"
-              onClick={() => setSheetOpen(true)}
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          </div>
-
-          {/* spec-82 phase 1 (mock 5c) — precarga/digitalización de un
-              manifiesto nuevo directamente desde la ruta activa, sin
-              volver a la pantalla de escritorio. Reusa el mismo flujo OCR
-              que "Nuevo Manifiesto" ya usa en /app/pickup (spec-47);
-              ver DigitalizeManifestTrigger.tsx. */}
-          <DigitalizeManifestTrigger />
         </>
       )}
 
@@ -249,13 +315,28 @@ export default function ActiveRoutePage() {
       />
 
       <div className="fixed bottom-0 inset-x-0 bg-background border-t border-border p-4 sm:p-6">
-        {/* space-y-3: "Cancelar ruta" is destructive and sits directly under
-            the routine "Cerrar ruta" CTA. Flush, they are two
-            full-width 40px targets one thumb-width apart on a phone held
-            one-handed, with only the confirm dialog between a mis-tap and
-            detaching every manifest on the route. 3h already separates them
-            (`flex flex-col gap-4`); this surface did not. */}
-        <div className="max-w-2xl mx-auto space-y-3">
+        {/* space-y-3: "Cancelar ruta" es destructivo y va justo debajo del
+            CTA de rutina "Cerrar ruta". Pegados, son dos objetivos de 40px
+            a ancho completo separados por el ancho de un pulgar en un
+            teléfono sostenido con una mano, con sólo el diálogo de
+            confirmación entre un toque errado y desenganchar todos los
+            manifiestos de la ruta. 3h ya los separa
+            (`flex flex-col gap-4`); esta superficie no lo hacía. */}
+        {/* M2, review — el orden (Cerrar ruta antes que Cancelar ruta) es
+            el criterio de la fase; `data-testid` propio para comprobar
+            POSICIÓN, no sólo presencia. */}
+        <div className="max-w-2xl mx-auto space-y-3" data-testid="route-footer-stack">
+          <RouteFooterTopRow
+            manifestsCount={routeManifests.length}
+            showAll={showAll}
+            manifestListPanelId={manifestListVisible ? MANIFEST_LIST_PANEL_ID : undefined}
+            onToggleShowAll={() => setShowAll((v) => !v)}
+            searchOpen={searchOpen}
+            searchInputId={searchOpen ? SEARCH_INPUT_ID : undefined}
+            onToggleSearch={handleToggleSearch}
+            onOpenAdd={() => setSheetOpen(true)}
+          />
+
           <CloseRouteButton
             totalVerified={totalVerified}
             isSubmitting={closeMut.isPending}

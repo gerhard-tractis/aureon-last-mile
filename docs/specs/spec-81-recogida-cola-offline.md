@@ -1138,44 +1138,315 @@ review):**
 > en la propia fase 1 de spec-82). Revisado también spec-80 (fase 2, en
 > paralelo) — coordinado explícitamente en el PR para no compartir archivos.
 
-### Fase 4 — Chip de sync `[pending]`
+### Fase 4 — Chip de sync `[done]`
 
-**Archivos:** `components/ConnectionStatusBanner.tsx` → chip; su test e i18n
+> Implementado por: implementer — rama `feat/spec-81-fase-4-chip-de-sync`, SHA `8522284` (PR #725, mergeado como `95c8e0a`).
+> Review: reviewer — **cuatro rondas**. Los dos que cambiaron el resultado: el panel afirmaba que el resto de `blockedCount` era espera cross-user que «se libera sola» —falso en el caso más común— y, al arreglarlo, **reapareció el mismo bug invertido**: `deadManifestIds` incluía las fotos mientras `manifestHasDeadEntry` las excluye, así que cuatro escaneos sanos se pintaban como atascados.
+> QA: PR #725 merged 2026-09-10T01:20Z, CI verde. **`e2e-qa` no ejercita la cola offline** (necesita un dispositivo sin red); ver abajo lo que queda para hardware.
+> Downstream: revisado spec-80 fase 5 — el rebase conservó su extracción de `useCloseManifest` y pasó `externalLoadId` como parámetro del hook, sin código huérfano. Revisado spec-80 fase 6 — **sigue siendo su requisito**: hasta que esa fase cablee `enqueueManifestPhoto`, ninguna foto llega a esta cola.
+
+**La lección de este módulo, otra vez, y ahora con nombre.** El bug de la ronda
+3 fue **la costura entre dos funciones que deciden lo mismo con criterios
+distintos** — exactamente el patrón que ya costó cuatro rondas en la fase 2
+(los dos bucles ocupados, 197 consultas/s y 90 pasadas/s). El arreglo no fue
+filtrar: fue **usar `deadEntryBlocksManifestClose` como fuente única en los dos
+lados**, una definición y dos llamantes. Verificado en seis escenarios —foto
+muerta, cierre muerto, ambos, solape cross-user, mezcla y `sending`— con **suma
+exacta en todos y el clamp sin disparar en ninguno**.
+
+**Y el clamp ocultaba la señal.** El `Math.max(..., 0)` que evitaba un «+-N»
+negativo convertía un descuadre **determinista y permanente** (5 contra 1) en
+un cero silencioso, y su test lo describía como «carrera». Es la versión
+interna del cero convincente que esta sesión persiguió toda la jornada: **un
+guard cosmético encima de una contradicción**. Queda redocumentado como lo que
+protege de verdad.
+
+**Dos decisiones de producto que quedaron escritas:**
+1. **El chip nunca imprime un identificador que el operario no pueda
+   encontrar.** `manifests.id` es un UUID que no aparece en ninguna pantalla;
+   cuando falta `externalLoadId` —entradas encoladas por una versión anterior,
+   que sobreviven a la actualización de la PWA— dice «Carga sin identificar»,
+   explica por qué, y da el único criterio honesto disponible: la carga que
+   tiene algo bloqueado. **Un id falso es peor que ninguno.**
+2. **La instrucción nombra al actor correcto.** Decía «contacta a soporte»
+   cuando el propio operario puede resolverlo tocando «REQUIERE AYUDA» en la
+   pantalla de esa carga. La regla del módulo es que un bloqueo pintado diga
+   **quién** lo desbloquea; decía el nombre equivocado.
+
+**Corrección de un dato que circuló por tres manos.** Se afirmó que cablear
+`ManifestPhotoStrip` era «un prop de distancia». El implementer lo verificó
+antes de tocar nada —`git log --follow` y grep— y **`enqueueManifestPhoto` no
+tiene ningún llamador de producción**. No era un prop: es **spec-80 fase 6**.
+El campo queda listo en la firma **sin fingir que está enchufado**.
+
+**Queda `awaiting_user_test` — sólo lo cierra una persona con el teléfono:**
+provocar un `dead` real (cerrar sin señal con un manifiesto no cerrable),
+confirmar que el panel nombra la carga con su código y no con un UUID, y que
+«REQUIERE AYUDA» la revive; y comprobar que una entrada encolada **antes** de
+esta versión, tras actualizar la PWA, cae en la rama «sin identificar» y que el
+texto le basta para encontrarla.
+
+
+**Archivos:** `components/SyncChip.tsx` (el `ConnectionStatusBanner.tsx` de
+este campo no existe desde 2026-08-16, `0fb4184` — ver el ítem 1 abajo),
+`hooks/useBlockedPickupEntries.ts`, `lib/offline/queue.ts`
+(`countPendingInManifests`), sus tests, `lib/i18n/es.ts`
 
 Redacción del handoff: «se guardan en el dispositivo y se envían solos…». Cuenta pendientes, como pide `5i`.
 
-- [ ] Desmontar el `fixed top-0` sin romper auth ni landing, que hoy también lo montan.
-- [ ] **Afordancia humana para `dead` (B3, ronda 2 de review del PR #679 —
+- [x] **Desmontar el `fixed top-0` sin romper auth ni landing.** Ya hecho —
+      no en esta fase: `ConnectionStatusBanner.tsx` fue borrado el
+      2026-08-16 en `0fb4184` (spec-54 fase 4.5, PR #429), reemplazado por
+      `SyncChip.tsx`, montado una única vez en `TopBar` (dentro de
+      `AppLayout`, nunca en `app/auth/layout.tsx` ni en `app/(landing)`).
+      El fichero que este ítem nombra (`components/ConnectionStatusBanner.tsx`)
+      no existe en el árbol — verificado (`git log --follow` sobre ese
+      path, y un grep de `SyncChip`/`scan_queue`/`syncManager` sobre
+      `app/auth/` y `app/(landing)/`, ninguno). El `**Archivos:**` de esta
+      fase queda desactualizado por la misma razón: el archivo real es
+      `components/SyncChip.tsx`.
+- [x] **Afordancia humana para `dead` (B3, ronda 2 de review del PR #679 —
       bloqueante en fase 2, no cerrado del todo ahí).** `dead` es
       deliberadamente permanente — ver el docstring de `manifestHasDeadEntry`
       y la decisión de no revertirlo tomada en la ronda 2: soltar el cierre
       detrás de un escaneo muerto cierra la carga con un bulto de menos, que
-      es el riesgo nº1 del spec. Pero hoy, tras la ronda 2, `dead` sólo dejó
-      de mentir (`getBlockedPickupCount`, separado de `queuedCount`;
-      `SyncChip` ya no lo pinta en verde de éxito) — no tiene ninguna salida.
-      Grep de `'dead'` en todo `apps/frontend/src`: sólo aparece en el tipo,
-      en los guards de `queue-claims.ts`, en `manifestHasDeadEntry` y en
-      `getBlockedPickupCount` (para contarlo). Ninguna pantalla, botón,
-      `markAlive` ni purga manual. Sin esto el operario recibió el toast
-      «tu firma se guardó y el cierre se enviará solo» y nada se lo
-      desmiente nunca — el chip ahora dice «requiere ayuda» pero no dice a
-      quién pedírsela ni qué hacer. Esta fase, que ya toca `SyncChip` y su
-      pantalla, debe: mostrar qué manifiesto está bloqueado y por qué
-      (`lastError`), y dar una vía para que un humano lo resuelva (contactar
-      soporte/operaciones — no necesariamente reintentar solo, dado que
-      `dead` es un rechazo de negocio, no de red).
+      es el riesgo nº1 del spec. Parcialmente cerrado ya antes de esta
+      fase: `retryDead`/`retryBlockedManifest` (fase 2, rondas 4-5 de
+      review del PR #679) y el botón "REQUIERE AYUDA · Toca para
+      reintentar" en `complete/[loadId]/page.tsx` — el grep que este ítem
+      citaba como evidencia de que no había nada ya no es cierto. Lo que
+      seguía faltando, y esta fase entrega: el chip global (`SyncChip`,
+      topbar, visible en TODA pantalla, no sólo en la de cierre) no decía
+      QUÉ manifiesto está bloqueado ni POR QUÉ (`lastError`) — sólo un
+      conteo. Nuevo: `listDeadPickupEntries` (`lib/offline/queue.ts`) +
+      `useBlockedPickupEntries` (hook) + un `<details>` en `SyncChip` que,
+      por cada `dead`, muestra el id del manifiesto, su `lastError`, y —
+      la distinción que el spec pide explícitamente, y que cambió el mismo
+      día que esta fase se implementó (fase 5, ronda 3 de review del PR
+      #712) — si ESE `dead` concreto bloquea el cierre de la carga o no
+      (`deadEntryBlocksManifestClose`: una `manifest_photo` muerta cuenta
+      como bloqueada en `getBlockedPickupCount` pero ya NO frena
+      `close_manifest`; el chip lo dice explícitamente en vez de dejar que
+      el operario asuma que si el badge está en rojo, la carga no puede
+      cerrarse).
 
-### Fase 5 — Fotos `[pending]`
+      **Ronda 2 de review del PR #725 (2026-09-09) — B1 bloqueante, corregido
+      aquí y no sólo en el código.** La primera versión de este párrafo
+      afirmaba que "el resto de `blockedCount` no explicado por
+      `listDeadPickupEntries` es espera cross-user que se libera sola" —
+      **falso**. `manifestIsBlocked` (`queue-blocking.ts`) prueba PRIMERO
+      `manifestHasDeadEntry`, y esa rama domina: cualquier `pending` del
+      MISMO manifiesto que un `dead` cuenta como bloqueada sin que exista
+      ningún otro operario, y esa `pending` no se libera sola — se resuelve
+      cuando el `dead` de arriba se resuelva. Medido con Dexie (mismo
+      operador, mismo usuario, un `close_manifest` `dead` y cuatro
+      `pickup_scan` `pending` en el mismo manifiesto): `getBlockedPickupCount
+      = 5`, `listDeadPickupEntries = 1`, resto = 4, y el texto anterior
+      habría dicho "+4 esperando a otro operario; se liberan solas" sobre
+      cuatro filas que no van a salir hasta que se resuelva la de arriba.
+      **Corregido:** `countPendingInManifests` (`lib/offline/queue.ts`)
+      cuenta las `pending` que comparten manifiesto con un `dead` ya
+      listado; `useBlockedPickupEntries` separa `sameManifestBlockedCount`
+      (se resuelven cuando el `dead` de arriba se resuelva, nunca solas) de
+      `crossUserBlockedCount` (el resto, sin ningún `dead` que lo explique
+      — esa sí se libera sola). El panel muestra las dos causas por
+      separado, nunca mezcladas.
 
-**Archivos:** `lib/offline/photos.ts`, integración con `ManifestPhotoStrip` (spec-80 fase 3)
+      **M1 (mayor, misma ronda).** El texto original de la vía de
+      resolución ("Contacta a soporte u operaciones para resolverlo")
+      nombraba al actor equivocado: `retryDead` ya existe y ya está
+      cableado al botón "REQUIERE AYUDA · Toca para reintentar" en
+      `complete/[loadId]/page.tsx` — el operario puede resolver esto con un
+      toque, sin ningún ticket. **Corregido:** cada `dead` listado dice
+      "Abre la carga `<manifestId>` y toca REQUIERE AYUDA para reintentar."
+      Sigue sin añadirse ningún botón nuevo al chip — eso seguía siendo
+      correcto — pero "no añadir botón" no es lo mismo que "mandar a
+      soporte".
 
-- [ ] Blob a IndexedDB en captura; subida al bucket `manifests` al drenar; `manifest_documents` se inserta **después** de que la subida confirme, nunca antes.
-- [ ] Test: fila huérfana imposible — si la subida falla, no hay registro apuntando a un objeto inexistente.
+      **M2/M3 (menores, mismos huecos de test, sin cambio de comportamiento
+      nuevo).** El test de "bloquea el cierre" no anclaba el regex (la rama
+      contraria, "No bloquea el cierre…", lo satisfacía como substring) y
+      la rama "nada requiere ayuda" podía coexistir sin test con un `dead`
+      ya listado (contradictorio: la carga de arriba SÍ requiere ayuda).
+      Cerrados con regex ancladas y aserciones negativas cruzadas.
+
+      **Menor:** el panel quedaba en blanco mientras el hook seguía en
+      `idle` con `blockedCount > 0` (la ventana entre el mount y su primera
+      lectura) — rama nueva "Cargando detalle…".
+
+      **Fuera de alcance, declarado en la ronda 2 de review del PR #725, no
+      arreglado aquí.** `complete/[loadId]/page.tsx:296` pinta el
+      `blockedCount` GLOBAL (device/operador, no por manifiesto) en una
+      pantalla que es POR carga, y su `handleRetryBlocked` sólo reintenta
+      el manifiesto que esa pantalla tiene abierto. Un `dead` en la carga
+      m-1 hace que la pantalla de m-2 muestre "1 REQUIERE AYUDA" también, y
+      tocarlo ahí revive cero filas. Es preexistente a esta fase (el badge
+      ya existía desde fase 2) — pero el panel de `SyncChip`, que sí nombra
+      el manifiesto real, es lo que lo vuelve visible como contradicción.
+      Queda anotado, no resuelto: la pantalla de cierre necesitaría filtrar
+      `blockedCount`/las entradas `dead` por el `manifestId` que tiene
+      abierto, trabajo de una fase futura si se decide que vale la pena.
+
+      **Ronda 3 de review del PR #725 (2026-09-09) — B bloqueante, el mismo
+      seam de B1 invertido.** `useBlockedPickupEntries` derivaba
+      `deadManifestIds` de TODOS los `dead`, fotos incluidas — pero
+      `manifestHasDeadEntry`/`manifestIsBlocked` (`queue-blocking.ts`)
+      EXCLUYEN `manifest_photo` de "¿hay un dead que bloquee este
+      manifiesto?" (B-1, spec-81 fase 5, ronda 3 del PR #712). Medido: una
+      foto `dead` + 4 `pickup_scan` `pending` en el mismo manifiesto daba
+      `blockedCount=1, dead=1, same=4` — el clamp (`Math.max(...,0)`)
+      escondía el `-4` en vez de dejarlo revelar la inconsistencia, y el
+      panel decía a la vez "es respaldo, no bloquea el cierre" y "+4 más
+      bloqueadas por la misma carga" sobre las MISMAS cuatro filas.
+      **Corregido:** `blockingRows = rows.filter(deadEntryBlocksManifestClose)`
+      antes de derivar `deadManifestIds` — el mismo predicado que ya
+      decidía la mitad de `getBlockedPickupCount`, ahora también decide
+      esta. El clamp de la ronda 2 queda como guard de una carrera real
+      (dos lecturas independientes, `blockedCount` de `useSyncQueue` contra
+      esta lectura, en instantes distintos) — no como lo que ocultaba el
+      bug de tipos; su test se re-documentó para decir eso, no se quitó.
+
+      **M (mayor, misma ronda).** "Abre la carga `<manifestId>`…" imprimía
+      un UUID (`manifests.id`) — el operario navega por `external_load_id`
+      (el segmento de `/app/pickup/complete/[loadId]`), no por la clave
+      primaria. **Corregido:** `PickupQueueEntry`/`EnqueueInput` ganan
+      `externalLoadId?: string`; `complete/[loadId]/page.tsx` lo pasa al
+      encolar `close_manifest` (`loadId`, ya resuelto de la URL).
+
+      **Ronda 4 de review del PR #725 (2026-09-09).** El texto de arriba
+      decía "ningún llamador de `pickup_scan`/`manifest_photo` lo pasa
+      todavía" como si fuera hipotético — corregido, con la comprobación
+      que lo sostiene: `enqueueManifestPhoto` (`lib/offline/photos.ts:191`)
+      **también gana `externalLoadId?: string`** (mismo campo,
+      `EnqueueManifestPhotoInput`), así que el encolado de fotos ya no se
+      queda atrás del de `close_manifest` cuando alguien lo conecte a una
+      UI. **Verificado explícitamente, no asumido:** un grep de
+      `enqueueManifestPhoto(` sobre `apps/frontend/src` fuera de
+      `photos.test.ts`, y `git log --follow` sobre
+      `ManifestPhotoStrip.tsx` (último commit: `2f80d83`, PR #706,
+      spec-80 fase 3) — **cero llamadores de producción**. La pantalla de
+      captura sigue en `useUploadManifestDocument` (online-only), sin
+      ninguna ruta offline conectada; el propio `ManifestCameraSheet.tsx`
+      dice explícitamente que "cableado a
+      `ManifestPhotoStrip`/`useUploadManifestDocument` queda fuera de
+      alcance" de spec-80 fase 4. Conectar esa UI a `enqueueManifestPhoto`
+      sigue siendo el ítem `- [ ]` ya declarado en spec-80 fase 4 (M3, "debe
+      llamar a `enqueueManifestPhoto`, no a `useUploadManifestDocument`") —
+      no es un cambio de una línea ("`loadId` como prop"), es reemplazar el
+      camino de subida completo de esa pantalla, y sigue fuera del alcance
+      de esta fase.
+
+      **Decisión del usuario sobre el fallback del chip cuando falta
+      `externalLoadId`, independiente de si `manifest_photo` está o no
+      conectado hoy:** un `close_manifest`/`manifest_photo` `dead` encolado
+      por una versión de la app anterior a este campo (los `dead` son
+      justo las entradas que nunca drenan, así que sobreviven una
+      actualización) sigue siendo alcanzable. `SyncChip` **nunca** cae al
+      UUID (`entry.manifestId`) ni en el encabezado ni en la instrucción —
+      ese identificador no aparece en ninguna pantalla que el operario vea,
+      y ofrecerlo es peor que no ofrecer ninguno. Encabezado: "Carga sin
+      identificar". Instrucción: explica que la carga se encoló con una
+      versión anterior de la app y a dónde ir (Recogida, la carga con algo
+      bloqueado) — nunca inventa un identificador navegable que no existe.
+
+### Fase 5 — Fotos `[done]`
+
+> Implementado por: implementer — rama `feat/spec-81-fase-5-fotos-offline`, SHA `265ff9c` (PR #712, mergeado como `271884b`).
+> Review: reviewer — **cinco rondas**. Los tres que cambiaron el resultado: una SELECT de verificación fallida por red **borraba el objeto que respaldaba una fila viva**; `uploaded_by` viajaba en el payload y chocaba con `auth.uid()` en la RLS cuando otro conductor drenaba; y una colisión de `sheet_number` mataba el manifiesto entero sin salida.
+> QA: PR #712 merged 2026-09-09T19:05Z, CI verde. **`e2e-qa` no ejercita la cola offline** (necesita un dispositivo sin red); el límite de `fake-indexeddb` con `Blob` real queda declarado como ítem de hardware.
+> Downstream: revisado spec-80 fase 4 — coordinado, ambos párrafos conservados. Revisado spec-80 fase 6 — **la creó este trabajo**: `enqueueManifestPhoto` existe y **no tiene ningún llamador de producción**.
+
+**La decisión de producto que desbloqueó esto, y su razón.** Una colisión de
+número de hoja dejaba la entrada en `dead`, y `manifestHasDeadEntry` bloqueaba
+**también el `close_manifest`** de la carga — sin que ningún código pudiera
+deshacerlo. Se decidió que **una foto es respaldo, no conteo**: su pérdida no
+falsea la cifra que el cliente firma, así que una `manifest_photo` muerta **ya
+no envenena el FIFO del manifiesto**. Y la colisión **renumera en vez de
+morir**, contra el servidor y contra la cola local. **Pero sigue contándose
+como bloqueada** — la regla del módulo es que todo lo que no salió se ve.
+
+**Una corrección de honestidad que quedó escrita:** `uploaded_by` registra
+**quién SUBIÓ, no quién capturó**. En una entrega cross-user son personas
+distintas, y «quién capturó» **no se persiste**. El bullet original afirmaba
+cerrar ese hueco y no lo cierra.
+
+**Hueco heredado:** `fake-indexeddb` **no hace round-trip de un `Blob` real**
+—devuelve `{}` y pierde `.size`—, así que el tope por tamaño está probado
+contra un duck-type. Sólo lo cierra una prueba en dispositivo real.
+
+
+**Depende de:** spec-80 fase 3 (`useUploadManifestDocument`/`ManifestPhotoStrip`, mergeada — es el hueco que esta fase cierra, declarado explícitamente en `complete/[loadId]/page.tsx`)
+
+**Archivos:** `lib/offline/photos.ts` (encolar), `lib/offline/photos-send.ts` (envío, M-3 ronda 3), `lib/offline/photos-types.ts` (tipos compartidos, M-3 ronda 3), `lib/offline/wake-event.ts` (M-2 ronda 3), `photos.test.ts`, `lib/db.ts` (tipo `manifest_photo`), `lib/offline/queue.ts` (`manifestHasDeadEntry` excluye `manifest_photo`, B-1 ronda 3), `lib/pickup/offlineQueueSender.ts` (despacho a `sendManifestPhoto`, `onManifestPhotoSent`), `components/AppLayout.tsx` (cableado de invalidación, B-2 ronda 3)
+
+- [x] Blob a IndexedDB en captura (`enqueueManifestPhoto`, sobre `pickup_queue` — mismo almacén de fase 1, el campo `blob` ya estaba reservado); subida al bucket `manifests` al drenar (`sendManifestPhoto`, el `OfflineQueueSender` de `manifest_photo`, despachado desde `createPickupQueueSender`); `manifest_documents` se inserta **después** de que la subida confirme, nunca antes.
+- [x] Test: fila huérfana imposible — si la subida falla, no hay registro apuntando a un objeto inexistente; y si el INSERT falla tras una subida exitosa (por cualquier motivo que no sea "esta misma foto ya se aplicó"), el objeto subido se borra antes de reportar el resultado. Mutation-verificado, dos rondas: 5 mutantes en la primera (guard 23505, limpieza tras fallo no idempotente, tope de bytes, clasificador de red de storage, clasificador de red de postgrest) + 7 más en la ronda 1 de review del PR #712 (guard de la SELECT de verificación B1, `uploaded_by` B2, renumerado local B3 ×2, evento de despertar M1 ×2, tope por fichero M2) — los 12 matados por el test que los reclama.
+
+**Decisiones tomadas en esta fase:**
+
+1. **No se tocó `ManifestPhotoStrip.tsx` ni la pantalla de captura.** spec-80 fase 4 (`5g`/`5h`) los está tocando en paralelo — coordinación explícita del orquestador. Esta fase entrega la infraestructura completa (encolar + drenar, con el sender ya despachado desde `offlineQueueSender.ts`); conectar la UI de captura a `enqueueManifestPhoto` en vez de a `useUploadManifestDocument` directo queda para quien aterrice después sobre ese fichero — la forma ya existe y está pensada para eso, mismo patrón que fase 2 dejó para el escritor de `pickup_scan`.
+
+   **Consecuencia honesta:** la frase «Las fotos también» (`5f`) pasa a ser **verdad a nivel de infraestructura** — un blob capturado y encolado sobrevive sin señal y se sube solo — pero **no automáticamente en la pantalla actual**, porque `ManifestPhotoStrip` sigue llamando a `useUploadManifestDocument` directo, sin ruta offline. Cerrar el lazo (que la captura real dispare `enqueueManifestPhoto` en vez de perder el archivo) es trabajo de integración, no de diseño nuevo, y no se hizo aquí por la misma razón de coordinación de arriba.
+
+2. **Idempotencia sin columna nueva en `manifest_documents`.** A diferencia de `pickup_scans` (fase 3, `client_operation_id` con índice único), las fotos reutilizan `UNIQUE(manifest_id, sheet_number)`, que ya existe: la ruta de subida es determinista (`operator_id/manifest_id/sheet-N-<client_operation_id>.jpg`, `upsert: true`), así que un reintento de la MISMA foto sube al mismo objeto y, si el INSERT anterior sí se aplicó, choca con un 23505 cuya fila referencia exactamente esa ruta — eso se reporta `sent`, no `dead`. Un 23505 cuya fila referencia OTRA ruta es una colisión real de `sheet_number` — no resoluble reintentando, se reporta `dead` con el mismo criterio que cualquier otro rechazo de negocio de esta cola. Con B3 (abajo), esa colisión real deja de ser el caso normal de dos capturas offline en un mismo dispositivo — sólo queda entre dos dispositivos que nunca sincronizaron entre sí.
+3. **Ningún `AbortSignal.timeout` propio para la subida**, a diferencia de `close_manifest` (`CLOSE_MANIFEST_TIMEOUT_MS`). Una foto puede legítimamente tardar más que una firma en 2G, y a diferencia de `close_manifest` (que muta `signature_operator_name` en el servidor), reclamar esta entrada como huérfana (`reclaimStale`) y reintentar antes de que la primera petición termine es inofensivo: la ruta es determinista y `upsert: true` hace que un segundo intento en vuelo sobre el mismo objeto no cree un duplicado. Documentado también en el docstring de `RECLAIM_STALE_MS` (`useOfflineQueue.ts`) tras la ronda 1 de review, para que la excepción a su propia invariante ("debe superar el timeout HTTP del sender") quede donde se lee esa invariante, no sólo en `photos.ts`.
+4. **Tope en bytes, no en filas (declarado en "Riesgos").** `MAX_UNCONFIRMED_PHOTO_BYTES_PER_OPERATOR = 200 MB` — `unconfirmedPhotoBytes` suma `.size` de todo `manifest_photo` sin `status: 'sent'` para el operador; `enqueueManifestPhoto` rechaza con error explícito antes de escribir si el nuevo blob lo superaría. Mismo criterio que el tope de 500 filas de fase 1: fallar visible, no fallar en silencio contra la cuota real del navegador. **Añadido en ronda 1 de review (M2):** un segundo tope por fichero, `MAX_PHOTO_FILE_BYTES = 10 MiB`, igual al `file_size_limit` real del bucket `manifests` (`20260430000001_create_manifests_storage_bucket.sql`) — sin él, una foto por encima de ese límite subía y era rechazada en cada intento del drenador, agotando `MAX_RETRY_ATTEMPTS` y bloqueando el manifiesto sin que el operario pudiera hacer nada; ahora se rechaza al capturar, donde todavía puede repetirse la foto.
+5. **Fallo de red durante el INSERT (tras una subida ya exitosa) no borra el objeto.** No se sabe si el INSERT se aplicó o no sin una segunda consulta; como el próximo reintento reutiliza la misma ruta determinista sin coste, no hay nada que limpiar — se reporta `offline` (no `retry`, mismo contrato que la costura 1 de fase 2 para `close_manifest`: no consume presupuesto de reintentos por una caída de señal).
+
+**Ronda 1 de review del PR #712 (2026-09-09) — tres bloqueantes, todos en el mismo patrón: un estado `dead` sin salida real:**
+
+- **B1.** La verificación del 23505 (`¿la fila existente es la MISMA foto?`) descartaba el `error` de su propia SELECT. Si la señal caía DE NUEVO justo entre el 23505 (reintento normal: el insert anterior SÍ se aplicó) y esa verificación, `existing` era `null` por el fallo de red — no porque la fila no existiera — y el código lo confundía con una colisión real: **borraba el objeto que la fila VIVA en `manifest_documents` referencia**, dejando evidencia legal apuntando a un objeto inexistente. `retryDead` no lo salvaba: revive, repite el mismo 23505, vuelve a fallar la misma SELECT sin señal, vuelve a morir. **Implementado:** la SELECT captura su propio `error`; un fallo de red se reporta `offline` sin tocar el bucket, cualquier otro fallo de la SELECT se reporta `retry` — nunca se borra nada mientras no se sepa de verdad si la fila existente es la nuestra.
+- **B2.** El INSERT mandaba `uploaded_by: entry.userId` — la identidad de quien ENCOLÓ la foto, congelada en la entrada — contra una policy `uploaded_by IS NULL OR uploaded_by = auth.uid()`. Pero `drainManifest` procesa la cabeza del FIFO sea de quien sea, pasado `CROSS_USER_RECLAIM_MS` (`queue-blocking.ts`) — decisión del usuario, aceptada porque `close_manifest` deriva el firmante de `auth.uid()` EN EL SERVIDOR, nunca del payload. `manifest_photo` fue el primer tipo de esta cola en llevar la identidad del actor en el payload, y rompía esa premisa: un operario B (bajo su propio JWT) drenando la foto que A capturó insertaba `uploaded_by = A` → 42501 → `retry` × `MAX_RETRY_ATTEMPTS` → `dead` → manifiesto bloqueado para siempre, subiendo y borrando el mismo blob en cada vuelta. **Implementado:** `uploaded_by: null` — la policy lo admite explícitamente; no hay sesión fiable de la que derivarlo en un drenador de fondo.
+- **B3.** `ManifestPhotoStrip.tsx` calcula el número de hoja contra `useManifestDocuments`, una query AL SERVIDOR — sin señal esa lista queda congelada, así que dos hojas capturadas offline en el MISMO dispositivo recibían el MISMO número propuesto. No es una carrera rara: es el caso normal del flujo que esta fase existe para cubrir. La segunda chocaba en el drenador con un `storage_path` distinto → 23505 leído (correctamente, con el B1 de arriba) como colisión real → `dead` → `manifestHasDeadEntry` bloqueaba también el `close_manifest` de la carga entera, sin salida (`retryDead` repetía la misma colisión). **Implementado:** `enqueueManifestPhoto` desambigua contra lo único consultable offline — la cola LOCAL — antes de que el número llegue al servidor (`nextAvailableSheetNumber`, `photos.ts`): el primer número ≥ el propuesto que ningún `manifest_photo` sin confirmar de ese manifiesto ya esté usando. No resuelve la colisión entre DOS dispositivos que nunca sincronizaron entre sí — ninguna cola puramente local puede verla venir — pero ese caso, mucho más raro, sigue teniendo la misma afordancia humana ("REQUIERE AYUDA") que cualquier otro bloqueo irrecuperable de esta cola; documentado explícitamente en el código, no un caso cubierto en silencio.
+
+Dos mayores:
+
+- **M1.** `enqueueManifestPhoto` no despertaba el drenador — `complete/[loadId]/page.tsx:228` sí dispara `PICKUP_QUEUE_WAKE_EVENT` tras encolar un `close_manifest` offline, pero el equivalente para fotos faltaba. `AppLayout` monta `useOfflineQueue` una única vez a nivel de shell; sin el evento, una foto encolada mientras la pestaña sigue abierta (el caso normal: el operario sigue en la pantalla de captura) esperaba a un `online` real que puede no llegar nunca si la señal de red nunca se perdió de verdad — sólo falló ese upload puntual. **Implementado:** `enqueueManifestPhoto` dispara `PICKUP_QUEUE_WAKE_EVENT` tras un encolado que sí se aplicó (no si un tope lo rechaza).
+- **M2.** Ver el punto 4 de "Decisiones tomadas" arriba (tope por fichero) — incluye también pasar `contentType` real del blob a `upload()` en vez de dejar que se infiera del nombre `.jpg` del objeto (forzado por `manifestPhotoStoragePath` sin importar el tipo real del archivo), evitando un content-type equivocado para un HEIC de iOS subido con ese nombre.
+
+Menores: mutante superviviente en el guard del tope de bytes (`>` frente a `>=`) — test de borde exacto añadido. El checklist de "M3" (spec-80 fase 4 debe llamar a `enqueueManifestPhoto`, no a `useUploadManifestDocument`) se añadió como ítem `- [ ]` explícito en esa fase, con la razón completa — antes vivía sólo en prosa dentro del `> Downstream:` de spec-80 fase 3, invisible para quien lea únicamente la sección de su propia fase.
+
+**Ronda 3 de review del PR #712 (2026-09-09) — decisión del usuario sobre B-1, más B-2 (bloqueante) y cuatro mayores:**
+
+- **B-1 (decisión del usuario, sobre la ronda 1).** El reviewer midió, con dos envíos sobre la misma entrada renumerada, que el `dead` por colisión de la ronda 1 seguía siendo un bloqueo que ningún código deshacía — `retryDead` repetía la misma colisión para siempre. Argumento aceptado explícitamente: `manifestHasDeadEntry` se escribió para `pickup_scan`, cuyo fallo corrompe el CONTEO que el cliente firma; una foto es respaldo, no conteo — su pérdida no falsea esa cifra. Dos cambios, cada uno cierra una puerta distinta:
+  1. **Una colisión de `sheet_number` ya no muere: renumera y reintenta.** `sendManifestPhoto` (`photos-send.ts`) limpia el objeto subido bajo el número viejo, calcula el siguiente número libre CONTRA EL SERVIDOR (`nextServerAvailableSheetNumber` — `MAX(sheet_number)+1` sobre `manifest_documents`, la fuente real del conflicto) y escribe ese número de vuelta en la entrada encolada (`db.pickup_queue.update`) antes de reportar `retry`. Si la consulta del siguiente número falla, se reintenta más tarde con el mismo número — nunca `dead` por esto.
+  2. **`manifestHasDeadEntry` (`queue.ts`) ya no cuenta `type: 'manifest_photo'`.** Una foto `dead` (el residual que sí puede quedar — dos dispositivos que nunca sincronizaron entre sí, o la consulta de renumerado fallando indefinidamente) ya no envenena el manifiesto ni bloquea su `close_manifest`; `manifestHead`/`listPending` ya excluían `dead` de cualquier tipo por su cuenta, así que un `pickup_scan`/`close_manifest` detrás de una foto muerta en el FIFO avanza con normalidad.
+- **B-2 (bloqueante).** `nextAvailableSheetNumber` (encolar, local) excluye `sent` a propósito — pero la única invalidación de `['pickup','manifest-documents', manifestId]` (`useManifestDocuments.ts`) vivía en `useUploadManifestDocument.onSuccess`, la ruta ONLINE. La ruta offline no invalidaba nada: un conductor con un solo teléfono y señal intermitente sube una foto, la tira sigue mostrando la lista vieja, la siguiente captura propone el mismo número que el servidor ya tiene, y llega un 23505 nuevo — más probable que el residual de dos dispositivos declarado en la ronda 1. **Implementado:** `createPickupQueueSender`/`createLazyPickupQueueSender` (`offlineQueueSender.ts`) ganan un `onManifestPhotoSent` opcional; `AppLayout.tsx` (el único punto de esta cadena con `useQueryClient()` real) lo usa para invalidar la query de ese `manifestId` en cuanto el drenador confirma el envío.
+- **M-1 (mayor).** El mutante superviviente: restringir `nextAvailableSheetNumber` a `status === 'pending'` no rompía ningún test — el código ya miraba toda la cola (`status !== 'sent'`, sin filtro de `userId`), pero la suite sólo sembraba `pending`. Tests nuevos con `sending` y con `dead` de otro usuario, ambos ocupando el número.
+- **M-2 (mayor, violación de capas).** `photos.ts` importaba un VALOR (`PICKUP_QUEUE_WAKE_EVENT`) desde `@/hooks/useOfflineQueue` — el único import de valor `lib → hooks` en todo el frontend de producción, arrastrando un módulo `'use client'` con React a un `lib/offline/*` que fase 1 mantuvo sin DOM y sin React. **Implementado:** `lib/offline/wake-event.ts` nuevo, con la constante; `useOfflineQueue.ts` la re-exporta para que `complete/[loadId]/page.tsx` no cambie su import.
+- **M-3 (mayor, tamaño de archivo).** `photos.ts` había pasado de 265 a 402 líneas (límite del repo: 300). **Implementado:** partido en `photos.ts` (lado de encolar: topes, renumerado local, `enqueueManifestPhoto`) y `photos-send.ts` (lado de envío: `sendManifestPhoto`, clasificadores de red, renumerado de servidor), con los tipos compartidos en `photos-types.ts` — mismo patrón que fase 2 partió `queue.ts`/`queue-claims.ts`, re-exportado desde `photos.ts` para que ningún llamador note el corte.
+- **M-4 (mayor).** B2 (ronda 1) cerró el 42501 con `uploaded_by: null`, pero dejaba la columna medio poblada — no-nula online, siempre nula offline. **Implementado:** `sendManifestPhoto` resuelve la identidad de la SESIÓN QUE DRENA en el momento del envío — la misma fuente que compara la policy — y sólo cae a `null` si de verdad no hay sesión resoluble. **Corrección de la ronda 4:** el bullet original de esta fila afirmaba que esto "cierra el hueco de trazabilidad de quién fotografió" — falso. `uploaded_by` registra quién SUBIÓ la fila, no quién CAPTURÓ la foto; en el escenario cross-user que motivó B2 son personas distintas, y "quién capturó" no se persiste en ningún sitio (el `userId` de la entrada vive sólo en IndexedDB, `purgeConfirmed` lo borra). Lo único cierto es que la columna deja de estar sistemáticamente vacía en la ruta offline.
+
+Menor (ronda 3): un `Blob`/`File` sin MIME (medido: algunos `<input capture>` en Android lo dejan vacío) mandaba `contentType: ''`, que un bucket con lista blanca rechaza de forma PERMANENTE. `entry.blob.type || 'image/jpeg'` lo cierra. El tope de 10 MiB (`MAX_PHOTO_FILE_BYTES`) queda duplicado con la validación de captura de spec-80 fase 4 (#713, mismo día) — no se unifica aquí (ramas distintas en vuelo), anotado para cuando ambas mergeen.
+
+Mutation-testing, ronda 3: mutantes dirigidos sobre B-1 (guard 23505 desactivado, limpieza de huérfano desactivada, renumerado desactivado), B-2 (cableado de `onManifestPhotoSent` cubierto con test dedicado en `AppLayout.test.tsx` y `offlineQueueSender.test.ts`), M-1 (`sending`/`dead` de otro usuario), M-4 (`uploaded_by` resuelto vs. `null` fijo) — todos matados por el test que los reclama. 66/66 verdes en `AppLayout.test.tsx` (incluida la coordinación con el mock de `useQueryClient`, que necesitaba identidad estable entre renders para no romper m9, la memoización del sender).
+
+**Ronda 4 de review del PR #712 (2026-09-09) — mergeable con correcciones: un bloqueante y varios menores, sobre una base que el review confirmó midiendo (renumerado sin bucle, sin pérdida de foto, `manifestHasDeadEntry` sin abrir ningún agujero, partición de capas limpia, coordinación con #713 limpia — `git merge-tree` exit 0):**
+
+- **Bloqueante — `supabase.auth.getUser()` reemplazado por `getSession()`.** Medido contra `@supabase/auth-js@2.72.0` (`GoTrueClient.js:1179-1226`): `getUser()` es una llamada de RED real (round-trip por foto); pasa por `_acquireLock(-1, …)` — espera de lock SIN TIMEOUT, así que un lock de GoTrue atascado en otra pestaña deja la entrada `sending` hasta que `reclaimStale` la libere a los 90s, con el FIFO de ese manifiesto parado mientras tanto; su `catch` puede disparar `_removeSession()` (`AuthSessionMissingError`), cerrando la sesión local del conductor a media jornada por una subida de foto en segundo plano; y corría sin `try/catch` — una excepción escapaba de `sendManifestPhoto` DESPUÉS de una subida ya exitosa, sin limpiar el objeto, el único camino post-subida que rompía "fila huérfana imposible". **Implementado:** `getSession()` (mismo `user.id`, local, sin red, sin el lock sin timeout, sin `_removeSession`), envuelto en `try/catch` de todas formas.
+- **Menor — el renumerado ignoraba la cola local y podía chocar consigo mismo.** Medido por el reviewer: con dos fotos locales (una en la hoja 8) y el servidor en `MAX=7`, renumerar proponía 8 de nuevo — el número que otra entrada local ya tenía. Converge en la vuelta siguiente, pero cada choque consume una unidad de `MAX_RETRY_ATTEMPTS` que un error transitorio real necesita. **Implementado:** el renumerado tras colisión ahora evita también lo que la cola LOCAL ya está usando (mismo conjunto que `nextAvailableSheetNumber` calcula al encolar, B3).
+- **Menor — el renumerado no invalidaba `manifest-documents`**, pese a haber descubierto una fila del servidor que la tira no conocía (exactamente el estado que B-2 vino a arreglar). **Implementado:** `onManifestDocumentsChanged` (renombrado de `onManifestPhotoSent` — ya no es sólo "se envió", es "el servidor cambió o reveló algo que el cliente no sabía") se dispara también en el renumerado, no sólo en `sent`; `sendManifestPhoto` decide internamente cuándo llamarlo, `offlineQueueSender.ts` ya no inspecciona `outcome` desde fuera.
+- **Corrección de M-4 (ronda 3), no un cambio de código.** El bullet original afirmaba que `uploaded_by` cerraba el hueco de "quién fotografió" — falso: registra quién SUBIÓ, no quién CAPTURÓ, y en el escenario cross-user que motivó B2 son personas distintas. Corregido en el propio bullet, arriba.
+- Menor, cosmético — `useOfflineQueue.ts` re-exportaba `PICKUP_QUEUE_WAKE_EVENT` con un segundo `export … from` contra el módulo en vez de re-exportar el binding ya importado. Corregido a `export { PICKUP_QUEUE_WAKE_EVENT };`.
+- Menor — el párrafo de coordinación con spec-80 fase 4 (#713) afirmaba un orden de merge ("aterriza después") sin dueño que lo cerrara. Reescrito en condicional, con dueño explícito: lo cierra quien mergee el segundo de los dos PRs, sobre el código real.
+
+Mutation-testing, ronda 4: mutantes dirigidos sobre el `try/catch` de `getSession` (excepción sin capturar), el renumerado ignorando la cola local, y el disparo de `onManifestDocumentsChanged` en la rama de renumerado (verificado en ambas capas: `photos.test.ts` y `offlineQueueSender.test.ts`) — los 3 (5 tests) matados por el test que los reclama. 248/248 verdes en el área, `--pool=forks`, dos corridas.
+
+**Ronda 5 de review del PR #712 (2026-09-09) — mergeable, dos correcciones textuales sin cambio de comportamiento:**
+
+- El comentario de `getSession()` (ronda 4) afirmaba de forma absoluta que es "LOCAL (sin red, sin el lock sin timeout, sin `_removeSession`)" — incorrecto en los tres puntos, medido en la misma fuente instalada: también pasa por `_acquireLock(-1, …)` (el mismo lock sin timeout, `GoTrueClient.js:1018-1026`); llama a `_callRefreshToken` (red real) si el token está cerca de expirar (`:1162`); y sí llama a `_removeSession()` si la sesión guardada no pasa `_isValidSession` (`:1120`). El cambio sigue siendo correcto — los residuos son mucho más estrechos que los de `getUser()` (red sólo cuando el token está por caducar, con señal ya confirmada por la subida previa; `_removeSession` sólo por almacenamiento corrupto, no por sesión revocada) — corregido el comentario para decir eso, no la afirmación absoluta.
+- El párrafo de coordinación con spec-80 fase 4 afirmaba "el orden de merge no es precondición — `git merge-tree` no encuentra conflicto en ningún sentido", cierto cuando se escribió y falso después: `#713` avanzó su M4 al mismo punto del fichero. Quitada la afirmación (sin reemplazarla por la contraria) — el orden de merge sigue sin ser una precondición real, pero declarar el resultado de una herramienta externa como si fuera estático fue el error.
+
+**Seguimiento, no bloqueante — `photos-send.ts` volvió a superar 300 líneas** (372, tras las correcciones de las rondas 4 y 5 — mayormente docstrings). M-3 (ronda 3) ya partió este módulo una vez por el mismo motivo; si vuelve a crecer, el corte natural siguiente es separar la rama de renumerado (`nextAvailableSheetNumberAfterCollision` + el bloque de colisión 23505 dentro de `sendManifestPhoto`) en su propio fichero.
+
+**Límite de la suite local, declarado — sin muleta de `drainNow()`.** Toda la cobertura de esta fase es sobre `enqueueManifestPhoto`/`unconfirmedPhotoBytes`/`manifestPhotoStoragePath`/`sendManifestPhoto` directamente, sin pasar por `useOfflineQueue`. No hizo falta ningún test que dependiera de avanzar el reloj y luego llamar `drainNow()` a mano — el drenador de fase 2 ya trata `manifest_photo` igual que cualquier otro tipo de entrada (FIFO, backoff, `reclaimStale`, `MAX_RETRY_ATTEMPTS`) sin necesitar cambios; el único punto nuevo es el despacho en `createPickupQueueSender`, cubierto por su propio test de enrutamiento (`offlineQueueSender.test.ts`).
+
+**Límite de QA local — declarado, no verificable en CI (menor, review del PR #712).** `fake-indexeddb` (la base falsa que corre esta suite) no round-tripea la identidad de un `Blob` real a través de `db.pickup_queue.add`/`.toArray()` — vuelve como `{}`, perdiendo `.size` (mismo límite que B6 documentó en `queue.test.ts` para fase 1). Los tests del tope de bytes usan un blob-like duck-typed (`{ size: N }`) para sembrar entradas directamente; eso NO invalida esos tests (`unconfirmedPhotoBytes` sólo lee `.size`, no distingue uno de otro), pero sí deja sin verificar en CI que un `Blob` REAL sobreviva ese mismo round-trip en un navegador de verdad conservando su `.size`. No es un supuesto — es un ítem de QA en dispositivo real: capturar una foto, cerrar y reabrir la PWA (o perder señal a mitad de sesión), y confirmar que el conteo de bytes y la subida al reconectar usan el tamaño correcto del archivo real, no `undefined`/`0`.
 
 ---
 
 ## Riesgos
 
 - **Una cola a medias es peor que ninguna.** Si `5d` dice «guardado en el dispositivo» y la entrada se pierde, el operario cierra una carga con un conteo falso y el cliente firma sobre esa cifra. Las fases 1–3 van juntas o no va ninguna; sólo la 4 y la 5 son separables.
-- **Cuota de IndexedDB.** Varias hojas por carga y varias cargas por ruta llenan el disco del teléfono. Hace falta política de purga de lo ya subido y un tope declarado. **Tope declarado y aplicado (fase 2, ronda 1 de review del PR #679, m3):** `purgeConfirmed` borra las entradas `sent` de un operador tras cada drenado exitoso; el tope duro para entradas sin confirmar (`status !== 'sent'`) se fija en **500 por operador** y `enqueue` lo comprueba, rechazando con un error explícito en vez de fallar en silencio contra la cuota real del navegador. Con blobs de fotos (fase 5) el límite relevante deja de ser el conteo y pasa a ser bytes; esa fase redefine el tope en tamaño, no en número de filas.
+- **Cuota de IndexedDB.** Varias hojas por carga y varias cargas por ruta llenan el disco del teléfono. Hace falta política de purga de lo ya subido y un tope declarado. **Tope declarado y aplicado (fase 2, ronda 1 de review del PR #679, m3):** `purgeConfirmed` borra las entradas `sent` de un operador tras cada drenado exitoso; el tope duro para entradas sin confirmar (`status !== 'sent'`) se fija en **500 por operador** y `enqueue` lo comprueba, rechazando con un error explícito en vez de fallar en silencio contra la cuota real del navegador. Con blobs de fotos (fase 5) el límite relevante deja de ser el conteo y pasa a ser bytes; esa fase redefine el tope en tamaño, no en número de filas. **Implementado en fase 5:** `MAX_UNCONFIRMED_PHOTO_BYTES_PER_OPERATOR = 200 MB` (`lib/offline/photos.ts`), aplicado en `enqueueManifestPhoto` con el mismo criterio de rechazo explícito.
 - **El alcance puede tentar a crecer** a Recepción y Despacho. Este spec entrega la infraestructura y **sólo** conecta Recogida; adoptarla en otros módulos es trabajo posterior con sus propios specs.

@@ -35,6 +35,10 @@ export interface EnqueueInput {
    * tiene forma de saber que esta entrada es suya. */
   userId: string;
   manifestId: string;
+  /** Ver el docstring de `externalLoadId` en `PickupQueueEntry` (`@/lib/db`)
+   * — el id humano/navegable, no `manifestId` (un UUID). Opcional: no
+   * todo llamador lo tiene a mano hoy. */
+  externalLoadId?: string;
   type: PickupQueueOperationType;
   payload: Record<string, unknown>;
   /** Ver PickupQueueEntry.blob — reservado, sin lógica hasta fase 5. */
@@ -77,6 +81,7 @@ export async function enqueue(
     operatorId: input.operatorId,
     userId: input.userId,
     manifestId: input.manifestId,
+    externalLoadId: input.externalLoadId,
     type: input.type,
     payload: input.payload,
     blob: input.blob,
@@ -149,7 +154,37 @@ export async function listPending(
  * Deliberadamente permanente: nada en este módulo vuelve a poner en marcha
  * un manifiesto envenenado — eso es una decisión de negocio (resolver la
  * discrepancia), no algo que este drenador deba automatizar.
+ *
+ * B-1, ronda 3 de review del PR #712 (spec-81 fase 5), decisión del usuario
+ * — `type: 'manifest_photo'` NUNCA cuenta aquí, aunque esté `dead`. El
+ * razonamiento de arriba es correcto para `pickup_scan`/`close_manifest`,
+ * cuyo fallo corrompe el CONTEO que el cliente firma; una foto es
+ * respaldo, no conteo — su pérdida no falsea esa cifra. Bloquear el
+ * `close_manifest` de una carga entera porque una foto de respaldo no pudo
+ * subir era el mismo patrón de "estado sin salida" que esta cola existe
+ * para evitar (`retryDead` repite la misma colisión para siempre sin este
+ * cambio). `manifestHead`/`listPending` ya excluyen `dead` de cualquier
+ * tipo por su cuenta (filtran `pending`/`sending`), así que esto sólo
+ * decide qué cuenta como "el manifiesto está envenenado" — una entrada
+ * `pickup_scan`/`close_manifest` detrás de una foto muerta en el FIFO
+ * avanza con normalidad; entre fotos muertas entre sí, el orden de "hoja N"
+ * no protege ningún conteo.
  */
+/**
+ * spec-81 fase 4 — el mismo criterio de arriba (B-1, ronda 3 de review del
+ * PR #712), extraído para que la UI del chip de sync pueda explicarle al
+ * operario POR QUÉ un `dead` concreto bloquea el cierre de la carga o no,
+ * sin duplicar la regla ni arriesgar que las dos copias diverjan.
+ * `getBlockedPickupCount` (`@/lib/db`) cuenta CUALQUIER `dead` como
+ * "requiere ayuda" — una foto muerta sigue necesitando intervención humana,
+ * sólo que no bloquea el `close_manifest` de la carga.
+ */
+export function deadEntryBlocksManifestClose(
+  type: PickupQueueOperationType,
+): boolean {
+  return type !== "manifest_photo";
+}
+
 export async function manifestHasDeadEntry(
   db: PickupQueueStore,
   operatorId: string,
@@ -158,9 +193,64 @@ export async function manifestHasDeadEntry(
   const count = await db.pickup_queue
     .where("operatorId")
     .equals(operatorId)
-    .and((entry) => entry.manifestId === manifestId && entry.status === "dead")
+    .and(
+      (entry) =>
+        entry.manifestId === manifestId &&
+        entry.status === "dead" &&
+        deadEntryBlocksManifestClose(entry.type),
+    )
     .count();
   return count > 0;
+}
+
+/**
+ * spec-81 fase 4 — el detalle detrás de `getBlockedPickupCount` (`@/lib/db`).
+ * Ese contador cuenta dos cosas distintas como "bloqueado": un `dead` real
+ * (rechazo de negocio irrecuperable, con `lastError`) y una `pending`
+ * bloqueada TEMPORALMENTE detrás de un `dead` o de otro operario
+ * (`manifestIsBlocked`) — esa segunda nunca se intentó, no tiene
+ * `lastError`, y se libera sola. El chip de sync necesita SÓLO la primera
+ * mitad para explicarle al operario qué manifiesto está bloqueado y por
+ * qué; mezclar las dos convertiría "espera unos minutos" en "pide ayuda".
+ *
+ * Deliberadamente sin memoización ni escaneo de manifiestos bloqueados —
+ * a diferencia de `getPendingPickupCount`/`getBlockedPickupCount`, esto no
+ * se llama en cada `POLL_MS`: sólo cuando el operario abre el detalle del
+ * chip (`useBlockedPickupEntries`).
+ */
+export async function listDeadPickupEntries(
+  db: PickupQueueStore,
+  operatorId: string,
+): Promise<PickupQueueEntry[]> {
+  return db.pickup_queue
+    .where("operatorId")
+    .equals(operatorId)
+    .and((entry) => entry.status === "dead")
+    .toArray();
+}
+
+/**
+ * spec-81 fase 4, ronda 2 de review del PR #725 (B1 bloqueante) — cuántas
+ * `pending` de un operador viven en alguno de los manifiestos dados. El
+ * chip de sync la usa con el conjunto de manifiestos que ya tienen un
+ * `dead` listado: `manifestHasDeadEntry` bloquea CUALQUIER `pending` de ese
+ * mismo manifiesto, sin que exista ningún otro operario de por medio — así
+ * que ese resto de `getBlockedPickupCount` no es espera cross-user que "se
+ * libera sola", es la MISMA carga bloqueada, y decirlo de la otra forma es
+ * la misma mentira que este módulo lleva rondas cerrando en otros sitios.
+ */
+export async function countPendingInManifests(
+  db: PickupQueueStore,
+  operatorId: string,
+  manifestIds: string[],
+): Promise<number> {
+  if (manifestIds.length === 0) return 0;
+  const ids = new Set(manifestIds);
+  return db.pickup_queue
+    .where("operatorId")
+    .equals(operatorId)
+    .and((entry) => entry.status === "pending" && ids.has(entry.manifestId))
+    .count();
 }
 
 /**

@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { ScannerInput } from '@/components/pickup/ScannerInput';
+import { ScannerInput, type ScannerInputHandle } from '@/components/pickup/ScannerInput';
 import { ScanHistoryList } from '@/components/pickup/ScanHistoryList';
 import { ScanResultPopup } from '@/components/pickup/ScanResultPopup';
 import { ScanResultCard } from '@/components/pickup/ScanResultCard';
@@ -21,6 +21,12 @@ import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
 import { toast } from 'sonner';
 import { useModuleEnabled } from '@/hooks/modules/useEnabledModules';
 import { ModuleKey } from '@/lib/modules/registry';
+import { useOfflineScanSource } from '@/hooks/pickup/useOfflineScanSource';
+import { ManifestNotDownloadedNotice } from '@/components/pickup/ManifestNotDownloadedNotice';
+import { OfflinePickupNotice } from '@/components/pickup/OfflinePickupNotice';
+import { effectiveManifestFields } from '@/lib/pickup/effectiveManifestFields';
+import { openPendingManifest } from '@/lib/pickup/openPendingManifest';
+import { ScanScreenFooter } from '@/components/pickup/ScanScreenFooter';
 
 export default function ScanningPage() {
   const params = useParams();
@@ -37,6 +43,7 @@ export default function ScanningPage() {
   const [startTime] = useState(() => Date.now());
   const [elapsed, setElapsed] = useState('00:00');
   const [userId, setUserId] = useState<string | null>(null);
+  const scannerRef = useRef<ScannerInputHandle>(null);
 
   // spec-54 mock 1h — real device queue state for the "COLA N" badge.
   // spec-81 fase 1: `useSyncQueue` now also counts `db.pickup_queue`, the
@@ -47,6 +54,13 @@ export default function ScanningPage() {
   // infrastructure rather than a hard-coded value waiting on a rewrite.
   const sync = useSyncQueue(operatorId);
 
+  // spec-82 fase 2 — "DESCARGAR" (mock 5c/5d). Inerte mientras hay señal
+  // (ver el docstring del hook): el flujo online de abajo no cambia en
+  // absoluto. Sin red, decide entre tres estados — "todavía no lo sé",
+  // "nunca se descargó" (bloquea) y "aquí está el snapshot" — nunca sólo
+  // dos, para no pintar "no descargada" sobre una carga que sí lo está.
+  const offline = useOfflineScanSource(operatorId, loadId, sync.status === 'offline');
+
   // spec-53 — second entry point. Labels are normally printed from the pickup
   // list before departure, but the crew also needs them here: this is the
   // screen they are on when they discover a label is missing or unreadable.
@@ -54,7 +68,26 @@ export default function ScanningPage() {
 
   useEffect(() => {
     if (!operatorId) return;
+    // spec-82 fase 2 — sin red no hay nada que este fetch pueda traer;
+    // `offline.snapshot` (si existe) alimenta las mismas variables más
+    // abajo. Evita una llamada de red condenada a quedar pendiente/fallar.
+    if (sync.status === 'offline') return;
     const supabase = createSPAClient();
+    // Ampliación de alcance, fase 5 (coordinación 2026-09-10) — este es el
+    // único punto de entrada real de la cuadrilla al escaneo: abre ruta →
+    // toca manifiesto → navega aquí sin pasar por `openPendingManifest`
+    // (hoy sólo la llama el escritorio, ver `app/pickup/page.tsx`). Sin
+    // esto `manifests.started_at` se queda NULL para siempre en ese camino
+    // y `DURACIÓN` en la pantalla de firma pinta "—" siempre, no a veces.
+    // `openPendingManifest` es idempotente por status ('pending' → escribe
+    // una vez; 'in_progress' → no vuelve a tocar `started_at`), así que
+    // reabrir esta pantalla no reinicia el reloj.
+    // L1, review de fase 5 — `.catch`, no dejar el rechazo sin manejar: sin
+    // esto, un fallo de red aquí salía como *unhandled rejection* en vez de
+    // un error visible/registrado.
+    openPendingManifest(supabase, operatorId, loadId).catch((error) => {
+      console.error('No se pudo marcar el inicio del escaneo (started_at)', error);
+    });
     supabase
       .from('manifests')
       .select('id, total_packages, pickup_route_id, retailer_name, pickup_location')
@@ -78,7 +111,7 @@ export default function ScanningPage() {
     supabase.auth.getUser().then(({ data }) => {
       setUserId(data.user?.id ?? null);
     });
-  }, [operatorId, loadId]);
+  }, [operatorId, loadId, sync.status]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -90,7 +123,26 @@ export default function ScanningPage() {
     return () => clearInterval(interval);
   }, [startTime]);
 
-  const { data: scans = [] } = usePickupScans(manifestId, operatorId);
+  // spec-82 fase 2 — sin red, el snapshot local reemplaza por completo los
+  // campos del manifiesto que el fetch de red (arriba) no pudo traer. Con
+  // red, `offline.snapshot` es siempre `null` (ver el hook) y esto no
+  // cambia nada del comportamiento existente. Ver
+  // `lib/pickup/effectiveManifestFields.ts`.
+  const {
+    manifestId: effectiveManifestId,
+    totalPackages: effectiveTotalPackages,
+    pickupRouteId: effectivePickupRouteId,
+    retailerName: effectiveRetailerName,
+    pickupPoint: effectivePickupPoint,
+  } = effectiveManifestFields(offline.snapshot, {
+    manifestId,
+    totalPackages,
+    pickupRouteId,
+    retailerName,
+    pickupPoint,
+  });
+
+  const { data: scans = [] } = usePickupScans(effectiveManifestId, operatorId);
   const scanMutation = useScanMutation();
 
   const {
@@ -98,7 +150,14 @@ export default function ScanningPage() {
     isLoading: ordersLoading,
     isError: ordersError,
     refetch: refetchOrders,
-  } = useManifestOrders(loadId, operatorId);
+  } = useManifestOrders(sync.status === 'offline' ? null : loadId, operatorId);
+
+  const effectiveOrders = offline.snapshot ? offline.snapshot.orders : orders;
+  // spec-82 fase 2, revisión B2 (ronda 3) — `usePickupScans` es una query de
+  // red; sin señal queda pausada y `scans` llega `[]` sin decir por qué.
+  // Todo lo que se derive de `scans` (conteos, badges por orden) tiene que
+  // saber que es "no lo sé", no "cero".
+  const scansUnknown = sync.status === 'offline';
 
   const verifiedCount = useMemo(
     () => {
@@ -119,7 +178,7 @@ export default function ScanningPage() {
   // spec-54 mock 1h — the "Bloque de resultado" card. Reflects the latest
   // scan attempt of ANY outcome (verified/not_found/duplicate), not just
   // the latest success — see useLatestScanResult's own comment for why.
-  const latestScanResult = useLatestScanResult(scans, orders);
+  const latestScanResult = useLatestScanResult(scans, effectiveOrders);
 
   // Scan failures (most commonly: offline, since useScanMutation writes
   // straight to Supabase with no local queue) must surface to the operator
@@ -131,18 +190,18 @@ export default function ScanningPage() {
 
   const handleScan = useCallback(
     (barcode: string) => {
-      if (!manifestId || !operatorId || !userId) return;
+      if (!effectiveManifestId || !operatorId || !userId) return;
       // spec-47 guard: a manifest must be linked to an in_progress pickup route
       // before any scan is allowed. If not, the driver is sent back to the
       // pickup landing where they can start (or join) a route.
-      if (!pickupRouteId) {
+      if (!effectivePickupRouteId) {
         toast.error('Inicia una ruta de retiro primero', {
           action: { label: 'Ir', onClick: () => router.push('/app/pickup') },
         });
         return;
       }
       scanMutation.mutate(
-        { barcode, manifestId, operatorId, externalLoadId: loadId, userId },
+        { barcode, manifestId: effectiveManifestId, operatorId, externalLoadId: loadId, userId },
         {
           onSuccess: (result) => {
             if (result.scanResult === 'not_found') {
@@ -153,24 +212,48 @@ export default function ScanningPage() {
         }
       );
     },
-    [manifestId, operatorId, userId, loadId, scanMutation, pickupRouteId, router, handleScanError]
+    [
+      effectiveManifestId,
+      operatorId,
+      userId,
+      loadId,
+      scanMutation,
+      effectivePickupRouteId,
+      router,
+      handleScanError,
+    ]
   );
 
   const handleManualVerify = useCallback(
     (packageLabel: string) => {
-      if (!manifestId || !operatorId || !userId) return;
-      if (!pickupRouteId) {
+      if (!effectiveManifestId || !operatorId || !userId) return;
+      if (!effectivePickupRouteId) {
         toast.error('Inicia una ruta de retiro primero', {
           action: { label: 'Ir', onClick: () => router.push('/app/pickup') },
         });
         return;
       }
       scanMutation.mutate(
-        { barcode: packageLabel, manifestId, operatorId, externalLoadId: loadId, userId },
+        {
+          barcode: packageLabel,
+          manifestId: effectiveManifestId,
+          operatorId,
+          externalLoadId: loadId,
+          userId,
+        },
         { onError: handleScanError }
       );
     },
-    [manifestId, operatorId, userId, loadId, scanMutation, pickupRouteId, router, handleScanError]
+    [
+      effectiveManifestId,
+      operatorId,
+      userId,
+      loadId,
+      scanMutation,
+      effectivePickupRouteId,
+      router,
+      handleScanError,
+    ]
   );
 
   // M-3, ronda 5 de review del PR #679 (mayor) — `blockedCount` incluye
@@ -179,17 +262,70 @@ export default function ScanningPage() {
   // operario tocaba "REQUIERE AYUDA" sobre un bloqueo cross-user y no veía
   // ningún cambio — ni éxito ni error, la misma pantalla de siempre.
   const handleRetryBlocked = useCallback(() => {
-    if (!manifestId || !operatorId) return;
-    void retryBlockedManifest(operatorId, manifestId).then((revived) => {
+    if (!effectiveManifestId || !operatorId) return;
+    void retryBlockedManifest(operatorId, effectiveManifestId).then((revived) => {
       if (revived === 0) {
         toast.info('Nada que reintentar todavía. Puede que otro operario lo esté procesando.');
       }
     });
-  }, [manifestId, operatorId]);
+  }, [effectiveManifestId, operatorId]);
+
+  // spec-82 fase 2 — early returns DESPUÉS de todos los hooks (regla de
+  // hooks de React), igual que hace `route/active/page.tsx` con
+  // `routeLoading`/`routeError`/`!route`. Con red (`offline.unknown` y
+  // `offline.blocked` siempre `false` — ver el hook) esto nunca se
+  // ejecuta y el flujo de abajo es exactamente el de siempre.
+  if (offline.unknown) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Clock className="h-8 w-8 animate-pulse text-text-muted" aria-hidden />
+      </div>
+    );
+  }
+  // M1, revisión de fase 2 — un fallo de lectura de IndexedDB (modo
+  // privado, upgrade bloqueado por otra pestaña, cuota agotada) no es
+  // "todavía cargando": antes de esto quedaba indistinguible de `unknown`
+  // para siempre y esta pantalla se congelaba en el spinner de arriba, sin
+  // texto, sin botón, sin salida.
+  if (offline.error) {
+    return (
+      <div className="w-full p-6 max-w-md mx-auto space-y-4 text-center">
+        <p className="text-text">No pudimos leer los datos guardados en este dispositivo.</p>
+        <Button onClick={offline.retry}>Reintentar</Button>
+      </div>
+    );
+  }
+  if (offline.blocked) {
+    return (
+      <ManifestNotDownloadedNotice
+        externalLoadId={loadId}
+        onBack={() => router.push('/app/pickup')}
+      />
+    );
+  }
 
   return (
     <>
-      <div className="space-y-4 p-4 sm:p-6 pb-28 max-w-2xl mx-auto">
+      {/* `w-full` es LOAD-BEARING, no decorativo (hotfix móvil 2026-09-10).
+          Este div es hijo directo de `<main className="flex min-h-0 flex-1
+          flex-col">` (AppLayout). Un item flex con márgenes AUTO en el eje
+          transversal (`mx-auto`) deja de estirarse y pasa a medir su tamaño
+          intrínseco, que `max-w-2xl` fija en 672px — también en un teléfono
+          de 375px, donde maquetaba la pantalla entera fuera de la
+          pantalla. `body { overflow-x: hidden }` (globals.css) no salva
+          nada aquí: recorta, así que el tercio derecho del escaneo
+          simplemente no existía para el operario. Con `w-full` el ancho
+          vuelve a ser el del contenedor y `max-w-2xl` es sólo un techo en
+          escritorio. */}
+      {/* pb-44 (176px), no pb-28 (112px) — Review de fase 5, B1. El pie fijo
+          de dos filas mide pt-4(16) + primario h-[60px](60) +
+          space-y-2.5(10) + secundario py-[15px]+lh+2 bordes(52) +
+          pb-[26px](26) = 164px; pb-28 dejaba 112px, 52px cortos. Sin holgura
+          del tabbar (`/app/pickup/scan` está en MOBILE_IMMERSIVE_PREFIXES,
+          así que AppLayout no añade su propio padding), esos 52px de
+          "Historial de escaneos" quedaban bajo el pie fijo — que no ocupa
+          flujo — sin forma de hacer scroll hasta ellos. */}
+      <div className="w-full space-y-4 p-4 sm:p-6 pb-44 max-w-2xl mx-auto">
         <ScanResultPopup
           visible={showNotFoundPopup}
           onDismiss={() => setShowNotFoundPopup(false)}
@@ -238,20 +374,35 @@ export default function ScanningPage() {
 
         <PickupFlowHeader
           loadId={loadId}
-          retailerName={retailerName}
-          pickupPoint={pickupPoint}
-          scanned={verifiedCount}
-          total={totalPackages}
+          retailerName={effectiveRetailerName}
+          pickupPoint={effectivePickupPoint}
+          // spec-82 fase 2, revisión B2 (ronda 3) — sin red, `usePickupScans`
+          // (query de red) queda pausada y `scans` llega vacío por falta de
+          // señal, no por falta de trabajo. Pasar `verifiedCount` (siempre
+          // 0 en ese caso) fabricaba un cero de confianza; `null` es el
+          // tercer estado real. Ver `PickupFlowHeader`'s propio docstring.
+          scanned={scansUnknown ? null : verifiedCount}
+          total={effectiveTotalPackages}
           queuedCount={sync.queuedCount}
           blockedCount={sync.blockedCount}
           // Decisión del usuario, 2026-09-08 (ronda 4 de review del PR #679,
           // B-1) — "el operario puede reintentar desde la app". Sólo se
           // ofrece una vez que el manifiesto cargó: sin `manifestId` no hay
           // a qué carga aplicar el reintento.
-          onRetryBlocked={manifestId && operatorId ? handleRetryBlocked : undefined}
+          onRetryBlocked={effectiveManifestId && operatorId ? handleRetryBlocked : undefined}
         />
 
-        <ScannerInput onScan={handleScan} disabled={scanMutation.isPending} />
+        {/* spec-82 fase 2 (ronda 3) — extraído a OfflinePickupNotice; ver
+            su propio docstring para B1/B2/downloadedAt. */}
+        {sync.status === 'offline' && (
+          <OfflinePickupNotice downloadedAt={offline.snapshot?.downloadedAt ?? null} />
+        )}
+
+        <ScannerInput
+          ref={scannerRef}
+          onScan={handleScan}
+          disabled={scanMutation.isPending || sync.status === 'offline'}
+        />
 
         {/* Not-found counter */}
         {notFoundCount > 0 && (
@@ -263,56 +414,46 @@ export default function ScanningPage() {
 
         <ScanResultCard {...latestScanResult} />
 
-        <div className="bg-surface border border-border rounded-lg">
-          <div className="px-3 pt-3 pb-1">
-            <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">Escaneos recientes</p>
-          </div>
-          <div className="p-3">
-            <ScanHistoryList scans={scans} />
-          </div>
-        </div>
-
+        {/* fase 5 (ronda 2 del mock, 5d) — "ÓRDENES Y BULTOS" va ENCIMA de
+            "HISTORIAL DE ESCANEOS": el mock viejo no dibujaba esta lista en
+            absoluto y el orden anterior (historial primero) era un
+            artefacto de cuándo se añadió cada bloque, no una decisión del
+            mock. */}
         <ManifestDetailList
-          orders={orders}
+          orders={effectiveOrders}
           scans={scans}
           onManualVerify={handleManualVerify}
+          scansUnknown={scansUnknown}
           isLoading={ordersLoading}
-          isError={ordersError}
+          // M6, revisión de fase 2 — un fallo de red ANTERIOR (con señal)
+          // deja `ordersError` pegado en la caché de React Query incluso
+          // tras perder señal después. Con un snapshot local válido, ese
+          // error viejo no puede seguir tapando órdenes que sí están
+          // disponibles con un cartel rojo y un "Retry" que de todos modos
+          // no puede hacer nada sin red.
+          isError={offline.snapshot ? false : ordersError}
           onRetry={() => refetchOrders()}
         />
-      </div>
 
-      {/*
-        spec-54 mock 1h fixed footer — 60px primary action, padding
-        16px/20px/26px per the handoff. The mock also specifies two
-        secondary 50%-width buttons here, both omitted deliberately:
-
-        - "Ingresar código" would open a manual-entry field that is already
-          on screen (ScannerInput doubles as the manual-entry surface for
-          this flow) — adding a second entry point would duplicate it
-          rather than unblock anything.
-        - "Cerrar carga" has no backing mutation at the manifest level on
-          this screen. The only close action that exists today is
-          `useClosePickupRoute`, which closes the whole pickup route
-          (potentially several manifests), not "this load" — using it here
-          would silently do something bigger than the label promises. A
-          per-manifest "finish this load" RPC would unblock adding it.
-      */}
-      <div className="fixed bottom-0 inset-x-0 bg-background border-t border-border pt-4 px-4 pb-[26px] sm:px-6">
-        <div className="max-w-2xl mx-auto">
-          <Button
-            onClick={() =>
-              router.push(
-                `/app/pickup/review/${encodeURIComponent(loadId)}`
-              )
-            }
-            className="w-full h-[60px] text-base"
-            size="lg"
-          >
-            Continuar a revisión
-          </Button>
+        <div className="bg-surface border border-border rounded-lg">
+          <div className="px-3 pt-3 pb-1">
+            <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">Historial de escaneos</p>
+          </div>
+          <div className="p-3">
+            <ScanHistoryList scans={scans} scansUnknown={scansUnknown} />
+          </div>
         </div>
       </div>
+
+      <ScanScreenFooter
+        onContinue={() => router.push(`/app/pickup/review/${encodeURIComponent(loadId)}`)}
+        onManualEntryRequested={() => scannerRef.current?.focus()}
+        // Review de fase 5, M3 — misma condición que deshabilita
+        // `ScannerInput` (línea de arriba): `focus()` sobre un
+        // `<input disabled>` no hace nada, así que el control no puede
+        // quedar habilitado cuando el campo al que apunta no lo está.
+        manualEntryDisabled={scanMutation.isPending || sync.status === 'offline'}
+      />
     </>
   );
 }

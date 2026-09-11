@@ -52,6 +52,11 @@ export async function openPendingManifest(
           ? { total_orders: counts.orderCount, total_packages: counts.packageCount }
           : {}),
       })
-      .eq('id', existing[0].id);
+      .eq('id', existing[0].id)
+      // Contrato no negociable del repo: operator_id en toda query y toda
+      // tabla. Preexistente sin él — ver fase 5 de spec-95, ampliación de
+      // alcance: se toca este fichero de todos modos, así que no se hereda
+      // en silencio.
+      .eq('operator_id', operatorId);
   }
 }

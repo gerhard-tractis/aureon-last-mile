@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ScannerInput } from './ScannerInput';
+import { createRef } from 'react';
+import { ScannerInput, type ScannerInputHandle } from './ScannerInput';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -10,7 +11,7 @@ afterEach(() => {
 describe('ScannerInput', () => {
   it('renders input with placeholder', () => {
     render(<ScannerInput onScan={vi.fn()} />);
-    expect(screen.getByPlaceholderText('Scan barcode...')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Esperando el disparo del lector…')).toBeInTheDocument();
   });
 
   it('calls onScan with trimmed value on Enter', async () => {
@@ -40,9 +41,23 @@ describe('ScannerInput', () => {
     expect(screen.getByRole('textbox')).toBeDisabled();
   });
 
+  // Review de fase 5, L4 — quedaba en inglés en el mismo fichero que se
+  // tradujo (placeholder ya en español, aria-label todavía no).
   it('has aria-label for accessibility', () => {
     render(<ScannerInput onScan={vi.fn()} />);
-    expect(screen.getByLabelText('Barcode scanner input')).toBeInTheDocument();
+    expect(screen.getByLabelText('Campo de escaneo')).toBeInTheDocument();
+  });
+
+  // fase 5 — "Ingresar código a mano" en el pie de scan/[loadId]/page.tsx no
+  // abre un segundo campo (eso duplicaría la única fuente de verdad del
+  // código); le devuelve el foco a este mismo input vía ref imperativo.
+  it('expone focus() por ref imperativo para que el pie de la pantalla pueda devolverle el foco', () => {
+    const ref = createRef<ScannerInputHandle>();
+    render(<ScannerInput ref={ref} onScan={vi.fn()} />);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    input.blur();
+    act(() => ref.current?.focus());
+    expect(input).toHaveFocus();
   });
 
   it('auto-submits after a fast keystroke burst with no terminator (hardware scanner)', () => {

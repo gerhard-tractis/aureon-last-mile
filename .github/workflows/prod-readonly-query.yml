@@ -29,6 +29,27 @@ name: Production Read-Only Query
 # rethinking the "no approval gate" decision above — the moment this workflow
 # writes anything, it needs the same `environment: production` treatment
 # deploy.yml's mutating jobs get.
+#
+# IPv4: THE POOLER, NOT THE DIRECT CONNECTION
+# --------------------------------------------------------------
+# This workflow had never actually been triggered until the spec-87 fase 4
+# backfill dry_run (a different workflow) hit the same bug first:
+# `db.<ref>.supabase.co:5432` (Supabase's direct connection) resolves to an
+# IPv6-only address, and GitHub-hosted runners have no IPv6 route. The fix is
+# Supabase's pooler (Supavisor), which is dual-stack:
+# `aws-0-<region>.pooler.supabase.com`. The region is resolved at runtime from
+# the Supabase Management API (never hardcoded — see
+# scripts/resolve-supabase-pooler-host.sh for why) using the
+# SUPABASE_ACCESS_TOKEN secret this job already has.
+#
+# TRANSACTION MODE (6543), NOT SESSION MODE (5432): every step here issues
+# exactly one `psql -c` with a single query, no state that needs to survive
+# past that one connection — the shape transaction mode is for. See
+# prod-backfill-loaded-route-id.yml's header for the fuller reasoning (same
+# pooler, same mode, this workflow just has simpler queries).
+#
+# The pooler also changes the connection user: `postgres` becomes
+# `postgres.<project-ref>`.
 
 on:
   workflow_dispatch:
@@ -39,11 +60,38 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Check out the repo
+        # `resolve-supabase-pooler-host.sh` lives in this repo, so the workspace
+        # has to exist before the step that runs it. Neither of these two
+        # workflows had a checkout before #750 — they only ever shelled out to
+        # `psql`, so nothing on disk was needed and its absence was invisible.
+        # The first real dry_run after #750 failed with exit 127,
+        # "No such file or directory".
+        uses: actions/checkout@v4
+
       - name: Install postgresql-client
         run: |
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -yqq postgresql-client
+
+      - name: Resolve Supabase pooler host (IPv4 — see workflow header)
+        id: resolve-pooler
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          HTTP_STATUS=$(curl -sS -o project.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            "https://api.supabase.com/v1/projects/${{ secrets.SUPABASE_PROJECT_REF }}")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "::error::Management API returned HTTP ${HTTP_STATUS} while resolving the project region"
+            rm -f project.json
+            exit 1
+          fi
+          POOLER_HOST=$(bash "$GITHUB_WORKSPACE/scripts/resolve-supabase-pooler-host.sh" < project.json)
+          rm -f project.json
+          echo "pooler_host=${POOLER_HOST}" >> "$GITHUB_OUTPUT"
 
       - name: Confirm routes_one_vehicle_per_day does NOT exist (spec-87, spec-79 h5c/b1)
         # 20260911000002 creates this index only if it finds zero conflicting
@@ -54,9 +102,10 @@ jobs:
         # fase 3/4 for the full reasoning.
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
         run: |
           set -euo pipefail
-          psql "sslmode=require host=db.${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co port=5432 dbname=postgres user=postgres" \
+          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
             -c "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'routes_one_vehicle_per_day';"
 
       - name: List cron.job (spec-88 fase 1 review question)
@@ -65,9 +114,10 @@ jobs:
         # deploy. In QA there are only two jobs, both as postgres.
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
         run: |
           set -euo pipefail
-          psql "sslmode=require host=db.${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co port=5432 dbname=postgres user=postgres" \
+          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
             -c "SELECT jobid, jobname, username, active FROM cron.job;"
 
       - name: Count packages eligible for the spec-79 loaded_route_id backfill
@@ -77,9 +127,10 @@ jobs:
         # this step is read-only even though the function it mirrors is not.
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          POOLER_HOST: ${{ steps.resolve-pooler.outputs.pooler_host }}
         run: |
           set -euo pipefail
-          psql "sslmode=require host=db.${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co port=5432 dbname=postgres user=postgres" \
+          psql "sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${{ secrets.SUPABASE_PROJECT_REF }}" \
             -c "
               SELECT COUNT(*) AS eligible_packages
                 FROM public.packages p

@@ -7,12 +7,13 @@ import type { ManifestRow } from '@/components/pickup/ManifestTable';
  * the grouping and tri-state logic are unit-testable without rendering.
  *
  * `ManifestRow.orderCount`/`packageCount` come from `get_pending_manifests`
- * (see useManifests.ts), which derives them with `COUNT(DISTINCT o.id)` /
- * `COUNT(p.id)` — real SQL aggregates, always a number, never NULL. This is
- * a DIFFERENT source than `manifests.total_packages` (OCR/manual intake,
- * nullable), which is what manifestProgress.ts's expectedLabel/sumExpected
- * exist to guard. Nothing here needs an "unknown" (—) rendering because
- * nothing here can be unknown; the two rules are not the same rule.
+ * (see useManifests.ts). For most rows they are `COUNT(DISTINCT o.id)` /
+ * `COUNT(p.id)` — real SQL aggregates. spec-94 fase 1 added a second arm
+ * (a manifest whose orders are ALL soft-deleted) that instead reads the
+ * nullable `manifests.total_orders`/`total_packages` — the same source
+ * manifestProgress.ts's expectedLabel/sumExpected already guards — so this
+ * file is no longer exempt from that "unknown, not zero" rule. `packageCount`
+ * below is coalesced to 0 for THIS display-only sum; never write it back.
  */
 
 export interface StartRoutePointGroup {
@@ -62,7 +63,7 @@ export function groupPendingManifests(rows: ManifestRow[]): StartRouteClientGrou
       points,
       selectableIds: allManifests.map((m) => m.id).filter((id): id is string => id != null),
       pointCount: points.length,
-      packageCount: allManifests.reduce((sum, m) => sum + m.packageCount, 0),
+      packageCount: allManifests.reduce((sum, m) => sum + (m.packageCount ?? 0), 0),
     };
   });
 }

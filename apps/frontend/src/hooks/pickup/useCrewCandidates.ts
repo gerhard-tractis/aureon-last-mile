@@ -1,10 +1,23 @@
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
 
+/**
+ * Review round 1 (spec-95 fase 4) — the "van roles" this hook fetches, named
+ * ONCE. Before this, the `.in('role', [...])` array below and CrewSelect's
+ * role-label map were two independently-typed literals; adding a role to one
+ * without the other (e.g. `warehouse_staff` sneaking into the query) would
+ * have compiled clean and silently mislabelled that person "conductor" in
+ * the UI. `CrewCandidate.role: CrewRole` plus a `Record<CrewRole, string>`
+ * label map in CrewSelect.tsx makes that impossible: an added role here that
+ * is missing from the label map is a compile error, not a runtime guess.
+ */
+export const CREW_ROLES = ['pickup_crew', 'pickup_leader', 'ops_leader'] as const;
+export type CrewRole = (typeof CREW_ROLES)[number];
+
 export interface CrewCandidate {
   id: string;
   full_name: string | null;
-  role: string;
+  role: CrewRole;
 }
 
 /**
@@ -37,7 +50,7 @@ export function useCrewCandidates(operatorId: string | null, excludeUserId: stri
         // someone else's, so it must appear here as well as in
         // ROUTE_LEADER_ROLES. Omitting it would leave an ops_leader unable to
         // lead OR join, which is the dead end spec-66 exists to remove.
-        .in('role', ['pickup_crew', 'pickup_leader', 'ops_leader'])
+        .in('role', CREW_ROLES)
         .is('deleted_at', null)
         .order('full_name', { ascending: true });
       if (error) throw error;

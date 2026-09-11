@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react';
 import { Input } from '@/components/ui/input';
 import { useScannerAutoSubmit } from '@/hooks/useScannerAutoSubmit';
 
@@ -9,9 +9,28 @@ interface ScannerInputProps {
   disabled?: boolean;
 }
 
-export function ScannerInput({ onScan, disabled }: ScannerInputProps) {
+/**
+ * fase 5 (ronda 2 del mock, 5d) — el pie de `scan/[loadId]/page.tsx` lleva
+ * "Ingresar código a mano" junto al botón primario. Este campo YA es la
+ * superficie de entrada manual (el operario puede teclear en vez de dejar
+ * disparar el lector), así que ese control no abre un segundo campo — le
+ * devuelve el foco a este. `focus()` es la única operación expuesta a
+ * propósito.
+ */
+export interface ScannerInputHandle {
+  focus: () => void;
+}
+
+export const ScannerInput = forwardRef<ScannerInputHandle, ScannerInputProps>(function ScannerInput(
+  { onScan, disabled },
+  forwardedRef,
+) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
+
+  useImperativeHandle(forwardedRef, () => ({
+    focus: () => inputRef.current?.focus({ preventScroll: true }),
+  }));
 
   // Auto-focus on mount and after each scan. preventScroll keeps the page
   // from jumping when the input regains focus — without it, marking a package
@@ -80,12 +99,12 @@ export function ScannerInput({ onScan, disabled }: ScannerInputProps) {
             setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 100);
           }
         }}
-        placeholder="Scan barcode..."
+        placeholder="Esperando el disparo del lector…"
         disabled={disabled}
         className="min-h-[48px] text-base font-medium text-center bg-accent text-accent-foreground placeholder:text-accent-foreground/70 sm:min-h-0 sm:text-lg sm:font-mono sm:text-left sm:bg-input sm:text-foreground sm:placeholder:text-muted-foreground"
         autoComplete="off"
-        aria-label="Barcode scanner input"
+        aria-label="Campo de escaneo"
       />
     </div>
   );
-}
+});

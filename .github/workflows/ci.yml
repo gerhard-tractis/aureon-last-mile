@@ -87,6 +87,9 @@ jobs:
       - name: Test the migration-safety guard — B3 per-violation base diff + m8 rename + F4
         run: bash ./scripts/check-migration-safety-basediff.test.sh
 
+      - name: Test the migration-safety guard — rules 4/5 (orphaned overload REVOKE, GRANT without REVOKE)
+        run: bash ./scripts/check-migration-safety-acl.test.sh
+
       # The production gate is only as good as its wiring, and this file has a
       # history of gating bugs that shipped green. Fails the build if any prod
       # deploy job stops depending on approve-production (spec-57).
@@ -166,6 +169,15 @@ jobs:
       # this does, against the file that actually ships.
       - name: Test the deploy-gating guard — pg_net differential harness (real bash, real deploy.yml)
         run: bash ./scripts/check-deploy-gating-pgnet-differential.test.sh
+      # check-deploy-gating.sh only asserts the SHAPE of the gating
+      # (needs/if/concurrency); it is blind to what the frontend= path
+      # filter's regex actually matches. This pins its content against the
+      # real deploy.yml so a future "simplification" back to
+      # `^apps/frontend/` alone cannot silently reintroduce the
+      # stale-bundle bug (a root package-lock.json bump would then leave
+      # deploy-vercel skipped, green all the way).
+      - name: Test the deploy-vercel frontend path filter contents
+        run: bash ./scripts/check-deploy-vercel-frontend-filter.test.sh
 
       # A malformed quarantine.json only fails today's e2e-qa run on the VPS —
       # by then it has already re-blocked production, the exact state spec-87
@@ -211,6 +223,75 @@ jobs:
           bash ./infra/supabase-qa/deploy-qa.drift.test.sh
           bash ./infra/supabase-qa/deploy-qa.sql-tests.test.sh
           bash ./infra/supabase-qa/deploy-qa.functions.test.sh
+          bash ./infra/supabase-qa/deploy-qa.marker.test.sh
+          bash ./infra/supabase-qa/deploy-qa.pgtap.test.sh
+          bash ./infra/supabase-qa/deploy-qa.compose-recreate.test.sh
+
+      # spec-92 review round 5: `| grep -q` under pipefail is not a bug,
+      # it is a CLASS — five live instances found in one day across
+      # deploy.yml and deploy-qa.sh, all failing toward the unsafe side
+      # (a guard silently reading "nothing matched" instead of crashing or
+      # matching correctly). This closes the mechanism, not one instance:
+      # any new `| grep -q` in infra/supabase-qa/*.sh or
+      # .github/workflows/*.yml fails the build here before it can become
+      # instance six.
+      - name: Check for pipefail-unsafe grep -q usage
+        run: bash ./scripts/check-pipefail-grep-q.sh
+
+      - name: Test the pipefail-grep-q guard
+        run: bash ./scripts/check-pipefail-grep-q.test.sh
+
+      # scripts/pgtap-local.sh's `run` case is the only gate the real SQL
+      # test files under packages/database/supabase/tests have (count not
+      # restated here — spec-92 rounds 3/5/6 hardcoded it three times and
+      # it went stale twice; `ls packages/database/supabase/tests/*.sql |
+      # wc -l` is the number that doesn't drift) — those files
+      # never run in CI (see the comment at the top of pgtap-local.sh), so a
+      # wrapper that reports PASS on a failing pgTAP assertion silently
+      # nulls out every piece of "pgTAP N/N verde" evidence produced with it
+      # (round 2 review of #717). This proves it isn't blind, on its own
+      # fixtures — a fresh, throwaway container, never the shared local-dev
+      # spec52-pg (that one is reused across worktrees on a developer's
+      # machine and is not available here anyway).
+      - name: Test the pgtap-local wrapper — TAP parsing + apply (own throwaway container)
+        run: |
+          set -uo pipefail
+          CT=pgtap-selftest-ci
+          docker rm -f "$CT" >/dev/null 2>&1 || true
+          docker run -d --name "$CT" -e POSTGRES_PASSWORD=pgtap supabase/postgres:15.8.1.060 >/dev/null
+          # supabase/postgres restarts postgres more than once during its own
+          # init (initdb, then extensions/roles bootstrap, then final start)
+          # — a "select 1" that succeeds once, even twice 3s apart, can still
+          # be followed by "the database system is shutting down" moments
+          # later on a cold runner (measured on a GitHub-hosted runner: a
+          # restart landed right as the first pgTAP fixture ran, after the
+          # one-retry check below passed). Require 5 consecutive successes,
+          # 2s apart, before treating it as actually settled.
+          ok=0
+          consec=0
+          for i in $(seq 1 90); do
+            if docker exec "$CT" psql -U postgres -d postgres -tAc "select 1" >/dev/null 2>&1; then
+              consec=$((consec+1))
+            else
+              consec=0
+            fi
+            if [ "$consec" -ge 5 ]; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "::error::$CT never became ready"
+            docker rm -f "$CT" >/dev/null 2>&1 || true
+            exit 1
+          fi
+          docker exec "$CT" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c "CREATE EXTENSION pgtap;"
+          rc=0
+          PGTAP_LOCAL_CONTAINER="$CT" bash ./scripts/pgtap-local.test.sh || rc=$?
+          # `apply`'s own content-hash guard (mutation-testing false-green,
+          # see pgtap-local.sh's header comment) — same container, no extra
+          # postgres bring-up cost.
+          PGTAP_LOCAL_CONTAINER="$CT" bash ./scripts/pgtap-local-apply.test.sh || rc=$?
+          docker rm -f "$CT" >/dev/null 2>&1 || true
+          exit "$rc"
 
       # Los tokens de fase y el campo **Verify:** de un spec son leidos por
       # maquina: los hooks de .claude/hooks/ deciden si queda trabajo y
@@ -373,6 +454,27 @@ jobs:
 
       - name: Test the stale-phase reconciliation orchestration
         run: node ./scripts/reconcile-stale-phases.test.mjs
+
+      # qa-prod-parity-compare.mjs (spec-93 fase 4): the deterministic
+      # guardrail. No network, no credentials — reads two measurement files
+      # and a baseline. Includes the mutation test for the phase's single
+      # most important requirement: an absent QA measurement must produce a
+      # non-zero exit, never a silent pass.
+      - name: Test the QA<->prod parity baseline parser
+        run: node ./scripts/qa-prod-parity-baseline.test.mjs
+
+      - name: Test the QA<->prod parity comparator
+        run: node ./scripts/qa-prod-parity-compare.test.mjs
+
+      - name: Test the QA<->prod parity coverage floor
+        run: node ./scripts/qa-prod-parity-coverage.test.mjs
+
+      # spec-93 fase 3b: pure-function alias tables pulled out of
+      # measure-qa-surfaces.sh so they can be unit tested without docker.
+      # Regression-pins run 34545563792's finding — an alias that produced a
+      # key production never had.
+      - name: Test the QA surface alias tables
+        run: bash ./scripts/lib/qa-surface-aliases.test.sh
 
       - name: Lint
         run: npx turbo run lint

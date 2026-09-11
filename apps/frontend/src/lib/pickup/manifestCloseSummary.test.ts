@@ -1,0 +1,239 @@
+import { describe, it, expect } from 'vitest';
+import {
+  pendingLoadsLabel,
+  summarizePendingRouteManifests,
+  backupPhotosLabel,
+  custodyNoticeCopy,
+  custodyConfirmationCopy,
+} from './manifestCloseSummary';
+
+describe('pendingLoadsLabel', () => {
+  it('uses singular noun and verb for exactly 1', () => {
+    expect(pendingLoadsLabel(1)).toBe('1 carga pendiente');
+  });
+
+  it('uses plural for 0, 2 and above', () => {
+    expect(pendingLoadsLabel(0)).toBe('0 cargas pendientes');
+    expect(pendingLoadsLabel(2)).toBe('2 cargas pendientes');
+    expect(pendingLoadsLabel(3)).toBe('3 cargas pendientes');
+  });
+});
+
+/**
+ * spec-80 fase 5, mock `5i` — "Sigue en PR-2026-0148 · 3 cargas pendientes ·
+ * Parque Arauco es la próxima". Pure counting so it can be tested without a
+ * DOM or a Supabase client, same reasoning as reviewCloseGate.ts (fase 2).
+ */
+describe('summarizePendingRouteManifests', () => {
+  it('excludes the manifest that was just closed, even if its cached status has not caught up yet', () => {
+    // Asymmetric fixture: two manifests both `in_progress`, one of them IS
+    // the one just closed. If the function only filtered by status (and not
+    // also by id), it would count the just-closed manifest as still
+    // pending whenever the route-manifests query is a beat behind
+    // close_manifest's write — the exact staleness window this function
+    // exists to cover.
+    const manifests = [
+      { id: 'm-closed', status: 'in_progress', retailer_name: 'Falabella' },
+      { id: 'm-other', status: 'in_progress', retailer_name: 'Parque Arauco' },
+    ];
+
+    const result = summarizePendingRouteManifests(manifests, 'm-closed');
+
+    expect(result.pendingCount).toBe(1);
+    expect(result.nextManifestLabel).toBe('Parque Arauco');
+  });
+
+  it('does not count a manifest whose status is completed', () => {
+    const manifests = [
+      { id: 'm-closed', status: 'in_progress', retailer_name: 'Falabella' },
+      { id: 'm-done', status: 'completed', retailer_name: 'Ripley' },
+    ];
+
+    const result = summarizePendingRouteManifests(manifests, 'm-closed');
+
+    expect(result.pendingCount).toBe(0);
+    expect(result.nextManifestLabel).toBeNull();
+  });
+
+  it('picks the first pending manifest in array order as "next" — the list is already ordered oldest-first', () => {
+    const manifests = [
+      { id: 'm-closed', status: 'completed', retailer_name: 'Falabella' },
+      { id: 'm-1', status: 'pending', retailer_name: 'Parque Arauco' },
+      { id: 'm-2', status: 'in_progress', retailer_name: 'Costanera Center' },
+    ];
+
+    const result = summarizePendingRouteManifests(manifests, 'm-closed');
+
+    expect(result.pendingCount).toBe(2);
+    expect(result.nextManifestLabel).toBe('Parque Arauco');
+  });
+
+  it('is null-safe when the next manifest has no retailer name yet', () => {
+    const manifests = [{ id: 'm-1', status: 'pending', retailer_name: null }];
+
+    const result = summarizePendingRouteManifests(manifests, 'm-closed');
+
+    expect(result.pendingCount).toBe(1);
+    expect(result.nextManifestLabel).toBeNull();
+  });
+
+  it('returns zero pending and a null label for an empty route', () => {
+    const result = summarizePendingRouteManifests([], 'm-closed');
+
+    expect(result.pendingCount).toBe(0);
+    expect(result.nextManifestLabel).toBeNull();
+  });
+});
+
+/**
+ * Seguimiento de spec-80 fase 6 (PR #736) — `ManifestClosedSummary` recibía
+ * `photosCount: number`, que no puede expresar "no lo sé". Cuando
+ * `useManifestDocuments` queda en pausa (`networkMode:'online'`, sin señal
+ * o con un error transitorio al montar) `documents` es `undefined`, y
+ * `complete/[loadId]/page.tsx` lo convertía en 0 con un `= []` — la MISMA
+ * mentira que la ronda 4 ya corrigió en `ManifestPhotoStrip` (su propio
+ * "manifest-photo-count"), sólo que en el otro lector del mismo dato.
+ *
+ * `serverPhotosCount: number | null` — `null` es "no se sabe" (servidor
+ * ilegible), nunca 0. `queuedPhotosCount` en cambio SIEMPRE se conoce: sale
+ * de IndexedDB, no de la red (`queuedManifestPhotoCount`,
+ * `lib/offline/photos.ts`) — por eso no puede colapsar al mismo `null` que
+ * el servidor. Con servidor ilegible y algo en cola, la pantalla no puede
+ * decir menos de lo que le consta.
+ */
+describe('backupPhotosLabel', () => {
+  it('sums server-confirmed and queued-unconfirmed when the server count is known', () => {
+    expect(backupPhotosLabel(3, 2)).toBe('5 fotos');
+  });
+
+  it('is honest with zero photos', () => {
+    expect(backupPhotosLabel(0, 0)).toBe('0 fotos');
+  });
+
+  it('renders a dash — not "0 fotos" — when the server count is unknown and nothing is queued', () => {
+    expect(backupPhotosLabel(null, 0)).toBe('—');
+  });
+
+  it('still says what it knows when the server is unreadable but the queue is not empty', () => {
+    expect(backupPhotosLabel(null, 2)).toBe('2 en cola (resto desconocido)');
+  });
+
+  // Ronda 2 de review del PR #743 (menor 5) — mismo criterio de
+  // concordancia que `pendingLoadsLabel` ya aplica ("1 carga pendiente",
+  // no "1 cargas pendientes").
+  it('uses the singular noun for exactly 1 known photo', () => {
+    expect(backupPhotosLabel(1, 0)).toBe('1 foto');
+  });
+});
+
+/**
+ * Ronda 2 de review de spec-95 fase 6 (B3, M1, M2) — el aviso de
+ * transferencia de custodia (`5f`) es la frase que le dice al cliente qué
+ * pasa legalmente con sus paquetes al firmar. Vivía como un template
+ * literal inline en `page.tsx`, lo que dejaba el bloqueante B3: un valor
+ * hardcodeado ahí pasaba las 34/34 pruebas de esa página porque el único
+ * test que la ejercitaba usaba SIEMPRE las mismas dos cifras del
+ * `beforeEach` (2 verificados, 1 faltante). Extraída aquí para poder variar
+ * las cifras en un test unitario puro, que es lo único que mata esa
+ * mutación.
+ *
+ * Concordancia singular/plural: mismo criterio que `pendingLoadsLabel` /
+ * `missingHeadingLabel` (reviewCloseGate.ts) / `closeButtonLabel` — "1
+ * paquete verificado pasa", no "1 paquetes verificado pasan"; "1 faltante
+ * queda", no "1 faltantes quedan" (M1). El mock (`5f`, 39/3) no cubre el
+ * singular ni el cero, así que el texto para esos casos se deriva de esa
+ * misma convención, no del mock — declarado, no inventado en silencio.
+ *
+ * missingCount === 0 (M2): con 0 faltantes — el camino feliz, y el más
+ * común según `reviewCloseGate.ts:83` ("pasa directo a 5f") — la segunda
+ * frase del mock ("Los N faltantes quedan…") no tiene nada que decir; se
+ * omite en vez de imprimir "0 faltantes quedan a nombre del local hasta
+ * que se resuelvan", que no tiene sentido.
+ */
+describe('custodyNoticeCopy', () => {
+  it('matches the mock’s two-sentence shape for its own numbers (39 verified, 3 missing)', () => {
+    expect(custodyNoticeCopy(39, 3)).toBe(
+      'Al firmar, 39 paquetes verificados pasan a custodia de Aureon. 3 faltantes quedan a nombre del local hasta que se resuelvan.'
+    );
+  });
+
+  it('uses the real counts, not a fixed pair (B3 — kills the hardcoded-string mutation)', () => {
+    expect(custodyNoticeCopy(7, 5)).toBe(
+      'Al firmar, 7 paquetes verificados pasan a custodia de Aureon. 5 faltantes quedan a nombre del local hasta que se resuelvan.'
+    );
+  });
+
+  it('singularizes verified (M1)', () => {
+    expect(custodyNoticeCopy(1, 3)).toBe(
+      'Al firmar, 1 paquete verificado pasa a custodia de Aureon. 3 faltantes quedan a nombre del local hasta que se resuelvan.'
+    );
+  });
+
+  it('singularizes missing (M1)', () => {
+    expect(custodyNoticeCopy(2, 1)).toBe(
+      'Al firmar, 2 paquetes verificados pasan a custodia de Aureon. 1 faltante queda a nombre del local hasta que se resuelva.'
+    );
+  });
+
+  it('omits the missing sentence entirely at zero missing — the common case (M2)', () => {
+    expect(custodyNoticeCopy(12, 0)).toBe(
+      'Al firmar, 12 paquetes verificados pasan a custodia de Aureon.'
+    );
+  });
+
+  it('is honest with zero verified too', () => {
+    expect(custodyNoticeCopy(0, 2)).toBe(
+      'Al firmar, 0 paquetes verificados pasan a custodia de Aureon. 2 faltantes quedan a nombre del local hasta que se resuelvan.'
+    );
+  });
+});
+
+/**
+ * spec-95 fase 7, mock `5f2` — la hoja de confirmación irreversible cuenta
+ * las mismas dos mitades que `custodyNoticeCopy` (5f), pero con la frase del
+ * mock: una sola oración de cuenta ("X pasan… y Y quedan registrados…"),
+ * seguida siempre de "Esta acción es irreversible." — a diferencia de
+ * `custodyNoticeCopy`, esa cola no depende de si hay faltantes.
+ *
+ * Concordancia con el mismo criterio que el resto del fichero (M1/M2 de
+ * `custodyNoticeCopy`): singular/plural en ambos sustantivos y verbos, y la
+ * mitad de faltantes se omite entera cuando son 0 — "0 quedan registrados
+ * como faltantes" no dice nada real (mismo M2).
+ */
+describe('custodyConfirmationCopy', () => {
+  it('matches the mock’s one-sentence shape for its own numbers (39 verified, 3 missing)', () => {
+    expect(custodyConfirmationCopy(39, 3)).toBe(
+      '39 paquetes pasan a custodia de Aureon y 3 quedan registrados como faltantes. Esta acción es irreversible.'
+    );
+  });
+
+  it('uses the real counts, not a fixed pair (kills the hardcoded-string mutation)', () => {
+    expect(custodyConfirmationCopy(7, 5)).toBe(
+      '7 paquetes pasan a custodia de Aureon y 5 quedan registrados como faltantes. Esta acción es irreversible.'
+    );
+  });
+
+  it('singularizes verified', () => {
+    expect(custodyConfirmationCopy(1, 3)).toBe(
+      '1 paquete pasa a custodia de Aureon y 3 quedan registrados como faltantes. Esta acción es irreversible.'
+    );
+  });
+
+  it('singularizes missing', () => {
+    expect(custodyConfirmationCopy(2, 1)).toBe(
+      '2 paquetes pasan a custodia de Aureon y 1 queda registrado como faltante. Esta acción es irreversible.'
+    );
+  });
+
+  it('omits the missing half entirely at zero missing — the common case', () => {
+    expect(custodyConfirmationCopy(12, 0)).toBe(
+      '12 paquetes pasan a custodia de Aureon. Esta acción es irreversible.'
+    );
+  });
+
+  it('is honest with zero verified too', () => {
+    expect(custodyConfirmationCopy(0, 2)).toBe(
+      '0 paquetes pasan a custodia de Aureon y 2 quedan registrados como faltantes. Esta acción es irreversible.'
+    );
+  });
+});

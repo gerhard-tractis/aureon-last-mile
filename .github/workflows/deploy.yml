@@ -36,6 +36,10 @@ on:
         description: 'Apply pending Supabase migrations even if this commit touched none'
         type: boolean
         default: false
+      force_frontend:
+        description: 'Deploy the frontend to Vercel even if this commit touched none of the frontend filter'
+        type: boolean
+        default: false
 
 # All deploy jobs run sequentially within their dependency chain — a failed
 # migration never reaches app deploys. Jobs are gated on path filters so a
@@ -165,6 +169,7 @@ jobs:
         env:
           FORCE_DB: ${{ inputs.force_db }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE_FRONTEND: ${{ inputs.force_frontend }}
         run: |
           set -euo pipefail
           # main is squash-merge only, so HEAD^ is the previous main tip.
@@ -173,13 +178,16 @@ jobs:
           CHANGED=$(git diff --name-only "${BASE}" "${DEPLOY_SHA}")
           echo "$CHANGED"
 
-          # review round 2026-09-10 — same SIGPIPE class as the migrations-
-          # diff content check below (B2): `echo "$VAR" | grep -qE ...` pipes
-          # into a `grep -q` that exits at the first match and closes its
-          # stdin, and under `pipefail` a big-enough $CHANGED with the match
-          # near the start can SIGPIPE the `echo`, making the whole pipeline
-          # report 141 — which reads as "no match" even though there was
-          # one. Herestring instead: no pipe, no writer to SIGPIPE.
+          # `echo "$VAR" | grep -q` es inseguro bajo `pipefail` (el shell por
+          # defecto de todo `run:` de Actions es `bash -eo pipefail`): `grep -q`
+          # sale en la PRIMERA coincidencia y cierra su extremo del pipe, el
+          # `echo` recibe SIGPIPE, el pipeline devuelve 141, y el `if` lo lee
+          # como "no coincidio". Falla ABIERTO — y aqui eso decide QUE SE
+          # DESPLIEGA: con una lista de rutas >64 KiB y la coincidencia al
+          # principio, `frontend`/`worker`/`agents`/`solver` quedan en `false`
+          # y ese job no corre, con la corrida en verde.
+          # La herestring no crea subproceso que matar. Medido en Ubuntu 22.04:
+          # 200 KB por pipe -> rc 141; por herestring -> rc 0.
           matches() { grep -qE "$1" <<< "$CHANGED" && echo true || echo false; }
 
           # force_db overrides the database path filter only. It exists so a
@@ -286,13 +294,49 @@ jobs:
             PG_NET=true
           fi
 
+          # Deliberately generous, not minimal: a false negative here means
+          # production silently keeps serving a stale bundle, which is worse
+          # than the wasted-deploy-quota problem this filter exists to fix.
+          # Covers apps/frontend itself, the workspace root files that pin
+          # every package's dependency versions (package.json/
+          # package-lock.json — a bump to a frontend dependency shows up only
+          # here, not under apps/frontend/), turbo.json (the build pipeline
+          # definition frontend's `turbo run build` follows), and the parts of
+          # packages/database that apps/frontend actually imports at build
+          # time (its package.json, tsconfig.json, and src/ — where the
+          # generated Supabase types apps/frontend consumes live, via
+          # `transpilePackages` in apps/frontend/next.config.ts). Excluded:
+          # vitest.config.ts and seed-qa/ (test/QA-only, nothing under
+          # apps/frontend touches them) and supabase/ — migrations, pgTAP
+          # tests, Deno edge functions (not bundled into the Next.js build),
+          # config.toml and docs. None of that reaches the frontend bundle;
+          # the one part of that tree the frontend DOES depend on is the
+          # generated types, and those live in src/database.types.ts, already
+          # covered by the src/ term above. apps/frontend/vercel.json is
+          # already covered by the apps/frontend/ prefix.
+          FRONTEND_PATTERN='^apps/frontend/|^package\.json$|^package-lock\.json$|^turbo\.json$|^packages/database/(package\.json$|tsconfig\.json$|src/)'
+          FRONTEND=$(matches "$FRONTEND_PATTERN")
+          # force_frontend mirrors force_db above, for the same reason: on a
+          # workflow_dispatch, BASE is only the dispatched commit's parent, so
+          # this filter sees a one-commit diff. If a Vercel deploy failed (or
+          # was skipped by this very filter) and every commit since then is
+          # docs/backend-only, no dispatch can recover the frontend without
+          # this override — the only alternatives would be a dummy commit
+          # touching apps/frontend/, or running `vercel --prod` by hand
+          # outside the pipeline, which is exactly what workflow_dispatch
+          # exists to make unnecessary (see the force_db comment above).
+          if [ "${FORCE_FRONTEND}" = "true" ]; then
+            echo "force_frontend: overriding frontend filter (was ${FRONTEND})"
+            FRONTEND=true
+          fi
+
           {
             echo "database=${DB}"
             echo "edge_functions=$(matches '^packages/database/supabase/functions/')"
             echo "worker=$(matches '^apps/worker/')"
             echo "agents=$(matches '^apps/agents/')"
             echo "solver=$(matches '^sidecar/or-tools/')"
-            echo "frontend=$(matches '^apps/frontend/')"
+            echo "frontend=${FRONTEND}"
             echo "auth_hook=${AUTH_HOOK}"
             echo "pg_net=${PG_NET}"
           } >> "$GITHUB_OUTPUT"
@@ -459,8 +503,46 @@ jobs:
 
   # ─── 3. Frontend (Vercel) ────────────────────────────────────────────────────
   # This job is the ONLY thing that should deploy the frontend to production.
-  # It runs on every green push to main and is ordered after migrations, so app
-  # code never reaches users ahead of the schema it depends on.
+  # It is path-filtered on `needs.changes.outputs.frontend` (Vercel's free plan
+  # caps at 100 deploys/day, and every push to main used to spend one even for
+  # docs-only or backend-only commits) and, when it does run, is ordered after
+  # migrations, so app code never reaches users ahead of the schema it depends
+  # on. See the `frontend=` filter in the `changes` job above for exactly what
+  # counts as frontend-affecting — it is deliberately generous, because a false
+  # negative here means production silently serves a stale bundle.
+  #
+  # SAME OUTPUT ALSO FEEDS QA: `needs.changes.outputs.frontend` is also passed
+  # as `CHANGED_FRONTEND` to deploy-qa below, where it decides whether QA
+  # rebuilds and restarts `aureon-frontend-qa`. Widening this filter (e.g. to
+  # include root package-lock.json) means a dependency bump with no
+  # apps/frontend/ diff now rebuilds QA's frontend too, not just production's.
+  # Intentional — QA drifting from what production is about to run would be
+  # worse — but it changes QA's rebuild frequency, not just production's deploy
+  # count, so it's worth knowing if QA's sync time creeps up.
+  #
+  # KNOWN GAP, PARTIALLY CLOSED: this filter only looks at the diff of the
+  # commit being deployed. If a Vercel deploy fails or is skipped and the
+  # commits that follow don't touch anything in the frontend filter, production
+  # stays on the old bundle with no automatic catch-up (unlike deploy-supabase,
+  # which runs unconditionally on every approved run — `db push --include-all`
+  # is a safe no-op, `vercel --prod` on an unrelated commit is not). The
+  # `force_frontend` workflow_dispatch input below is the cheap fix for that:
+  # a human can force a deploy of whatever commit they dispatch from.
+  #
+  # It is NOT the good fix. The good fix is what
+  # infra/supabase-qa/deploy-qa.sh's `widen_changed_flags` already does for
+  # QA: diff what's actually deployed (there, QA's last-synced SHA) against
+  # what's about to ship, and OR that into the filter, so a skipped run can
+  # never be silently forgotten. Production has no equivalent of "the SHA
+  # Vercel actually has" to diff against — that would need querying Vercel's
+  # deployment API for the last production deployment's commit, not just
+  # trusting the workflow's own history. Left undone; `force_frontend` is the
+  # stopgap until someone builds that.
+  #
+  # A build-time env var added only to the "Deploy to Vercel" step below (not
+  # to any file the path filter tracks) would also change the shipped bundle
+  # without tripping this filter — `force_frontend` covers that case too, by
+  # forcing the deploy regardless of what the filter found.
   #
   # REQUIRED: Vercel's Git integration must have production auto-deploy DISABLED
   # for `main` (Vercel → Project → Settings → Git → Ignored Build Step, or
@@ -477,7 +559,7 @@ jobs:
     if: |
       always() && !failure() && !cancelled() &&
       needs.approve-production.result == 'success' &&
-      needs.changes.result == 'success'
+      needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -689,9 +771,27 @@ jobs:
 
       - name: Sync QA environment
         run: |
+          # `set -e` stays: dropping it to capture the exit code below left
+          # the `cd` unguarded, which is how a failed cd runs the deploy
+          # against the wrong tree. `|| rc=$?` is a condition context, so it
+          # captures without errexit killing the step first.
           set -euo pipefail
           cd "$HOME/qa-deploy-src"
-          bash infra/supabase-qa/deploy-qa.sh
+          # Capture the code instead of letting it kill the step directly, so
+          # the failure step below can tell WHICH failure this was. 78 means
+          # "QA is in sync, the deploy marker is not" — see deploy-qa.sh's
+          # QA_EXIT_MARKER_STREAK and the failure step's branch.
+          #
+          # Written to a file rather than $GITHUB_ENV: this step exits
+          # non-zero right after, and a plain file needs no assumption about
+          # whether the env file is still processed for a failed step.
+          # $RUNNER_TEMP is cleared by the runner at the start and end of
+          # every job, and this step runs exactly once per job, so there is
+          # no stale-file case to guard against here — no `rm -f` needed.
+          rc=0
+          bash infra/supabase-qa/deploy-qa.sh || rc=$?
+          echo "$rc" > "$RUNNER_TEMP/qa-deploy-rc"
+          exit "$rc"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CHANGED_FRONTEND: ${{ needs.changes.outputs.frontend }}
@@ -702,6 +802,42 @@ jobs:
       - name: Report failure
         if: failure()
         run: |
+          # Exit 78 is NOT a drifted QA, and saying so sends whoever is on call
+          # hunting a deriva that does not exist. QA synced fine; the deploy
+          # marker could not be written for QA_DEGRADED_MAX runs in a row.
+          # Each of those runs still diffed from whatever marker was already
+          # on disk (or rebuilt every app if there was none) — never against
+          # a false baseline, so nothing was skipped. The operator reads the
+          # LAST ::error::, so the accurate one has to be the only one printed.
+          QA_DEPLOY_RC="$(cat "$RUNNER_TEMP/qa-deploy-rc" 2>/dev/null || true)"
+          if [ "${QA_DEPLOY_RC:-}" = "78" ]; then
+            echo "::error::QA is in sync — but the deploy marker has been unwritable for several runs and is now failing the deploy on purpose."
+            echo "QA itself is fine: migrations, seed and every app restart succeeded, and each degraded"
+            echo "run fell back to the last recorded marker, or to a full rebuild if there was none —"
+            echo "never to the checkout's HEAD, so nothing was skipped."
+            echo "What to fix is a FILE PERMISSION on the VPS, not a QA drift — the deploy log above"
+            echo "names the marker path, its owner and the exact chown. Almost always a file created"
+            echo "by hand over SSH as root inside /home/aureon (same class as #718)."
+            echo "NOTE: this blocks the production deploy (spec-57), deliberately."
+            exit 1
+          fi
+          # spec-93 fase 3, review round — QA_EXIT_PGTAP_STREAK, a DISTINCT
+          # code from 78 for the same shape of problem: QA itself is fine,
+          # only CREATE EXTENSION pgtap has failed QA_PGTAP_DEGRADED_MAX runs
+          # in a row (see ensure_pgtap() in deploy-qa.sh). Likely cause: the
+          # QA Postgres role lacks the privilege — pgtap is NOT trusted and
+          # needs a superuser.
+          if [ "${QA_DEPLOY_RC:-}" = "79" ]; then
+            echo "::error::QA is in sync — but CREATE EXTENSION pgtap has failed repeatedly and is now failing the deploy on purpose."
+            echo "QA itself is fine: migrations, seed and every app restart succeeded. Only pgtap testing"
+            echo "is broken — every pgTAP file under packages/database/supabase/tests will keep reporting"
+            echo "SKIPPED-NO-PGTAP until this is fixed."
+            echo "Likely cause: the role in POSTGRES_PASSWORD lacks the privilege to create the extension —"
+            echo "pgtap is NOT trusted and needs a superuser (supabase_admin in the Supabase images, not"
+            echo "postgres). Fix on the VPS: grant the privilege, or point ensure_pgtap at a superuser role."
+            echo "NOTE: this blocks the production deploy (spec-57), deliberately."
+            exit 1
+          fi
           echo "::error::QA environment sync failed — QA is now drifted from main."
           echo "To debug: run infra/supabase-qa/deploy-qa.sh on the VPS, or check"
           echo "journalctl -u aureon-frontend-qa/-agents-qa/-worker-qa -n 50."

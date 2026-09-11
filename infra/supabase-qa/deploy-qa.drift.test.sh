@@ -43,6 +43,7 @@ extract() { sed -n "/^$1() {/,/^}/p" "$HERE/deploy-qa.sh"; }
   extract err
   extract is_true
   extract widen_changed_flags
+  extract read_qa_prev_sha
 } > "$TMP/fns.sh"
 # shellcheck disable=SC1091
 . "$TMP/fns.sh"
@@ -120,6 +121,105 @@ QA_PREV_SHA="$GITHUB_SHA" DEPLOY_SHA="$WORKER_SHA" \
   CHANGED_FRONTEND=false CHANGED_WORKER=false CHANGED_AGENTS=false CHANGED_EDGE_FUNCTIONS=false \
   eval 'widen_changed_flags >/dev/null 2>&1; echo "$CHANGED_WORKER $CHANGED_FRONTEND"' > "$TMP/out"
 check_eq "maps apps/worker to the worker flag only" "true false" "$(cat "$TMP/out")"
+
+# ── B2's twin (spec-92 review round 5): widen()'s match used to be
+#    `printf '%s\n' "$changed" | grep -qE "$2"`. `grep -q` exits on its
+#    FIRST match and closes its read end of the pipe; with a large enough
+#    `git diff --name-only` list, `printf` can still be writing when grep
+#    quits — SIGPIPE, the pipeline exits 141 under pipefail, 141 != 0 makes
+#    the `elif` read FALSE, and widen_changed_flags silently reports
+#    "false" for an app that DID change. Reproduced here with a real git
+#    repo and a real diff: one apps/frontend file (sorts first
+#    alphabetically, so grep would match almost immediately) plus ~5000
+#    filler files after it (so the list is large enough that printf is
+#    still writing when a first-match-then-quit reader gives up) ─────────
+BIGDIFF_BASE="$(git -C "$REPO" rev-parse HEAD)"
+# Built via plumbing (read-tree/update-index/write-tree/commit-tree), not
+# 5000 real filesystem writes + `git add` — same diff --name-only size,
+# without paying for 5000 mkdir/echo forks.
+git -C "$REPO" read-tree "$BIGDIFF_BASE" >/dev/null
+BLOB_SHA="$(git -C "$REPO" hash-object -w --stdin <<< 'trigger')"
+{
+  echo "100644 blob $BLOB_SHA	apps/frontend/src/big_diff_trigger.tsx"
+  i=0
+  while [ "$i" -lt 5000 ]; do
+    printf '100644 blob %s\tzzz_filler/file_%s.txt\n' "$BLOB_SHA" "$i"
+    i=$((i + 1))
+  done
+} | git -C "$REPO" update-index --index-info
+BIGDIFF_TREE="$(git -C "$REPO" write-tree)"
+BIGDIFF_SHA="$(git -C "$REPO" commit-tree "$BIGDIFF_TREE" -p "$BIGDIFF_BASE" -m 'big diff')"
+QA_PREV_SHA="$BIGDIFF_BASE" DEPLOY_SHA="$BIGDIFF_SHA" \
+  CHANGED_FRONTEND=false CHANGED_WORKER=false CHANGED_AGENTS=false CHANGED_EDGE_FUNCTIONS=false \
+  eval 'widen_changed_flags >/dev/null 2>&1; echo "$CHANGED_FRONTEND"' > "$TMP/out"
+check_eq "B2 twin: a large diff with an early frontend match still widens CHANGED_FRONTEND" \
+  "true" "$(cat "$TMP/out")"
+
+echo
+echo "read_qa_prev_sha() (spec-88 fase 3, ronda 6)"
+
+# The bug this ronda chased: sync_checkout() used to read QA_PREV_SHA
+# straight from the checkout's `git rev-parse HEAD`. `git reset --hard`
+# (inside sync_checkout, unconditionally, every run) advances that HEAD
+# BEFORE any restart/rebuild step runs later in main() — so a run that dies
+# partway through main() (restart_functions hit a real permission bug,
+# #718, 2026-09-09) still leaves the checkout's HEAD at the new commit. The
+# next run then reads that already-advanced HEAD as "prev", and any file
+# that landed in the commit the dead run already checked out silently drops
+# out of the diff. Measured live: this exact mechanism dropped
+# CHANGED_QA_COMPOSE to false on the retry after #710 merged, and
+# `docker inspect supabase-qa-auth` showed the container still running its
+# pre-merge environment — `restart_auth()` was simply never called.
+QA_CHECKOUT_DIR="$REPO"
+QA_STATE_FILE="$TMP/state-missing"
+# An ABSENT marker must report NOTHING, which widen_changed_flags() turns
+# into "rebuild every app" (see its unknown-baseline cases above).
+#
+# This used to fall back to `git rev-parse HEAD`, on the reasoning that the
+# only way to have no marker was a first run on a fresh host. Making the
+# marker write non-fatal (#732, after five deploys died on an unwritable
+# marker) created a second way, and with it a hole big enough to undo this
+# whole ronda:
+#
+#   run N   degraded - the marker could not be written at all, deploy green
+#   run N+1 sync_checkout's `git reset --hard` lands, then main() dies
+#           partway (the #718 permission bug, same day)
+#   run N+2 no marker, so prev = HEAD = run N+1's sha - and every file run
+#           N+1 checked out but never deployed drops out of the diff
+#
+# That is the bug this ronda exists to remove, arriving by the back door.
+# Before the write became non-fatal the invariant survived by CRASHING. It
+# now survives by degrading to the SAFE baseline instead: no marker, no
+# baseline, rebuild everything. The cost is one slow run on a genuinely
+# fresh host - the case where rebuilding everything was correct anyway.
+check_eq "reports no baseline when the marker is absent, so everything rebuilds" \
+  "" "$(read_qa_prev_sha)"
+
+printf '%s' "$FRONTEND_SHA" > "$TMP/state-present"
+QA_STATE_FILE="$TMP/state-present"
+check_eq "reads the marker instead of git HEAD once one exists" \
+  "$FRONTEND_SHA" "$(read_qa_prev_sha)"
+
+# The exact scenario that broke: the checkout's HEAD has already moved past
+# what the marker says, because a previous run's sync_checkout() ran but its
+# later restarts died. read_qa_prev_sha() must still report the OLDER,
+# marker-recorded commit — not the checkout's newer HEAD — so
+# widen_changed_flags() sees the true, still-outstanding diff.
+# STALE is not ABSENT, and the difference is the whole design: the real
+# incident's marker was root-owned but perfectly READABLE, so it is a safe,
+# older baseline and stays in use. Only a marker that is not there at all
+# forces the full rebuild.
+QA_STATE_FILE="$TMP/state-present"
+check_eq "still uses a stale-but-readable marker rather than rebuilding everything" \
+  "$FRONTEND_SHA" "$(read_qa_prev_sha)"
+
+current_head="$(git -C "$REPO" rev-parse HEAD)"
+if [ "$current_head" = "$FRONTEND_SHA" ]; then
+  fail=$((fail + 1)); echo "  FAIL test setup — REPO HEAD unexpectedly equals FRONTEND_SHA, the case below proves nothing"
+else
+  check_eq "reports the marker even when the checkout has since moved past it" \
+    "$FRONTEND_SHA" "$(read_qa_prev_sha)"
+fi
 
 echo
 echo "  $pass passed, $fail failed"

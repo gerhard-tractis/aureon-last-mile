@@ -33,7 +33,7 @@ export interface ScanQueue {
  * dejaría esos contadores en 0 mientras las entradas de Recogida esperan en
  * otro origen de almacenamiento.
  */
-export type PickupQueueOperationType = 'pickup_scan' | 'close_manifest';
+export type PickupQueueOperationType = 'pickup_scan' | 'close_manifest' | 'manifest_photo';
 
 /**
  * `pending`: candidata a envío. `sending`: un drenador la reclamó — evita que
@@ -69,11 +69,24 @@ export interface PickupQueueEntry {
    */
   userId: string;
   manifestId: string;
+  /**
+   * Ronda 3 de review de spec-81 fase 4 (PR #725, M mayor) — `manifestId`
+   * es `manifests.id`, un UUID generado, sin significado para el
+   * operario. `external_load_id` (`manifests.external_load_id`,
+   * `20260310100000…:56`) es lo que él ve y lo que resuelve
+   * `complete/[loadId]/page.tsx` desde la URL. Una afordancia que le pida
+   * "abre la carga X" necesita este campo — el UUID no es una instrucción
+   * ejecutable. Opcional porque no todo encolado tiene el dato a mano
+   * hoy (sin llamador de producción todavía para `pickup_scan`/
+   * `manifest_photo`, ver `EnqueueInput`); `undefined` cuando no se pasó.
+   */
+  externalLoadId?: string;
   type: PickupQueueOperationType;
   payload: Record<string, unknown>;
   /**
-   * Reservado para spec-81 fase 5 (fotos): el blob de la foto capturada.
-   * Deliberadamente sin usar en fase 1.
+   * spec-81 fase 5: el blob de la foto capturada, para entradas
+   * `type: 'manifest_photo'` — ver `lib/offline/photos.ts`. `undefined` para
+   * cualquier otro tipo de entrada.
    */
   blob?: Blob;
   status: PickupQueueEntryStatus;
@@ -112,24 +125,108 @@ export interface PickupQueueEntry {
 // caught this because it excludes `*.test.ts`, and nothing outside tests
 // called these functions with the real `db` until `useOfflineQueue` (fase
 // 2, first production caller).
+/**
+ * spec-82 fase 2 — caché de LECTURA offline por manifiesto ("DESCARGAR" de
+ * `5c`). Hermana de `pickup_queue` pero de naturaleza distinta: `pickup_queue`
+ * es trabajo por ENVIAR (con `status`/reintentos); esto es una fotografía ya
+ * RECIBIDA, sin reintento — se re-descarga a mano, nunca sola. Ver "Por qué
+ * una tabla nueva" en docs/specs/spec-82-recogida-movil-asignacion-y-ruta.md,
+ * fase 2.
+ *
+ * Un registro por `(operatorId, externalLoadId)` — nunca dos: `saveManifestSnapshot`
+ * (`lib/offline/manifest-cache.ts`) sobrescribe la fila existente en vez de
+ * agregar una segunda, para que una re-descarga no deje una copia vieja
+ * compitiendo con la nueva.
+ */
+export interface CachedManifestOrder {
+  id: string;
+  order_number: string;
+  customer_name: string;
+  comuna: string;
+  delivery_address: string;
+  packages: Array<{
+    id: string;
+    label: string;
+    package_number: string | null;
+    sku_items: Array<{ sku: string; description: string; quantity: number }>;
+    declared_weight_kg: number | null;
+    /** spec-55 — menor, revisión de fase 2: sin estos dos, `OrderCard`
+     * dispersaba las cajas hijas de una expansión en vez de agruparlas bajo
+     * su padre, el badge "Aureon" desaparecía, y "Agregar bultos"
+     * reaparecía sobre un bulto ya generado — la misma carga se veía
+     * distinta con y sin red. */
+    is_generated_label?: boolean;
+    parent_label?: string | null;
+  }>;
+}
+
+export interface CachedManifestRow {
+  id?: number;
+  operatorId: string;
+  externalLoadId: string;
+  manifestId: string;
+  totalPackages: number | null;
+  pickupRouteId: string | null;
+  retailerName: string | null;
+  pickupLocation: string | null;
+  orders: CachedManifestOrder[];
+  /** ISO 8601 — cuándo se tomó esta fotografía. Sin invalidación automática
+   * (ver el spec): una fila vieja sigue sirviendo hasta que alguien vuelva a
+   * tocar "DESCARGAR" con señal. */
+  downloadedAt: string;
+}
+
+/**
+ * Cadenas de índice por versión, exportadas — ronda 3 de revisión de
+ * spec-82 fase 2. `db.schema-upgrade.test.ts` construye un estado "sólo
+ * hasta la versión 2" para poblarlo antes de abrir la clase real en
+ * versión 3; sin exportar esto, ese archivo tendría que copiar estas
+ * cadenas a mano, y una copia puede divergir de aquí en silencio (pasó:
+ * un `.upgrade()` que BORRA filas en vez de tablas pasaba verde contra una
+ * fotocopia). Importando las mismas constantes, no hay nada que
+ * sincronizar — sólo hay una definición.
+ */
+export const SCAN_QUEUE_V1_STORES =
+  '++id, manifest_id, operator_id, synced, [manifest_id+synced], scanned_at';
+export const PICKUP_QUEUE_V2_STORES =
+  '++id, clientOperationId, operatorId, manifestId, status';
+export const MANIFEST_CACHE_V3_STORES =
+  '++id, operatorId, externalLoadId, [operatorId+externalLoadId]';
+
 export class AureonOfflineDB extends Dexie {
   scan_queue!: EntityTable<ScanQueue, 'id'>;
   pickup_queue!: EntityTable<PickupQueueEntry, 'id'>;
+  manifest_cache!: EntityTable<CachedManifestRow, 'id'>;
 
-  constructor() {
-    super('aureon_offline');
+  /**
+   * `name` con valor por defecto — ronda 3 de revisión de spec-82 fase 2 —
+   * para que `db.schema-upgrade.test.ts` pueda instanciar esta clase REAL
+   * bajo un nombre de base aislado, en vez de mantener una fotocopia local
+   * de los `stores({...})` que podía divergir de este archivo en silencio
+   * (y de hecho lo hizo: un upgrade que BORRA filas en vez de tablas pasaba
+   * verde contra la fotocopia). Todo llamador de producción sigue
+   * obteniendo `'aureon_offline'` sin cambiar una línea.
+   */
+  constructor(name: string = 'aureon_offline') {
+    super(name);
 
     // Define schema version 1
     this.version(1).stores({
-      scan_queue:
-        '++id, manifest_id, operator_id, synced, [manifest_id+synced], scanned_at',
+      scan_queue: SCAN_QUEUE_V1_STORES,
     });
 
     // spec-81 fase 1 — cola offline de Recogida. No se toca el índice de
     // `scan_queue`: los índices se congelan en la versión donde se
     // publicaron (ver spec-81, ronda 1, B7).
     this.version(2).stores({
-      pickup_queue: '++id, clientOperationId, operatorId, manifestId, status',
+      pickup_queue: PICKUP_QUEUE_V2_STORES,
+    });
+
+    // spec-82 fase 2 — caché de lectura offline por manifiesto. Igual
+    // congelamiento de índices que arriba: si una fase futura necesita otro
+    // índice, va en una versión nueva, no editando ésta.
+    this.version(3).stores({
+      manifest_cache: MANIFEST_CACHE_V3_STORES,
     });
   }
 }

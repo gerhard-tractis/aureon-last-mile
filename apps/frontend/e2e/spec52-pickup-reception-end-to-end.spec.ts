@@ -14,11 +14,10 @@ import {
   seed, teardown, closeDb, db, signIn, scanUntilStatus,
   activeRoute, packageStatus, packageId, routeReception, manifestStates,
   DRIVER, RECEPTIONIST, PLATE, LOADS, COLLECTED, UNEXPECTED, LEFT_BEHIND,
-  OPERATOR_ID, suppressCookieBanner,
+  OPERATOR_ID, suppressCookieBanner, getAccessTokenClaims,
+  PICKUP_SCANNER_LABEL as PICKUP_SCANNER,
+  RECEPTION_SCANNER_LABEL as RECEPTION_SCANNER,
 } from './support/spec52-fixture';
-
-const PICKUP_SCANNER = 'Barcode scanner input';
-const RECEPTION_SCANNER = 'Escáner de recepción';
 
 /** Deliberately flat and out of carga order — the receptionist never picks one. */
 const RECEPTION_ORDER = [
@@ -73,6 +72,31 @@ test.describe('spec-52 pickup route and consolidated reception', () => {
   test('driver departs the hub — the vehicle is required', async () => {
     test.setTimeout(120_000);
     await signIn(driver, DRIVER);
+
+    // spec-88 fase 3 — the only real proof custom_access_token_hook ran (as
+    // opposed to just not blocking the login). Its EXCEPTION handler swallows
+    // any internal failure and returns the JWT unchanged, so `signIn()`
+    // reaching /app on its own proves nothing about the hook — a degraded
+    // hook still authenticates.
+    //
+    // ronda 3 of review caught that app_metadata.claims is the WRONG place to
+    // assert: sync_claims_to_auth_metadata() (a trigger, unrelated to this
+    // hook — 20260312120000_sync_app_metadata_claims.sql) writes that exact
+    // same key, in the exact same shape, into auth.users.raw_app_meta_data,
+    // which GoTrue copies into app_metadata regardless of whether the hook
+    // ran at all. Measured: with the hook fully bypassed, app_metadata.claims
+    // still comes out byte-identical. The only thing the hook adds that
+    // nothing else does is at the JWT's ROOT (`claims := claims ||
+    // custom_claims`, 20260312190110_fix_hook_role_overwrite.sql:36) — so
+    // assert there. `role` is not a valid discriminant: the hook overwrites
+    // the root `role` back to `"authenticated"` right after the merge
+    // (same file, next line) so PostgREST still recognises the JWT; only
+    // `operator_id` and `permissions` at the root are hook-exclusive.
+    const claims = await getAccessTokenClaims(driver);
+    expect(claims.operator_id).toBe(OPERATOR_ID);
+    expect(Array.isArray(claims.permissions)).toBe(true);
+    expect((claims.permissions as unknown[]).length).toBeGreaterThan(0);
+
     await driver.goto('/app/pickup');
 
     // spec-54 (#425) rebuilt Recogida: PickupRouteDraftPanel renders the

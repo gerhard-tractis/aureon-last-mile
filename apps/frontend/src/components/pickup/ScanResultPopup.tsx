@@ -26,9 +26,12 @@ export function ScanResultPopup({ visible, onDismiss }: ScanResultPopupProps) {
     >
       <XCircle className="h-6 w-6 text-status-error flex-shrink-0" />
       <div>
-        <p className="font-semibold text-text">Package Not Included</p>
+        {/* Review de fase 5, B2 — frase canónica del mock (`5d`), la misma
+            que ya usa `ScanHistoryList.tsx:53` para el mismo evento
+            (`scan_result === 'not_found'`). */}
+        <p className="font-semibold text-text">NO ESTÁ EN LA CARGA</p>
         <p className="text-sm text-text-secondary">
-          Barcode not found in this manifest
+          El código escaneado no corresponde a ningún bulto de este manifiesto
         </p>
       </div>
       <button

@@ -60,7 +60,14 @@ export function PackageRow({ pkg, isVerified, onManualVerify, existingBoxCount =
 
   return (
     <div className="bg-surface-raised rounded-md text-sm">
-      <div className="flex items-center gap-3 px-3 py-2">
+      {/* `flex-wrap` (hotfix móvil 2026-09-10) — etiqueta, nº de bulto,
+          conteo de SKUs, peso y los dos botones (`whitespace-nowrap` por el
+          `buttonVariants` base) suman ~600px medidos en navegador, contra
+          ~293px disponibles en un teléfono de 375px. Envolver es la única
+          salida que no esconde datos: truncar la etiqueta sería mentir
+          sobre la identidad del bulto que el operario tiene en la mano, y
+          encoger los botones los deja ilegibles con guantes. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2">
         {skuCount > 0 ? (
           <button
             type="button"
@@ -103,7 +110,12 @@ export function PackageRow({ pkg, isVerified, onManualVerify, existingBoxCount =
           <span className="text-text-secondary">{pkg.declared_weight_kg} kg</span>
         )}
 
-        <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+        {/* Sin `flex-shrink-0` y con su propio `flex-wrap`: a 320px los dos
+            botones juntos siguen sin caber en una línea aunque la fila ya
+            envuelva, así que este grupo tiene que poder partirse también.
+            `justify-end` mantiene el alineado a la derecha que daba
+            `ml-auto` cuando cabía todo en una sola línea. */}
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           {!pkg.is_generated_label && (
             <Button
               size="sm"
@@ -125,9 +137,22 @@ export function PackageRow({ pkg, isVerified, onManualVerify, existingBoxCount =
               size="sm"
               variant="outline"
               onClick={() => onManualVerify(pkg.label)}
-              aria-label="Mark verified"
+              disabled={!isOnline}
+              // spec-82 fase 2 revisión B1 — sin cola offline en esta
+              // pantalla (eso es spec-81), un escaneo/verificación
+              // manual offline queda pausado sólo en memoria y
+              // desaparece sin rastro si la pestaña se cierra antes de
+              // recuperar señal. Prometer el registro sería la misma
+              // mentira que ManifestNotDownloadedNotice ya no dice.
+              title={!isOnline ? 'Sin conexión — no se puede registrar el escaneo' : undefined}
+              // Review de fase 5, M1 — el mock (`5d`) escribe "Marcar"; el
+              // texto largo ("Marcar verificado") reabría la presión de
+              // ancho que #772 arregló a 375px. `aria-label` se queda más
+              // descriptivo porque, siendo explícito, reemplaza el texto
+              // visible como nombre accesible — no cuesta ancho de pantalla.
+              aria-label="Marcar verificado"
             >
-              Mark Verified
+              Marcar
             </Button>
           )}
         </div>
@@ -150,7 +175,7 @@ export function PackageRow({ pkg, isVerified, onManualVerify, existingBoxCount =
             <thead>
               <tr className="text-text-secondary">
                 <th className="text-left font-medium py-0.5 pr-3">SKU</th>
-                <th className="text-left font-medium py-0.5 pr-3">Descripcion</th>
+                <th className="text-left font-medium py-0.5 pr-3">Descripción</th>
                 <th className="text-right font-medium py-0.5">Cant.</th>
               </tr>
             </thead>

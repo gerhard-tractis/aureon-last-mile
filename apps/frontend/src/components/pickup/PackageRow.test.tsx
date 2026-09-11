@@ -53,19 +53,81 @@ describe('PackageRow', () => {
 
   it('shows Mark Verified button when not verified', () => {
     render(<PackageRow {...defaultProps} />);
-    expect(screen.getByRole('button', { name: /mark verified/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /marcar verificado/i })).toBeInTheDocument();
+  });
+
+  // Review de fase 5, M1 — el mock (`5d`) escribe "Marcar", no "Marcar
+  // verificado": esa fila ya venía justa de #772 (etiqueta + nº + SKUs +
+  // peso + dos botones `whitespace-nowrap` en ~293px a 375px), y el texto
+  // largo consume el margen que `flex-wrap` ganó. El `aria-label` se queda
+  // más descriptivo ("Marcar verificado") — es el nombre accesible real
+  // porque un `aria-label` explícito reemplaza el texto visible del
+  // control para lectores de pantalla, así que ampliarlo no cuesta nada de
+  // ancho en pantalla.
+  it('el texto VISIBLE del botón es "Marcar", no "Marcar verificado"', () => {
+    render(<PackageRow {...defaultProps} />);
+    const button = screen.getByRole('button', { name: /marcar verificado/i });
+    expect(button).toHaveTextContent('Marcar');
+    expect(button).not.toHaveTextContent('Marcar verificado');
+  });
+
+  // Hotfix móvil 2026-09-10 — esta fila apila etiqueta, nº de bulto,
+  // conteo de SKUs, peso y dos botones (`whitespace-nowrap` por el
+  // `buttonVariants` base) en una sola línea que no podía encoger:
+  // ~600px medidos en navegador, contra ~293px disponibles en un
+  // teléfono de 375px. Envolver es la única salida que no esconde datos:
+  // truncar una etiqueta de bulto sería mentir sobre la identidad del
+  // bulto que el operario tiene en la mano.
+  //
+  // Contrato sobre clases y no sobre geometría por la misma razón que en
+  // `scan/[loadId]/page.test.tsx`: jsdom no maqueta. La medición real se
+  // hizo en navegador a 375px y a 320px — cero elementos desbordados.
+  describe('cabe en la pantalla de un teléfono', () => {
+    it('la fila puede envolverse en varias líneas', () => {
+      render(<PackageRow {...defaultProps} />);
+      const row = screen.getByText('CTN001').parentElement!;
+      expect(row.className).toContain('flex-wrap');
+    });
+
+    it('el grupo de acciones también puede envolverse y no bloquea el encogido', () => {
+      render(<PackageRow {...defaultProps} />);
+      const actions = screen.getByRole('button', { name: /marcar verificado/i }).parentElement!;
+      expect(actions.className).toContain('flex-wrap');
+      expect(actions.className).not.toContain('flex-shrink-0');
+    });
+  });
+
+  // spec-82 fase 2 revisión B1 — sin red, un escaneo/verificación manual
+  // queda pausado en memoria (useScanMutation no tiene cola offline en
+  // esta pantalla) y desaparece sin rastro si la PWA se cierra antes de
+  // recuperar señal. "Mark Verified" no puede prometer un registro que no
+  // va a ocurrir — mismo patrón ya usado por "Agregar bultos" arriba.
+  it('disables Mark Verified when offline, with the reason in the title', () => {
+    window.navigator.onLine = false;
+    render(<PackageRow {...defaultProps} />);
+    const button = screen.getByRole('button', { name: /marcar verificado/i });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', expect.stringMatching(/sin conexión/i));
+  });
+
+  it('does not call onManualVerify when clicked while offline', () => {
+    window.navigator.onLine = false;
+    const onManualVerify = vi.fn();
+    render(<PackageRow {...defaultProps} onManualVerify={onManualVerify} />);
+    fireEvent.click(screen.getByRole('button', { name: /marcar verificado/i }));
+    expect(onManualVerify).not.toHaveBeenCalled();
   });
 
   it('calls onManualVerify with label when button clicked', () => {
     const onManualVerify = vi.fn();
     render(<PackageRow {...defaultProps} onManualVerify={onManualVerify} />);
-    fireEvent.click(screen.getByRole('button', { name: /mark verified/i }));
+    fireEvent.click(screen.getByRole('button', { name: /marcar verificado/i }));
     expect(onManualVerify).toHaveBeenCalledWith('CTN001');
   });
 
   it('shows checkmark and hides button when verified', () => {
     render(<PackageRow {...defaultProps} isVerified={true} />);
-    expect(screen.queryByRole('button', { name: /mark verified/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /marcar verificado/i })).not.toBeInTheDocument();
     expect(screen.getByTestId('verified-icon')).toBeInTheDocument();
   });
 

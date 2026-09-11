@@ -144,6 +144,14 @@ run_filter() {
   out_file="$dir/github_output"
   : > "$out_file"
   # Payloads go through FILES, not env vars — see write_stubs' comment.
+  #
+  # FORCE_FRONTEND is stubbed below because main's frontend path-filter work
+  # (the stale-bundle fix) added that input to this same step. The `run:`
+  # reads it under `set -u`, so leaving it unset kills the extracted snippet
+  # with rc=2 before it computes anything — all 17 cases fail with empty
+  # outputs, which reads like a detection bug and is not one. False is the
+  # right stub: this harness asserts auth_hook/pg_net, and force_frontend
+  # only ever widens the frontend flag.
   printf '%s' "$migrations_diff" > "$dir/migrations_diff"
   printf '%s' "$cum_changed" > "$dir/cum_changed"
   printf '%s' "$changed" > "$dir/changed"
@@ -152,6 +160,7 @@ run_filter() {
     && PATH="$dir/bin:$PATH" \
        DEPLOY_SHA="deploysha" \
        FORCE_DB="$force_db" \
+       FORCE_FRONTEND="false" \
        GH_TOKEN="dummy" \
        GITHUB_OUTPUT="$out_file" \
        STUB_MIGRATIONS_DIFF_FILE="$dir/migrations_diff" \
