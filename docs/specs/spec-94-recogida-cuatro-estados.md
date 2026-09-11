@@ -1,6 +1,6 @@
 # spec-94 — Recogida: cuatro estados, y la carga que no estaba en ninguno
 
-**Status:** in progress
+**Status:** completed
 **Verify:** unit, sql, e2e-qa
 **Downstream:** spec-82-recogida-movil-asignacion-y-ruta.md, spec-83-recogida-escritorio-datos-faltantes.md
 
@@ -223,7 +223,12 @@ Hallado en el review de la fase 1 (2026-09-10), no al planificar — la tabla de
 dependencias decía «fase 2 depende de fase 1» y eso es cierto para construir,
 pero no dice nada sobre desplegar. Son dos preguntas distintas.
 
-## Fase 1 — las cuatro RPC, y la partición demostrada `[in_progress]`
+## Fase 1 — las cuatro RPC, y la partición demostrada `[done]`
+
+> Implementado por: implementer — rama `feat/spec-94-fase-1-rpcs`, SHAs `88c5906` → `15a51fb` → `708f5ac` → `0f20606`. Migración `20261008000001`, test pgTAP nuevo con 28 aserciones.
+> Review: reviewer (opus) — dos rondas sobre la implementación, más tres sobre el spec antes de empezar. Ronda 1: seis hallazgos (prefijo de migración ya tomado en `main`, aserción cross-tenant que medía RLS y no la función, `0::BIGINT` que llegaba a escribirse en `manifests`, guardas `DO $$` perdidas al re-templar, ACL, sub-comentarios). Ronda 2: dos huecos de cobertura. Todos cerrados en `0f20606` y `bb34e59`. Mutation testing con hash de `prosrc` antes/después sobre seis mutantes — **dos no se pusieron rojos a la primera** y se cerraron con fixtures nuevas (`CARGA-94-ROUTECANCELLED`, `CARGA-94-DEADROUTE-DONE`).
+> QA: PR #786 merged 2026-09-11T04:34:27Z. `e2e-qa` del run de ese merge salió **rojo por causa ajena** — spec-95 fase 5 (#784) había traducido el `aria-label` del escáner dejando el literal viejo en dos fixtures E2E, rompiendo `spec52` y `reception-mobile` para todo merge posterior y frenando los deploys a producción. Arreglado en #789. Reporte limpio leído en el run `34569334947`: `expected: 23, skipped: 0, unexpected: 0, flaky: 0`. Migración verificada en la base de QA (`schema_migrations`), no inferida del check.
+> Downstream: revisado spec-82 y spec-83 — ninguna fase abierta afectada (ambos `awaiting_user_test`). spec-83 fase 1 sigue vigente, con un matiz: `missing_count` ya no vive sólo en `get_completed_manifests`, también lo devuelven las RPC de los cubos 2 y 3, porque si no el panel de cierres se apagaba. La deuda declarada de spec-82 (`?? 0` en `scan/[loadId]/page.tsx:83`) es de display, no de escritura: la regla nueva la refina, no la contradice.
 
 **Depende de:** ninguna
 
@@ -427,7 +432,12 @@ re-templar: representan «carga recibida en el hub», y hay que escribirles
 `scripts/pgtap-local.sh` — los tests SQL no corren en CI, y el contenedor es
 compartido entre worktrees.
 
-## Fase 2 — la pestaña «En punto de retiro» y el renombrado `[in_progress]`
+## Fase 2 — la pestaña «En punto de retiro» y el renombrado `[done]`
+
+> Implementado por: implementer — misma rama `feat/spec-94-fase-1-rpcs`, SHAs `c498303` → `bb34e59`. Va en el mismo PR que la fase 1 a propósito: ver «Las fases 1 y 2 se mergean juntas».
+> Review: reviewer (opus) — dos rondas. La primera encontró que el arreglo del nullable estaba a medias (`totalsToRows` aplastaba el NULL con `?? 0` antes de la guarda, así que un clic en «Camino a bodega» escribía `total_orders=0` permanente) y que la línea que implementaba la protección no tenía **ningún** test que la falsificara. La segunda confirmó las correcciones. De ahí salió también el tercer cubo de «Cierres de hoy».
+> QA: PR #786 merged 2026-09-11T04:34:27Z, mismo run y mismo reporte que la fase 1. `unit`: 6648 tests en verde.
+> Downstream: revisado spec-82 y spec-83 en la misma pasada que la fase 1 — sin cambios que las afecten.
 
 **Depende de:** spec-94 fase 1
 
@@ -490,7 +500,12 @@ compartido entre worktrees.
   significa que un grep de las etiquetas nuevas encuentra un fichero que
   miente. Se borran los dos.
 
-## Fase 3 — «Quitar de la ruta» desde la pestaña `[in_progress]`
+## Fase 3 — «Quitar de la ruta» desde la pestaña `[done]`
+
+> Implementado por: implementer — rama `feat/spec-94-fase-3-quitar-de-la-ruta`, SHAs `c6d4ee8` → `cf9bfaa` → `1ea76aa` → `9d82216`. Incluye la migración no prevista `20261009000001` (ver arriba).
+> Review: reviewer (opus) — una ronda, siete hallazgos. Dos decididos como producto y escritos aquí (la guarda 4 se queda en el toast; «Ver ruta» pasa a «QR de entrega»). Uno bueno implementado: las guardas 3 y 7 salían como inglés crudo con UUID bajo caché rancia. Y el cuarto test incapaz de fallar de este spec: el de precedencia sólo probaba `closed_at` sobre el resto — invertir `route_status` y `verified_count` dejaba los siete tests en verde. Cerrados en `9d82216`.
+> QA: PR #791 merged 2026-09-11T06:04:18Z. `e2e-qa` leído en el reporte del run `34569334947`: `expected: 23, skipped: 0, unexpected: 0, flaky: 0`. Migración `20261009000001` verificada presente en `schema_migrations` de QA y `pickup_route_id` confirmada en `proargnames` de `get_routed_manifests`. `unit`: 6804 tests en verde.
+> Downstream: revisado spec-82 y spec-83 — sin cambios. Ninguno depende del RPC de quitar ni de esta pestaña.
 
 **Depende de:** spec-94 fase 2
 
