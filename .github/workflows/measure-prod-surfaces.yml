@@ -280,10 +280,11 @@ jobs:
           # regexp_replace: se compara si el ajuste EXISTE, no su valor.
           psql "sslmode=require host=$POOLER_HOST port=$POOLER_PORT dbname=postgres user=$POOLER_USER" \
             -At -c "
-              SELECT coalesce(d.datname, '<cluster>') || ' :: '
+              SELECT coalesce(d.datname, '<cluster>') || ' | rol=' || coalesce(r.rolname, '<todos>') || ' :: '
                      || regexp_replace(unnest(s.setconfig), '(secret|password)=.*', '\1=<redacted>')
                 FROM pg_db_role_setting s
                 LEFT JOIN pg_database d ON d.oid = s.setdatabase
+                LEFT JOIN pg_roles r ON r.oid = s.setrole
                ORDER BY 1;" \
             | tee -a "$GITHUB_STEP_SUMMARY"
           echo '--- cron.job ---' | tee -a "$GITHUB_STEP_SUMMARY"
