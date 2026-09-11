@@ -65,10 +65,20 @@ assert_contains() {
 echo "check-deploy-gating.sh — auto-approve shape (spec-92)"
 
 # base_wf <environment-line> <approve-production-steps-block-or-NONE> <extra-job-block>
+#
+# `changes:` always carries real auth_hook/pg_net outputs now (review round
+# 2026-09-10, B3 mutant 5) — the check used to skip entirely when `outputs:`
+# was absent, which a fixture using the conditional env but declaring none
+# was accidentally relying on. Now that the check gates on whether
+# approve-production's environment READS those outputs (not on whether
+# `changes` happens to declare them), a fixture using a conditional env must
+# back it with real outputs to stay green, same as the real deploy.yml does.
 base_wf() {
   local env_line="$1" steps_block="$2" extra_job="${3:-}"
   printf 'jobs:\n'
   printf '  changes:\n    runs-on: ubuntu-latest\n'
+  printf '    outputs:\n      auth_hook: ${{ steps.filter.outputs.auth_hook }}\n'
+  printf '      pg_net: ${{ steps.filter.outputs.pg_net }}\n'
   printf '  deploy-qa:\n    needs: [changes]\n    concurrency:\n      group: qa-deploy\n'
   printf '  e2e-qa:\n'
   printf '    needs: [changes, deploy-qa]\n'
@@ -98,8 +108,11 @@ FRESH_STEP='    steps:
             exit 1
           fi'
 
-CONDITIONAL_ENV="environment: \${{ needs.changes.outputs.auth_hook == 'true' && 'production' || 'production-auto' }}"
-INVERTED_ENV="environment: \${{ needs.changes.outputs.auth_hook == 'true' && 'production-auto' || 'production' }}"
+# spec-92 fase 1b / spec-93: the shape widened from a single auth_hook check
+# to an OR of both auto-approve-exempt classes (auth_hook, pg_net) — see
+# check-deploy-gating-autoapprove.mjs's VALID_CONDITIONAL_ENV.
+CONDITIONAL_ENV="environment: \${{ (needs.changes.outputs.auth_hook == 'true' || needs.changes.outputs.pg_net == 'true') && 'production' || 'production-auto' }}"
+INVERTED_ENV="environment: \${{ (needs.changes.outputs.auth_hook == 'true' || needs.changes.outputs.pg_net == 'true') && 'production-auto' || 'production' }}"
 WRONG_FIELD_ENV="environment: \${{ needs.changes.outputs.database == 'true' && 'production' || 'production-auto' }}"
 UNCONDITIONAL_AUTO_ENV="environment: production-auto"
 

@@ -45,11 +45,15 @@ echo "check-deploy-gating.sh — auto-approve shape (round 2)"
 
 CHANGES_STEPS='    steps:
       - name: Filter paths
+        id: filter
         run: |
           AUTH_HOOK=false
           if echo "$CHANGED" | grep -qE '"'"'custom_access_token_hook'"'"'; then AUTH_HOOK=true; fi
-          if printf '"'"'%s'"'"' "$MIGRATIONS_DIFF" | grep -qE '"'"'supabase_auth_admin'"'"'; then AUTH_HOOK=true; fi
-          echo "auth_hook=${AUTH_HOOK}" >> "$GITHUB_OUTPUT"'
+          if grep -qE '"'"'supabase_auth_admin'"'"' <<< "$MIGRATIONS_DIFF"; then AUTH_HOOK=true; fi
+          echo "auth_hook=${AUTH_HOOK}" >> "$GITHUB_OUTPUT"
+          PG_NET=false
+          if grep -qiE '"'"'net\s*\.\s*http|pg_net\b|schema\s+net\b'"'"' <<< "$MIGRATIONS_DIFF"; then PG_NET=true; fi
+          echo "pg_net=${PG_NET}" >> "$GITHUB_OUTPUT"'
 
 FRESH_STEP='    steps:
       - name: Verify this run is current
@@ -66,6 +70,7 @@ base_wf() {
   printf 'jobs:\n'
   printf '  changes:\n    runs-on: ubuntu-latest\n'
   printf '    outputs:\n      auth_hook: ${{ steps.filter.outputs.auth_hook }}\n'
+  printf '      pg_net: ${{ steps.filter.outputs.pg_net }}\n'
   if [ -n "$changes_extra" ]; then printf '%s\n' "$changes_extra"; else printf '%s\n' "$CHANGES_STEPS"; fi
   printf '  deploy-qa:\n    needs: [changes]\n    concurrency:\n      group: qa-deploy\n'
   printf '  e2e-qa:\n'
@@ -75,7 +80,7 @@ base_wf() {
   printf "      - name: Check quarantine\n        if: steps.qa.outputs.provisioned == 'true'\n        working-directory: .\n        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json\n"
   printf '  approve-production:\n'
   printf '    needs: [changes, deploy-qa, e2e-qa]\n'
-  printf "    environment: \${{ needs.changes.outputs.auth_hook == 'true' && 'production' || 'production-auto' }}\n"
+  printf "    environment: \${{ (needs.changes.outputs.auth_hook == 'true' || needs.changes.outputs.pg_net == 'true') && 'production' || 'production-auto' }}\n"
   if [ -n "$approve_extra" ]; then printf '%s\n' "$approve_extra"; else printf '%s\n' "$FRESH_STEP"; fi
   for j in supabase edge-functions vercel worker agents solver; do
     printf '  deploy-%s:\n    needs: [changes, approve-production]\n    concurrency:\n      group: production-deploy-%s\n' "$j" "$j"
@@ -154,7 +159,7 @@ $CHANGES_STEPS
         run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json
   approve-production:
     needs: [changes, deploy-qa, e2e-qa]
-    environment: \${{ needs.changes.outputs.auth_hook == 'true' && 'production' || 'production-auto' }}
+    environment: \${{ (needs.changes.outputs.auth_hook == 'true' || needs.changes.outputs.pg_net == 'true') && 'production' || 'production-auto' }}
 $FRESH_STEP
   deploy-supabase:
     needs: [changes, approve-production]
@@ -193,6 +198,61 @@ BLIND_WF="$(base_wf "" "$BLIND_FILTER_STEP")"
 assert_exit 1 "deleting the detection signals from the filter step fails" "$BLIND_WF"
 assert_contains "no longer references custom_access_token_hook" "names the removed path signal" "$BLIND_WF"
 assert_contains "no longer references supabase_auth_admin" "names the removed migration-content signal" "$BLIND_WF"
+
+# ── B3 mutant 5 (review round 2026-09-10): delete the WHOLE outputs: block ──
+# from `changes`, not just the auth_hook key inside it — this is a different
+# shape than round-1 mutant 5 above (NO_AUTH_HOOK_OUTPUT_WF keeps `outputs:`
+# present, just incomplete). Deleting the block entirely used to skip check
+# 4 altogether (it was gated on `changesJob.outputs` being truthy); now it
+# gates on approve-production's environment actually reading those outputs.
+NO_OUTPUTS_AT_ALL_WF="jobs:
+  changes:
+    runs-on: ubuntu-latest
+$CHANGES_STEPS
+  deploy-qa:
+    needs: [changes]
+    concurrency:
+      group: qa-deploy
+  e2e-qa:
+    needs: [changes, deploy-qa]
+    steps:
+      - name: Run E2E against QA
+        run: npm run e2e:qa || true
+      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == 'true'
+        working-directory: .
+        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json
+  approve-production:
+    needs: [changes, deploy-qa, e2e-qa]
+    environment: \${{ (needs.changes.outputs.auth_hook == 'true' || needs.changes.outputs.pg_net == 'true') && 'production' || 'production-auto' }}
+$FRESH_STEP
+  deploy-supabase:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-supabase
+  deploy-edge-functions:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-edge-functions
+  deploy-vercel:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-vercel
+  deploy-worker:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-worker
+  deploy-agents:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-agents
+  deploy-solver:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-solver"
+assert_exit 1 "deleting the ENTIRE outputs: block (not just a key) fails" "$NO_OUTPUTS_AT_ALL_WF"
+assert_contains "auth_hook is missing" "names the missing auth_hook output" "$NO_OUTPUTS_AT_ALL_WF"
+assert_contains "pg_net is missing" "names the missing pg_net output" "$NO_OUTPUTS_AT_ALL_WF"
 
 echo
 echo "  $pass passed, $fail failed"

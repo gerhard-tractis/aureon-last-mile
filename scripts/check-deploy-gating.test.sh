@@ -207,6 +207,11 @@ OBJECT_ENV='jobs:
     concurrency: production-deploy-solver'
 
 assert_exit 0 "accepts the object form of environment:" "$OBJECT_ENV"
+
+# ── G2/round-5 (typo'd changes.outputs field refs in if:/env:) live in
+# check-deploy-gating-field-refs.test.sh — split out to stay under the
+# repo's 300-line guideline.
+
 # ── Bad input ────────────────────────────────────────────────────────────────
 if bash "$SCRIPT" "$TMP/does-not-exist.yml" >/dev/null 2>&1; then
   fail=$((fail + 1)); echo "  FAIL exits non-zero on a missing workflow file"

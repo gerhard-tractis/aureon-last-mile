@@ -34,8 +34,17 @@ export function computeProdJobs(jobs) {
 
 // Exported so check-deploy-gating.mjs's own (looser) environment check can
 // accept this shape too, without duplicating the regex.
+//
+// spec-92 fase 1b / spec-93: widened from a single auth_hook check to an OR
+// of both auto-approve-exempt classes — auth_hook (spec-92) and pg_net
+// (spec-93, check-deploy-gating-pgnet.mjs). Either one being 'true' must
+// route to 'production'; only when BOTH are false does it auto-approve to
+// 'production-auto'. The parenthesised OR is required (not just written for
+// style) — without it `&&` binds tighter than the bare `||`, so
+// `a == 'true' || b == 'true' && 'production' || 'production-auto'` would
+// auto-approve on `a` alone and require a human click to route it back.
 export const VALID_CONDITIONAL_ENV =
-  /\$\{\{\s*needs\.changes\.outputs\.auth_hook\s*==\s*'true'\s*&&\s*'production'\s*\|\|\s*'production-auto'\s*\}\}/;
+  /\$\{\{\s*\(\s*needs\.changes\.outputs\.auth_hook\s*==\s*'true'\s*\|\|\s*needs\.changes\.outputs\.pg_net\s*==\s*'true'\s*\)\s*&&\s*'production'\s*\|\|\s*'production-auto'\s*\}\}/;
 
 /**
  * Round-1 version matched three substrings ANYWHERE in the step's `run:` —
@@ -62,22 +71,30 @@ function findFreshnessStep(steps) {
   });
 }
 
+// `resolveGateEnv`/`checkOutputStepBinding` live in
+// check-deploy-gating-output-binding.mjs, shared with
+// check-deploy-gating-pgnet.mjs — split out to stay under the repo's
+// 300-line guideline (review round 2026-09-10, item 5 / size). Re-exported
+// here too: check-deploy-gating.mjs and existing tests already import
+// VALID_CONDITIONAL_ENV etc. from this file, and other code may still
+// expect resolveGateEnv to live here.
+import { resolveGateEnv, checkOutputStepBinding } from './check-deploy-gating-output-binding.mjs';
+export { resolveGateEnv, checkOutputStepBinding };
+
 export function checkAutoApproveShape(jobs) {
   const errors = [];
   const gate = jobs['approve-production'];
   if (!gate) return errors; // check-deploy-gating.mjs already reports this
 
   // ── 1. environment polarity, only when a conditional expression is used ──
-  const env = typeof gate.environment === 'object' && gate.environment !== null
-    ? gate.environment.name
-    : gate.environment;
+  const env = resolveGateEnv(gate);
   if (typeof env === 'string' && env.includes('${{')) {
     if (!VALID_CONDITIONAL_ENV.test(env)) {
       errors.push(
         `approve-production.environment is a conditional expression but not the expected shape ` +
-        `(needs.changes.outputs.auth_hook == 'true' ? 'production' : 'production-auto') — found: ` +
-        `${env}. An inverted or malformed expression can auto-approve exactly the class of change ` +
-        `(auth hook config) that spec-92 says must not auto-approve.`
+        `((auth_hook == 'true' || pg_net == 'true') ? 'production' : 'production-auto') — found: ` +
+        `${env}. An inverted or malformed expression can auto-approve exactly the classes of change ` +
+        `(auth hook config, or a migration using pg_net) that spec-92/spec-93 say must not auto-approve.`
       );
     }
   } else if (typeof env === 'string' && env !== 'production') {
@@ -153,17 +170,65 @@ export function checkAutoApproveShape(jobs) {
   // needs.changes.outputs.auth_hook then evaluates to '', '' == 'true' is
   // false, approve-production's environment ALWAYS resolves to
   // 'production-auto' — the human pause silently disappears from the repo
-  // with CI green. Only enforced when the fixture declares `outputs:` on
-  // `changes` at all (minimal fixtures across this test family often don't).
+  // with CI green.
+  //
+  // review round 2026-09-10 (B3, mutant 5): this used to gate on
+  // `changesJob.outputs` being a truthy object — meaning deleting the ENTIRE
+  // `outputs:` block from `changes` (not just the `auth_hook` key inside it)
+  // skipped this check altogether, against the REAL deploy.yml. Gating on
+  // the environment expression instead (does approve-production's
+  // environment actually READ needs.changes.outputs.* at all?) cannot be
+  // sidestepped that way: if the conditional form is in play, its inputs
+  // must genuinely exist, whether `outputs:` is missing entirely or merely
+  // incomplete. Minimal fixtures elsewhere in this family that use the
+  // conditional env now need real outputs backing it — see
+  // check-deploy-gating-autoapprove.test.sh's base_wf.
   const changesJob = jobs['changes'];
-  if (changesJob && changesJob.outputs && typeof changesJob.outputs === 'object') {
-    const authHookOutput = changesJob.outputs.auth_hook;
-    if (!authHookOutput || !/auth_hook/.test(String(authHookOutput))) {
+  const usesConditionalEnv = typeof env === 'string' && env.includes('${{');
+
+  // ── 4b. every needs.<job>.outputs.* the environment reads must actually
+  // be in approve-production's own needs: ──────────────────────────────────
+  // review round 2026-09-10, item 2: removing 'changes' from
+  // approve-production.needs doesn't touch the environment EXPRESSION at
+  // all — `needs.changes.outputs.auth_hook` still parses fine, but
+  // `needs.changes` doesn't exist in the job's context without 'changes' in
+  // needs:, so it evaluates to '' and the whole condition silently and
+  // permanently resolves to 'production-auto'. Same failure as mutant 5
+  // (deleting the outputs: block) reached from the needs: end of the wire
+  // instead of the outputs: end — and just as plausible an edit, since
+  // approve-production doesn't visibly use `changes` for anything else.
+  if (usesConditionalEnv) {
+    const referencedJobs = new Set(
+      [...env.matchAll(/needs\.([A-Za-z0-9_-]+)\.outputs\./g)].map((m) => m[1])
+    );
+    const gateNeeds = Array.isArray(gate.needs) ? gate.needs : gate.needs ? [gate.needs] : [];
+    for (const job of referencedJobs) {
+      if (!gateNeeds.includes(job)) {
+        errors.push(
+          `approve-production.environment reads needs.${job}.outputs.* but '${job}' is not in ` +
+          `approve-production's own needs: — needs.${job} does not exist in that context, so the ` +
+          `expression always resolves to 'production-auto' no matter what ${job} actually computed`
+        );
+      }
+    }
+  }
+
+  if (changesJob && usesConditionalEnv) {
+    const authHookOutput = changesJob.outputs && typeof changesJob.outputs === 'object'
+      ? changesJob.outputs.auth_hook
+      : undefined;
+    if (!authHookOutput) {
       errors.push(
-        'changes.outputs.auth_hook is missing or does not reference an auth_hook step output — ' +
-        'needs.changes.outputs.auth_hook then reads as empty, which always resolves ' +
-        "approve-production's environment to 'production-auto', silently removing the human pause"
+        'changes.outputs.auth_hook is missing — needs.changes.outputs.auth_hook then reads as ' +
+        "empty, which always resolves approve-production's environment to 'production-auto', " +
+        'silently removing the human pause'
       );
+    } else {
+      // ── item 3, hardened G1/G2 (round 3): checkOutputStepBinding now owns
+      // the full check — an unanchored field name (auth_hook_v2) or a
+      // step that only MENTIONS auth_hook= without writing it to
+      // $GITHUB_OUTPUT both used to pass silently. See its own comment.
+      errors.push(...checkOutputStepBinding(changesJob, authHookOutput, 'auth_hook'));
     }
 
     // ── 5. the detection signals themselves must still be present ─────────
