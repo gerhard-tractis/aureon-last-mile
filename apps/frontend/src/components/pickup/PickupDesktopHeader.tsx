@@ -15,6 +15,14 @@ import { todayLabel } from '@/lib/pickup/pickupPageHelpers';
  *
  * The caller still owns the `!isBelowLg` guard — this component does not
  * know about the breakpoint, it just IS the desktop header.
+ *
+ * spec-95 fase 8 (mock `5a:63-67`) — the checklist calls out "el buscador
+ * de la cabecera pasa a ser el global (orden/paquete/RUT)". That search box
+ * is already app-wide: `TopBar` renders it (`onOpenSearch`, gated by
+ * `showOpsTools`) above every page, including this one, in `AppLayout`.
+ * This component never owned a search box of its own to begin with — there
+ * is nothing to move here. The module's OWN search (carga/punto/cliente)
+ * lives in `PickupDesktopView`, its own bar above the client chips.
  */
 export interface PickupDesktopHeaderProps {
   manifestCount: number;

@@ -25,6 +25,48 @@ describe('ManifestTable', () => {
     expect(screen.getByText('Mall Plaza Vespucio')).toBeInTheDocument();
   });
 
+  // spec-95 fase 8 (mock 5a, Recogida.dc.html:110) — the label-printing
+  // column had the action wired since spec-53, and the header row already
+  // had eight aligned `<span>`s (the eighth was an empty one over the print
+  // button) — the grid was never misaligned. What was missing was the TEXT
+  // of that eighth header cell. (Review round 1, C5: an earlier version of
+  // this comment claimed a 7-vs-8 misalignment that never existed —
+  // verified against `4bd1c02`, corrected here.)
+  it('names the eighth column ETIQUETAS, over the print action — when the module is on', () => {
+    render(<ManifestTable rows={[row()]} labelsEnabled emptyMessage="vacío" />);
+    expect(screen.getByText('Etiquetas')).toBeInTheDocument();
+  });
+
+  // m2 (review round 1) — the label column's track was 32px, too narrow
+  // for the word "Etiquetas" (~59px at this size); the mock reserves 86px
+  // because its action is a text button, not just an icon. This asserts
+  // the CLASS that reserves the width, not just that the text renders —
+  // jsdom does not lay anything out, so only the class is checkable here.
+  it('reserves enough width in the grid for the ETIQUETAS header text', () => {
+    render(<ManifestTable rows={[row()]} labelsEnabled emptyMessage="vacío" />);
+    const row_ = screen.getByTestId('manifest-row');
+    expect(row_.className).toContain('96px_64px');
+  });
+
+  // B3 — the header text is not decoration. `labelsEnabled` already gates
+  // the print action per row (":70", spec-53's own module gate); an
+  // operator without PACKAGE_LABELS must not see a column titled ETIQUETAS
+  // that never does anything, on every cold load of this screen.
+  it('hides the ETIQUETAS header when the labels module is off', () => {
+    render(<ManifestTable rows={[row()]} emptyMessage="vacío" />);
+    expect(screen.queryByText('Etiquetas')).toBeNull();
+  });
+
+  // C4 — a text-presence assertion alone lets ETIQUETAS and Ventana swap
+  // places and still pass. The header's eight cells align 1:1 with the
+  // eight data columns of GRID, so ETIQUETAS has to come AFTER Ventana.
+  it('keeps ETIQUETAS after Ventana in the header, matching the data columns below', () => {
+    render(<ManifestTable rows={[row()]} labelsEnabled emptyMessage="vacío" />);
+    const ventana = screen.getByText('Ventana');
+    const etiquetas = screen.getByText('Etiquetas');
+    expect(ventana.compareDocumentPosition(etiquetas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('labels a manifest with no retailer rather than leaving the cell blank', () => {
     render(<ManifestTable rows={[row({ retailerName: null })]} emptyMessage="vacío" />);
     expect(screen.getByText('Sin cliente')).toBeInTheDocument();

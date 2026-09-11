@@ -9,7 +9,7 @@ import { PickupDesktopHeader } from '@/components/pickup/PickupDesktopHeader';
 import { PickupDesktopView, type TabKey } from '@/components/pickup/PickupDesktopView';
 import { PickupMobileView } from '@/components/pickup/PickupMobileView';
 import { usePickupManifestTabs } from '@/hooks/pickup/usePickupManifestTabs';
-import { clientBreakdown, completedToday, pendingTotals } from '@/hooks/pickup/pickupSummary';
+import { completedToday, pendingTotals } from '@/hooks/pickup/pickupSummary';
 import { useActivePickupRoute } from '@/hooks/pickup/useActivePickupRoute';
 import { useStartPickupRoute } from '@/hooks/pickup/useStartPickupRoute';
 import { useAddManifestToRoute } from '@/hooks/pickup/useAddManifestToRoute';
@@ -25,7 +25,13 @@ import {
   attachManifestsToRoute,
   partialAttachMessage,
 } from '@/lib/pickup/attachManifestsToRoute';
-import { matchesClient, matchesSearchTerm, matchesSearchTermRouted, rowsForTab } from '@/lib/pickup/pickupPageHelpers';
+import {
+  matchesClient,
+  matchesSearchTerm,
+  matchesSearchTermRouted,
+  rowsForTab,
+  clientCountsForTab,
+} from '@/lib/pickup/pickupPageHelpers';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { toast } from 'sonner';
 
@@ -105,9 +111,11 @@ function PickupPageContent() {
   // spec-94 fase 2 — the union of all four cubes, not just pending: a
   // retailer with every load already routed would otherwise lose its
   // filter chip exactly when it's needed.
-  const clients = clientBreakdown([...pending, ...routed, ...inTransit, ...completed]).map(
-    (c) => c.name,
-  );
+  // spec-95 fase 8, review round 1 (B1) — the count is per ACTIVE cube, not
+  // the union: the union only decides which chips exist (spec-94 fase 2),
+  // hanging a count off it printed a number the tab pill and the footer
+  // both disagreed with. See clientCountsForTab's own docstring.
+  const clients = clientCountsForTab(tab, pending, routed, inTransit, completed);
 
   const visibleRows = rowsForTab(tab, pendingRows, inTransitRows, completedRows)
     .filter((r) => matchesClient(r.retailerName, selectedClient))

@@ -191,8 +191,17 @@ vi.mock('@/components/pickup/CameraIntake', () => ({
   CameraIntake: () => <div data-testid="camera-intake" />,
 }));
 
+// spec-95 fase 8, review round 1 (B1) — renders the `clients` prop instead
+// of swallowing it, so this file can assert the per-tab count end to end,
+// not just at pickupPageHelpers.test.ts's unit level.
 vi.mock('@/components/pickup/ClientFilter', () => ({
-  ClientFilter: () => null,
+  ClientFilter: ({ clients }: { clients: { name: string; count: number }[] }) => (
+    <div data-testid="client-filter">
+      {clients.map((c) => (
+        <span key={c.name}>{c.name} · {c.count}</span>
+      ))}
+    </div>
+  ),
 }));
 
 // Now actually wired: the real button pops a vehicle dialog, which this
@@ -269,6 +278,28 @@ describe('PickupPage', () => {
       // The code shows in the banner and again in the draft panel's
       // "already have a route open" notice.
       expect(screen.getAllByText('R-2492').length).toBeGreaterThan(0);
+    });
+  });
+
+  // spec-95 fase 8, review round 1 (B1) — the chip count has to match the
+  // cube on screen. Fixture: Easy has 1 row in pending AND 1 in completed;
+  // Sodimac only in pending; Falabella only in in_transit (0 in pending).
+  // The default tab is 'pending'.
+  describe('Client chips count the active tab, not the union (B1)', () => {
+    it('counts Easy by its pending row only, not pending+completed', () => {
+      render(<PickupPage />);
+      expect(screen.getByText('Easy · 1')).toBeInTheDocument();
+    });
+
+    it('still lists Falabella (from in_transit) with a zero, not missing entirely', () => {
+      render(<PickupPage />);
+      expect(screen.getByText('Falabella · 0')).toBeInTheDocument();
+    });
+
+    it('has both chips summing to 2, the pending tab\'s own row count', () => {
+      render(<PickupPage />);
+      expect(screen.getByText('Easy · 1')).toBeInTheDocument();
+      expect(screen.getByText('Sodimac · 1')).toBeInTheDocument();
     });
   });
 

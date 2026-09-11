@@ -8,6 +8,7 @@ import {
   totalsToRows,
   manifestsAvailability,
   rescueRowsFromCompleted,
+  clientCountsForTab,
 } from './pickupPageHelpers';
 import type { ManifestRow } from '@/components/pickup/ManifestTable';
 import type { PendingManifest, CompletedManifest, InTransitManifest } from '@/hooks/pickup/useManifests';
@@ -334,5 +335,62 @@ describe('rescueRowsFromCompleted', () => {
     const rescue = completed({ signature_operator: null, missing_count: 3 });
     const [row] = rescueRowsFromCompleted([rescue]);
     expect(row.discrepancy_count).toBeUndefined();
+  });
+});
+
+// spec-95 fase 8, review round 1 (B1) — the chip count has to match the
+// CUBE the operator is looking at. `clientBreakdown` over the union of all
+// four cubes was correct while the chip only signalled existence
+// (spec-94 fase 2: a retailer with everything already routed must not lose
+// its chip) — hanging a COUNT off that union prints a number that
+// disagrees with both the tab pill and the "Mostrando N de M" footer.
+describe('clientCountsForTab', () => {
+  const p = (retailer_name: string | null) => ({ retailer_name });
+
+  it('counts only the rows of the active tab', () => {
+    const counts = clientCountsForTab(
+      'pending',
+      [p('Falabella'), p('Falabella'), p('Ripley')],
+      [p('Falabella')], // routed
+      [], // in_transit
+      [p('Falabella'), p('Falabella'), p('Falabella'), p('Falabella'), p('Falabella'), p('Falabella')], // completed
+    );
+    expect(counts).toEqual(
+      expect.arrayContaining([
+        { name: 'Falabella', count: 2 },
+        { name: 'Ripley', count: 1 },
+      ]),
+    );
+  });
+
+  // spec-94 fase 2's own reason for the union: a retailer with every load
+  // already routed must not lose its chip when Pendientes is the active
+  // tab — it just reads zero there instead of disappearing.
+  it('keeps a chip for a client with zero rows on the active tab, reading zero honestly', () => {
+    const counts = clientCountsForTab('pending', [], [p('Falabella')], [], []);
+    expect(counts).toEqual([{ name: 'Falabella', count: 0 }]);
+  });
+
+  it('sums to exactly the active tab\'s row count — the same figure the tab pill and footer show', () => {
+    const pending = [p('Falabella'), p('Ripley'), p(null)];
+    const counts = clientCountsForTab('pending', pending, [p('Sodimac')], [], []);
+    const total = counts.reduce((sum, c) => sum + c.count, 0);
+    expect(total).toBe(pending.length);
+  });
+
+  it('reads the routed cube for the routed tab, not pending', () => {
+    const counts = clientCountsForTab(
+      'routed',
+      [p('Falabella'), p('Falabella')], // pending
+      [p('Ripley')], // routed
+      [],
+      [],
+    );
+    expect(counts).toEqual(
+      expect.arrayContaining([
+        { name: 'Falabella', count: 0 },
+        { name: 'Ripley', count: 1 },
+      ]),
+    );
   });
 });

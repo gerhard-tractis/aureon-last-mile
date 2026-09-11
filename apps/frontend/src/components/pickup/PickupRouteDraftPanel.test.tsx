@@ -121,4 +121,18 @@ describe('PickupRouteDraftPanel', () => {
     expect(screen.getByText(/marca los manifiestos de la tabla/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /iniciar ruta/i })).toBeNull();
   });
+
+  // spec-95 fase 8 (mock 5a:213-215) — closes divergencia 2 of spec-83 fase
+  // 4: the mock drops the driver entirely (spec-61's model — the crew is
+  // assigned by whoever leads, not picked here) and says so in place of an
+  // inline vehicle/driver picker.
+  describe('bloque VEHÍCULO (spec-95 fase 8)', () => {
+    it('says the vehicle is chosen at confirmation, with no driver field', () => {
+      render(<PickupRouteDraftPanel {...baseProps()} />);
+      expect(
+        screen.getByText('Se elige al confirmar la ruta. La cuadrilla la asigna quien la lidera.'),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/conductor/i)).toBeNull();
+    });
+  });
 });

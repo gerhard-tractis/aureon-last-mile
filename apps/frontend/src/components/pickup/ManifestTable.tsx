@@ -51,8 +51,17 @@ export interface ManifestRow {
 }
 
 // The mock originally had six columns; spec-53 added a seventh (label
-// printing) and spec-83 fase 2 adds the eighth (pickup window).
-const GRID = 'grid grid-cols-[22px_118px_1fr_104px_72px_72px_96px_32px] gap-3';
+// printing) and spec-83 fase 2 adds the eighth (pickup window). The header
+// row always had eight aligned cells — the eighth was blank over the print
+// button. spec-95 fase 8 gives it its own text, ETIQUETAS (5a:110), gated
+// by `labelsEnabled` exactly like the print action itself (review round 1,
+// B3): an operator without the module must not see a column heading that
+// never does anything. The underlying data (labels_printed_at/
+// labels_printed_by_name) is untouched by spec-94 fase 1's re-template of
+// the four RPCs: those two columns are re-templated verbatim, not renamed
+// (spec-94:260-261, migration 20261008000001 lines 97-98/207-208/389-390/
+// 479-480).
+const GRID = 'grid grid-cols-[22px_118px_1fr_104px_72px_72px_96px_64px] gap-3';
 
 interface ManifestTableProps {
   rows: ManifestRow[];
@@ -98,7 +107,7 @@ export function ManifestTable({
         <span className="text-right">Órdenes</span>
         <span className="text-right">Paq.</span>
         <span>Ventana</span>
-        <span />
+        <span className="text-right">{labelsEnabled ? 'Etiquetas' : ''}</span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">

@@ -7,7 +7,7 @@ import type {
   PendingManifest,
 } from '@/hooks/pickup/useManifests';
 import type { RoutedManifest } from '@/hooks/pickup/useRoutedManifests';
-import { NO_CLIENT_LABEL } from '@/hooks/pickup/pickupSummary';
+import { NO_CLIENT_LABEL, clientBreakdown, type ClientCount } from '@/hooks/pickup/pickupSummary';
 
 /**
  * Extracted from page.tsx (spec-54 3h review fix, item 6) to keep the page
@@ -155,6 +155,49 @@ export function rowsForTab(
     case 'completed':
       return completedRows;
   }
+}
+
+/**
+ * spec-95 fase 8, review round 1 (B1) — the client chips carry a COUNT now
+ * (mock `5a:88-95`), and that count has to agree with the cube the operator
+ * is looking at, not the union of all four. `clientBreakdown` over the
+ * union is still right for the SET of names (spec-94 fase 2: a retailer
+ * with every load already routed must not lose its chip when Pendientes is
+ * active) — it is only wrong once a number is hung off it. So: union for
+ * WHICH chips exist, active-tab rows for WHAT each one reads. A client with
+ * zero rows on the active tab still gets a chip, reading zero honestly —
+ * that zero is real (every other cube was counted to build the set), not
+ * a stand-in for "still loading".
+ *
+ * Exhaustive `switch`, not a ternary chain, for the same reason
+ * `rowsForTab` above is: a fifth `TabKey` must fail to compile here, not
+ * silently fall through to `completed`'s rows.
+ */
+export function clientCountsForTab(
+  tab: TabKey,
+  pending: { retailer_name: string | null }[],
+  routed: { retailer_name: string | null }[],
+  inTransit: { retailer_name: string | null }[],
+  completed: { retailer_name: string | null }[],
+): ClientCount[] {
+  const activeTabRows = (() => {
+    switch (tab) {
+      case 'pending':
+        return pending;
+      case 'routed':
+        return routed;
+      case 'in_transit':
+        return inTransit;
+      case 'completed':
+        return completed;
+    }
+  })();
+
+  const activeCounts = new Map(clientBreakdown(activeTabRows).map((c) => [c.name, c.count]));
+
+  return clientBreakdown([...pending, ...routed, ...inTransit, ...completed])
+    .map((c) => ({ name: c.name, count: activeCounts.get(c.name) ?? 0 }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 
 /**

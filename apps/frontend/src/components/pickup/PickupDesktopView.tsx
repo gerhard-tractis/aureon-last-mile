@@ -1,12 +1,14 @@
 'use client';
 
-import { Search, X } from 'lucide-react';
-import { Input } from '@/components/ui/input';
+import { useEffect, useState } from 'react';
 import { StatTile } from '@/components/StatTile';
 import { ClientFilter } from '@/components/pickup/ClientFilter';
+import type { ClientCount } from '@/hooks/pickup/pickupSummary';
 import { ActiveRouteBanner } from '@/components/pickup/ActiveRouteBanner';
 import { ManifestTable, type ManifestRow } from '@/components/pickup/ManifestTable';
 import { RoutedManifestTable } from '@/components/pickup/RoutedManifestTable';
+import { ManifestListFooter } from '@/components/pickup/ManifestListFooter';
+import { ManifestSearchBar } from '@/components/pickup/ManifestSearchBar';
 import { PickupRouteDraftPanel } from '@/components/pickup/PickupRouteDraftPanel';
 import { TodayClosuresPanel } from '@/components/pickup/TodayClosuresPanel';
 import type { ClosureRow } from '@/hooks/pickup/pickupSummary';
@@ -59,12 +61,19 @@ const EMPTY_MESSAGES: Record<TabKey, string> = {
   completed: 'Ningún manifiesto completado todavía.',
 };
 
+// spec-95 fase 8 (mock 5a:216-217) — "Mostrando 7 de 12 · Cargar más"
+// replaces the Anterior/Siguiente pager spec-83 fase 4 found nowhere in the
+// code (it was never built). This reveals more of the already-fetched rows
+// client-side — there is no server-side page to ask for — 7 to match the
+// mock's own first page.
+const PAGE_SIZE = 7;
+
 interface PickupDesktopViewProps {
   activeRoute: ActivePickupRoute | null | undefined;
   activeManifests: RouteManifestRow[];
   totals: { manifests: number; orders: number; packages: number };
   closures: ClosureRow[];
-  clients: string[];
+  clients: ClientCount[];
   selectedClient: string | null;
   setSelectedClient: (client: string | null) => void;
   searchTerm: string;
@@ -138,6 +147,19 @@ export function PickupDesktopView({
     completed: completedRows.length,
   };
 
+  // spec-95 fase 8 — "Cargar más" grows this; switching tab, searching or
+  // picking a client resets it, or the ninth row of a brand-new filter
+  // would render as if it had already been revealed by a click nobody made.
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [tab, searchTerm, selectedClient]);
+
+  const totalForTab = tab === 'routed' ? visibleRoutedRows.length : visibleRows.length;
+  const shownCount = Math.min(visibleCount, totalForTab);
+  const pagedRows = visibleRows.slice(0, visibleCount);
+  const pagedRoutedRows = visibleRoutedRows.slice(0, visibleCount);
+
   return (
     <div className="grid min-h-0 gap-4 xl:grid-cols-[1fr_340px]">
       <div className="flex min-w-0 flex-col gap-4">
@@ -157,34 +179,11 @@ export function PickupDesktopView({
           <StatTile label="Completados hoy" value={closures.length} tone="success" />
         </div>
 
+        <ManifestSearchBar value={searchTerm} onChange={setSearchTerm} tab={tab} />
+
         {clients.length > 0 && (
           <ClientFilter clients={clients} selected={selectedClient} onSelect={setSelectedClient} />
         )}
-
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
-          <Input
-            type="search"
-            placeholder={
-              tab === 'routed'
-                ? 'Buscar por carga, retailer, ruta o líder…'
-                : 'Buscar por carga, retailer o punto de recogida…'
-            }
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-9 pr-9"
-          />
-          {searchTerm && (
-            <button
-              type="button"
-              aria-label="Limpiar búsqueda"
-              onClick={() => setSearchTerm('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </div>
 
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-border bg-surface">
           <div className="flex flex-none flex-wrap items-center gap-1 border-b border-border px-4 py-2.5">
@@ -222,11 +221,11 @@ export function PickupDesktopView({
             // arrow function fail to return on every path (TS2366).
             switch (tab) {
               case 'routed':
-                return <RoutedManifestTable rows={visibleRoutedRows} emptyMessage={EMPTY_MESSAGES.routed} />;
+                return <RoutedManifestTable rows={pagedRoutedRows} emptyMessage={EMPTY_MESSAGES.routed} />;
               case 'pending':
                 return (
                   <ManifestTable
-                    rows={visibleRows}
+                    rows={pagedRows}
                     selectedIds={selectedIds}
                     onToggle={toggle}
                     labelsEnabled={labelsEnabled}
@@ -238,7 +237,7 @@ export function PickupDesktopView({
               case 'in_transit':
                 return (
                   <ManifestTable
-                    rows={visibleRows}
+                    rows={pagedRows}
                     labelsEnabled={labelsEnabled}
                     onPrintLabels={onPrintLabels}
                     onOpen={onOpen}
@@ -248,7 +247,7 @@ export function PickupDesktopView({
               case 'completed':
                 return (
                   <ManifestTable
-                    rows={visibleRows}
+                    rows={pagedRows}
                     labelsEnabled={labelsEnabled}
                     onPrintLabels={onPrintLabels}
                     onOpen={onOpen}
@@ -257,6 +256,12 @@ export function PickupDesktopView({
                 );
             }
           })()}
+
+          <ManifestListFooter
+            shownCount={shownCount}
+            totalCount={totalForTab}
+            onLoadMore={() => setVisibleCount((c) => c + PAGE_SIZE)}
+          />
         </section>
       </div>
 
