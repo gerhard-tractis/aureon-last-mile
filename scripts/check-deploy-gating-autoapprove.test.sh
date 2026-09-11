@@ -98,8 +98,11 @@ FRESH_STEP='    steps:
             exit 1
           fi'
 
-CONDITIONAL_ENV="environment: \${{ needs.changes.outputs.auth_hook == 'true' && 'production' || 'production-auto' }}"
-INVERTED_ENV="environment: \${{ needs.changes.outputs.auth_hook == 'true' && 'production-auto' || 'production' }}"
+# spec-92 fase 1b / spec-93: the shape widened from a single auth_hook check
+# to an OR of both auto-approve-exempt classes (auth_hook, pg_net) — see
+# check-deploy-gating-autoapprove.mjs's VALID_CONDITIONAL_ENV.
+CONDITIONAL_ENV="environment: \${{ (needs.changes.outputs.auth_hook == 'true' || needs.changes.outputs.pg_net == 'true') && 'production' || 'production-auto' }}"
+INVERTED_ENV="environment: \${{ (needs.changes.outputs.auth_hook == 'true' || needs.changes.outputs.pg_net == 'true') && 'production-auto' || 'production' }}"
 WRONG_FIELD_ENV="environment: \${{ needs.changes.outputs.database == 'true' && 'production' || 'production-auto' }}"
 UNCONDITIONAL_AUTO_ENV="environment: production-auto"
 

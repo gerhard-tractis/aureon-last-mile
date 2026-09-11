@@ -49,7 +49,10 @@ CHANGES_STEPS='    steps:
           AUTH_HOOK=false
           if echo "$CHANGED" | grep -qE '"'"'custom_access_token_hook'"'"'; then AUTH_HOOK=true; fi
           if printf '"'"'%s'"'"' "$MIGRATIONS_DIFF" | grep -qE '"'"'supabase_auth_admin'"'"'; then AUTH_HOOK=true; fi
-          echo "auth_hook=${AUTH_HOOK}" >> "$GITHUB_OUTPUT"'
+          echo "auth_hook=${AUTH_HOOK}" >> "$GITHUB_OUTPUT"
+          PG_NET=false
+          if printf '"'"'%s'"'"' "$MIGRATIONS_DIFF" | grep -qE '"'"'net\.http_(post|get)'"'"'; then PG_NET=true; fi
+          echo "pg_net=${PG_NET}" >> "$GITHUB_OUTPUT"'
 
 FRESH_STEP='    steps:
       - name: Verify this run is current
@@ -66,6 +69,7 @@ base_wf() {
   printf 'jobs:\n'
   printf '  changes:\n    runs-on: ubuntu-latest\n'
   printf '    outputs:\n      auth_hook: ${{ steps.filter.outputs.auth_hook }}\n'
+  printf '      pg_net: ${{ steps.filter.outputs.pg_net }}\n'
   if [ -n "$changes_extra" ]; then printf '%s\n' "$changes_extra"; else printf '%s\n' "$CHANGES_STEPS"; fi
   printf '  deploy-qa:\n    needs: [changes]\n    concurrency:\n      group: qa-deploy\n'
   printf '  e2e-qa:\n'
@@ -75,7 +79,7 @@ base_wf() {
   printf "      - name: Check quarantine\n        if: steps.qa.outputs.provisioned == 'true'\n        working-directory: .\n        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json\n"
   printf '  approve-production:\n'
   printf '    needs: [changes, deploy-qa, e2e-qa]\n'
-  printf "    environment: \${{ needs.changes.outputs.auth_hook == 'true' && 'production' || 'production-auto' }}\n"
+  printf "    environment: \${{ (needs.changes.outputs.auth_hook == 'true' || needs.changes.outputs.pg_net == 'true') && 'production' || 'production-auto' }}\n"
   if [ -n "$approve_extra" ]; then printf '%s\n' "$approve_extra"; else printf '%s\n' "$FRESH_STEP"; fi
   for j in supabase edge-functions vercel worker agents solver; do
     printf '  deploy-%s:\n    needs: [changes, approve-production]\n    concurrency:\n      group: production-deploy-%s\n' "$j" "$j"
@@ -154,7 +158,7 @@ $CHANGES_STEPS
         run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json
   approve-production:
     needs: [changes, deploy-qa, e2e-qa]
-    environment: \${{ needs.changes.outputs.auth_hook == 'true' && 'production' || 'production-auto' }}
+    environment: \${{ (needs.changes.outputs.auth_hook == 'true' || needs.changes.outputs.pg_net == 'true') && 'production' || 'production-auto' }}
 $FRESH_STEP
   deploy-supabase:
     needs: [changes, approve-production]
