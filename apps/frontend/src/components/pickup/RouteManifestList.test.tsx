@@ -76,6 +76,18 @@ describe('groupManifestStatus', () => {
     ];
     expect(groupManifestStatus(group)).toBe('pendiente');
   });
+
+  // Review finding 5 — pedido explícitamente y no estaba: un grupo mixto de
+  // tres (una cerrada, una empezada y sin cerrar, una sin tocar) tiene que
+  // dar EN RUTA. El comportamiento ya era correcto; faltaba fijarlo.
+  it('is EN RUTA for a mixed group: one closed, one started and open, one untouched', () => {
+    const group = [
+      manifest({ id: 'm1', total_packages: 5, verified_count: 5 }), // closed
+      manifest({ id: 'm2', total_packages: 5, verified_count: 2 }), // started, open
+      manifest({ id: 'm3', total_packages: 4, verified_count: 0 }), // untouched
+    ];
+    expect(groupManifestStatus(group)).toBe('en_ruta');
+  });
 });
 
 describe('RouteManifestList', () => {
@@ -101,7 +113,11 @@ describe('RouteManifestList', () => {
         onManifestClick={() => {}}
       />
     );
-    expect(screen.getByText('Retailer A')).toBeInTheDocument();
+    // Review finding 4 — con `pickup_location: null` la fila cae al
+    // fallback `retailer_name` (no a un texto genérico "sin registrar"),
+    // así que 'Retailer A' aparece dos veces: cabecera de grupo + título de
+    // fila. Ambas apariciones son correctas.
+    expect(screen.getAllByText('Retailer A')).toHaveLength(2);
     expect(screen.getByText('LOAD-1')).toBeInTheDocument();
     expect(screen.getByText('7/10')).toBeInTheDocument();
   });
@@ -453,6 +469,146 @@ describe('RouteManifestList', () => {
         />
       );
       expect(screen.queryByText(/ver carga/i)).not.toBeInTheDocument();
+    });
+
+    // Review finding 1 — BUG REAL. `total_packages: null` es "desconocido",
+    // no cero (manifestProgress.ts). Antes `?? 0` presentaba una suma
+    // PARCIAL como si fuera el total del grupo: LOAD-1 (42) + LOAD-2
+    // (null) pintaba "42 paquetes" en la cabecera mientras la fila de
+    // LOAD-2 mostraba "0/—" al lado — dos cifras contradictorias en la
+    // misma pantalla. Con `sumExpected` (mismo helper que
+    // RouteProgressHeader.tsx y PickupMobileActiveRoute.tsx ya usan para
+    // este mismo problema) el grupo entero pinta "—", nunca un denominador
+    // inventado. Mutación que esto mata: `?? 0` → `?? 777` (sobrevivía
+    // 28/28 antes de este test).
+    it('shows "—" paquetes when any manifest in the group has an unknown total_packages', () => {
+      render(
+        <RouteManifestList
+          manifests={[
+            groupManifest({ id: 'm1', external_load_id: 'LOAD-1', total_packages: 42 }),
+            groupManifest({
+              id: 'm2',
+              external_load_id: 'LOAD-2',
+              pickup_location: 'Parque Arauco',
+              total_packages: null,
+            }),
+          ]}
+          onManifestClick={() => {}}
+        />
+      );
+      expect(screen.getByText('2 puntos · — paquetes')).toBeInTheDocument();
+      expect(screen.queryByText(/42 paquetes/)).not.toBeInTheDocument();
+    });
+
+    // Review finding 2 — `pointCount` no estaba testeado más allá del caso
+    // feliz (puntos ya distintos), así que `= group.manifests.length`
+    // pasaba 41/41. Dos cargas en el MISMO punto cuentan como un solo
+    // punto.
+    it('counts a repeated pickup_location as one point, not one per manifest', () => {
+      render(
+        <RouteManifestList
+          manifests={[
+            groupManifest({ id: 'm1', external_load_id: 'LOAD-1', pickup_location: 'Mall Plaza Vespucio' }),
+            groupManifest({ id: 'm2', external_load_id: 'LOAD-2', pickup_location: 'Mall Plaza Vespucio' }),
+          ]}
+          onManifestClick={() => {}}
+        />
+      );
+      expect(screen.getByText('1 punto · 84 paquetes')).toBeInTheDocument();
+    });
+
+    // Mismo hallazgo — el docstring de `groupManifestsByRetailer` afirma
+    // que un `pickup_location: null` cuenta como un único punto
+    // "desconocido"; sin este test esa afirmación no estaba probada.
+    it('counts pickup_location: null manifests together as one unknown point', () => {
+      render(
+        <RouteManifestList
+          manifests={[
+            groupManifest({ id: 'm1', external_load_id: 'LOAD-1', pickup_location: null }),
+            groupManifest({ id: 'm2', external_load_id: 'LOAD-2', pickup_location: null }),
+          ]}
+          onManifestClick={() => {}}
+        />
+      );
+      expect(screen.getByText('1 punto · 84 paquetes')).toBeInTheDocument();
+    });
+
+    // Review finding 3 — BUG. `retailer_name: ''` pasaba de largo el `??`
+    // (sólo captura null/undefined) y dejaba la cabecera sin nombre; peor,
+    // '' y null formaban dos grupos separados para dos cargas igualmente
+    // anónimas. Mutación que esto mata: fallback → `?? ''` (sobrevivía
+    // 41/41 antes de este test). Cadena unificada con el precedente del
+    // repo (`pickupStartRouteGrouping.ts`'s `NO_CLIENT`): "Sin cliente".
+    it('groups retailer_name: null and retailer_name: \'\' together, under "Sin cliente"', () => {
+      render(
+        <RouteManifestList
+          manifests={[
+            groupManifest({ id: 'm1', external_load_id: 'LOAD-1', retailer_name: null }),
+            groupManifest({ id: 'm2', external_load_id: 'LOAD-2', retailer_name: '' }),
+          ]}
+          onManifestClick={() => {}}
+        />
+      );
+      const groups = screen.getAllByTestId('route-manifest-group');
+      expect(groups).toHaveLength(1);
+      expect(within(groups[0]).getByText('Sin cliente')).toBeInTheDocument();
+    });
+
+    // Review finding 4 — el fallback de la fila cuando `pickup_location` es
+    // null no debe perder del todo la información: cae a `retailer_name`
+    // antes de un texto genérico. Con dos cargas SIN dirección del mismo
+    // retailer, antes ambas filas decían lo mismo ("Punto de recogida sin
+    // registrar") y sólo se distinguían por el external_load_id en mono.
+    it('falls back the row title to retailer_name when pickup_location is null', () => {
+      render(
+        <RouteManifestList
+          manifests={[
+            groupManifest({ id: 'm1', external_load_id: 'LOAD-1', pickup_location: null }),
+            groupManifest({ id: 'm2', external_load_id: 'LOAD-2', pickup_location: null }),
+          ]}
+          onManifestClick={() => {}}
+        />
+      );
+      // Cabecera de grupo (<h3>) + las dos filas (<h4>), las tres dicen
+      // "Falabella" — nada se pierde.
+      expect(screen.getAllByText('Falabella')).toHaveLength(3);
+    });
+
+    // Sólo cuando NINGUNA de las dos identidades está disponible cae al
+    // texto genérico compartido con `3j` (`NO_POINT`, "Sin punto de
+    // recogida").
+    it('falls back the row title to "Sin punto de recogida" when both pickup_location and retailer_name are missing', () => {
+      render(
+        <RouteManifestList
+          manifests={[
+            groupManifest({
+              id: 'm1',
+              external_load_id: 'LOAD-1',
+              pickup_location: null,
+              retailer_name: null,
+            }),
+          ]}
+          onManifestClick={() => {}}
+        />
+      );
+      expect(screen.getByText('Sin punto de recogida')).toBeInTheDocument();
+    });
+
+    // Review finding 4 (a11y) — la jerarquía de encabezados coincide con la
+    // jerarquía visual: <h3> el cliente (cabecera de grupo), <h4> el punto
+    // de cada manifiesto debajo.
+    it('uses <h3> for the group header and <h4> for each manifest row, matching the visual hierarchy', () => {
+      render(
+        <RouteManifestList
+          manifests={[
+            groupManifest({ id: 'm1', external_load_id: 'LOAD-1' }),
+            groupManifest({ id: 'm2', external_load_id: 'LOAD-2', pickup_location: 'Parque Arauco' }),
+          ]}
+          onManifestClick={() => {}}
+        />
+      );
+      expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(1);
+      expect(screen.getAllByRole('heading', { level: 4 })).toHaveLength(2);
     });
   });
 });

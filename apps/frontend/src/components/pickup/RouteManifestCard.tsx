@@ -13,15 +13,25 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { NO_POINT } from '@/lib/pickup/routeManifestGrouping';
 import type { RouteManifestRow } from './RouteManifestList';
 
 /**
  * Extraído de `RouteManifestList.tsx` en spec-95 fase 1, sólo por tamaño
  * (regla de 300 líneas — mismo motivo documentado en
  * `RouteManifestList.download.test.tsx`): la agrupación por cliente que esa
- * fase añade empujó el fichero por encima del límite. Una sola tarjeta de
- * manifiesto, sin cambios de comportamiento respecto a lo que ya existía
- * dentro de `RouteManifestList`.
+ * fase añade empujó el fichero por encima del límite.
+ *
+ * Sí hay UN cambio de comportamiento deliberado respecto a lo que existía
+ * dentro de `RouteManifestList` (revisión de fase 1, 2026-09-11): el título
+ * de la fila pasó de `retailer_name` a `pickup_location`. La cabecera de
+ * grupo (`RouteManifestList.tsx`) ya muestra el retailer una sola vez;
+ * repetirlo en cada fila era redundante y, agrupado, ambiguo para cualquier
+ * query por texto (`screen.getByText(retailerName)` encontraba dos
+ * elementos). El punto de recogida es la identidad propia de la fila —
+ * acerca además esta vista al mock (`5c`), que titula cada fila con el
+ * nombre del punto, no del retailer. Ver el fallback justo debajo del
+ * `<h4>` para el caso `pickup_location: null`.
  */
 export interface ManifestCardProps {
   manifest: RouteManifestRow;
@@ -69,20 +79,24 @@ export function ManifestCard({
       >
         <div className="flex items-center justify-between gap-3 pr-11">
           <div className="min-w-0">
-            {/* spec-95 fase 1 — la cabecera de grupo ya muestra
-                `retailer_name`; repetirlo aquí por manifiesto era
-                redundante y, agrupado, ambiguo para cualquier query por
-                texto. El punto de recogida es la identidad propia de esta
-                fila (mock 5c). Nunca fabricar un punto: cuando
-                `pickup_location` es null (no capturado al ingreso), cae a
-                un texto explícito de "sin registrar", nunca al nombre del
-                retailer ni al id de carga — ambos ya se muestran en algún
-                otro lugar de esta misma fila/cabecera y duplicarlos aquí
-                volvería a introducir el mismo texto ambiguo que esto
-                reemplaza. */}
-            <h3 className="font-semibold text-text truncate">
-              {m.pickup_location ?? 'Punto de recogida sin registrar'}
-            </h3>
+            {/* Review finding 4 (a11y) — <h4>, no <h3>: el <h3> real de esta
+                jerarquía visual es el nombre del cliente en la cabecera de
+                grupo (RouteManifestList.tsx); esta fila es una subsección
+                de esa cabecera, no un encabezado de nivel superior.
+                Review finding 4 (regresión) — `pickup_location` es null con
+                frecuencia (no capturado al ingreso). Antes, tres cargas sin
+                dirección se titulaban las tres, idénticamente, "Punto de
+                recogida sin registrar" — distinguibles sólo por el
+                external_load_id en mono de 12px debajo. La cadena de
+                fallback cae a `retailer_name` antes de perder del todo la
+                información (antes de este cambio, la fila SIEMPRE mostraba
+                el retailer): nunca se pierde qué cliente es esta carga.
+                `NO_POINT` ("Sin punto de recogida") es el mismo texto que
+                `pickupStartRouteGrouping.ts` ya usa para este concepto en
+                `3j` — no una tercera cadena inventada. */}
+            <h4 className="font-semibold text-text truncate">
+              {m.pickup_location || m.retailer_name || NO_POINT}
+            </h4>
             <p className="font-mono text-xs text-text-secondary mt-0.5">
               {m.external_load_id}
             </p>

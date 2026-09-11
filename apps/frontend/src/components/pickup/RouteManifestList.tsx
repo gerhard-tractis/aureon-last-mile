@@ -4,6 +4,7 @@ import { Package } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/EmptyState';
 import { isManifestComplete } from '@/lib/pickup/manifestProgress';
+import { groupManifestsByRetailer } from '@/lib/pickup/routeManifestGrouping';
 import { ManifestCard } from './RouteManifestCard';
 
 /** Mirrors `manifest_status_enum` (packages/database/supabase/migrations/
@@ -106,50 +107,6 @@ const GROUP_STATUS_CLASSNAME: Record<GroupStatus, string> = {
   pendiente: 'border-border-strong bg-surface text-text-secondary',
 };
 
-interface ManifestGroup {
-  retailerName: string;
-  pointCount: number;
-  packageCount: number;
-  manifests: RouteManifestRow[];
-}
-
-/**
- * Agrupa por `retailer_name` (mock 5c), en el orden de PRIMERA aparición de
- * cada retailer — y sin reordenar los manifiestos dentro de cada grupo.
- * `useRouteManifests` ya ordena por `created_at` ascendente (cola
- * append-only), y `page.tsx` calcula "la próxima carga" sobre exactamente
- * ese orden; agrupar aquí no puede alterarlo.
- *
- * `pointCount` cuenta valores distintos de `pickup_location` dentro del
- * grupo (un `null` — dirección no capturada al ingreso — cuenta como un
- * único punto "desconocido", nunca se descarta). `packageCount` suma
- * `total_packages`; es un AGREGADO DE PANTALLA, no una escritura a la base
- * de datos, así que coalescer un total desconocido a 0 aquí es una lectura
- * "no sabemos nada de este bulto" razonable — no la misma trampa que
- * `openPendingManifest.ts` documenta contra escribir `?? 0` de vuelta a
- * `manifests.total_packages`.
- */
-function groupManifestsByRetailer(manifests: RouteManifestRow[]): ManifestGroup[] {
-  const groups: ManifestGroup[] = [];
-  const byName = new Map<string, ManifestGroup>();
-  for (const m of manifests) {
-    const retailerName = m.retailer_name ?? 'Retailer desconocido';
-    let group = byName.get(retailerName);
-    if (!group) {
-      group = { retailerName, pointCount: 0, packageCount: 0, manifests: [] };
-      byName.set(retailerName, group);
-      groups.push(group);
-    }
-    group.manifests.push(m);
-  }
-  for (const group of groups) {
-    const points = new Set(group.manifests.map((m) => m.pickup_location ?? '__unknown__'));
-    group.pointCount = points.size;
-    group.packageCount = group.manifests.reduce((sum, m) => sum + (m.total_packages ?? 0), 0);
-  }
-  return groups;
-}
-
 interface RouteManifestListProps {
   manifests: RouteManifestRow[];
   onManifestClick: (externalLoadId: string) => void;
@@ -250,9 +207,14 @@ export function RouteManifestList({
                 cuatro casos. */}
             <div className="flex items-center gap-3 rounded-[13px] border border-border bg-surface-raised px-3.5 py-2.5">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[15px] font-semibold text-text">
+                {/* Review finding 4 (a11y) — este es el encabezado real de
+                    la jerarquía visual (cabecera de grupo, cliente); la fila
+                    de cada manifiesto debajo usa <h4>. Antes era al revés:
+                    la fila llevaba <h3> y esto era un <p> sin jerarquía,
+                    invertido respecto a lo que se ve en pantalla. */}
+                <h3 className="truncate text-[15px] font-semibold text-text">
                   {group.retailerName}
-                </p>
+                </h3>
                 <p className="truncate text-[13.5px] text-text-secondary">
                   {group.pointCount} {group.pointCount === 1 ? 'punto' : 'puntos'} ·{' '}
                   {group.packageCount} {group.packageCount === 1 ? 'paquete' : 'paquetes'}
