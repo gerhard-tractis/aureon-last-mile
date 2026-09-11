@@ -111,7 +111,7 @@ Dos colisiones reales, las dos decididas por el usuario el 2026-09-10:
 
 **Depende de:** ninguna
 
-**Archivos:** `apps/frontend/src/app/app/pickup/route/active/page.tsx`, `apps/frontend/src/components/pickup/PickupMobileClientGroup.tsx`, `apps/frontend/src/components/pickup/RouteManifestList.tsx`, y sus tests
+**Archivos:** `apps/frontend/src/components/pickup/RouteManifestList.tsx`, `apps/frontend/src/components/pickup/RouteManifestCard.tsx`, y sus tests
 
 Hoy `route/active/page.tsx` trabaja sobre una **lista plana** de manifiestos:
 `NextManifestCard` / `UpcomingManifestList` / `RouteManifestList` no agrupan por
@@ -122,18 +122,47 @@ campo ya viaja en `RouteManifestRow` — y que lo caro era la semántica, no el
 - [ ] Agrupar por `retailer_name`, con la cabecera del mock: nombre, `N puntos · M paquetes`.
 - [ ] Chip por grupo con la regla única. Definir el predicado **en un solo sitio** y testearlo como unidad, no repartido por el render:
   - `COMPLETADA` — todas las cargas del grupo cerradas.
-  - `EN RUTA` — alguna carga del grupo con escaneo empezado y ninguna pendiente de descarga.
-  - `PENDIENTE` — el resto.
+  - `EN RUTA` — alguna carga con escaneo empezado (`verified_count > 0`) **y esa misma carga sin cerrar**.
+  - `PENDIENTE` — el resto, incluido el grupo vacío y el caso en que la única carga con escaneos ya cerró.
 - [ ] Que desaparezca el botón «Ver carga» del slot de cabecera de grupo.
 - [ ] TDD: el predicado primero, con un caso por rama y uno de frontera (grupo vacío).
 
-> **Nota de precisión.** Las tres ramas de arriba son la lectura de este spec del
-> mock, no una cita literal del mock — el mock dibuja los tres chips pero no
-> escribe el predicado. Si al implementar se ve que `EN RUTA` y `PENDIENTE` no
-> se distinguen con los campos que hay en `RouteManifestRow`, **no se inventa la
-> distinción**: se para, se escribe aquí qué campo falta, y la fase pasa a
-> `[blocked]` con su `> Bloqueo:`. Es exactamente el error que `spec-82` fase 1
-> evitó la primera vez.
+> **Regla A, «por progreso» — decisión del usuario/diseñador, 2026-09-11.**
+> La primera redacción de esta fase pedía, para `EN RUTA`, «alguna carga con
+> escaneo empezado **y ninguna pendiente de descarga**». Era una lectura
+> equivocada de este spec, no del mock: al implementarla, el diff contra `5c`
+> daba `PENDIENTE` en **Falabella y Ripley**, donde el mock dibuja `EN RUTA`.
+>
+> Al revisarlo con el mock delante apareció que **el mock era el inconsistente**.
+> El diseñador lo confirmó, textual: «hoy el mock quedó inconsistente. Apliqué
+> "sin cerrar = EN RUTA" y por eso Ripley lo lleva, pero entonces Paris también
+> debería llevarlo — los cuatro grupos están igual de dentro de la ruta activa.»
+>
+> De las dos reglas candidatas, ambas derivables de los datos, se eligió la de
+> progreso sobre la de siguiente parada **porque no duplica información**: un
+> chip `SIGUIENTE` a nivel de grupo repetiría la pastilla `SIGUIENTE` que ya
+> lleva la tarjeta destacada, y el operario ya ve ahí su próxima parada.
+>
+> **La descarga pendiente no entra en el predicado.** Es ortogonal al progreso y
+> se sigue resolviendo por manifiesto con el chip `DESCARGAR` de `spec-82`
+> fase 2, que esta fase no toca.
+>
+> **Pendiente aguas arriba:** bajo la regla A, Ripley es `PENDIENTE`. El
+> artboard `5c` todavía lo dibuja `EN RUTA`. Hasta que se rebaje otra vez el
+> mock, esa celda discrepa **a propósito** — no es un hallazgo nuevo y no hay
+> que volver a reportarlo.
+
+> **Desviaciones de alcance, declaradas.** (1) `RouteManifestCard.tsx` es nuevo:
+> agregar la agrupación empujó `RouteManifestList.tsx` a 437 líneas y la regla de
+> 300 no es negociable, así que la tarjeta por manifiesto se extrajo sin cambio
+> de comportamiento (quedan 280 y 173). (2) **No se tocó
+> `PickupMobileClientGroup.tsx`**, pese a estar en el `**Archivos:**` original:
+> pertenece a la pantalla `3j` (selección pre-ruta, modelo
+> `StartRouteClientGroup`/`ManifestRow`), una superficie de datos distinta de la
+> de `5c` (`RouteManifestRow`); reutilizarlo habría mezclado dos modos
+> —selección y progreso— en un componente ya ajustado a su pantalla.
+> (3) `route/active/page.tsx` tampoco necesitó cambios: sigue pasando el mismo
+> contrato a `RouteManifestList`.
 
 ### Fase 2 — `5c` cabecera de ruta y pie de dos filas `[pending]`
 
