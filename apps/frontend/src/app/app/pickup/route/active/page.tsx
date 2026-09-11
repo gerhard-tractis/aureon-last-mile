@@ -108,7 +108,7 @@ export default function ActiveRoutePage() {
   // exists to prevent. Offer the retry instead.
   if (routeError) {
     return (
-      <div className="p-6 max-w-2xl mx-auto space-y-4 text-center">
+      <div className="w-full p-6 max-w-2xl mx-auto space-y-4 text-center">
         <p className="text-text">No pudimos cargar tu ruta.</p>
         <div className="flex items-center justify-center gap-2">
           <Button onClick={() => refetchRoute()}>Reintentar</Button>
@@ -122,7 +122,7 @@ export default function ActiveRoutePage() {
 
   if (!route) {
     return (
-      <div className="p-6 max-w-2xl mx-auto space-y-4 text-center">
+      <div className="w-full p-6 max-w-2xl mx-auto space-y-4 text-center">
         <p className="text-text">No tienes una ruta activa.</p>
         <Button onClick={() => router.push('/app/pickup')}>Volver</Button>
       </div>
@@ -260,7 +260,7 @@ export default function ActiveRoutePage() {
   // (teléfono/`sm`). `pb-56` (224px) cubre ambos con margen — si no, la
   // última fila de manifiestos queda bajo la barra fija.
   return (
-    <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-4 pb-56" data-testid="active-route-page">
+    <div className="w-full p-4 sm:p-6 max-w-2xl mx-auto space-y-4 pb-56" data-testid="active-route-page">
       <RouteProgressHeader route={route} manifests={routeManifests} isLoading={rmLoading} />
 
       {/* spec-95 fase 3 (mock 5c) — `nextManifestAddress` es `undefined`
