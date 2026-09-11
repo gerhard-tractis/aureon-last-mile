@@ -476,9 +476,18 @@ irreversible»). `5f2` lo rediseña como **hoja inferior** y le añade datos.
 - [ ] Botones `Sí, cerrar la carga` (primario) y `Volver a revisar`.
 - [ ] **No se toca ninguna rama de `handleComplete`.** La cola offline de `spec-81` fase 2 queda intacta; esto es la capa de confirmación, no el cierre.
 
-### Fase 8 — `5a` escritorio `[pending]`
+### Fase 8 — `5a` escritorio `[blocked]`
 
 **Depende de:** spec-94 fase 1
+
+> Bloqueo: se intentó despachar la fase con `node scripts/check-phase-overlap.mjs
+> 'docs/specs/spec-95-recogida-ronda-2-de-diseno.md#Fase 8' …` y devolvió **exit
+> 4** («dependencia declarada sin satisfacer: spec-94 fase 1, que sigue
+> `[pending]`») — verificado además contra `docs/specs/spec-94-recogida-cuatro-estados.md:226`,
+> donde fase 1 está `[in_progress]`, y contra `git log -1
+> feat/spec-94-fase-1-rpcs` (commit de 2026-09-11 01:21, worktree vivo en
+> `wt-s94f1`): **otra sesión la está construyendo ahora** — 2026-09-11 —
+> desbloquea: dependencia (spec-94)
 
 **Archivos:** `apps/frontend/src/components/pickup/PickupDesktopView.tsx`, `apps/frontend/src/components/pickup/PickupDesktopHeader.tsx`, `apps/frontend/src/components/pickup/ClientFilter.tsx`, `apps/frontend/src/components/pickup/ManifestTable.tsx`, `apps/frontend/src/components/pickup/PickupRouteDraftPanel.tsx`, `apps/frontend/src/components/pickup/StartRouteButton.tsx`, y sus tests
 
@@ -492,6 +501,15 @@ irreversible»). `5f2` lo rediseña como **hoja inferior** y le añade datos.
 - [ ] CTA `Iniciar ruta de retiro` (se queda) más secundario `Ver QR de la ruta`. Cierra la divergencia 3 de `spec-83` fase 4.
 - [ ] «Mostrando 7 de 12 · Cargar más» en vez de paginación con Anterior/Siguiente.
 - [ ] **No** se implementa la barra de ocupación: sigue `[parked]` en `spec-83` fase 3.
+
+
+> **Por qué esto es un bloqueo real y no burocracia.** `5a` añade la séptima
+> columna `ETIQUETAS` sobre la tabla de escritorio, y `spec-94` fase 1 reescribe
+> las cuatro RPC que la alimentan, re-templando explícitamente esa misma columna
+> de `spec-53` junto a `missing_count` y `signature_operator`
+> (`spec-94:202-203`). Construir `ETIQUETAS` contra el contrato de hoy es
+> trabajo que se tira. El orden lo decidió el usuario el 2026-09-10
+> («spec-94 fase 1 primero»), y el guard lo aplica en vez de la prosa.
 
 ### Fase 9 — `5g` el botón de flash `[done]`
 
