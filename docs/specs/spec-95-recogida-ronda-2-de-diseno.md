@@ -273,7 +273,7 @@ dibuja exactamente eso (código de ruta, `12/28`, barra y las tres cifras
 > cerrados por esta fase**, anotado allí. spec-61 Task 5 revisado: `Cancelar
 > ruta` sólo cambia de sitio, diálogo y RPC intactos (`git diff` vacío).
 
-### Fase 3 — `5c` panel de mapa `[in_progress]`
+### Fase 3 — `5c` panel de mapa `[done]`
 
 **Depende de:** spec-95 fase 2
 
@@ -319,6 +319,16 @@ ETA. **Sólo se implementan dirección y navegación.**
 > `lib/types.ts` pese a existir desde `20260329000001` — misma deriva del
 > generador ya documentada para `fleet_vehicles.capacity_packages`. Añadido a
 > mano; sin eso `tsc` falla con `SelectQueryError`.
+
+> Implementado por: implementer — rama `feat/spec-95-fase-3-panel-de-mapa`, SHA `8a1bf9e`.
+> Review: **sin revisión adversarial** — se cerró directo tras verificación del
+> orquestador (mutaciones propias y suite completa). Se declara el hueco en vez
+> de implicar una revisión que no hubo.
+> QA: PR #788 merged 2026-09-11, sin checks en rojo. 1057 tests de `pickup`;
+> `verify.sh` local verde. **`e2e-qa` no se leyó por separado.**
+> Downstream: revisado spec-83 (dueño del escritorio) y spec-82 — **sin
+> cambios**: esta fase sólo lee una dirección ya existente y no altera ninguna
+> RPC ni contrato que ellos describan.
 
 ### Fase 4 — `5b` cuadrilla y selector de vehículo `[done]`
 
@@ -489,7 +499,7 @@ rejilla de cifras, el aviso legal y la firma del cliente opt-in.
 > (fase 2, la cola offline) — **sin cambios**: ninguna rama de `handleComplete`
 > ni de la cola se tocó, verificado sobre el diff.
 
-### Fase 7 — `5f2` la confirmación irreversible `[in_progress]`
+### Fase 7 — `5f2` la confirmación irreversible `[done]`
 
 **Depende de:** spec-95 fase 6
 
@@ -504,18 +514,27 @@ irreversible»). `5f2` lo rediseña como **hoja inferior** y le añade datos.
 - [ ] Botones `Sí, cerrar la carga` (primario) y `Volver a revisar`.
 - [ ] **No se toca ninguna rama de `handleComplete`.** La cola offline de `spec-81` fase 2 queda intacta; esto es la capa de confirmación, no el cierre.
 
-### Fase 8 — `5a` escritorio `[blocked]`
+> Implementado por: implementer — rama `feat/spec-95-fase-7-dialogo-irreversible`,
+> SHAs `44c67da` + `ce17817`.
+> Review: reviewer (opus), una ronda, **NO mergeable**. La migración
+> `AlertDialog` → `Sheet` había movido el **foco inicial al botón irreversible**
+> (Radix fuerza el foco al cancel; `Sheet` no), perdido `role="alertdialog"` y
+> añadido un control «Close» en inglés. Dos mutaciones sobrevivían sobre
+> criterios de la propia fase. Cerrados; el orquestador reverificó
+> `role="alertdialog"` a mano.
+> QA: PR #787 merged 2026-09-11, sin checks en rojo. Suite completa 669
+> ficheros / 6707 tests. **`e2e-qa` no se leyó por separado.**
+> Downstream: revisado spec-80 (fase 3, dueña de esta pantalla) y spec-81
+> (fase 2, la cola offline) — **sin cambios**, verificado sobre el diff con
+> `--numstat`: ninguna rama de `handleComplete` ni de la cola se tocó.
+
+### Fase 8 — `5a` escritorio `[in_progress]`
 
 **Depende de:** spec-94 fase 1
 
-> Bloqueo: se intentó despachar la fase con `node scripts/check-phase-overlap.mjs
-> 'docs/specs/spec-95-recogida-ronda-2-de-diseno.md#Fase 8' …` y devolvió **exit
-> 4** («dependencia declarada sin satisfacer: spec-94 fase 1, que sigue
-> `[pending]`») — verificado además contra `docs/specs/spec-94-recogida-cuatro-estados.md:226`,
-> donde fase 1 está `[in_progress]`, y contra `git log -1
-> feat/spec-94-fase-1-rpcs` (commit de 2026-09-11 01:21, worktree vivo en
-> `wt-s94f1`): **otra sesión la está construyendo ahora** — 2026-09-11 —
-> desbloquea: dependencia (spec-94)
+> **Bloqueo resuelto 2026-09-11.** Dependía de `spec-94` fase 1; ese spec
+> quedó `completed` en `main` (PRs #786/#791/#792) con la migración
+> `20261008000001`. `check-phase-overlap.mjs` pasó de exit 4 a **exit 0**.
 
 **Archivos:** `apps/frontend/src/components/pickup/PickupDesktopView.tsx`, `apps/frontend/src/components/pickup/PickupDesktopHeader.tsx`, `apps/frontend/src/components/pickup/ClientFilter.tsx`, `apps/frontend/src/components/pickup/ManifestTable.tsx`, `apps/frontend/src/components/pickup/PickupRouteDraftPanel.tsx`, `apps/frontend/src/components/pickup/StartRouteButton.tsx`, y sus tests
 
@@ -538,6 +557,46 @@ irreversible»). `5f2` lo rediseña como **hoja inferior** y le añade datos.
 > (`spec-94:202-203`). Construir `ETIQUETAS` contra el contrato de hoy es
 > trabajo que se tira. El orden lo decidió el usuario el 2026-09-10
 > («spec-94 fase 1 primero»), y el guard lo aplica en vez de la prosa.
+
+
+> **«Ver QR de la ruta» NO se implementa en el panel BORRADOR — decisión del
+> usuario, 2026-09-11.** El mock lo dibuja en ese pie, pero **ahí la ruta
+> todavía no existe**, así que «ver su QR» no es una operación posible: lo único
+> que el botón podía hacer era **crearla**, convirtiendo un verbo de lectura en
+> uno de escritura. Con `start_pickup_route` imponiendo una ruta activa por
+> conductor, quien sólo quería enseñar el QR al receptor se quedaba con una ruta
+> abierta cuya única salida es `Cancelar ruta` — y el destino, por diseño,
+> le habría mostrado `0 paquetes` (cuenta `pickup_scans` cuando aún no hay
+> `route_receptions`), que esa misma pantalla ya documenta como bug arreglado
+> una vez. La afordancia correcta **ya existe** en `ActiveRouteBanner.tsx:50`,
+> sobre la ruta en curso, que es donde el mock también la dibuja
+> (`Recogida.dc.html:85`). Regla de desempate del spec: el mock manda en diseño,
+> **el spec manda en comportamiento**.
+>
+> **Los chips cuentan el cubo visible, no la unión.** Contar la unión de los
+> cuatro cubos —correcto cuando el chip sólo existía o no (spec-94 fase 2)— se
+> vuelve una cifra falsa al colgarle un número: `Todos · 23` convivía con
+> `Pendientes · 12` en la misma tarjeta, y `Falabella · 10` abría una lista de
+> 4. El mock los dibuja coincidiendo. La **unión sigue decidiendo qué chips
+> existen** (para no perder el de un retailer todo-ruteado); sólo el conteo sale
+> del cubo activo.
+>
+> **La cabecera `ETIQUETAS` se gatea como su acción.** `labelsEnabled` viene de
+> `useEnabledModules`, que devuelve `?? false`: sin el gate, un operador sin el
+> módulo veía una columna titulada y permanentemente vacía, y cualquiera veía un
+> parpadeo en carga en frío.
+>
+> **Corrección de registro:** el comentario y el test decían que la cabecera
+> pintaba 7 `<span>` sobre un grid de 8. **Es falso** — `4bd1c02` pinta ocho, el
+> último vacío. Las columnas estaban alineadas; sólo faltaba el texto. El
+> orquestador repitió esa afirmación antes de comprobarla.
+>
+> **Divergencias con `5a`, declaradas:** la insignia de atajo `/` de la barra de
+> búsqueda no se implementó; los chips del mock son `border-radius:6px` y el
+> código usa `rounded-full` (preexistente). **La barra de ocupación no se
+> implementa** — sigue `[parked]` en `spec-83` fase 3.
+>
+> **Deuda:** `page.tsx` queda en 309 líneas, sobre el límite de 300.
 
 ### Fase 9 — `5g` el botón de flash `[done]`
 
