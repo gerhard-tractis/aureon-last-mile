@@ -2,9 +2,21 @@
 
 Since spec-92, a merge to `main` deploys to production automatically once
 `e2e-qa` is green and the run is still `main`'s current tip — no click. The
-click from spec-57 is still here, but it is now the **exception**: it only
-appears when the merge touches the auth hook, the one class of change QA does
-not exercise (see "Why the auth hook is different" below).
+click from spec-57 is still here, but it is now the **exception**: it appears
+for the **two** classes of change QA does not exercise, both measured, never
+guessed:
+
+1. **The auth hook** — `custom_access_token_hook`, which production invokes on
+   every login (see "Why the auth hook is different" below).
+2. **`pg_net`** — the extension is installed in QA and **not** in production
+   (measured, run `34539233402`), so a migration using `net.http_post()` /
+   `net.http_get()` applies green against QA and fails on apply in production
+   with `schema "net" does not exist`.
+
+A third trigger is not a class of change at all: **`force_db=true`** forces both
+flags on. That input exists because the "last successful run ⇒ production is up
+to date" invariant broke once (2026-08-23, 13 migrations at once); when you are
+already telling the pipeline the range is untrustworthy, pausing is cheap.
 
 Related: `.github/workflows/README.md` · `docs/qa-environment.md` ·
 `docs/runbooks/manual-deployment.md` · `docs/runbooks/rollback-production.md` ·
@@ -17,7 +29,7 @@ Related: `.github/workflows/README.md` · `docs/qa-environment.md` ·
 ```
 merge to main ──▶ CI ──▶ deploy-qa ──▶ e2e-qa ──▶ approve-production
                           (QA VPS)     (BLOCKING)      │
-                                                        ├─ auth_hook == 'true'?
+                                                        ├─ auth_hook OR pg_net == 'true'?
                                                         │    ⏸ YOU, here (environment: production)
                                                         │    :  auto (environment: production-auto)
                                                         └─▶ production
@@ -156,3 +168,33 @@ maintainer exists.
 diff does not touch the auth hook) has no protection rules by design — do not
 add reviewers to it; that would silently restore the pre-spec-92 pause for
 every merge.
+
+
+---
+
+## The one link no guard in this repo can see
+
+Everything above is enforced by `scripts/check-deploy-gating*.mjs` against
+`.github/workflows/deploy.yml` — twelve links of the chain, each verified by
+mutation against the real file.
+
+**The pause itself is not in a file.** It is a `required_reviewers` rule on the
+`production` environment, in GitHub's settings. Checked 2026-09-11:
+
+```
+$ gh api repos/gerhard-tractis/aureon-last-mile/environments/production     --jq '.protection_rules[] | .type + " " + ((.reviewers // []) | map(.reviewer.login) | join(","))'
+required_reviewers gerhard-tractis
+
+$ gh api repos/gerhard-tractis/aureon-last-mile/environments/production-auto
+404   # GitHub creates it on first use — expected, this is the no-pause path
+```
+
+Removing that reviewer, or adding reviewers to `production-auto`, changes the
+gate's behaviour **without touching a single line of code**, and no test in this
+repo can detect it. `deploy-approval-watchdog` (fase 3) queries
+`environments/production` on every run and alerts when `productionGateProtected`
+is false — including when the query itself fails, which is fail-closed. That is
+the only coverage this link has.
+
+If you ever see production deploying an auth-hook change without asking you,
+check that rule **before** you look at the workflow.
