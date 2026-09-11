@@ -132,7 +132,20 @@ AS $$
       SELECT COUNT(DISTINCT d.package_id)
         FROM public.discrepancies d
        WHERE d.manifest_id = m.id
+         -- Defense in depth, not load-bearing on its own: d.manifest_id
+         -- already FKs to a manifests row that the outer WHERE has scoped
+         -- to public.get_operator_id(), so a cross-operator d row could
+         -- only reach here via a manifest that isn't this operator's in the
+         -- first place — which the outer clause already excludes. No
+         -- fixture kills this line alone; it stays for the same reason the
+         -- rest of this repo re-checks tenant scope on every join.
          AND d.operator_id = m.operator_id
+         -- Redundant by discrepancy_source_matches_operation (20260913000001):
+         -- that CHECK forces operation_type='reception' rows to have
+         -- manifest_id IS NULL, so d.manifest_id = m.id above already
+         -- implies operation_type='pickup'. Kept for readability, not as a
+         -- second guard — do not go looking for a fixture that kills this
+         -- clause alone.
          AND d.operation_type = 'pickup'
          AND d.kind = 'missing'
          AND d.deleted_at IS NULL
@@ -164,6 +177,17 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION public.get_routed_manifests() IS 'spec-94 fase 1 (ronda 3, "manda la ruta"). Cubo 2 ("En punto de retiro"): ruta viva (pickup_routes.deleted_at IS NULL) con pr.status NOT IN (in_transit, received) -- NOT IN, no una lista positiva, para que un valor nuevo del enum aterrice aquí y no se caiga del modelo. Incluye cargas ya cerradas en el andén con el camión todavía parado (status=''completed'', closed_at poblado, ruta in_progress) -- esa mezcla es coste aceptado a propósito, ver spec-94. LEFT JOIN a pickup_routes con deleted_at en el ON: una ruta soft-deleted no debe hacer desaparecer el manifiesto, cae por sus propias columnas en otro cubo. missing_count y verified_count replican exactamente las subconsultas de get_completed_manifests (spec-83 fase 1) y la guarda 7 de remove_manifest_from_route (spec-64) respectivamente.';
+
+-- Patrón de 20260925000001:229-231 / 20261005000001:138-140. Sus tres
+-- hermanas (get_pending_manifests/get_in_transit_manifests/get_completed_
+-- manifests) nunca tuvieron este bloque -- 20261003000001 documenta por qué
+-- eso es seguro igual (SECURITY INVOKER + RLS es el backstop real, no el
+-- GRANT) -- pero get_routed_manifests es nueva, sin estado previo que
+-- preservar, así que sigue el patrón más explícito en vez de heredar la
+-- ausencia por inercia.
+REVOKE ALL ON FUNCTION public.get_routed_manifests() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_routed_manifests() TO authenticated;
+REVOKE ALL ON FUNCTION public.get_routed_manifests() FROM anon;
 
 -- =============================================================================
 -- 2. get_pending_manifests -- cubo 1 ("Por retirar") + el brazo UNION ALL
@@ -279,12 +303,24 @@ AS $$
     -- (vienen de pickup_points vía orders.pickup_point_id, y aquí no hay
     -- ninguna orden viva) -- NULL significa "sin datos", nunca "sin plazo"
     -- (20261003000001). No rellenar con COALESCE.
+    --
+    -- order_count/package_count: m.total_orders/total_packages (nullable),
+    -- NO un 0::BIGINT fijo. openPendingManifest.ts (docstring, líneas 20-29)
+    -- prohíbe explícitamente convertir un "desconocido" en cero: si el
+    -- usuario abre esta carga, page.tsx:146-149 pasa estos mismos valores a
+    -- openPendingManifest, que hace `UPDATE manifests SET total_orders=...,
+    -- total_packages=...` -- PERMANENTE. Un 0 fijo aquí pisaría el total
+    -- ORIGINAL de intake (que puede ser un número real, p.ej. 5, de antes de
+    -- que todas sus órdenes se soft-borraran) con un cero falso. m.total_
+    -- orders/total_packages es la fuente honesta: NULL si nunca se
+    -- registraron (ensure_manifest_for_order, 20260814000001, los deja NULL
+    -- a propósito), el valor real si alguien los escribió.
     SELECT
       m.id,
       m.external_load_id,
       m.retailer_name,
-      0::BIGINT AS order_count,
-      0::BIGINT AS package_count,
+      m.total_orders::BIGINT AS order_count,
+      m.total_packages::BIGINT AS package_count,
       m.created_at,
       NULL::TEXT AS pickup_point,
       COALESCE((
@@ -440,7 +476,20 @@ AS $$
       SELECT COUNT(DISTINCT d.package_id)
         FROM public.discrepancies d
        WHERE d.manifest_id = m.id
+         -- Defense in depth, not load-bearing on its own: d.manifest_id
+         -- already FKs to a manifests row that the outer WHERE has scoped
+         -- to public.get_operator_id(), so a cross-operator d row could
+         -- only reach here via a manifest that isn't this operator's in the
+         -- first place — which the outer clause already excludes. No
+         -- fixture kills this line alone; it stays for the same reason the
+         -- rest of this repo re-checks tenant scope on every join.
          AND d.operator_id = m.operator_id
+         -- Redundant by discrepancy_source_matches_operation (20260913000001):
+         -- that CHECK forces operation_type='reception' rows to have
+         -- manifest_id IS NULL, so d.manifest_id = m.id above already
+         -- implies operation_type='pickup'. Kept for readability, not as a
+         -- second guard — do not go looking for a fixture that kills this
+         -- clause alone.
          AND d.operation_type = 'pickup'
          AND d.kind = 'missing'
          AND d.deleted_at IS NULL
@@ -503,41 +552,76 @@ END $$;
 DO $$
 DECLARE
   v_src  TEXT;
+  v_cols TEXT;
 BEGIN
-  SELECT p.prosrc INTO v_src FROM pg_proc p
-   WHERE p.oid = 'public.get_routed_manifests()'::regprocedure;
+  -- ── get_routed_manifests ────────────────────────────────────────────────
+  SELECT p.prosrc, array_to_string(p.proargnames, ',') INTO v_src, v_cols
+   FROM pg_proc p WHERE p.oid = 'public.get_routed_manifests()'::regprocedure;
   IF v_src NOT LIKE '%LEFT JOIN public.pickup_routes pr ON pr.id = m.pickup_route_id AND pr.deleted_at IS NULL%' THEN
     RAISE EXCEPTION 'get_routed_manifests must LEFT JOIN pickup_routes with deleted_at in the ON clause, not the WHERE';
   END IF;
   IF v_src NOT LIKE '%pr.status NOT IN (%in_transit%received%)%' THEN
     RAISE EXCEPTION 'get_routed_manifests must use pr.status NOT IN (in_transit, received), not a positive list';
   END IF;
+  IF v_cols IS DISTINCT FROM
+     'id,external_load_id,retailer_name,total_orders,total_packages,created_at,pickup_point,labels_printed_at,labels_printed_by_name,route_code,route_started_at,driver_name,route_status,closed_at,missing_count,verified_count'
+  THEN
+    RAISE EXCEPTION 'get_routed_manifests column set changed unexpectedly, got: %', v_cols;
+  END IF;
 
-  SELECT p.prosrc INTO v_src FROM pg_proc p
-   WHERE p.oid = 'public.get_pending_manifests()'::regprocedure;
+  -- ── get_pending_manifests ───────────────────────────────────────────────
+  SELECT p.prosrc, array_to_string(p.proargnames, ',') INTO v_src, v_cols
+   FROM pg_proc p WHERE p.oid = 'public.get_pending_manifests()'::regprocedure;
   IF v_src NOT LIKE '%UNION ALL%' THEN
     RAISE EXCEPTION 'get_pending_manifests lost its UNION ALL arm for manifests with zero live orders';
   END IF;
   IF v_src NOT LIKE '%LEFT JOIN pickup_routes pr%' THEN
     RAISE EXCEPTION 'get_pending_manifests must resolve "ruta viva" via pickup_routes, not pickup_route_id alone';
   END IF;
+  -- spec-83 fase 2: the three window columns must still be derived from
+  -- pickup_points, not just declared in RETURNS TABLE (round-2 finding on
+  -- that migration; the check itself got dropped when this migration
+  -- re-templated the function -- restored here).
+  IF v_src NOT LIKE '%pickup_locations->0->''operating_hours''->>''start''%' THEN
+    RAISE EXCEPTION 'get_pending_manifests does not derive pickup_window_start from pickup_locations';
+  END IF;
+  IF v_src NOT LIKE '%sla_config->>''pickup_cutoff_time''%' THEN
+    RAISE EXCEPTION 'get_pending_manifests does not derive pickup_cutoff_time from sla_config';
+  END IF;
+  IF v_cols IS DISTINCT FROM
+     'id,external_load_id,retailer_name,order_count,package_count,created_at,pickup_point,verified_count,labels_printed_at,labels_printed_by_name,pickup_window_start,pickup_window_end,pickup_cutoff_time'
+  THEN
+    RAISE EXCEPTION 'get_pending_manifests column set changed unexpectedly, got: %', v_cols;
+  END IF;
 
-  SELECT p.prosrc INTO v_src FROM pg_proc p
-   WHERE p.oid = 'public.get_in_transit_manifests()'::regprocedure;
+  -- ── get_in_transit_manifests ────────────────────────────────────────────
+  SELECT p.prosrc, array_to_string(p.proargnames, ',') INTO v_src, v_cols
+   FROM pg_proc p WHERE p.oid = 'public.get_in_transit_manifests()'::regprocedure;
   IF v_src NOT LIKE '%awaiting_reception%' OR v_src NOT LIKE '%reception_in_progress%' THEN
     RAISE EXCEPTION 'get_in_transit_manifests must filter on reception_status IN (awaiting_reception, reception_in_progress) for the no-live-route branch';
   END IF;
   IF v_src NOT LIKE '%pr.status = ''in_transit''%' THEN
     RAISE EXCEPTION 'get_in_transit_manifests must check pr.status = in_transit for the live-route branch';
   END IF;
+  IF v_cols IS DISTINCT FROM
+     'id,external_load_id,retailer_name,total_orders,total_packages,reception_status,updated_at,created_at,pickup_point,labels_printed_at,labels_printed_by_name'
+  THEN
+    RAISE EXCEPTION 'get_in_transit_manifests column set changed unexpectedly, got: %', v_cols;
+  END IF;
 
-  SELECT p.prosrc INTO v_src FROM pg_proc p
-   WHERE p.oid = 'public.get_completed_manifests()'::regprocedure;
+  -- ── get_completed_manifests ─────────────────────────────────────────────
+  SELECT p.prosrc, array_to_string(p.proargnames, ',') INTO v_src, v_cols
+   FROM pg_proc p WHERE p.oid = 'public.get_completed_manifests()'::regprocedure;
   IF v_src NOT LIKE '%missing_count%' OR v_src NOT LIKE '%signature_operator%' THEN
     RAISE EXCEPTION 'get_completed_manifests lost missing_count (spec-83) or signature_operator (spec-80) in the re-template';
   END IF;
   IF v_src NOT LIKE '%pr.status = ''received''%' THEN
     RAISE EXCEPTION 'get_completed_manifests must check pr.status = received for the live-route branch';
+  END IF;
+  IF v_cols IS DISTINCT FROM
+     'id,external_load_id,retailer_name,total_orders,total_packages,completed_at,created_at,pickup_point,labels_printed_at,labels_printed_by_name,missing_count,signature_operator'
+  THEN
+    RAISE EXCEPTION 'get_completed_manifests column set changed unexpectedly, got: %', v_cols;
   END IF;
 
   RAISE NOTICE '✓ spec-94 fase 1 (ronda 3): four pickup RPCs re-templated, route status wins when a live route exists';

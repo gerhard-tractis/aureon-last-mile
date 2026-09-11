@@ -288,8 +288,17 @@ DELETE FROM public.manifests
  WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-NOMANIFEST';
 
 -- CARGA-94-ORDERSDELETED: la fila de manifests queda viva (pending); lo que
--- se borra es la ÚNICA orden de la carga.
+-- se borra es la ÚNICA orden de la carga. total_orders/total_packages se
+-- fijan a un valor REAL (2/3), no se dejan en el NULL por defecto de
+-- ensure_manifest_for_order -- así la aserción de más abajo prueba que el
+-- brazo arm2 pasa el número real (el total de intake ORIGINAL, de antes de
+-- que las órdenes se soft-borraran), no que "NULL entra, NULL sale" de
+-- casualidad (lo que también pasaría con un bug que siempre devolviera NULL
+-- sin mirar la columna).
 UPDATE public.orders SET deleted_at = NOW()
+ WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-ORDERSDELETED';
+
+UPDATE public.manifests SET total_orders = 2, total_packages = 3
  WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-ORDERSDELETED';
 
 UPDATE public.manifests SET
@@ -386,20 +395,54 @@ UPDATE public.manifests SET
 WHERE operator_id = '00000000-0000-4000-8000-000000009500' AND external_load_id = 'CARGA-94-OTHEROP';
 
 -- GUARD: como owner (RLS bypassada), ambos operadores deben ser visibles --
--- si esto fallara, la aserción cross-tenant de abajo probaría RLS en vez del
--- filtro operator_id propio de la función (mismo patrón que
--- spec61_pending_excludes_routed.sql).
+-- si esto fallara, TEST 1 de abajo probaría RLS en vez del filtro
+-- operator_id propio de la función (mismo patrón que
+-- spec61_pending_excludes_routed.sql:86-102).
 DO $$
 DECLARE c INT;
 BEGIN
   SELECT COUNT(*) INTO c FROM public.operators
    WHERE slug IN ('spec94-op','spec94-op-b');
   IF c <> 2 THEN
-    RAISE EXCEPTION 'owner context saw % of 2 fixture operators -- la aserción cross-tenant ya no prueba el filtro operator_id de la función', c;
+    RAISE EXCEPTION 'owner context saw % of 2 fixture operators -- TEST 1 ya no probaría el filtro operator_id propio de la función', c;
   END IF;
 END $$;
 
--- ── Contexto: RLS ON, como en producción, caller = operador A ───────────────
+-- ── TEST 1 -- contexto OWNER (RLS bypassada): el filtro propio de la función ─
+-- Ronda de review: correr esta aserción bajo SET LOCAL role='authenticated'
+-- no prueba nada por sí sola -- manifests_tenant_select
+-- (20260310100000:163-168) ya esconde al operador B por RLS antes de que el
+-- WHERE de get_routed_manifests entre en juego, así que borrar
+-- `m.operator_id = public.get_operator_id()` de la función dejaría esta
+-- aserción en verde igual. Como owner (el rol de esta conexión bypassa RLS
+-- por defecto), sólo el filtro propio de la función puede excluir al
+-- operador B -- set_config basta para que get_operator_id() (SECURITY
+-- DEFINER, lee current_setting) resuelva al operador A sin cambiar de rol.
+SELECT set_config(
+  'request.jwt.claims',
+  '{"sub":"00000000-0000-4000-8000-000000009401","operator_id":"00000000-0000-4000-8000-000000009400"}',
+  true
+);
+
+DO $$
+DECLARE loads TEXT[];
+BEGIN
+  SELECT array_agg(external_load_id ORDER BY external_load_id)
+    INTO loads FROM public.get_routed_manifests();
+  loads := COALESCE(loads, '{}');
+
+  IF 'CARGA-94-OTHEROP' = ANY(loads) THEN
+    RAISE EXCEPTION 'TEST 1 (owner, RLS bypassada): la carga ruteada del operador B se filtró a la respuesta del operador A -- el filtro operator_id propio de get_routed_manifests falló: %', loads;
+  END IF;
+  IF NOT ('CARGA-94-DOCK' = ANY(loads)) THEN
+    RAISE EXCEPTION 'TEST 1: una carga ruteada real del operador A no aparece -- %', loads;
+  END IF;
+END $$;
+
+-- ── TEST 2 -- contexto authenticated, RLS ON, como en producción ────────────
+-- No es un duplicado de TEST 1: aquí RLS SÍ participa (manifests_tenant_
+-- select), así que esto prueba que la RLS real de producción tampoco deja
+-- pasar al operador B -- un fallo distinto al que TEST 1 detecta.
 SELECT set_config(
   'request.jwt.claims',
   '{"sub":"00000000-0000-4000-8000-000000009401","operator_id":"00000000-0000-4000-8000-000000009400","role":"authenticated"}',
@@ -635,11 +678,18 @@ SELECT is(
   'CARGA-94-NOMANIFEST: id NULL (no hay fila de manifests todavía) pero order_count/package_count SÍ cuentan la orden viva -- viene del arm1 (orders-rooted)'
 );
 
+-- Ronda de review: order_count/package_count del arm2 NO deben ser un
+-- 0::BIGINT fijo. openPendingManifest.ts prohíbe explícitamente convertir un
+-- "desconocido" en cero -- si el usuario abre esta carga, page.tsx pasa
+-- estos mismos valores a un UPDATE manifests SET total_orders=...,
+-- total_packages=... PERMANENTE, y un 0 fijo pisaría el total real de
+-- intake (aquí, 2/3) con un cero falso. m.total_orders/total_packages
+-- (nullable) es la fuente honesta.
 SELECT is(
   (SELECT (id IS NOT NULL, order_count, package_count, pickup_point)
      FROM t_pending WHERE external_load_id = 'CARGA-94-ORDERSDELETED'),
-  (true, 0::bigint, 0::bigint, NULL::text),
-  'CARGA-94-ORDERSDELETED: id SÍ presente (la fila de manifests vive) pero order_count/package_count son 0 -- viene del arm2 (manifest-rooted, sin ninguna orden viva que agrupar)'
+  (true, 2::bigint, 3::bigint, NULL::text),
+  'CARGA-94-ORDERSDELETED: id SÍ presente (la fila de manifests vive), order_count/package_count son el total REAL de manifests (2/3) -- viene de m.total_orders/total_packages, nunca un 0 fijo'
 );
 
 -- ── Ámbito de operador, no de usuario firmado ────────────────────────────────
@@ -649,12 +699,15 @@ SELECT is(
   'get_routed_manifests ve las tres cargas ruteadas del operador aunque ninguna comparta líder -- es de ámbito operador, no de usuario firmado'
 );
 
--- ── Aislamiento cross-tenant: la carga del operador B (misma forma que
---    CARGA-94-DOCK) NO debe filtrarse a la respuesta del operador A ────────
+-- ── Aislamiento cross-tenant, TEST 2 (repetición pgTAP de la comprobación
+--    del DO block de arriba): bajo RLS real (authenticated), la carga del
+--    operador B tampoco se filtra. El filtro propio de la función ya quedó
+--    probado por TEST 1 (owner, RLS bypassada); esto añade la capa de RLS
+--    real de producción encima, no la sustituye. ─────────────────────────
 SELECT is(
   'CARGA-94-OTHEROP' IN (SELECT external_load_id FROM t_routed),
   false,
-  'get_routed_manifests bajo el JWT del operador A no incluye la carga ruteada del operador B (operator_id propio de la función, bajo RLS real)'
+  'get_routed_manifests bajo authenticated (RLS ON) tampoco filtra la carga ruteada del operador B -- TEST 2, complementa el filtro propio ya probado en TEST 1'
 );
 
 SELECT * FROM finish();

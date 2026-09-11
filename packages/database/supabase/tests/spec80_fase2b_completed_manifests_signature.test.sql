@@ -60,14 +60,20 @@ ON CONFLICT (id) DO NOTHING;
 -- row per load the moment its order was inserted.
 --
 -- reception_status = 'received' on all three (spec-94 fase 1): get_completed_
--- manifests() no longer partitions on status='completed' alone, it requires
--- reception_status='received' (or the old-flow arm, which needs
--- reception_status IS NULL -- unreachable here because
--- trg_manifest_set_reception_status, spec-08, still live, auto-fills
--- reception_status='awaiting_reception' the instant status transitions to
--- 'completed' with reception_status NULL. Setting 'received' explicitly is
--- what actually happens when a load is received at the hub, which is what
--- "Completados" means post spec-94.
+-- manifests() no longer partitions on status='completed' alone. With NO
+-- pickup_route_id set (this fixture's shape), the function's "sin ruta viva"
+-- arm requires reception_status='received' OR (completed AND reception_
+-- status IS NULL) -- and IS NULL is unreachable here because trg_manifest_
+-- set_reception_status (spec-08, still live) auto-fills reception_status=
+-- 'awaiting_reception' the instant status transitions to 'completed' with
+-- the column NULL. Setting 'received' explicitly is the honest fixture for
+-- that arm -- NOT a claim that this is how production reaches "received":
+-- both real writers (20260625000001:198-201, 20260812000006:185-189) filter
+-- `WHERE pickup_route_id = NEW.id`, so a genuinely-received load in
+-- production KEEPS its route and goes through the "ruta viva" arm
+-- (pr.status='received') instead. This fixture exercises the other,
+-- route-less arm of the SAME predicate -- a state the RPC must still get
+-- right regardless of which code path reaches it.
 UPDATE public.manifests
    SET status = 'completed', completed_at = NOW(), total_packages = 5, total_orders = 1,
        signature_operator = NULL, reception_status = 'received'
