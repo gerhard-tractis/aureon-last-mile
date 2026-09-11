@@ -107,7 +107,7 @@ Two ordering constraints that are not obvious from the table, and that `scripts/
 
 **Archivos:** `docs/specs/spec-58-geocoding-foundation.md` (esta sección)
 
-> Implementado por: orquestador (no un implementer — el entregable es una tabla en este fichero, no código) — rama docs/spec-58-fase-0-mapeo-precision
+> Implementado por: orquestador (no un implementer — el entregable es una tabla en este fichero, no código) — rama docs/spec-58-fase-0-mapeo-precision, SHA 22c6183
 > Review: sin revisión de `reviewer`. El hueco se declara en vez de maquillarse: es una fase de medición cuya evidencia son respuestas HTTP reproducibles, transcritas abajo junto a la consulta que las produjo, de modo que cualquiera las repite en un minuto. La Fase 4 ejerce esta regla contra `fetch` mockeado y ahí sí hay review.
 > QA: n/a — no se despliega nada. Las llamadas se hicieron contra la API real de MapTiler el 2026-09-11.
 > Downstream: revisado spec-59 y spec-60 — sin cambios. Ninguno de los dos lee la respuesta cruda del geocoder: consumen `orders.latitude/longitude` y `geocode_precision`, cuyo contrato no cambia. spec-59 sí hereda el requisito de `User-Agent` para los tiles, anotado abajo.
