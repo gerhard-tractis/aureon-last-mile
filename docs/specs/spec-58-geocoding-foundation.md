@@ -1,10 +1,18 @@
-# Spec-58: Geocoding Foundation — turning delivery addresses into coordinates
+# Spec-58: Geocoding foundation — turning the addresses our pickup points hand us into coordinates
 
 > **Related:** [spec-59](spec-59-map-component-despacho-pins.md) (map component + Despacho pins — depends on this), [spec-60](spec-60-control-tower-fleet-map.md) (Control Tower fleet map), [spec-38](spec-38-route-activity-view.md) (created the map placeholder), [spec-54](spec-54-ui-rebrand.md) (tokenised the map surface, deferred the provider)
 
 **Status:** backlog
+**Verify:** unit
+**Downstream:** spec-59-map-component-despacho-pins.md, spec-60-control-tower-fleet-map.md
 
-_Date: 2026-08-17_
+_Date: 2026-08-17 — rewritten into phases 2026-09-11_
+
+> **Why the rewrite.** The original was one 354-line block with no phase tokens, written before the convention in `docs/specs/CLAUDE.md` existed. Nothing in it had been built — verified 2026-09-11: `orders` has no geocode columns, `geocode_cache` does not exist, and the only matches for `maptiler|geocode` outside this file are four comments in other specs' migrations saying "no geocode here". So this is a restructuring, not a correction: every decision and every piece of evidence below is carried over intact, now hanging off the phase that consumes it.
+
+> **On `**Verify:** unit`.** A schema-heavy spec would normally declare `unit, sql, e2e-qa`. It declares neither `sql` nor `e2e-qa`, on purpose. `scripts/judges/sql.sh` **does not exist** — there is no `scripts/judges/` directory at all (verified 2026-09-11), and `scripts/verify.sh:58` fails loudly on a judge it cannot resolve, so declaring `sql` would red-build every phase. pgTAP is still written and still run, via `scripts/pgtap-local.sh` against the shared Docker container. And `e2e-qa` is left out because **this spec ships no screen**: a browser judge would have nothing to look at. spec-59 is the first one that needs it.
+
+> **On the Spanish field names in an otherwise English spec.** `**Archivos:**`, `**Depende de:**` and `> Bloqueo:` are read by machine, not by a person: `scripts/check-spec-fields.sh`, `scripts/check-phase-overlap.mjs` and `scripts/check-blocked-evidence.sh` match those literals, and the last one greps the Spanish stems `intent*` / `verific*` inside the block. They stay in Spanish because renaming them is a harness change, not a spec change.
 
 > **Note on a stale forward-reference:** `spec-38:24-25` defers "Leaflet map integration" and "Geocoding" to *spec-39*. That number was subsequently used by `spec-39-distribution-pending-list.md`. This spec and spec-59 are the real successors; spec-38's pointer is stale and should be read as "a later spec".
 
@@ -12,11 +20,11 @@ _Date: 2026-08-17_
 
 ## Goal
 
-Give every order a latitude and longitude, so that a map can be drawn at all. No UI ships in this spec.
+Give every order a latitude and longitude, so a map can be drawn at all. No UI ships here.
+
+"The addresses the load generators give us" means `orders.delivery_address` — the free text that arrives in a pickup point's manifest, CSV, photo or API payload. Note the naming: `generators` was renamed to `pickup_points` in `20260329000001_rename_generators_to_pickup_points.sql`, which also renamed `orders.generator_id` to `orders.pickup_point_id`. A pickup point's **own** address is a Non-Goal here.
 
 ## The problem
-
-Ops asked to see orders pinned on a map in Despacho and trucks on a map in the Torre de Control. Neither is a rendering problem — it is a data problem.
 
 `public.orders` stores exactly one piece of location information: `delivery_address TEXT NOT NULL` (`20260217000003_create_orders_table.sql:56`), plus `comuna` / `comuna_id`. There are **no populated coordinate columns and no geocoder anywhere in the repo**:
 
@@ -30,7 +38,7 @@ The only **populated** coordinates are `dispatches.latitude` / `longitude`, and 
 
 ## What DispatchTrack's coordinates actually are — and why they cannot help here
 
-An earlier draft of this spec proposed harvesting destination coordinates from DispatchTrack for free. **That was wrong, and it is recorded here so it is not re-proposed.**
+An earlier draft proposed harvesting destination coordinates from DispatchTrack for free. **That was wrong, and it is recorded here so it is not re-proposed.**
 
 `scripts/dt-api-docs.md` uses the same field name with two different meanings:
 
@@ -47,31 +55,75 @@ Three writers touch `dispatches.latitude` / `longitude` today, and they do not a
 | `dispatchtrack-route-poll/index.ts:140-141` | `management_latitude` | Same — but see below |
 | `scripts/backfill-dispatches.mjs:188-189` | top-level `d.latitude` | "Where the dispatch was delivered" |
 
-The two are near-identical in practice, but the poll is suspect: the Show Route response documents `identifier` and a **string** `status`, while the poll reads `d.dispatch_id` and a **numeric** `d.status`, `continue`-ing when either is absent (`index.ts:121`, `:125`). If the documented shape is accurate, the poll's dispatch loop never reaches line 140 and its coordinate write is dead code. The counter-evidence, so spec-60 need not rediscover it: `index.ts:116` carries the comment "NOTE: REST API returns dispatches in same shape as webhook payload" — its author believed `dispatch_id` and a numeric status are what actually arrive. One of the two is wrong; only production data settles it. It is out of scope to fix here, but spec-60 depends on these columns and must verify it.
+The two are near-identical in practice, but the poll is suspect: the Show Route response documents `identifier` and a **string** `status`, while the poll reads `d.dispatch_id` and a **numeric** `d.status`, `continue`-ing when either is absent (`index.ts:121`, `:125`). If the documented shape is accurate, the poll's dispatch loop never reaches line 140 and its coordinate write is dead code. The counter-evidence, so spec-60 need not rediscover it: `index.ts:116` carries the comment "NOTE: REST API returns dispatches in same shape as webhook payload" — its author believed `dispatch_id` and a numeric status are what actually arrive. One of the two is wrong; only production data settles it. It is out of scope here, but spec-60 depends on these columns and must verify it.
 
-**This spec does not add `dest_latitude` / `dest_longitude` to `dispatches`, and does not modify either edge function.**
+**No phase of this spec adds `dest_latitude` / `dest_longitude` to `dispatches`, and none modifies either edge function.**
 
 ## Decisions
 
-1. **Provider: MapTiler**, behind an interface. One vendor and one key for both geocoding (this spec) and tiles (spec-59). Google's geocoding is likely more accurate on Chilean street addresses, but its terms restrict persisting coordinates long-term and we intend to store lat/lng permanently on `orders`. The interface exists so swapping to Google, LocationIQ or Nominatim is a single adapter file.
+1. **Provider: MapTiler**, behind an interface. Re-confirmed 2026-09-11.
+
+   To answer the obvious question directly, because it came up: **Leaflet is not an alternative to MapTiler.** Leaflet is a client-side rendering library — it paints markers you already have onto tiles somebody else serves, and it has no geocoder, no address parser and no tile data of its own. spec-59 decision 1 already picks Leaflet + react-leaflet for the drawing. This spec never draws anything, so Leaflet has no role in it; what it needs is an HTTP service that turns `"Av. Providencia 1234, Providencia"` into a coordinate pair, which is a different layer entirely. Leaflet will render MapTiler's tiles using the coordinates this spec writes.
+
+   The real candidates were MapTiler, Google, LocationIQ and self-hosted Nominatim. MapTiler wins on being **one vendor and one key for both** geocoding (here) and tiles (spec-59) — and Leaflet needs a tile source from someone regardless, since OSM's public tile server forbids production use. Google's geocoding is likely more accurate on Chilean street addresses, but its terms restrict persisting coordinates long-term and we intend to store lat/lng permanently on `orders`. Self-hosted Nominatim is free per lookup and unrestricted on storage, but Chilean street-level OSM coverage is materially worse than a commercial geocoder, and the whole spec is gated on hitting ≥ 80 % street-level matches — so it would be betting the gate on the weakest option. The interface exists so swapping to any of them is a single adapter file.
 2. **First-class columns, not JSONB.** Coordinates go on `orders` as real columns. `destination_address` / `agent_metadata` stay untouched — they are already unwritten scaffolding and adding a second unwritten shape helps no one.
 3. **Cache aggressively, at street granularity.** Chilean last-mile has heavy address repetition. The cache key deliberately **excludes** the unit (departamento / oficina / piso): a street-level geocoder returns one point for all 40 flats in a building, so keying on the unit would turn one paid lookup into forty. The unit stays on the order; it is simply not part of the geocoding key.
-4. **Never permanently fail an order, and never permanently freeze a bad answer.** An unresolved address falls back to its comuna centroid marked `approximate`, but a centroid is a *retryable* state, not a terminal one — see Job state machine. An order with an honest, visibly-approximate pin is actionable; an order silently frozen at a centroid because the provider was down for twenty minutes is a lie.
-5. **Measure before backfilling, not after.** The accuracy gate runs on a sample **before** any bulk write. Once the whole order history is geocoded and cached, "swapping the adapter is cheap" stops being true.
+4. **Never permanently fail an order, and never permanently freeze a bad answer.** An unresolved address falls back to its comuna centroid marked `approximate`, but a centroid is a *retryable* state, not a terminal one — see Fase 5. An order with an honest, visibly-approximate pin is actionable; an order silently frozen at a centroid because the provider was down for twenty minutes is a lie.
+5. **Measure before backfilling, not after.** The accuracy gate (Fase 6) runs on a sample **before** any bulk write (Fase 7). Once the whole order history is geocoded and cached, "swapping the adapter is cheap" stops being true.
 
 ## Non-Goals
 
 - Any map rendering, component, or screen change — that is spec-59.
 - Truck positions — that is spec-60.
-- Polygon geometry for comunas. `chile_comunas.geometry` stays NULL; this spec seeds centroid lat/lng only. Zone drawing and point-in-polygon are out of scope, and PostGIS spatial indexing is not needed for a per-order pin.
+- Polygon geometry for comunas. `chile_comunas.geometry` stays NULL; Fase 2 seeds centroid lat/lng only. Zone drawing and point-in-polygon are out of scope, and PostGIS spatial indexing is not needed for a per-order pin.
 - Wiring the OR-Tools solver. This spec unblocks it; it does not do it.
-- Geocoding `pickup_points`. The same mechanism will apply later.
+- Geocoding `pickup_points` — the pickup points' own addresses. The same mechanism will apply later, in a spec named at that time.
 - Manual coordinate correction by an operator. Consequently `geocode_source` does **not** enumerate a `'manual'` value — when a correction UI is specified, that spec adds it.
 - Reverse geocoding.
 
-## Data model
+## The phases
 
-### Changed: `public.orders`
+| Fase | Delivers | Token |
+|---|---|---|
+| 0 | Precision mapping: which MapTiler response field carries match granularity | `[blocked]` |
+| 1 | `orders` geocode columns, queue index, reset trigger, `geocode_cache` | `[pending]` |
+| 2 | `chile_comunas` centroids, 347 rows with provenance | `[pending]` |
+| 3 | Address normalisation v1 + cache read/write. No network. | `[pending]` |
+| 4 | MapTiler adapter behind the interface, circuit breaker, env | `[pending]` |
+| 5 | `geocode.enrich` queue, cron, batch claim, retry ladder, quota | `[pending]` |
+| 6 | Accuracy gate on 200 sampled production addresses | `[blocked]` |
+| 7 | Backfill of the existing order history | `[blocked]` |
+
+Two ordering constraints that are not obvious from the table, and that `scripts/check-phase-overlap.mjs` would otherwise get wrong:
+
+- **Fase 2 declares a dependency on Fase 1 for a file reason, not a logical one.** Both regenerate `packages/database/src/database.types.ts`. Their SQL is independent and could in principle run in parallel; that one shared file is a hard conflict, so they are serialised.
+- **The pgTAP suite is split in two files** (`spec58_geocoding.sql`, `spec58_comuna_centroids.sql`) for the same reason. One file would make the two schema phases collide on the tests as well. Separately: `scripts/pgtap-local.sh` drives a Docker container shared by every worktree on this machine, so two phases must not run SQL tests at the same moment even when their files are disjoint.
+
+---
+
+### Fase 0 — Precision mapping: what MapTiler actually calls a street-level match `[blocked]`
+
+**Depende de:** ninguna
+**Archivos:** `docs/specs/spec-58-geocoding-foundation.md` (esta sección)
+
+The whole accuracy gate is measured off this mapping, so it cannot be left to the implementer's judgement, and it cannot be guessed from documentation.
+
+Call MapTiler's geocoding endpoint with three real Chilean addresses — one dense-urban street with a number, one address in a comuna with a well-known name collision, one rural or peri-urban address — record the full responses, and write the mapping table **into this section**: which response field carries the match granularity (candidates: `place_type`, `properties.accuracy`, `relevance`), and exactly which values count as `exact`. Only street-level or better is `exact`; locality, municipality and region are `approximate`.
+
+Deliverable is an edit to this file, not code. No adapter is written here — that is Fase 4, which consumes the table.
+
+> Bloqueo: se intentó localizar una `MAPTILER_API_KEY` utilizable en el repo o en el VPS antes de abrir la fase — verificado con `git grep -iE "maptiler|MAPTILER_API_KEY"` sobre `origin/main`, que no devuelve ni una referencia fuera del texto de este spec, y contra `apps/agents/src/config.ts`, donde la variable no está registrada — 2026-09-11 — desbloquea: usuario (dar de alta la cuenta MapTiler y entregar la key; es una cuenta con tarjeta, no algo que un agente pueda crear)
+
+
+
+---
+
+### Fase 1 — `orders` geocode columns and `geocode_cache` `[pending]`
+
+**Depende de:** ninguna
+**Archivos:** `packages/database/supabase/migrations/<ts>_spec58_geocoding_schema.sql` (nueva), `packages/database/supabase/tests/spec58_geocoding.sql` (nuevo), `packages/database/src/database.types.ts`
+
+#### Changed: `public.orders`
 
 ```sql
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS latitude DECIMAL(10,7);
@@ -82,7 +134,7 @@ ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS geocode_precision TEXT;   -- 
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS geocode_status TEXT NOT NULL DEFAULT 'pending';
                                                   -- 'pending' | 'resolved' | 'fallback' | 'unresolvable'
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS geocode_attempts INT NOT NULL DEFAULT 0;
-ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS geocode_last_attempt_at TIMESTAMPTZ;  -- stamped on every attempt, for the per-run log
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS geocode_last_attempt_at TIMESTAMPTZ;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS geocode_next_attempt_at TIMESTAMPTZ;
 ```
 
@@ -94,7 +146,7 @@ Constraints:
 
 - `geocode_precision IN ('exact','approximate')`, `geocode_status IN ('pending','resolved','fallback','unresolvable')`.
 - `latitude` and `longitude` are either both NULL or both set.
-- Range check: `latitude BETWEEN -90 AND 90 AND longitude BETWEEN -180 AND 180`, and a Chile sanity check rejecting `(0,0)` — a provider bug writing null-island or a swapped pair must not reach the map.
+- Range check: `latitude BETWEEN -90 AND 90 AND longitude BETWEEN -180 AND 180`, and a sanity check rejecting `(0,0)` — a provider bug writing null-island or a swapped pair must not reach the map.
 
 Work-queue index, leading on the due-time column so the claim query's predicate and ordering both use it:
 
@@ -104,13 +156,13 @@ CREATE INDEX IF NOT EXISTS idx_orders_geocode_queue
   WHERE geocode_status IN ('pending','fallback') AND deleted_at IS NULL;
 ```
 
-Postgres defaults ASC to `NULLS LAST`, so the `ORDER BY` in the job must be written `geocode_next_attempt_at NULLS FIRST, created_at` verbatim or the index will not be used. Untried orders have a NULL due-time and therefore sort first.
+Postgres defaults ASC to `NULLS LAST`, so the `ORDER BY` in Fase 5 must be written `geocode_next_attempt_at NULLS FIRST, created_at` verbatim or the index will not be used. Untried orders have a NULL due-time and therefore sort first.
 
-**The batch query has no `operator_id` predicate**, which is a deliberate deviation from the `operator_id`-on-every-query non-negotiable and needs stating rather than implying. This is a service-role maintenance job with no tenant context: it runs on a cron, not on behalf of a user, and scoping it per operator would mean either a tenant list in the worker or one cron per tenant. The consequence to accept: one operator bulk-importing 50k orders monopolises every batch until it drains. If that becomes real, the fix is round-robin by `operator_id` within the batch, not a per-tenant job.
+**The batch query has no `operator_id` predicate**, a deliberate deviation from the `operator_id`-on-every-query non-negotiable that needs stating rather than implying. It is a service-role maintenance job with no tenant context: it runs on a cron, not on behalf of a user, and scoping it per operator would mean either a tenant list in the worker or one cron per tenant. The consequence to accept: one operator bulk-importing 50k orders monopolises every batch until it drains. If that becomes real, the fix is round-robin by `operator_id` within the batch, not a per-tenant job.
 
 No RLS change: `orders` policies already scope by `operator_id`, and these are ordinary columns on existing rows.
 
-### Re-geocoding on address change
+#### Re-geocoding on address change
 
 `orders.delivery_address` is editable, and nothing today would notice. A trigger resets the geocode state:
 
@@ -136,9 +188,9 @@ The `zz` prefix forces this trigger to sort **after** the normalisation trigger,
 
 Note also that `UPDATE OF` fires on column *mention*, not on value change — hence the `IS DISTINCT FROM` guards inside the function rather than relying on the trigger clause alone.
 
-Without this, an edited address silently keeps the pin of the address it replaced — which is worse than having no pin, because it looks correct.
+Without this, an edited address silently keeps the pin of the address it replaced — worse than having no pin, because it looks correct.
 
-### New: `public.geocode_cache`
+#### New: `public.geocode_cache`
 
 ```sql
 CREATE TABLE IF NOT EXISTS public.geocode_cache (
@@ -170,15 +222,35 @@ Being accurate about the risk: the key **is derived from customer address data**
 2. RLS on, no client-facing policy, plus an explicit `REVOKE` — belt and braces. This repo already carries `20260729000001_fix_cross_tenant_definer_rpcs.sql`, so "a future SECURITY DEFINER RPC joins this table" is a demonstrated failure mode here, not a hypothetical.
 3. The frontend must never query this table. Only the service role (the agents worker) touches it.
 
-`normalisation_version` exists because the rules below will change. **It is a column, not an input to the hash** — the hash covers the normalised string only, and the uniqueness constraint spans both. That way two versions of one address can coexist: on a bump, the old rows stay queryable and targetable for cleanup instead of becoming unreachable dead weight.
+`normalisation_version` exists because the rules in Fase 3 will change. **It is a column, not an input to the hash** — the hash covers the normalised string only, and the uniqueness constraint spans both. That way two versions of one address can coexist: on a bump, the old rows stay queryable and targetable for cleanup instead of becoming unreachable dead weight.
 
 Bumping the version is not free: every cached key misses, so the next drain re-pays for the whole address book. Treat it as a deliberate, costed operation, not a refactoring detail.
 
-**Soft-delete exception:** this table has no `deleted_at`. It is a derived cache, rebuildable from `orders` and the provider, and carries no business record. That is a deliberate exception to the project's soft-deletes-only rule.
+**Soft-delete exception:** this table has no `deleted_at`. It is a derived cache, rebuildable from `orders` and the provider, and carries no business record. A deliberate exception to the project's soft-deletes-only rule.
 
-**Normalisation** (version 1): lowercase, strip accents, strip punctuation, collapse whitespace; `av.` / `avda.` → `avenida`, `pje.` → `pasaje`; **strip** the unit component (`depto` / `dpto` / `departamento` / `oficina` / `of.` / `piso` and its number) per Decision 3. Comuna resolution reuses `public.normalize_comuna_id(TEXT)` (`20260321000001_chile_comunas_normalization.sql:426`) rather than a second comuna matcher.
+#### Tests (pgTAP, written first)
 
-### Changed: `public.chile_comunas`
+`packages/database/supabase/tests/spec58_geocoding.sql`:
+
+- `orders` accepts a valid coordinate pair; rejects `geocode_precision = 'wrong'`; rejects an invalid `geocode_status`; rejects latitude-without-longitude (by constraint name); rejects `(0,0)` and out-of-range values.
+- The address-change trigger resets `geocode_status` to `pending` and nulls the coordinates; an unrelated column update does not.
+- The reset fires when a raw `comuna` edit changes `comuna_id` via the normalisation trigger in the same statement — this is what proves the `zz` name ordering works, and it is the one test that fails if someone renames the trigger.
+- `geocode_cache` is unique on `(address_hash, normalisation_version)`, and `address_hash` alone is deliberately **not** unique.
+- `geocode_cache` is unreadable by **both** `anon` and `authenticated`.
+- `idx_orders_geocode_queue` exists.
+
+Run with `scripts/pgtap-local.sh`; SQL tests do not run in CI.
+
+Also regenerate `packages/database/src/database.types.ts` wholesale. That file is **already stale** — it still declares the dropped `barcode_scans` table and is missing `routes`, `dispatches`, `drivers` and `chile_comunas`. Regenerate, do not hand-patch.
+
+
+
+---
+
+### Fase 2 — Comuna centroids `[pending]`
+
+**Depende de:** spec-58 fase 1
+**Archivos:** `packages/database/supabase/migrations/<ts>_spec58_comuna_centroids.sql` (nueva), `packages/database/supabase/tests/spec58_comuna_centroids.sql` (nuevo), `packages/database/src/database.types.ts`
 
 ```sql
 ALTER TABLE public.chile_comunas ADD COLUMN IF NOT EXISTS centroid_lat DECIMAL(10,7);
@@ -187,22 +259,59 @@ ALTER TABLE public.chile_comunas ADD COLUMN IF NOT EXISTS centroid_lng DECIMAL(1
 
 Seeded from **one** named source, committed as data in the migration exactly as the comuna list itself was (`20260321000001:43-407`). `geometry` remains NULL.
 
-347 hand-committed coordinate pairs are unreproducible unless the provenance is written down, so record in the migration header: the source dataset and its version/download date, and the extraction method (for OSM comuna relations, the centroid definition used — bounding-box centre and polygon centroid differ noticeably for long coastal comunas). One source, not "INE / OSM".
-
-The `14201 Ranco` row is not in any comuna dataset, being a provincia. Write its chosen lat/lng literal into the migration and mark it hand-picked with a comment, rather than leaving a NULL that trips the assertion below.
+347 hand-committed coordinate pairs are unreproducible unless the provenance is written down, so record in the migration header: the source dataset and its version or download date, and the extraction method (for OSM comuna relations, the centroid definition used — bounding-box centre and polygon centroid differ noticeably for long coastal comunas). One source, not "INE / OSM".
 
 **Two traps in that seed data, both of which will break a naive assertion:**
 
-- The table holds **347** rows, not the 346 its own migration comment claims. Row `('14201', 'Ranco', 'Ranco', 'Los Ríos', 14)` at `:299` is a *provincia*, not a comuna — Los Ríos has 12 comunas, and this row makes 13. Assert with `COUNT(*) FILTER (WHERE centroid_lat IS NULL) = 0`, never a hard-coded row count. Give `14201` the Provincia del Ranco centroid and leave the pre-existing data bug alone; correcting it is a separate concern with `comuna_id` foreign keys attached.
+- The table holds **347** rows, not the 346 its own migration comment claims. Row `('14201', 'Ranco', 'Ranco', 'Los Ríos', 14)` at `:299` is a *provincia*, not a comuna — Los Ríos has 12 comunas, and this row makes 13. Assert with `COUNT(*) FILTER (WHERE centroid_lat IS NULL) = 0`, never a hard-coded row count. Give `14201` the Provincia del Ranco centroid, write the literal into the migration with a comment marking it hand-picked, and leave the pre-existing data bug alone — correcting it is a separate concern with `comuna_id` foreign keys attached.
 - Three seeded comunas fall outside any mainland bounding box: `05201 Isla de Pascua` (~−109.4° lng), `05104 Juan Fernández` (~−78.8° lng), `12202 Antártica` (~−75 to −80° lat). The validity check is therefore *mainland box **or** one of those three CUT codes*, not a single rectangle.
 
-## Provider layer — `apps/agents`
+#### Tests (pgTAP, written first)
 
-The agents app already has everything this needs; no new infrastructure is stood up.
+`packages/database/supabase/tests/spec58_comuna_centroids.sql`:
 
-**New files**, mirroring the existing `providers/` shape (`providers/openrouter.ts`, `providers/types.ts`, `providers/circuit-breaker.ts`):
+- `COUNT(*) FILTER (WHERE centroid_lat IS NULL) = 0`.
+- Every centroid is inside the mainland box **or** is one of the three island/Antarctic CUT codes.
+- No centroid has lat/lng transposed — in Chile the two are never interchangeable, since every longitude is more negative than −65 and no mainland latitude is.
 
-- `apps/agents/src/providers/geocoding/types.ts`
+
+
+---
+
+### Fase 3 — Address normalisation and the cache layer `[pending]`
+
+**Depende de:** spec-58 fase 1
+**Archivos:** `apps/agents/src/lib/geocoding/normalise.ts` (nuevo), `apps/agents/src/lib/geocoding/normalise.test.ts` (nuevo), `apps/agents/src/tools/supabase/geocoding.ts` (nuevo), `apps/agents/src/tools/supabase/geocoding.test.ts` (nuevo)
+
+Pure TypeScript plus Supabase reads and writes. No network call to any provider — that is Fase 4 — so this phase is fully testable offline.
+
+**Normalisation, version 1:** lowercase, strip accents, strip punctuation, collapse whitespace; `av.` / `avda.` → `avenida`, `pje.` → `pasaje`; **strip** the unit component (`depto` / `dpto` / `departamento` / `oficina` / `of.` / `piso` and its number) per Decision 3. Comuna resolution reuses `public.normalize_comuna_id(TEXT)` (`20260321000001_chile_comunas_normalization.sql:426`) rather than a second comuna matcher.
+
+The hash is sha256 over the normalised `street|comuna` string. `normalisation_version` is **not** an input to it (Fase 1 explains why).
+
+The cache tool exposes exactly two operations — look up by `(address_hash, normalisation_version)`, and insert a result — plus the `orders` update. Keep the normaliser in its own file: it is the part Fase 5's tests exercise hardest, and the part a version bump will rewrite.
+
+#### Tests (Vitest, written first)
+
+- Accent stripping, `av.` → `avenida`, whitespace collapse; two spellings of one address produce one hash.
+- **`depto 42` and `depto 7` at the same street address produce the same hash** (Decision 3).
+- The hash does not include `normalisation_version`: one address yields the same hash across versions, and the two cache rows coexist.
+- A cache hit bumps `hit_count` and `last_used_at`.
+
+Run locally with `--pool=forks`.
+
+
+
+---
+
+### Fase 4 — The MapTiler adapter `[pending]`
+
+**Depende de:** spec-58 fase 0
+**Archivos:** `apps/agents/src/providers/geocoding/types.ts` (nuevo), `apps/agents/src/providers/geocoding/maptiler.ts` (nuevo), `apps/agents/src/providers/geocoding/maptiler.test.ts` (nuevo), `apps/agents/src/providers/types.ts`, `apps/agents/src/providers/openrouter.ts`, `apps/agents/src/config.ts`, `apps/agents/src/config.test.ts`, `apps/agents/.env.example`
+
+The agents app already has everything this needs; no new infrastructure is stood up. New files mirror the existing `providers/` shape (`providers/openrouter.ts`, `providers/types.ts`, `providers/circuit-breaker.ts`).
+
+`apps/agents/src/providers/geocoding/types.ts`:
 
 ```ts
 export interface GeocodeQuery { address: string; comuna: string; region?: string }
@@ -221,38 +330,46 @@ export interface GeocodingProvider {
 }
 ```
 
-- `apps/agents/src/providers/geocoding/maptiler.ts` — the adapter. Country-biased to `cl`, proximity-biased to the comuna centroid. Wrapped in the existing `CircuitBreaker` so a provider outage degrades to centroid fallback instead of stalling the queue.
-- `apps/agents/src/tools/supabase/geocoding.ts` — cache read/write and the `orders` update, alongside the existing `tools/supabase/orders.ts`.
+`apps/agents/src/providers/geocoding/maptiler.ts` — country-biased to `cl`, proximity-biased to the comuna centroid from Fase 2, `exact` vs `approximate` decided by the mapping table Fase 0 writes. Wrapped in the existing `CircuitBreaker` so a provider outage degrades to centroid fallback instead of stalling the queue.
 
-### Precision mapping — resolve before implementing
+**Error classification.** Fase 5's retry ladder distinguishes "the provider told us something about this address" from "the provider was unreachable", so the adapter must return the second as a typed transport failure. The union already exists, spelled at `apps/agents/src/providers/types.ts:36` — `'rate_limit' | 'timeout' | 'api_error' | 'network'` — but it is currently a member of `LLMError`, so importing it as-is would type a geocoding failure as an LLM error. **Extract it to a shared `ProviderErrorType`** (which touches `openrouter.ts`) rather than inventing a second vocabulary that can drift.
 
-The entire accuracy gate is measured off this mapping, so it cannot be left to the implementer's judgement. **Task 1 of implementation** is to call MapTiler's geocoding endpoint with three real Chilean addresses, record the response, and write the mapping table into this section: which response field carries the match granularity (candidates: `place_type`, `properties.accuracy`, `relevance`), and exactly which values count as `exact`. Only street-level or better is `exact`; locality, municipality and region are `approximate`. Do not proceed on a guess.
+**Env.** `MAPTILER_API_KEY` and `MAPTILER_MONTHLY_QUOTA` in `apps/agents/.env`, added to `.env.example`, registered in `apps/agents/src/config.ts` (which validates every var at startup). Production values live in `/home/aureon/.env` (chmod 600), read via `deploy/aureon-agents.service`.
 
-### Resolution order
+`MAPTILER_API_KEY` is **optional**: if absent the worker boots and Fase 5 resolves everything to centroids rather than refusing to start. A geocoding key must not be able to take down the agent suite. Log loudly at startup when it is missing.
 
-1. `geocode_cache` hit on `(address_hash, normalisation_version)` → use it, bump `hit_count` / `last_used_at`. No network call. A cache hit is always `resolved`, because only `exact` results are ever cached.
-2. MapTiler → `source='maptiler'`, precision per the mapping above. **Written to the cache only when `precision='exact'`.**
-3. Comuna centroid → `source='comuna_centroid'`, `precision='approximate'`, `geocode_status='fallback'`. **Never written to the cache.**
+#### Tests (Vitest, written first)
 
-**Only `exact` results are cached.** Caching a coarse answer would silently defeat the retry the state machine promises: step 1 would short-circuit every subsequent attempt, the row would re-read the same approximate value on every run without a single network call, and it would land `unresolvable` while the spec claimed it was being retried. The same reasoning that has always excluded centroids applies to a provider's locality-level match — both are "we do not really know where this is", and neither should be frozen into the cache.
+Against a mocked `fetch`: a Chilean address fixture resolving `exact`; a locality-granularity response resolving `approximate`; a malformed response; HTTP 429; a timeout — each classified per the union above. The circuit breaker opens after repeated failure and the adapter surfaces that as a transport failure, not as "no match".
 
-There is no DispatchTrack step; see the section above.
 
-### Env
 
-`MAPTILER_API_KEY` and `MAPTILER_MONTHLY_QUOTA` in `apps/agents/.env`, added to `.env.example`, and registered in `apps/agents/src/config.ts` (which validates every var at startup). Production values live in `/home/aureon/.env` (chmod 600), read via `deploy/aureon-agents.service`.
+---
 
-`MAPTILER_API_KEY` is **optional**: if absent, the worker boots and the job resolves everything to centroids rather than refusing to start. A geocoding key must not be able to take down the agent suite. Log loudly at startup when it is missing.
+### Fase 5 — The `geocode.enrich` worker and its state machine `[pending]`
 
-## Job state machine
+**Depende de:** spec-58 fase 4
+**Archivos:** `apps/agents/src/orchestration/queues.ts`, `apps/agents/src/orchestration/queues.test.ts`, `apps/agents/src/orchestration/workers.ts`, `apps/agents/src/orchestration/workers.test.ts`, `apps/agents/src/orchestration/schedulers.ts`, `apps/agents/src/orchestration/schedulers.test.ts`, `apps/agents/src/agents/geocode/enrich.ts` (nuevo), `apps/agents/src/agents/geocode/enrich.test.ts` (nuevo)
 
-New queue `geocode.enrich` — add `'geocode.enrich'` to the exported `QueueName` union at `orchestration/queues.ts:5` **and** to `QUEUE_CONFIGS` at `:20` (`Record<QueueName, QueueConfig>` will not compile otherwise), `attempts: 3, backoffDelay: 60_000`. Worker in `orchestration/workers.ts`, scheduler in `orchestration/schedulers.ts`:
+Add `'geocode.enrich'` to the exported `QueueName` union at `orchestration/queues.ts:5` **and** to `QUEUE_CONFIGS` at `:20` (`Record<QueueName, QueueConfig>` will not compile otherwise), `attempts: 3, backoffDelay: 60_000`. Worker in `orchestration/workers.ts`, scheduler in `orchestration/schedulers.ts`:
 
 ```ts
 { queue: 'geocode.enrich', schedulerId: 'geocode-cron', pattern: '*/10 * * * *', jobName: 'geocode_pending' }
 ```
 
 `America/Santiago` is already that file's default TZ.
+
+#### Resolution order
+
+1. `geocode_cache` hit on `(address_hash, normalisation_version)` → use it, bump `hit_count` / `last_used_at`. No network call. A cache hit is always `resolved`, because only `exact` results are ever cached.
+2. MapTiler → `source='maptiler'`, precision per Fase 0's mapping. **Written to the cache only when `precision='exact'`.**
+3. Comuna centroid → `source='comuna_centroid'`, `precision='approximate'`, `geocode_status='fallback'`. **Never written to the cache.**
+
+**Only `exact` results are cached.** Caching a coarse answer would silently defeat the retry this state machine promises: step 1 would short-circuit every subsequent attempt, the row would re-read the same approximate value on every run without a single network call, and it would land `unresolvable` while the spec claimed it was being retried. The same reasoning that has always excluded centroids applies to a provider's locality-level match — both are "we do not really know where this is", and neither should be frozen into the cache.
+
+There is no DispatchTrack step; see the section above.
+
+#### Claiming a batch
 
 Each run claims a bounded batch of 200 rows:
 
@@ -262,7 +379,12 @@ WHERE geocode_status IN ('pending','fallback')
   AND (geocode_next_attempt_at IS NULL OR geocode_next_attempt_at <= now())
 ORDER BY geocode_next_attempt_at NULLS FIRST, created_at
 LIMIT 200
+FOR UPDATE SKIP LOCKED
 ```
+
+`FOR UPDATE SKIP LOCKED` is not optional. Without it a run that outlives its ten-minute cron window — or any BullMQ retry, and the queue is configured `attempts: 3` — re-selects the identical 200 rows and pays the provider for them twice. "Claims a batch" has to be mechanised, not asserted.
+
+#### The ladder
 
 | Outcome | `geocode_status` | `geocode_attempts` | Next attempt |
 |---|---|---|---|
@@ -274,17 +396,13 @@ LIMIT 200
 | 2 attempts exhausted | `unresolvable` | 2 | never |
 | No `comuna_id` and no provider answer | `unresolvable` | — | never |
 
-Two rules do the work here:
+Two rules do the work here.
 
-Quota exhaustion and a missing key get their own row because they do not clear in half an hour: re-arming those every 30 minutes would churn the entire order book through the batch all month doing no useful work. A transient transport failure does clear, so it re-arms quickly.
-
-**A transport failure is not evidence about the address**, so it must not consume the attempt budget. That is what stops a provider outage of any length from marching a day's orders to `unresolvable` — it re-arms every 30 minutes indefinitely. Classify these with the union already spelled at `apps/agents/src/providers/types.ts:36` — `'rate_limit' | 'timeout' | 'api_error' | 'network'` — but note it is currently a member of `LLMError`, so importing it as-is would type a geocoding failure as an LLM error. Extract it to a shared `ProviderErrorType` (touching `openrouter.ts`) rather than inventing a second vocabulary that can drift from this table.
+**A transport failure is not evidence about the address**, so it must not consume the attempt budget. That is what stops a provider outage of any length from marching a day's orders to `unresolvable` — it re-arms every 30 minutes indefinitely. Quota exhaustion and a missing key get their own row because they do not clear in half an hour: re-arming those every 30 minutes would churn the entire order book through the batch all month doing no useful work.
 
 **A real answer — coarse or null — is evidence, and retrying it is nearly pure spend.** A deterministic geocoder returns the same coarse answer to the same query, so an aggressive ladder would buy several paid lookups per bad address with an expected yield near zero, applied to the ~20 % of the corpus the accuracy gate already tolerates. Hence one retry at 7 days (long enough for the provider's data to have actually changed), then stop. The realistic re-query volume is *(coarse + null share) × monthly order volume* — each bad address is re-queried exactly once, and the 7 days is a delay, not a divisor. State that figure against `MAPTILER_MONTHLY_QUOTA` when the quota value is chosen; this retry policy is the single largest driver of the monthly number.
 
-**Claiming the batch.** The select must be `FOR UPDATE SKIP LOCKED`. Without it a run that outlives its ten-minute cron window — or any BullMQ retry, and the queue is configured `attempts: 3` — re-selects the identical 200 rows and pays the provider for them twice. "Claims a batch" has to be mechanised, not asserted.
-
-**Quota counter.** `MAPTILER_MONTHLY_QUOTA` is enforced against a Redis counter keyed by month (`geocode:quota:YYYY-MM`) with a TTL past month end, on the Redis that BullMQ already requires. It must not live in process memory: `CircuitBreaker` keeps its state in private in-process fields (`providers/circuit-breaker.ts:16-18`), and an in-memory quota counter would silently reset on every restart and every deploy while the state machine treats "quota exhausted" as a first-class outcome.
+**Quota counter.** `MAPTILER_MONTHLY_QUOTA` is enforced against a Redis counter keyed by month (`geocode:quota:YYYY-MM`) with a TTL past month end, on the Redis that BullMQ already requires. It must not live in process memory: `CircuitBreaker` keeps its state in private in-process fields (`providers/circuit-breaker.ts:16-18`), and an in-memory quota counter would silently reset on every restart and every deploy while this table treats "quota exhausted" as a first-class outcome.
 
 `orders.comuna_id` is nullable and `get_unmatched_comunas()` exists precisely because unmatched comunas are a live problem, so the no-comuna case is real and must terminate rather than loop forever.
 
@@ -293,19 +411,34 @@ Quota exhaustion and a missing key get their own row because they do not clear i
 - *2 attempts exhausted* — holds the comuna centroid, `precision='approximate'`. spec-59 draws a hollow marker.
 - *No `comuna_id`* — `latitude` / `longitude` stay NULL. spec-59 excludes it from the map and counts it under "sin ubicación".
 
-**Surfacing `unresolvable`.** Manual correction is a Non-Goal, so **nothing can move a row out of this state, and `unresolvable` is genuinely terminal today.** No workflow is implied, because none exists: there is no `.from('orders').update(` anywhere in `apps/frontend/src`, and nothing outside intake writes `delivery_address`. An operator who spots a wrong pin has no in-app way to fix it.
+**Surfacing `unresolvable`.** Manual correction is a Non-Goal, so **nothing can move a row out of this state, and `unresolvable` is genuinely terminal today.** No workflow is implied, because none exists: there is no `.from('orders').update(` anywhere in `apps/frontend/src`, and nothing outside intake writes `delivery_address`. An operator who spots a wrong pin has no in-app way to fix it. What this phase provides is visibility, not remedy: the worker logs a per-run count of `resolved` / `fallback` / `unresolvable` rows and of provider calls made versus cache hits. Fase 1's reset trigger is **forward-looking** — it protects re-intake of a corrected address and whatever correction UI a later spec adds; it is not a remedy available now.
 
-What this spec provides is visibility, not remedy: the worker logs a per-run count of `fallback` and `unresolvable` rows, and rollout step 4 watches it. The reset trigger above is **forward-looking** — it protects re-intake of a corrected address and whatever correction UI a later spec adds; it is not a remedy available now.
+#### Tests (Vitest, written first)
 
-A one-off backfill script under `scripts/` handles the existing order history, importing the same resolver — not a second implementation of it.
+- A `fallback` row is re-claimed once `geocode_next_attempt_at` has passed and **not** before; a `resolved` row is never re-claimed.
+- A coarse answer increments `geocode_attempts`; a null answer also increments it; a circuit-breaker / quota / 429 / timeout does **not**.
+- The 2nd coarse-or-null attempt lands `unresolvable` holding a centroid.
+- An order with no `comuna_id` and no provider answer lands `unresolvable` with NULL coordinates.
+- Neither centroid nor coarse results are written to the cache, and a `fallback` row therefore re-queries the provider on its next run rather than re-reading a frozen answer.
+- The circuit breaker opens and the job continues via centroid fallback, marking rows `fallback` (not `resolved`).
+- The quota guard stops calling the provider once exhausted, and its rows are `fallback`.
+- Missing `MAPTILER_API_KEY`: the worker boots and resolves to centroids.
 
-## Accuracy gate — runs before any bulk write
+#### QA before this phase closes
 
-**Sequencing:** the gate cannot run until the precision mapping table above is written into this file, because the ≥80 % threshold is measured off that mapping.
+Deploy the agents worker to QA with the key set, seed a handful of QA orders with real Santiago addresses, let one cron tick run, and read the per-run log: calls made, cache hits, and the three status counts. A green PR check does not prove the migration applied — `deploy.yml`'s path filter can skip the DB job entirely.
 
-**Where it runs:** on the VPS, as a one-off script against a checked-out branch — *not* a service deploy, and therefore ahead of rollout step 3. It uses the production Supabase service key already in `/home/aureon/.env`, which is also where `MAPTILER_API_KEY` must be placed first. Running it from a laptop would mean copying a production service key onto a laptop, so it does not happen there.
 
-Per `CLAUDE.md`'s rule about never touching the VPS unprompted, this run needs the user's explicit go-ahead.
+
+> **On the single name in `**Depende de:**`.** This phase genuinely needs fases 1, 2, 3 and 4. It names fase 4 because fase 4 is the last of them to land — 1 gates 2 and 3, and nothing gates 4 except fase 0. The single name must not be read as "the other three are optional".
+
+---
+
+### Fase 6 — Accuracy gate, before any bulk write `[blocked]`
+
+**Depende de:** spec-58 fase 4
+
+**Where it runs:** on the VPS, as a one-off script against a checked-out branch — *not* a service deploy. It uses the production Supabase service key already in `/home/aureon/.env`, which is also where `MAPTILER_API_KEY` must be placed first. Running it from a laptop would mean copying a production service key onto a laptop, so it does not happen there.
 
 Run the resolver against a sample of **200 real production `delivery_address` values**, sampled across comunas rather than from a single client, with cache writes disabled (dry run):
 
@@ -315,40 +448,37 @@ Run the resolver against a sample of **200 real production `delivery_address` va
 | `approximate` (centroid fallback) | ≤ 20 % |
 | Provider hard failures | ≈ 0 % |
 
-Sampling and grading is a script under `scripts/`; the resulting numbers get written back into this file.
-
 **If `exact` lands materially below 80 %, stop and re-evaluate the provider.** This is why the gate precedes the backfill: afterwards there is no cheap swap, because `geocode_cache` and `orders.latitude` are both fully written and this spec specifies no cache-purge or re-geocode procedure.
 
 A precision distribution cannot catch a systematically-shifted-yet-plausible result, so also eyeball 20 resolved points against their addresses before declaring the gate passed.
 
-## Testing (TDD — tests first)
+The sampling and grading script lives under `scripts/`. The resulting numbers are written back **into this section** — the phase is not `[done]` until they are.
 
-**pgTAP**, as `packages/database/supabase/tests/spec58_geocoding.sql` (matching the existing `specNN_<topic>.sql` convention, e.g. `spec52_migration_reconciliation.sql`):
+> Bloqueo: se intentó acotar la fase a algo que un agente pueda cerrar por su cuenta y no se puede — lee direcciones reales de la Supabase de producción con la service key de `/home/aureon/.env` y gasta cuota del proveedor; verificado contra `CLAUDE.md`, que prohíbe tocar el VPS salvo que el usuario lo pida, y contra la fase 0, cuya key todavía no existe — 2026-09-11 — desbloquea: usuario (visto bueno explícito a la corrida en el VPS; la key de MapTiler llega por la fase 0)
 
-- `orders` accepts a valid coordinate pair; rejects `geocode_precision = 'wrong'`; rejects an invalid `geocode_status`; rejects latitude-without-longitude (by constraint name); rejects `(0,0)` and out-of-range values.
-- The address-change trigger resets `geocode_status` to `pending` and nulls the coordinates; an unrelated column update does not.
-- `geocode_cache` is unique on `(address_hash, normalisation_version)` — and `address_hash` alone is deliberately **not** unique, so two versions of one address can coexist.
-- `geocode_cache` is unreadable by **both** `anon` and `authenticated`.
-- `idx_orders_geocode_queue` exists.
-- `COUNT(*) FILTER (WHERE centroid_lat IS NULL) = 0` on `chile_comunas`; every centroid is inside the mainland box **or** one of the three island/Antarctic CUT codes; no centroid has lat/lng transposed.
 
-**Vitest — `apps/agents`** (colocated `*.test.ts`):
+---
 
-- Normalisation: accent stripping, `av.` → `avenida`, whitespace collapse; two spellings of one address produce one hash; **`depto 42` and `depto 7` at the same street address produce the same hash** (Decision 3). The hash does **not** include `normalisation_version`: one address yields the same hash across versions, and the two cache rows coexist.
-- Resolution order: a cache hit makes no provider call; a coarse provider result is stored `approximate` + `fallback`; a null provider result falls back to the centroid; **neither centroid nor coarse results are written to the cache**, and a `fallback` row therefore re-queries the provider on its next run rather than re-reading a frozen answer.
-- State machine: a `fallback` row is re-claimed once `geocode_next_attempt_at` has passed and **not** before; a `resolved` row is never re-claimed; a coarse answer increments `geocode_attempts` while a circuit-breaker/quota/429/timeout does **not**; a `null` provider answer also increments it; the 2nd coarse-or-null attempt lands `unresolvable` holding a centroid; an order with no `comuna_id` and no provider answer lands `unresolvable` with NULL coordinates.
-- The reset trigger fires when a raw `comuna` edit changes `comuna_id` via the normalisation trigger in the same statement (this is what proves the `zz` name ordering works), and does **not** fire when an unrelated column is updated.
-- MapTiler adapter against a mocked `fetch`: a Chilean address fixture, a malformed response, HTTP 429, and a timeout each behave as specified.
-- The circuit breaker opens after repeated failure and the job continues via centroid fallback, marking rows `fallback` (not `resolved`).
-- The quota guard stops calling the provider once exhausted, and its rows are `fallback`.
-- Missing `MAPTILER_API_KEY`: the worker boots and resolves to centroids.
+### Fase 7 — Backfill of the existing order history `[blocked]`
 
-Vitest cannot run locally on this machine; use `npx turbo run lint type-check build` locally and let CI run the suite.
+**Depende de:** spec-58 fase 6
 
-## Rollout
+A one-off script under `scripts/` handles the orders that already exist, **importing the same resolver** the worker uses — not a second implementation of it. Production is roughly 112k dispatches and 61k packages, so this is the phase where a naive loop times out: batch it, and make it resumable.
 
-1. Migration plus a regenerated `packages/database/src/database.types.ts`. That file is **already stale** — it still declares the dropped `barcode_scans` table and is missing `routes`, `dispatches`, `drivers` and `chile_comunas`. Regenerate it wholesale here rather than hand-patching.
-2. **Run the accuracy gate as a dry run on 200 sampled addresses. Record the numbers in this file. Do not proceed on a failure.**
-3. Deploy the agents worker with `MAPTILER_API_KEY` set, and confirm the deploy actually ran the DB job — a green PR check does not prove the migration applied.
-4. Let the cron drain the backlog; watch cache hit rate, provider call count, and the `fallback` / `unresolvable` counts for a day.
-5. Only then start spec-59.
+Then let the cron drain whatever the script leaves and watch, for a day: cache hit rate, provider call count, and the `fallback` / `unresolvable` counts. Only then does spec-59 start.
+
+> Bloqueo: se intentó adelantar el backfill a las fases tomables por un agente y no procede — la Decisión 5 lo condiciona a que el gate de la fase 6 pase, y esa fase está bloqueada en el usuario; verificado contra la Decisión 5 de este mismo spec y contra el tamaño real del corpus de producción (~112k despachos), que es lo que vuelve irreversible un backfill mal medido — 2026-09-11 — desbloquea: dependencia (spec-58 fase 6), y después el usuario para la corrida en producción
+
+
+---
+
+## Rollout order
+
+1. Fase 0 unblocks — the MapTiler key exists.
+2. Fases 1 and 2 (schema, serialised), then 3 and 4.
+3. Fase 5, verified in QA.
+4. Fase 6, the gate. Do not proceed on a failure.
+5. Fase 7, the backfill, then a day of watching the counts.
+6. Only then, spec-59.
+
+Fases 1, 2 and 3 need no MapTiler key and can start today.
