@@ -62,7 +62,16 @@ export QA_PGTAP_DEGRADED_MAX=3
 extract() { sed -n "/^$1() {/,/^}/p" "$HERE/deploy-qa.sh"; }
 build_harness() {
   {
-    echo "set -uo pipefail"
+    # B3 (spec-92 review round 3): the real script runs under
+    # `set -Eeuo pipefail` (deploy-qa.sh:57). This harness used to run the
+    # extracted function under only `set -uo pipefail` — missing -e AND -E —
+    # so an `exit`-on-error-mid-pipeline bug in the real function (the exact
+    # shape B2 took) could never be observed here: `-e` is what makes a
+    # failing command actually abort, and without it every assertion below
+    # only ever sees "did the harness process return 0", which it always
+    # does when -e isn't set. Matching the script's real flags is what makes
+    # this suite able to catch that class of bug at all.
+    echo "set -Eeuo pipefail"
     echo "QA_ENV_FILE=\"$QA_ENV_FILE\""
     echo "QA_PGTAP_DEGRADED_FILE=\"$QA_PGTAP_DEGRADED_FILE\""
     echo "QA_PGTAP_DEGRADED_MAX=\"$QA_PGTAP_DEGRADED_MAX\""

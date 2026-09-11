@@ -63,7 +63,7 @@ QA_DEGRADED_MAX="${QA_DEGRADED_MAX:-3}"
 QA_PGTAP_DEGRADED_FILE="${QA_PGTAP_DEGRADED_FILE:-${QA_STATE_FILE}.pgtap-degraded}"
 QA_PGTAP_DEGRADED_MAX="${QA_PGTAP_DEGRADED_MAX:-3}"
 # spec-92 review round 2 (m1): none of ensure_pgtap's/sql_tests_check's psql
-# invocations had a timeout. The 91 test files (and the pgtap probe, and
+# invocations had a timeout. The test files (and the pgtap probe, and
 # CREATE EXTENSION) run against QA's LIVE Postgres while people are using
 # it — a LOCK/ALTER blocked on a row another session holds waits forever.
 # There is a ceiling (deploy-qa's job has timeout-minutes: 15), but that
@@ -769,7 +769,7 @@ container_health_check() { # $1 label, $2 container name
 #     WHERE name='pgtap'                                             -> 1.3.3
 # The extension is available in the image but nothing ever created it, so
 # sql_tests_check()'s own SKIPPED-NO-PGTAP path has been silently skipping
-# all 20 packages/database/supabase/tests/*.sql files that use plan()/
+# every packages/database/supabase/tests/*.sql file that uses plan()/
 # finish() since they were written — a green check that never ran them.
 #
 # Three places could own `CREATE EXTENSION pgtap`; this one does, and here
@@ -799,7 +799,7 @@ container_health_check() { # $1 label, $2 container name
 # permanent CREATE EXTENSION failure (e.g. the QA role lacking the
 # privilege — pgtap is NOT trusted and needs a superuser) would sit as a
 # FAIL row on an otherwise-green run indefinitely: `sql_tests_check` would
-# keep reporting SKIPPED-NO-PGTAP for all 20 pgTAP files forever, functionally
+# keep reporting SKIPPED-NO-PGTAP for every pgTAP file forever, functionally
 # identical to the bug this fase exists to close, just with a FAIL row
 # nobody reads. Same escalation record_deploy_marker() already uses for
 # exactly this shape of problem (a real, harmless-today failure that must
@@ -857,79 +857,88 @@ ensure_pgtap() {
 }
 
 # --------------------------------------------------------------------------
-# SQL tests — packages/database/supabase/tests/*.sql, run against QA's live
-# Postgres after migrations+seed.
+# SQL tests — packages/database/supabase/tests/*.sql (92 files as of
+# spec-92 review round 3, 21 of them using pgTAP's plan()/finish()), run
+# against QA's live Postgres after migrations+seed.
 #
 # BLOCKING as of spec-92, for the per-file pass/fail rows only. Through
 # 2026-09-09 this whole function was advisory-only, because none of these
 # files had ever run anywhere (scripts/pgtap-local.sh:2 said outright "NOT
 # used by CI") and pgtap wasn't even installed on QA — every plan()-based
-# file silently SKIPPED, so "green" meant "mostly untested", and gating a
-# deploy on that would have been theater. spec-93 fase 3 installed pgtap on
-# QA (ensure_pgtap, above) and the last real run against it came back clean:
-# pass=91 fail=0 skip=0. A file that has actually run and passed is exactly
-# the kind of result that SHOULD gate a deploy — that's the whole point of
-# this fase.
+# file silently SKIPPED, so "green" meant "mostly untested". spec-93 fase 3
+# installed pgtap on QA; a file that has actually run and passed is exactly
+# the kind of result that SHOULD gate a deploy. The exact pass/fail/skip
+# counts for any given run are in that run's own log line at the bottom of
+# this function — deliberately not restated as a number here, since a
+# number in a comment goes stale the moment the file count changes (this
+# comment block itself used to say 91/20/31/"two files" after the count had
+# already moved to 92/21 — caught in review round 3's m4).
 #
-# What is STILL advisory, deliberately, and must stay that way: any SKIP,
-# because a SKIP here always means "a prerequisite to running the tests was
-# absent", never "a test ran and failed". Converting a missing
-# POSTGRES_PASSWORD, a missing tests dir, an empty tests dir, or a single
-# pgTAP file skipped for lack of the pgtap extension into a hard failure
-# would fail deploys for reasons that have nothing to do with SQL
-# correctness — a checkout without a password, or a fresh QA box mid-bootstrap,
-# would redden every deploy until someone fixes the environment, not the
-# SQL. The pgtap-missing case in particular is NOT a silent pass either:
+# What is STILL advisory, deliberately: any SKIP, because a SKIP here always
+# means "a prerequisite to running the tests was absent", never "a test ran
+# and failed". Converting a missing POSTGRES_PASSWORD, a missing tests dir,
+# an empty tests dir, the pgtap-installed PROBE failing outright, or a
+# single pgTAP file skipped for lack of the pgtap extension into a hard
+# failure would fail deploys for reasons that have nothing to do with SQL
+# correctness. The pgtap-missing case is NOT a silent pass either:
 # ensure_pgtap() (above) already escalates a persistent CREATE-EXTENSION
 # failure into a hard deploy failure of its own (QA_PGTAP_DEGRADED_MAX,
-# QA_EXIT_PGTAP_STREAK) after QA_PGTAP_DEGRADED_MAX consecutive runs, so a
-# genuinely broken pgtap install cannot hide behind SKIPPED-NO-PGTAP
-# forever — that escalation lives there once, not duplicated here.
+# QA_EXIT_PGTAP_STREAK), so a genuinely broken pgtap install cannot hide
+# behind SKIPPED-NO-PGTAP forever — that escalation lives there once, not
+# duplicated here.
 #
-# record() (used for every per-file ok/FAIL row below) is what makes real
-# test results reach post_checks' final `[ "$RESULT" -ne 0 ] && exit 1`.
-# record_advisory() (defined above, next to record()) is reserved for the
-# four SKIP paths described above — appends to CHECKS but never touches
-# RESULT, so an absent prerequisite can never redden the deploy by itself.
-# Nothing in this function calls exit non-zero itself either — every psql
-# invocation is guarded with `|| true`, and the function always falls
-# through to its final `log` line and returns 0; post_checks() is the only
-# place that turns RESULT into an actual exit.
+# record() (every per-file ok/FAIL row, and the probe-failed row) is what
+# makes a result reach post_checks' final `[ "$RESULT" -ne 0 ] && exit 1`.
+# record_advisory() is reserved for the "a prerequisite was absent" SKIP
+# paths — appends to CHECKS but never touches RESULT.
 #
-# Verified by hand (all 31 files): every one is `BEGIN; ... ROLLBACK;` with
-# no COMMIT anywhere, so nothing here can persist — including the one file
+# Verified by hand (all 92 files, reconfirmed in review round 3 after the
+# count moved from 31): every one is `BEGIN; ... ROLLBACK;` with no COMMIT
+# anywhere, so nothing here can persist — including the one file
 # (spec52_open_route_reception.sql) that runs ALTER TABLE ... DISABLE/ENABLE
 # TRIGGER mid-test: DDL is transactional in Postgres, so ROLLBACK undoes it
 # same as any INSERT. Read-only in effect, against a live environment people
-# are testing in right now.
+# are testing in right now. This also means running each file through its
+# OWN connection (below) cannot change its semantics: nothing here commits
+# regardless of which connection ran it.
 #
-# Two files use pgTAP's plan()/finish() instead of RAISE EXCEPTION (detected
-# by content — grep for `plan(` — not a hardcoded filename list, so a new
-# pgTAP file is picked up automatically). Nothing in the migrations installs
-# the pgtap extension, and creating it here would be a schema write this
-# function must not make, so those two are skipped with a named reason
-# whenever `pgtap` is not in pg_extension.
+# ONE psql PROCESS PER FILE — round 2's design (all files through one
+# connection, via a generated script of \i's between \echo BEGIN/END
+# markers, attributing pass/fail by parsing the merged output) went through
+# three review rounds and grew a new false-"ok" disguise each time:
+#   B1: a RAISE EXCEPTION's stderr "ERROR:" line, flushed before the
+#       BEGIN/END markers still sitting in psql's block-buffered stdout,
+#       landing outside every section — scored "ok".
+#   B2: fixing B1 by grepping the whole output for a "psql:<path>:" prefix
+#       added a diagnostic pipeline (`{ ... } | awk | awk | head | sed`)
+#       whose inner grep could itself exit 1 under `set -Eeuo pipefail`,
+#       silently killing the function on exactly the failure path meant to
+#       report the failure.
+#   M6/M7: a file psql could not even open, or a stray metacommand error,
+#       produced output that matched neither guard (lowercase "error:", or
+#       a prefix belonging to the RUNNER, not the file) — "ok" again — or,
+#       under the same buffering, could land INSIDE a neighboring file's
+#       section and fail the wrong file.
+# Every one of these is a consequence of trying to attribute a merged
+# stream back to one of 92 files after the fact. One psql invocation per
+# file removes the merge: there is nothing to attribute, because there is
+# only ever one file's output in $out. `-v ON_ERROR_STOP=1` (safe now —
+# unlike round 2, one file's early exit cannot touch a different file's
+# invocation) turns a RAISE EXCEPTION, a bad metacommand, or an unreadable
+# file into a nonzero psql exit code directly: no marker, no prefix, no
+# section, no lowercase/uppercase "error" text to match. pgTAP's plan()/
+# finish() failures are the one case that does NOT raise (a `not ok N` is
+# ordinary SELECT output, psql exits 0 regardless) — those are still
+# content-checked, but now against ONE file's own untouched $out, so there
+# is no neighbor to misattribute to and no position to get wrong.
 #
-# All 31 run through ONE psql connection (a generated script of \i's, each
-# wrapped in \echo markers) rather than 31 separate invocations. Cheaper, and
-# safe: each file already opens and closes its own transaction, so one file's
-# RAISE EXCEPTION (which aborts only its own transaction) can't touch the
-# next file's BEGIN. ON_ERROR_STOP is deliberately left at psql's default of
-# 0 here — unlike apply_seed's ON_ERROR_STOP=1 — specifically so an error in
-# file 5 does not stop files 6 through 31 from running.
-#
-# Failure detection matches scripts/pgtap-local.sh's `run` case: grep the
-# captured output for "ERROR:" (a RAISE EXCEPTION) rather than trust psql's
-# process exit status, which stays 0 even when a statement inside the script
-# errored (that is what ON_ERROR_STOP=1 would change, and we don't set it).
-# Anchored on the colon, not bare "ERROR" — the same imprecision
-# pgtap-local.sh's own comment (:167-172 as of #717) documents avoiding, since
-# an unanchored match can hit the word inside an otherwise-passing message.
-# pgTAP failures don't raise, so pgTAP sections are additionally grepped for
-# TAP's "not ok N" failure marker. Matched as "not ok [0-9]", not "not ok "
-# (trailing space) — pgTAP prints a bare "not ok N" with no trailing space
-# or description for a one/two-arg assertion (`ok(false)`, `is(a, b)`), and
-# the space-anchored form used to miss it silently (see scripts/pgtap-local.sh).
+# Cost measured before choosing this (review round 3 asked for a number,
+# not an assumption): 92 sequential `psql -tAc 'SELECT 1'` connections
+# inside a throwaway local Postgres container took ~10.2s total (~110ms
+# each) versus ~135ms for the same 92 statements through one connection —
+# roughly 10s of added wall time against post_checks' shared 15-minute
+# job budget. Negligible, and it buys structural immunity to the whole
+# B1/B2/M6/M7 family instead of a fourth patch on top of a third.
 # --------------------------------------------------------------------------
 sql_tests_check() {
   local pw; pw="$(env_get POSTGRES_PASSWORD)"
@@ -954,128 +963,68 @@ sql_tests_check() {
 
   local psql_qa=(psql -h localhost -p 5433 -U postgres -d postgres)
 
-  # spec-92 review round 2 (M2): "2>/dev/null || true" used to turn ANY probe
-  # failure (a connection hiccup, a saturated pooler, the db container
-  # restarting between ensure_pgtap() and here) into the SAME empty string
-  # as "pgtap is genuinely not installed" — every plan()-based file would
-  # then be silently written SKIPPED-NO-PGTAP and scored advisory: a green
-  # deploy with 20 of 91 files never executed. ensure_pgtap()'s own
-  # degraded-streak escalation does NOT cover this case: it already ran,
-  # succeeded, and cleared its own streak file two lines before this call —
-  # its escalation is for CREATE EXTENSION failing, not for this SELECT
-  # failing. A failed probe is now its own blocking FAIL, distinct from
-  # "pgtap not installed" (probe succeeds, returns zero rows).
-  local pgtap_probe probe_rc
-  pgtap_probe="$(PGPASSWORD="$pw" PGCONNECT_TIMEOUT="$QA_SQL_CONNECT_TIMEOUT_SEC" \
+  # M5 (round 3): decide pgtap_ok from STDOUT ONLY. Round 2 switched
+  # `2>/dev/null || true` to `2>&1` to stop swallowing a failed probe (M2),
+  # but `2>&1` also means a harmless NOTICE on stderr changes the captured
+  # value the "== 1" comparison below decides on — pgtap_ok would become
+  # "NOTICE: ...\n1", not equal to "1", and every plan() file would be
+  # silently SKIPPED again with a green table. The channel that decides
+  # (stdout) and the channel that gets logged (stderr) must stay separate.
+  local pgtap_stderr; pgtap_stderr="$(mktemp)"
+  local pgtap_ok probe_rc
+  pgtap_ok="$(PGPASSWORD="$pw" PGCONNECT_TIMEOUT="$QA_SQL_CONNECT_TIMEOUT_SEC" \
        PGOPTIONS="-c statement_timeout=${QA_SQL_STATEMENT_TIMEOUT_MS}" \
        "${psql_qa[@]}" -tAc \
-    "SELECT 1 FROM pg_extension WHERE extname = 'pgtap'" 2>&1)" && probe_rc=0 || probe_rc=$?
+    "SELECT 1 FROM pg_extension WHERE extname = 'pgtap'" 2>"$pgtap_stderr")" && probe_rc=0 || probe_rc=$?
+  if [ -s "$pgtap_stderr" ]; then
+    log "--- pgtap probe wrote to stderr (did not affect the pgtap_ok decision): $(cat "$pgtap_stderr")"
+  fi
+  rm -f "$pgtap_stderr"
+  # A failed probe (connection hiccup, saturated pooler, db container
+  # restarting between ensure_pgtap() and here) is its own blocking FAIL,
+  # distinct from "asked, got 0 rows" (pgtap genuinely not installed).
+  # ensure_pgtap()'s degraded-streak escalation does not cover this: it
+  # already ran, succeeded, and cleared its own streak two lines before
+  # this call — its escalation is for CREATE EXTENSION failing, not this.
   if [ "$probe_rc" -ne 0 ]; then
-    log "--- could not query pg_extension for pgtap (exit ${probe_rc}): $pgtap_probe"
     record "sql tests" FAIL "could not determine whether pgtap is installed — see deploy log"
     return 0
   fi
-  local pgtap_ok="$pgtap_probe"
 
-  local begin_tag="__SQLTEST_BEGIN__" end_tag="__SQLTEST_END__"
-  local runner; runner="$(mktemp)"
-  local f base
+  local pass=0 fail=0 skip=0 f base out rc
   for f in "${files[@]}"; do
     base="$(basename "$f")"
-    echo "\\echo ${begin_tag} ${base}" >> "$runner"
+
     if grep -q 'plan(' "$f" && [ "$pgtap_ok" != "1" ]; then
-      echo "\\echo SKIPPED-NO-PGTAP" >> "$runner"
-    else
-      echo "\\i '${f}'" >> "$runner"
-    fi
-    echo "\\echo ${end_tag} ${base}" >> "$runner"
-  done
-
-  # rc is captured, not swallowed with a blind `|| true`: a nonzero exit here
-  # (psql couldn't even connect, or was killed mid-run) is a different failure
-  # mode from ON_ERROR_STOP=0 letting individual files error while the rest
-  # keep running (which still exits 0) — it's used below only to make the
-  # per-file "did not run" diagnosis readable, never to decide pass/fail on
-  # its own, since a partial run (some files' markers present, some not)
-  # needs the per-file marker check regardless of the overall exit code.
-  local output rc
-  output="$(PGPASSWORD="$pw" PGCONNECT_TIMEOUT="$QA_SQL_CONNECT_TIMEOUT_SEC" \
-       PGOPTIONS="-c statement_timeout=${QA_SQL_STATEMENT_TIMEOUT_MS}" \
-       "${psql_qa[@]}" -v ON_ERROR_STOP=0 -q -f "$runner" 2>&1)" && rc=0 || rc=$?
-  rm -f "$runner"
-
-  local pass=0 fail=0 skip=0 section
-  for f in "${files[@]}"; do
-    base="$(basename "$f")"
-    # A file that never ran must never score "ok" — that would be a green
-    # check that saw nothing (the exact failure mode this fase exists to
-    # close: 2026-09-10 review round on this fase found sql_tests_check
-    # scored a connection-refused psql run as "ok" for every file, because
-    # it grepped $output for "ERROR:"/"not ok" and a connection failure
-    # prints lowercase "error:" and produces NO \echo output at all — every
-    # per-file section came back empty and fell through to the pass branch.
-    # A mid-run death (psql killed partway through) has the identical shape
-    # for every file after the point of death: no BEGIN/END pair. Fixed by
-    # requiring BOTH markers to be literally present in $output before a
-    # file's content is even inspected — grep -F/-x, not the awk scan below,
-    # so a missing marker can't be masked by a coincidental text match.
-    # FAIL, not SKIP: SKIP means an ABSENT PREREQUISITE (see the four
-    # record_advisory() paths above and in this loop); here the prerequisite
-    # (files, password, pgtap) was present and the run itself broke, which is
-    # a different failure the deploy must see.
-    if ! printf '%s\n' "$output" | grep -qxF "$begin_tag $base" \
-        || ! printf '%s\n' "$output" | grep -qxF "$end_tag $base"; then
-      fail=$((fail + 1))
-      log "--- $base did not run: psql produced no ${begin_tag}/${end_tag} pair for it" \
-        "(psql exit status ${rc} — connection failure or a mid-run crash, not a SQL test result)"
-      record "sql: $base" FAIL "psql did not run this file — see deploy log"
-      continue
-    fi
-    section="$(printf '%s\n' "$output" | awk -v b="$begin_tag $base" -v e="$end_tag $base" \
-      '$0==b{on=1;next} $0==e{on=0} on')"
-
-    # spec-92 review round 2 (B1): the section above attributes output to a
-    # file BY POSITION between its BEGIN/END markers. Markers go to stdout
-    # (\echo); a RAISE EXCEPTION's "ERROR:" goes to stderr. `2>&1` merges
-    # both into one pipe, but psql's stdout is block-buffered (4KB) on a
-    # pipe while stderr is unbuffered — under that buffering, a file's
-    # ERROR: line can be FLUSHED BEFORE the BEGIN/END markers still sitting
-    # in the stdout buffer, landing outside every section. All markers are
-    # still present (the marker-pair guard above passes), the section for
-    # the file that actually failed comes back empty, and it fell through
-    # to "ok" — reproduced against this exact function. Fixed by NOT relying
-    # on position at all for stderr-attributed errors: psql prefixes every
-    # error from an \i'd script with "psql:<path>:<line>: ERROR: ...", where
-    # <path> is exactly the argument \i was given ($f, below) — grep the
-    # WHOLE unsectioned $output for that literal prefix, which is correct
-    # regardless of where stdout/stderr interleaving put the line.
-    local file_err_lines
-    file_err_lines="$(printf '%s\n' "$output" | grep -F "psql:${f}:" | grep 'ERROR:' || true)"
-
-    if printf '%s' "$section" | grep -q "SKIPPED-NO-PGTAP"; then
       skip=$((skip + 1))
       # Advisory: an absent prerequisite (pgtap not installed), not a test
-      # result. See the function-level comment for why this stays a SKIP
-      # forever and ensure_pgtap() is what escalates a persistent version
-      # of this into a real deploy failure, not this line.
+      # result. ensure_pgtap()'s own degraded-streak escalation is what
+      # turns a PERSISTENT version of this into a real deploy failure.
       record_advisory "sql: $base" SKIP "pgtap extension not installed on QA"
-    elif printf '%s' "$section" | grep -qE "ERROR:|not ok [0-9]" || [ -n "$file_err_lines" ]; then
+      continue
+    fi
+
+    # ONE psql process for THIS file only — see the function-level comment
+    # for why. ON_ERROR_STOP=1 is what turns a RAISE EXCEPTION, a bad
+    # metacommand, or an unopenable file into $rc being nonzero, with
+    # nothing left to parse for the common case.
+    out="$(PGPASSWORD="$pw" PGCONNECT_TIMEOUT="$QA_SQL_CONNECT_TIMEOUT_SEC" \
+         PGOPTIONS="-c statement_timeout=${QA_SQL_STATEMENT_TIMEOUT_MS}" \
+         "${psql_qa[@]}" -v ON_ERROR_STOP=1 -q -f "$f" 2>&1)" && rc=0 || rc=$?
+
+    if [ "$rc" -ne 0 ]; then
       fail=$((fail + 1))
-      # Echo the failing lines. Without this the summary row says "see the
-      # deploy log" and the log does not contain it — the section lives only
-      # in $output, which is never printed. A check that reports a failure
-      # you cannot diagnose is barely better than no check, and now that
-      # this row blocks the deploy, the log IS what tells someone why.
-      # file_err_lines first: it is the only reliable source when buffering
-      # pushed the ERROR: line out of $section entirely.
-      log "--- $base failed, first 20 offending lines:"
-      { printf '%s\n' "$file_err_lines"
-        printf '%s\n' "$section" | grep -E "ERROR:|not ok [0-9]|EXCEPTION"
-      } | awk 'NF' | awk '!seen[$0]++' | head -20 | sed 's/^/    /'
-      # Blocking: record(), not record_advisory() — a real SQL test failure
-      # must flip RESULT and fail this deploy. See the function-level
-      # comment for why this is safe now (91/91 passing against QA today)
-      # when it would not have been before pgtap existed on QA.
+      log "--- $base failed (psql exit ${rc}), first 20 lines of its own output:"
+      printf '%s\n' "$out" | head -20 | sed 's/^/    /'
+      record "sql: $base" FAIL "see the block above this table"
+    elif printf '%s' "$out" | grep -q "not ok [0-9]"; then
+      # pgTAP's own assertions never raise — finish() just returns a "not
+      # ok N" row like any other SELECT, so $rc stays 0 even on a real
+      # failure. Content-checked against THIS file's own $out only: no
+      # neighbor to misattribute to, unlike round 2's shared $output.
+      fail=$((fail + 1))
+      log "--- $base failed (pgTAP assertion, no exception), first 20 lines of its own output:"
+      printf '%s\n' "$out" | head -20 | sed 's/^/    /'
       record "sql: $base" FAIL "see the block above this table"
     else
       pass=$((pass + 1))
@@ -1099,7 +1048,7 @@ post_checks() {
   # MUST run before sql_tests_check(): that function decides per-pgTAP-file
   # whether to SKIP by querying pg_extension itself. Creating the extension
   # after it would leave this very deploy — the one that installs pgtap —
-  # still reporting SKIPPED-NO-PGTAP for all 20 plan()/finish() files.
+  # still reporting SKIPPED-NO-PGTAP for every plan()/finish() file.
   ensure_pgtap
   sql_tests_check
   if is_true "${CHANGED_FRONTEND:-}"; then
