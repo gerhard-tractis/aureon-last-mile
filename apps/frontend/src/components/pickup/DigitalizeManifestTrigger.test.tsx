@@ -144,11 +144,27 @@ describe('DigitalizeManifestTrigger', () => {
       React.createElement(
         QueryClientProvider,
         { client: queryClient },
-        React.createElement(DigitalizeManifestTrigger, { className: 'flex-1 min-h-[44px]' }),
+        React.createElement(DigitalizeManifestTrigger, { className: 'flex-1' }),
       ),
     );
     const button = screen.getByRole('button', { name: /digitalizar manifiesto/i });
     expect(button.className).toContain('flex-1');
     expect(button.className).not.toContain('w-full');
+  });
+
+  // L2 (review) — un `className` de override no puede tumbar el objetivo
+  // táctil mínimo (44px) del botón: eso pasaba antes, cuando `className`
+  // reemplazaba el string COMPLETO en vez de sólo la parte de ancho.
+  it('conserva min-h-[44px] aunque se pase un className de override', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      React.createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        React.createElement(DigitalizeManifestTrigger, { className: 'flex-1' }),
+      ),
+    );
+    const button = screen.getByRole('button', { name: /digitalizar manifiesto/i });
+    expect(button.className).toContain('min-h-[44px]');
   });
 });

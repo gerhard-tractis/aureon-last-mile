@@ -19,6 +19,7 @@ import {
   useDownloadManifest,
 } from '@/hooks/pickup/useManifestDownload';
 import { isManifestComplete } from '@/lib/pickup/manifestProgress';
+import { matchesRouteManifestQuery, hasActiveRouteSearchQuery } from '@/lib/pickup/routeManifestSearch';
 import { RouteProgressHeader } from '@/components/pickup/RouteProgressHeader';
 import { RouteMapPlaceholder } from '@/components/pickup/RouteMapPlaceholder';
 import { NextManifestCard } from '@/components/pickup/NextManifestCard';
@@ -32,6 +33,7 @@ import { CancelRouteButton } from '@/components/pickup/CancelRouteButton';
 import { toast } from 'sonner';
 
 const MANIFEST_LIST_PANEL_ID = 'route-manifest-list-panel';
+const SEARCH_INPUT_ID = 'route-manifest-search-input';
 
 export default function ActiveRoutePage() {
   const router = useRouter();
@@ -247,14 +249,19 @@ export default function ActiveRoutePage() {
 
   const manifestListVisible = routeManifests.length === 0 || showAll;
 
-  // pb-40 (160px), not pb-24: the fixed bar at the foot of this screen now
-  // carries TWO 40px buttons plus p-4/sm:p-6 padding -- ~112px on a phone,
-  // ~128px at `sm`. pb-24 reserved 96px, so the leader (the only person who
-  // sees both buttons) had the last 16-32px of the manifest list permanently
-  // under the bar, on the exact screen where they check what is left to
-  // collect.
+  // M3, review — "Luego" usa el MISMO predicado que el panel (no uno
+  // propio): sólo la tarjeta destacada arriba queda exenta, como en
+  // PickupMobileActiveRoute.tsx.
+  const visibleUpcoming = hasActiveRouteSearchQuery(query)
+    ? upcoming.filter((m) => matchesRouteManifestQuery(m, query))
+    : upcoming;
+
+  // H2, review — el pie ya no son "dos botones de 40px": fila superior
+  // 44px + Cerrar ruta 44px + Cancelar ruta 40px + padding ≈ 184-200px
+  // (teléfono/`sm`). `pb-56` (224px) cubre ambos con margen — si no, la
+  // última fila de manifiestos queda bajo la barra fija.
   return (
-    <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-4 pb-40">
+    <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-4 pb-56" data-testid="active-route-page">
       <RouteProgressHeader route={route} manifests={routeManifests} isLoading={rmLoading} />
 
       <RouteMapPlaceholder pickupLocation={nextManifest?.pickup_location ?? null} />
@@ -270,11 +277,12 @@ export default function ActiveRoutePage() {
           )}
           {routeComplete && <RouteCompleteNotice />}
 
-          <UpcomingManifestList manifests={upcoming} />
+          <UpcomingManifestList manifests={visibleUpcoming} />
 
           {manifestListVisible && (
             <RouteManifestPanel
               panelId={MANIFEST_LIST_PANEL_ID}
+              searchInputId={SEARCH_INPUT_ID}
               manifests={routeManifests}
               searchOpen={searchOpen}
               query={query}
@@ -311,13 +319,17 @@ export default function ActiveRoutePage() {
             confirmación entre un toque errado y desenganchar todos los
             manifiestos de la ruta. 3h ya los separa
             (`flex flex-col gap-4`); esta superficie no lo hacía. */}
-        <div className="max-w-2xl mx-auto space-y-3">
+        {/* M2, review — el orden (Cerrar ruta antes que Cancelar ruta) es
+            el criterio de la fase; `data-testid` propio para comprobar
+            POSICIÓN, no sólo presencia. */}
+        <div className="max-w-2xl mx-auto space-y-3" data-testid="route-footer-stack">
           <RouteFooterTopRow
             manifestsCount={routeManifests.length}
             showAll={showAll}
             manifestListPanelId={manifestListVisible ? MANIFEST_LIST_PANEL_ID : undefined}
             onToggleShowAll={() => setShowAll((v) => !v)}
             searchOpen={searchOpen}
+            searchInputId={searchOpen ? SEARCH_INPUT_ID : undefined}
             onToggleSearch={handleToggleSearch}
             onOpenAdd={() => setSheetOpen(true)}
           />

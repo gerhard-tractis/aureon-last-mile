@@ -38,6 +38,7 @@ function renderRow(overrides: Partial<React.ComponentProps<typeof RouteFooterTop
     manifestListPanelId: undefined,
     onToggleShowAll: vi.fn(),
     searchOpen: false,
+    searchInputId: undefined,
     onToggleSearch: vi.fn(),
     onOpenAdd: vi.fn(),
     ...overrides,
@@ -113,5 +114,38 @@ describe('RouteFooterTopRow', () => {
       'aria-controls',
       'route-manifest-list-panel',
     );
+  });
+
+  // L4 (review) — mismo criterio que el toggle de manifiestos: sin idref
+  // colgante cuando el campo de búsqueda no está montado.
+  it('no pone aria-controls en Buscar cuando no se pasa searchInputId', () => {
+    renderRow({ searchInputId: undefined });
+    expect(screen.getByRole('button', { name: 'Buscar carga' })).not.toHaveAttribute(
+      'aria-controls',
+    );
+  });
+
+  it('pone aria-controls en Buscar cuando se pasa el id del campo', () => {
+    renderRow({ searchOpen: true, searchInputId: 'search-input-1' });
+    expect(screen.getByRole('button', { name: 'Buscar carga' })).toHaveAttribute(
+      'aria-controls',
+      'search-input-1',
+    );
+  });
+
+  // M2 (review, MEDIO) — el criterio de la fase es un ORDEN concreto
+  // (Buscar, Ver manifiesto(s), Digitalizar, +), y ningún test previo lo
+  // comprobaba: mover Digitalizar a primera posición o Cerrar/Cancelar de
+  // lugar pasaba en verde igual. Se comprueba por posición real en el DOM,
+  // no sólo por presencia de cada botón en cualquier parte del documento.
+  it('mantiene el orden Buscar → Ver manifiesto(s) → Digitalizar → + de izquierda a derecha', () => {
+    renderRow();
+    const row = screen.getByTestId('route-footer-top-row');
+    const children = Array.from(row.children) as HTMLElement[];
+    expect(children).toHaveLength(4);
+    expect(children[0]).toHaveAttribute('aria-label', 'Buscar carga');
+    expect(children[1].textContent).toContain('Ver los 2 manifiestos');
+    expect(children[2].textContent).toMatch(/digitalizar manifiesto/i);
+    expect(children[3]).toHaveAttribute('data-testid', 'open-add-manifest');
   });
 });

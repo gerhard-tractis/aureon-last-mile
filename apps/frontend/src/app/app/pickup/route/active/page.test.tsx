@@ -524,5 +524,120 @@ describe('ActiveRoutePage', () => {
       expect(screen.getByText(/sin resultados/i)).toBeInTheDocument();
       expect(screen.queryByText(/sin manifiestos en la ruta/i)).toBeNull();
     });
+
+    // M3, review — el precedente (PickupMobileActiveRoute.tsx) filtra
+    // "remaining" además del panel; sólo exime la tarjeta hero. Antes de
+    // esta corrección, "Luego" no se tocaba con la búsqueda en absoluto.
+    it('la búsqueda también filtra "Luego", no sólo el panel', async () => {
+      routeManifestsMock.mockReturnValue({
+        data: [
+          { ...INCOMPLETE_MANIFEST, id: 'm1', external_load_id: 'LOAD-1', retailer_name: 'Acme', verified_count: 1 },
+          { ...INCOMPLETE_MANIFEST, id: 'm5', external_load_id: 'LOAD-5', retailer_name: 'Beta', verified_count: 0 },
+        ],
+        isLoading: false,
+      });
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByTestId('upcoming-manifest-list')).toBeInTheDocument());
+      expect(within(screen.getByTestId('upcoming-manifest-list')).getByText('Beta')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Buscar carga' }));
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar carga' }), {
+        target: { value: 'Acme' },
+      });
+      expect(screen.queryByTestId('upcoming-manifest-list')).toBeNull();
+    });
+
+    // L1, review — la mitad no testeada de la decisión de producto: cerrar
+    // Buscar limpia la query (no sólo colapsa el campo). Sin este test,
+    // borrar el `else { setQuery(''); }` de handleToggleSearch pasaba
+    // igual: 27/27.
+    it('cerrar Buscar limpia la query — reabrir no arrastra el texto anterior', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      const buscar = screen.getByRole('button', { name: 'Buscar carga' });
+      fireEvent.click(buscar);
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar carga' }), {
+        target: { value: 'Acme' },
+      });
+      fireEvent.click(buscar); // cierra
+      fireEvent.click(buscar); // reabre
+      expect(screen.getByRole('searchbox', { name: 'Buscar carga' })).toHaveValue('');
+    });
+
+    // L4, review — el botón Buscar debe apuntar, vía aria-controls, al id
+    // REAL del campo que monta RouteManifestPanel — no basta con que cada
+    // componente lo declare por separado, tienen que coincidir en runtime.
+    it('aria-controls de Buscar apunta al id real del campo montado', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      const buscar = screen.getByRole('button', { name: 'Buscar carga' });
+      fireEvent.click(buscar);
+      const input = screen.getByRole('searchbox', { name: 'Buscar carga' });
+      expect(buscar).toHaveAttribute('aria-controls', input.id);
+    });
+
+    // H1, review, ALTO — regresión de extremo a extremo: un grupo con una
+    // carga cerrada (matchea la búsqueda) y otra abierta sin tocar (no
+    // matchea) no puede pintarse COMPLETADA sólo porque la fila visible
+    // esté cerrada.
+    it('el chip de grupo no miente bajo búsqueda (extremo a extremo)', async () => {
+      routeManifestsMock.mockReturnValue({
+        data: [
+          {
+            id: 'a',
+            external_load_id: 'LOAD-A',
+            retailer_name: 'Falabella',
+            pickup_location: 'Mall Plaza Vespucio',
+            total_orders: 1,
+            total_packages: 10,
+            verified_count: 10,
+          },
+          {
+            id: 'b',
+            external_load_id: 'LOAD-B',
+            retailer_name: 'Falabella',
+            pickup_location: 'Parque Arauco',
+            total_orders: 1,
+            total_packages: 5,
+            verified_count: 0,
+          },
+        ],
+        isLoading: false,
+      });
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: 'Ver los 2 manifiestos' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Buscar carga' }));
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar carga' }), {
+        target: { value: 'LOAD-A' },
+      });
+      expect(screen.getByTestId('route-manifest-group-status')).toHaveTextContent('PENDIENTE');
+    });
+  });
+
+  // H2, review, ALTO — el pie fijo creció a tres filas y `pb-40` se quedó
+  // corto. Se asierta la clase real (no sólo que la página renderice) para
+  // que revertir el valor a `pb-40` rompa el test, no sólo el comentario.
+  describe('spec-95 fase 2 — reserva de espacio bajo el pie fijo', () => {
+    it('reserva suficiente padding-bottom para el pie de tres filas', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      expect(screen.getByTestId('active-route-page')).toHaveClass('pb-56');
+    });
+  });
+
+  // M2, review, MEDIO — el orden Cerrar ruta → Cancelar ruta es la
+  // justificación de seguridad completa del bloque (el destructivo va
+  // DEBAJO del CTA de rutina). Comprobado por posición real, no presencia.
+  describe('spec-95 fase 2 — orden del pie inferior', () => {
+    it('Cerrar ruta precede a Cancelar ruta en el DOM', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      const stack = screen.getByTestId('route-footer-stack');
+      const children = Array.from(stack.children) as HTMLElement[];
+      expect(children).toHaveLength(3);
+      expect(children[0]).toHaveAttribute('data-testid', 'route-footer-top-row');
+      expect(children[1]).toHaveAttribute('data-testid', 'close-route-button');
+      expect(children[2]).toHaveAttribute('data-testid', 'cancel-route-button');
+    });
   });
 });

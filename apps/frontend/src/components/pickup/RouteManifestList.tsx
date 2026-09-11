@@ -164,6 +164,25 @@ interface RouteManifestListProps {
    * sostiene tantas descargas concurrentes como filas existan.
    */
   downloadingIds?: Set<string>;
+  /**
+   * spec-95 fase 2, corrección H1 de review — `manifest.id` de las filas
+   * que deben pintarse (típicamente el resultado de un filtro de búsqueda
+   * hecho por el caller). Deliberadamente NO filtra qué entra a
+   * `groupManifestsByRetailer`/`groupManifestStatus`: el chip de grupo y
+   * "N puntos · M paquetes" se calculan SIEMPRE sobre `manifests` completo,
+   * nunca sobre el subconjunto visible — el bug que esto corrige era
+   * exactamente pasar ya-filtrado aquí adentro, con lo que un grupo con una
+   * carga cerrada (buscada) y otra abierta (oculta por el filtro) se pintaba
+   * `COMPLETADA` en vez de `PENDIENTE`. Mismo principio que
+   * `fullGroupsByClient` en PickupMobileStartRoute.tsx: el estado agregado
+   * de un grupo se deriva de su membresía real, no de lo que el filtro deja
+   * ver. `undefined` (el default) es "no estoy filtrando" — pinta todas las
+   * filas de cada grupo, comportamiento idéntico al de antes de esta fase.
+   * Un grupo cuyas filas quedan todas ocultas por el filtro no se pinta en
+   * absoluto (ni cabecera ni filas) — el caller decide aparte qué mostrar
+   * cuando NINGÚN grupo tiene coincidencias (ver RouteManifestPanel.tsx).
+   */
+  visibleManifestIds?: Set<string>;
 }
 
 /**
@@ -179,6 +198,7 @@ export function RouteManifestList({
   downloadedIds,
   onDownload,
   downloadingIds,
+  visibleManifestIds,
 }: RouteManifestListProps) {
   if (manifests.length === 0) {
     return (
@@ -193,7 +213,15 @@ export function RouteManifestList({
   return (
     <div className="space-y-3" data-testid="route-manifest-list">
       {groupManifestsByRetailer(manifests).map((group) => {
+        // Siempre sobre el grupo COMPLETO — ver el docstring de
+        // `visibleManifestIds` arriba. `status`, `pointCount` y
+        // `packageCount` nunca deben verse afectados por qué filas terminan
+        // visibles.
         const status = groupManifestStatus(group.manifests);
+        const visibleRows = visibleManifestIds
+          ? group.manifests.filter((m) => visibleManifestIds.has(m.id))
+          : group.manifests;
+        if (visibleRows.length === 0) return null;
         return (
           <div
             key={group.retailerName}
@@ -231,7 +259,7 @@ export function RouteManifestList({
               </span>
             </div>
 
-            {group.manifests.map((m) => (
+            {visibleRows.map((m) => (
               <ManifestCard
                 key={m.id}
                 manifest={m}

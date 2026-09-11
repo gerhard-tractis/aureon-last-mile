@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { RouteManifestPanel } from './RouteManifestPanel';
 import type { RouteManifestRow } from './RouteManifestList';
@@ -27,6 +27,7 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof RouteManifes
   return render(
     <RouteManifestPanel
       panelId="panel-1"
+      searchInputId="search-input-1"
       manifests={[ACME, BETA]}
       searchOpen={false}
       query=""
@@ -52,6 +53,26 @@ describe('RouteManifestPanel', () => {
   it('muestra el campo cuando searchOpen es true', () => {
     renderPanel({ searchOpen: true });
     expect(screen.getByRole('searchbox', { name: 'Buscar carga' })).toBeInTheDocument();
+  });
+
+  // L4 (review) — el input necesita id propio para que el botón "Buscar"
+  // de RouteFooterTopRow pueda apuntarle un aria-controls real.
+  it('el campo de búsqueda lleva el id que se le pasa', () => {
+    renderPanel({ searchOpen: true, searchInputId: 'mi-id-de-prueba' });
+    expect(screen.getByRole('searchbox', { name: 'Buscar carga' })).toHaveAttribute(
+      'id',
+      'mi-id-de-prueba',
+    );
+  });
+
+  // H3 (review) — mismo fix que PickupMobileActiveRoute.tsx N6 (review
+  // round 3): el disparador vive en la barra fija de abajo y el campo
+  // monta arriba de una lista que puede ser larga; sin desplazar el
+  // viewport (no sólo el foco de teclado), el conductor teclea a ciegas.
+  it('desplaza el campo a la vista al montarlo (no sólo mueve el foco)', () => {
+    renderPanel({ searchOpen: true });
+    const input = screen.getByRole('searchbox', { name: 'Buscar carga' });
+    expect(input.scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' });
   });
 
   it('filtra por retailer_name cuando hay query', () => {
@@ -80,6 +101,7 @@ describe('RouteManifestPanel', () => {
     render(
       <RouteManifestPanel
         panelId="panel-1"
+        searchInputId="search-input-1"
         manifests={[noPoint]}
         searchOpen
         query="no-deberia-matchear"
@@ -120,5 +142,73 @@ describe('RouteManifestPanel', () => {
     renderPanel({ manifests: [], query: '   ' });
     expect(screen.getByText(/sin manifiestos en la ruta/i)).toBeInTheDocument();
     expect(screen.queryByText(/sin resultados/i)).toBeNull();
+  });
+
+  // H1 (review, ALTO) — el chip de grupo y su subtítulo deben seguir
+  // reflejando la membresía REAL del grupo, no el subconjunto que matchea
+  // la búsqueda. Falabella con una carga cerrada (LOAD-A) y otra abierta
+  // sin tocar (LOAD-B, verified_count 0): sin búsqueda el chip es
+  // PENDIENTE (LOAD-B abierta). Buscar "LOAD-A" oculta la fila de LOAD-B,
+  // pero el grupo entero sigue siendo Falabella con sus dos cargas reales
+  // — el chip NO puede pasar a COMPLETADA sólo porque la única fila
+  // VISIBLE está cerrada.
+  describe('el chip de grupo no miente bajo búsqueda', () => {
+    const LOAD_A_CLOSED: RouteManifestRow = {
+      id: 'a',
+      external_load_id: 'LOAD-A',
+      retailer_name: 'Falabella',
+      pickup_location: 'Mall Plaza Vespucio',
+      total_orders: 1,
+      total_packages: 10,
+      verified_count: 10,
+    };
+    const LOAD_B_OPEN: RouteManifestRow = {
+      id: 'b',
+      external_load_id: 'LOAD-B',
+      retailer_name: 'Falabella',
+      pickup_location: 'Parque Arauco',
+      total_orders: 1,
+      total_packages: 5,
+      verified_count: 0,
+    };
+
+    it('sin búsqueda el grupo es PENDIENTE (LOAD-B sigue abierta)', () => {
+      render(
+        <RouteManifestPanel
+          panelId="panel-1"
+          searchInputId="search-input-1"
+          manifests={[LOAD_A_CLOSED, LOAD_B_OPEN]}
+          searchOpen={false}
+          query=""
+          onQueryChange={vi.fn()}
+          onManifestClick={vi.fn()}
+        />,
+      );
+      expect(screen.getByTestId('route-manifest-group-status')).toHaveTextContent('PENDIENTE');
+    });
+
+    it('buscando "LOAD-A" el grupo SIGUE PENDIENTE, no COMPLETADA, aunque sólo se vea esa fila', () => {
+      render(
+        <RouteManifestPanel
+          panelId="panel-1"
+          searchInputId="search-input-1"
+          manifests={[LOAD_A_CLOSED, LOAD_B_OPEN]}
+          searchOpen
+          query="LOAD-A"
+          onQueryChange={vi.fn()}
+          onManifestClick={vi.fn()}
+        />,
+      );
+      const group = screen.getByTestId('route-manifest-group');
+      expect(within(group).getByTestId('route-manifest-group-status')).toHaveTextContent(
+        'PENDIENTE',
+      );
+      // El subtítulo tampoco encoge: sigue reportando el grupo real (2
+      // puntos), no el subconjunto visible (1 punto).
+      expect(within(group).getByText(/2 puntos/)).toBeInTheDocument();
+      // Y sólo la fila de LOAD-A está visible — LOAD-B sigue oculta.
+      expect(screen.getByText('LOAD-A')).toBeInTheDocument();
+      expect(screen.queryByText('LOAD-B')).toBeNull();
+    });
   });
 });
