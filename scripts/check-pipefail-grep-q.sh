@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # check-pipefail-grep-q.sh — rejects a pipe into `grep`/`egrep`/`fgrep` with
 # an early-exit flag (`-q`/`--quiet`, in any position, any flag order,
-# split across separate tokens, or on a continuation line after a trailing
-# `|`) in infra/supabase-qa/*.sh and .github/workflows/*.yml.
+# split across separate tokens, glued to the pipe with no space, or on a
+# continuation line after a BARE trailing `|`) in infra/supabase-qa/*.sh
+# and .github/workflows/*.yml. NOT covered (round 7, A4 — not a
+# regression, round 5's regex did not cover it either, named here so this
+# header does not oversell it): a `\`-continued line ending in `| \` with
+# `grep -q` starting the next line — only a trailing BARE pipe is tracked
+# across lines.
 #
 # Why: `grep -q` exits on its FIRST match and closes its read end of the
 # pipe. Under `pipefail` — deploy-qa.sh's own `set -Eeuo pipefail`, and
@@ -66,20 +71,47 @@ is_qflag() { # $1 = one token (already known to start with "-"). True if
   esac
 }
 
-# round 6 (M2): returns (via echo) the text after the LAST `#` that is a
-# real comment start — preceded by whitespace, or the very first character
-# of the line — not just the last `#` byte anywhere. `${content##*#}`
-# (the previous version) could not tell a real trailing comment from a `#`
-# sitting inside a quoted grep PATTERN on the same line: a line grepping
-# FOR the literal string '# pipefail-safe: x' would have matched its own
-# escape hatch without ever having justified anything. This still is not
-# full shell parsing (a `#` after a non-whitespace, non-quote character —
-# e.g. inside an unquoted glob — could theoretically still fool it), but
-# it closes the concrete case a reviewer demonstrated.
+# round 6 (M2), hardened in round 7 (A2): returns (via echo) the text
+# after the LAST `#` that is a real comment start — preceded by
+# whitespace, or the very first character of the line, AND NOT INSIDE A
+# QUOTED STRING — not just the last `#` byte anywhere, and not just any
+# whitespace-preceded `#` regardless of quoting.
+#
+# round 6's version tracked "preceded by whitespace" but not quote state,
+# so it was fooled by a SPACE inside quotes right before the `#`: a line
+# grepping for the literal pattern '... # pipefail-safe: x' (single quotes,
+# one space before the #) has prev=' ' at that position, so round 6's
+# heuristic treated it as a genuine trailing comment and the line
+# whitelisted itself without anything outside the quotes ever having
+# justified anything — round 6's own fixture happened to glue the `#`
+# directly to the opening quote (prev="'"), which is why it passed there
+# and failed here. This version tracks single/double-quote state while
+# scanning and never considers a `#` found INSIDE a quoted string as a
+# comment start, regardless of what precedes it.
+#
+# Still not full shell parsing (nested command substitution, $'...'
+# ANSI-C quoting, and a `#` immediately after a non-whitespace,
+# non-quote character in unquoted text — e.g. inside a glob — are not
+# specially handled), but every case demonstrated against this guard so
+# far is closed.
 trailing_comment() {
   local s="$1" n=${#1} i c prev pos=-1
+  local in_squote=0 in_dquote=0
   for ((i = 0; i < n; i++)); do
     c="${s:i:1}"
+    if [ "$in_squote" -eq 1 ]; then
+      [ "$c" = "'" ] && in_squote=0
+      continue
+    fi
+    if [ "$in_dquote" -eq 1 ]; then
+      if [ "$c" = '\' ]; then i=$((i + 1)); continue; fi
+      [ "$c" = '"' ] && in_dquote=0
+      continue
+    fi
+    case "$c" in
+      "'") in_squote=1; continue ;;
+      '"') in_dquote=1; continue ;;
+    esac
     [ "$c" = "#" ] || continue
     if [ "$i" -eq 0 ]; then
       pos=$i
@@ -109,6 +141,14 @@ is_grep_cmd() { # $1 = one token, possibly with a leading "(" or trailing
 # -q/--quiet flag anywhere in that invocation's flag run.
 scan_line() {
   local line="$1"
+  # round 7 (A1): a `|` with NO surrounding whitespace ("$x"|grep,
+  # cmd |grep) used to glue onto the adjacent word as one token — round
+  # 5's regex (`\|\s*grep`) tolerated zero spaces, but round 6's
+  # `words=($line)` tokenizer only splits on whitespace, so `|grep` never
+  # became two words and neither the pipe check nor is_grep_cmd fired.
+  # This is the shorthand most people actually type. Force every `|` to
+  # be its own token before splitting, regardless of adjacent spacing.
+  line="${line//|/ | }"
   local -a words
   # shellcheck disable=SC2206 — deliberate whitespace tokenizing; this
   # scans shell/YAML source lines, not arbitrary user data.

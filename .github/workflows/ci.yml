@@ -184,7 +184,7 @@ jobs:
       # any new `| grep -q` in infra/supabase-qa/*.sh or
       # .github/workflows/*.yml fails the build here before it can become
       # instance six.
-      - name: Check for pipefail-unsafe `| grep -q`
+      - name: Check for pipefail-unsafe grep -q usage
         run: bash ./scripts/check-pipefail-grep-q.sh
 
       - name: Test the pipefail-grep-q guard

@@ -117,6 +117,23 @@ EOF
 bash "$S" "$TMP/pipe_no_q.sh" >/dev/null 2>&1
 check_true "M1: | grep -E with no -q anywhere still passes" $?
 
+# ── A1 (round 7): a pipe with NO space before `grep` was a real regression
+#    from round 5's regex (`\|\s*grep`, where \s* admits zero spaces) to
+#    round 6's tokenizer (`words=($line)`, which glues "|grep" into ONE
+#    word since there is no whitespace to split on). This is the shorthand
+#    most people actually type ─────────────────────────────────────────────
+cat > "$TMP/pipe_no_space_before.sh" <<'EOF'
+printf '%s' "$x"|grep -q "foo"
+EOF
+bash "$S" "$TMP/pipe_no_space_before.sh" >/dev/null 2>&1
+check_false "A1: catches |grep -q with no space before grep" $?
+
+cat > "$TMP/pipe_no_space_mixed.sh" <<'EOF'
+printf '%s' "$x" |grep -q "foo"
+EOF
+bash "$S" "$TMP/pipe_no_space_mixed.sh" >/dev/null 2>&1
+check_false "A1: catches a space-then-pipe-then-no-space-grep" $?
+
 # ── A .yml file (workflow run: blocks) is scanned the same way ───────────
 cat > "$TMP/workflow.yml" <<'EOF'
 jobs:
@@ -157,6 +174,27 @@ printf '%s' "$x" | grep -q '# pipefail-safe: x'
 EOF
 bash "$S" "$TMP/marker_as_substring.sh" >/dev/null 2>&1
 check_false "M2: the marker string used as a grep PATTERN (not a real trailing comment) is still caught" $?
+
+# ── A2 (round 7): round 6's trailing_comment() fix worked only because that
+#    fixture's `#` was glued directly to the opening quote (prev char was
+#    `'`, not whitespace). A single SPACE inside the quotes before the `#`
+#    (`'... `# pipefail-safe: x'`, entirely plausible grep-pattern prose)
+#    makes `prev` a space and the old heuristic — "preceded by whitespace
+#    = real comment" — wrongly treats it as a genuine trailing comment,
+#    with nothing outside the quotes ever having justified anything ──────
+cat > "$TMP/marker_as_substring_with_space.sh" <<'EOF'
+printf '%s' "$x" | grep -q ' # pipefail-safe: x'
+EOF
+bash "$S" "$TMP/marker_as_substring_with_space.sh" >/dev/null 2>&1
+check_false "A2: a marker inside quotes, with a space before the #, is still caught" $?
+
+# Quote-awareness must not create new false positives: a real trailing
+# comment AFTER a quoted string containing a "#" must still be honored.
+cat > "$TMP/real_marker_after_quoted_hash.sh" <<'EOF'
+printf '%s' "$x" | grep -q "value#tag"  # pipefail-safe: x is a 2-line hardcoded string containing a hash-tag character
+EOF
+bash "$S" "$TMP/real_marker_after_quoted_hash.sh" >/dev/null 2>&1
+check_true "A2: a real trailing marker after a quoted # is still honored" $?
 
 # The guard's whitelist mechanism deliberately does not (and cannot)
 # validate PROSE quality — "because I said so" mechanically parses as a
