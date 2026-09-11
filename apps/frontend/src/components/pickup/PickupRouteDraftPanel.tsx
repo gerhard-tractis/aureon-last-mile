@@ -1,6 +1,6 @@
 'use client';
 
-import { X } from 'lucide-react';
+import { Truck, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StartRouteButton } from './StartRouteButton';
 import type { ManifestRow } from './ManifestTable';
@@ -8,14 +8,14 @@ import type { ManifestRow } from './ManifestTable';
 /**
  * spec-54 phase 4.4 — "Nueva ruta de recogida" (mock `5a`, right column top).
  *
- * The mock shows an inline vehicle/driver picker with an estimated vehicle
- * occupancy bar. Neither is rendered here: occupancy needs a vehicle
- * capacity and a package volume, and neither `vehicles` nor `packages`
- * carries one — a guessed percentage on the screen that decides whether a
- * van is full would be actively harmful (spec-83 fase 3). The vehicle
- * itself is picked in `StartRouteButton`'s dialog instead of inline — a
- * spec-61 interaction decision with its own tests, not a missing-data gap,
- * and out of this file's scope to redo.
+ * spec-95 fase 8 (mock `5a:213-215`) closes divergencia 2 of spec-83 fase 4:
+ * the mock no longer draws an inline vehicle/driver picker — it adopts
+ * spec-61's model outright (vehicle picked when the route is confirmed, in
+ * `StartRouteButton`'s dialog; no driver field at all, because the crew is
+ * assigned by whoever leads the route, not chosen here) and says so with a
+ * static line. The estimated-occupancy bar right below it in the mock is
+ * still NOT rendered — it stays `[parked]` in spec-83 fase 3 by the user's
+ * 2026-09-09 decision, and no percentage is invented here either.
  *
  * When a route is already open the panel steps aside — the driver has one
  * active route at a time (start_pickup_route enforces it), so offering to
@@ -28,8 +28,13 @@ interface PickupRouteDraftPanelProps {
   operatorId: string | null;
   selected: ManifestRow[];
   onRemove: (id: string) => void;
-  /** Creates the route with the chosen vehicle, then attaches the selection. */
-  onCreate: (vehicleId: string) => void;
+  /**
+   * Creates the route with the chosen vehicle, then attaches the selection.
+   * `viewQr` (spec-95 fase 8) is forwarded verbatim from
+   * `StartRouteButton.onStart` — true only when the driver used the
+   * secondary "Ver QR de la ruta" CTA.
+   */
+  onCreate: (vehicleId: string, viewQr?: boolean) => void;
   isCreating?: boolean;
   /** Set when the driver already has a route open. */
   activeRouteCode?: string | null;
@@ -115,6 +120,18 @@ export function PickupRouteDraftPanel({
         </p>
       ) : (
         <>
+          <div className="flex flex-none flex-col gap-2.5 border-b border-border px-4 py-3.5">
+            <span className="font-mono text-[9.5px] font-medium uppercase tracking-[.1em] text-text-secondary">
+              Vehículo
+            </span>
+            <div className="flex items-center gap-2.5 rounded-lg border border-dashed border-border-strong bg-background p-2.5">
+              <Truck className="h-[17px] w-[17px] flex-none text-text-muted" />
+              <span className="text-[11.5px] leading-[1.3] text-text-secondary">
+                Se elige al confirmar la ruta. La cuadrilla la asigna quien la lidera.
+              </span>
+            </div>
+          </div>
+
           <div className="flex flex-none items-center gap-2 border-b border-border bg-background px-4 py-2.5">
             <span className="font-mono text-[9.5px] font-medium uppercase tracking-[.1em] text-text-secondary">
               Manifiestos en la ruta

@@ -198,11 +198,20 @@ vi.mock('@/components/pickup/ClientFilter', () => ({
 // Now actually wired: the real button pops a vehicle dialog, which this
 // file has no business driving, but a stub that never calls `onStart` made
 // the whole create-route path unreachable from here.
+//
+// spec-95 fase 8 — a second stub button exercises the "Ver QR de la ruta"
+// path (`onStart(vehicleId, true)`), same as the real StartRouteButton's
+// secondary CTA does.
 vi.mock('@/components/pickup/StartRouteButton', () => ({
-  StartRouteButton: ({ onStart }: { onStart: (vehicleId: string) => void }) => (
-    <button type="button" onClick={() => onStart('veh-1')}>
-      Crear ruta
-    </button>
+  StartRouteButton: ({ onStart }: { onStart: (vehicleId: string, viewQr?: boolean) => void }) => (
+    <>
+      <button type="button" onClick={() => onStart('veh-1')}>
+        Crear ruta
+      </button>
+      <button type="button" onClick={() => onStart('veh-1', true)}>
+        Crear ruta y ver QR
+      </button>
+    </>
   ),
 }));
 
@@ -979,6 +988,26 @@ describe('PickupPage', () => {
       expect(msg).toContain('1 de 2');
       // The route still exists — the message must not read as a total failure.
       expect(mockPush).toHaveBeenCalledWith('/app/pickup/route/active');
+    });
+
+    // spec-95 fase 8 (mock 5a:224-225) — "Ver QR de la ruta" creates the
+    // route exactly like the primary CTA, but lands on the route's own QR
+    // page instead of the active-route screen. Wired end to end here, not
+    // just at StartRouteButton's own boundary — the fase 9 review's lesson
+    // about a drawn-but-disconnected affordance.
+    it('navigates to the route QR page when created via "Ver QR de la ruta"', async () => {
+      mockStartMutate.mockImplementation(
+        (_args: unknown, opts: { onSuccess: (r: unknown) => Promise<void> }) =>
+          opts.onSuccess({ id: 'route-1' }),
+      );
+      mockDesktop();
+      render(<PickupPage />);
+      await userEvent.click(screen.getByText('Easy Vespucio'));
+      await userEvent.click(screen.getByRole('button', { name: 'Crear ruta y ver QR' }));
+      await waitFor(() =>
+        expect(mockPush).toHaveBeenCalledWith('/app/pickup/route/route-1/qr'),
+      );
+      expect(mockPush).not.toHaveBeenCalledWith('/app/pickup/route/active');
     });
 
     it('clears the selection so the next route does not inherit it', async () => {

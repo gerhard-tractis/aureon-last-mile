@@ -176,7 +176,11 @@ function PickupPageContent() {
    * Making it required would be a tsc error on that prop type and, at
    * runtime, would hand `undefined` to the RPC as the crew.
    */
-  const handleCreateRoute = (vehicleId: string, crewIds: string[] = []) => {
+  // spec-95 fase 8 — `viewQr` (mock 5a:224-225, "Ver QR de la ruta") sends
+  // the driver to the new route's own QR page instead of the active-route
+  // screen. Defaulted, for the same reason `crewIds` is: mobile calls this
+  // with `(vehicleId, crewIds)` and never knows about the QR shortcut.
+  const handleCreateRoute = (vehicleId: string, crewIds: string[] = [], viewQr = false) => {
     startMut.mutate(
       { vehicleId, crewUserIds: crewIds },
       {
@@ -194,7 +198,9 @@ function PickupPageContent() {
             toast.error(partialAttachMessage(failedLoadIds, attempted));
           }
           setSelectedIds(new Set());
-          router.push('/app/pickup/route/active');
+          router.push(
+            viewQr ? `/app/pickup/route/${route.id}/qr` : '/app/pickup/route/active',
+          );
         },
         // spec-61 Task 5 — ONE surface per screen, not two. Mobile renders
         // this same message as a persistent role="alert" inside 3j, right
@@ -273,7 +279,10 @@ function PickupPageContent() {
           onOpen={(row) => { void handleRowOpen(row); }}
           operatorId={operatorId}
           selectedManifests={selectedManifests}
-          onCreateRoute={handleCreateRoute}
+          // Desktop's second arg is `viewQr`, not `crewIds` — `1l` has no
+          // crew picker, so it lands in the THIRD position here instead of
+          // handleCreateRoute's own second.
+          onCreateRoute={(vehicleId, viewQr) => handleCreateRoute(vehicleId, [], viewQr)}
           isCreatingRoute={startMut.isPending || addMut.isPending}
           canLead={canLeadPickupRoute(role)}
           routeUnknown={activeRouteUnknown}

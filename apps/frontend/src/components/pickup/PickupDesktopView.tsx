@@ -95,9 +95,13 @@ interface PickupDesktopViewProps {
   onOpen: (row: ManifestRow) => void;
   operatorId: string | null;
   selectedManifests: ManifestRow[];
-  /** Desktop never sends a crew — `1l` has no crew picker, and
-   *  `handleCreateRoute` defaults the argument. spec-61 Task 5. */
-  onCreateRoute: (vehicleId: string) => void;
+  /**
+   * Desktop never sends a crew — `1l` has no crew picker, and
+   * `handleCreateRoute` defaults the argument. spec-61 Task 5. `viewQr`
+   * (spec-95 fase 8) is forwarded from `PickupRouteDraftPanel`'s
+   * `StartRouteButton` when the driver used "Ver QR de la ruta".
+   */
+  onCreateRoute: (vehicleId: string, viewQr?: boolean) => void;
   isCreatingRoute: boolean;
   /** spec-61 — false for a pickup_crew user; gates `1l`'s own start
    *  affordance the same way 3j is gated. */
