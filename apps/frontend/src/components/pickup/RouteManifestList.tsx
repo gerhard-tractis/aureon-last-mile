@@ -1,19 +1,11 @@
 'use client';
 
-import { Package, ShoppingCart, X } from 'lucide-react';
+import { Package } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/EmptyState';
-import { isManifestComplete, progressLabel } from '@/lib/pickup/manifestProgress';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
+import { isManifestComplete } from '@/lib/pickup/manifestProgress';
+import { groupManifestsByRetailer } from '@/lib/pickup/routeManifestGrouping';
+import { ManifestCard } from './RouteManifestCard';
 
 /** Mirrors `manifest_status_enum` (packages/database/supabase/migrations/
  *  20260310100000_create_pickup_verification_tables.sql:33). */
@@ -65,6 +57,56 @@ export interface RouteManifestRow {
   signature_operator?: string | null;
 }
 
+/** spec-95 fase 1 (mock 5c) — el estado que pinta el chip de cabecera de
+ *  cada grupo de cliente. */
+export type GroupStatus = 'completada' | 'en_ruta' | 'pendiente';
+
+/**
+ * La regla única de chip por grupo. Definida en un solo sitio y testeada
+ * como unidad (ver RouteManifestList.test.tsx) — nada de esto se repite ni
+ * se decide de nuevo en el render.
+ *
+ * Regla A, «por progreso» — decisión del usuario/diseñador, 2026-09-11. El
+ * mock de `5c` resultó inconsistente (Ripley llevaba `EN RUTA` con su única
+ * carga marcada `DESCARGAR`, pero bajo esa misma lectura Paris también
+ * debería haber llevado `EN RUTA`; el diseñador confirmó el error). La regla
+ * elegida no mira descarga en absoluto — es ortogonal al progreso de
+ * escaneo y se sigue resolviendo aparte, por manifiesto, con el chip
+ * `DESCARGAR` de spec-82 fase 2, que esta función no toca. Se prefirió esta
+ * regla sobre un chip `SIGUIENTE` a nivel de grupo porque hubiera
+ * duplicado la pastilla `SIGUIENTE` que ya lleva la tarjeta destacada del
+ * manifiesto siguiente — el operario ya ve la próxima parada ahí.
+ *
+ * - `completada` — todas las cargas del grupo están cerradas
+ *   (`isManifestComplete`).
+ * - `en_ruta` — alguna carga tiene escaneo empezado (`verified_count > 0`)
+ *   Y esa misma carga no está cerrada.
+ * - `pendiente` — el resto, incluido el grupo vacío (caso de frontera) y el
+ *   caso en que la única carga con escaneos ya cerró y ninguna otra tiene
+ *   escaneos.
+ */
+export function groupManifestStatus(manifests: RouteManifestRow[]): GroupStatus {
+  if (manifests.length === 0) return 'pendiente';
+  if (manifests.every((m) => isManifestComplete(m))) return 'completada';
+
+  const someStartedAndOpen = manifests.some(
+    (m) => m.verified_count > 0 && !isManifestComplete(m),
+  );
+  return someStartedAndOpen ? 'en_ruta' : 'pendiente';
+}
+
+const GROUP_STATUS_LABEL: Record<GroupStatus, string> = {
+  completada: 'COMPLETADA',
+  en_ruta: 'EN RUTA',
+  pendiente: 'PENDIENTE',
+};
+
+const GROUP_STATUS_CLASSNAME: Record<GroupStatus, string> = {
+  completada: 'border-status-success-border bg-status-success-bg text-status-success-text',
+  en_ruta: 'border-accent bg-accent-muted text-accent-emphasis',
+  pendiente: 'border-border-strong bg-surface text-text-secondary',
+};
+
 interface RouteManifestListProps {
   manifests: RouteManifestRow[];
   onManifestClick: (externalLoadId: string) => void;
@@ -95,6 +137,11 @@ interface RouteManifestListProps {
    * `Set` (aunque esté vacío) significa que la respuesta ya se conoce.
    * Optativo y aditivo, mismo patrón que `onRemove`: sin `onDownload` no se
    * ofrece el chip aunque `downloadedIds` esté resuelto.
+   *
+   * spec-95 fase 1, decisión del usuario/diseñador 2026-09-11 — esta prop
+   * ya NO participa en `groupManifestStatus` (el chip de grupo). La regla A
+   * elegida allí es ortogonal a la descarga local: sigue resolviéndose
+   * únicamente aquí, por manifiesto.
    */
   downloadedIds?: Set<string>;
   /**
@@ -145,123 +192,57 @@ export function RouteManifestList({
 
   return (
     <div className="space-y-3" data-testid="route-manifest-list">
-      {manifests.map((m) => {
-        const complete = isManifestComplete(m);
-        const canRemove = !!onRemove && m.verified_count === 0;
-        // spec-82 fase 2 — colisión con COMPLETADA (anotada en fase 1):
-        // gana COMPLETADA. `downloadedIds === undefined` es "todavía no lo
-        // sé" y nunca pinta DESCARGAR — ver el docstring de la prop.
-        const showDownload =
-          !complete && !!onDownload && !!downloadedIds && !downloadedIds.has(m.external_load_id);
-        // Menor, revisión de fase 2 — `downloadedIds` puede seguir siendo
-        // `undefined` ("todavía no lo sé"); `!!downloadedIds` primero
-        // asegura que esto nunca sea `true` en ese caso.
-        const isDownloaded = !!downloadedIds && downloadedIds.has(m.external_load_id);
+      {groupManifestsByRetailer(manifests).map((group) => {
+        const status = groupManifestStatus(group.manifests);
         return (
           <div
-            key={m.id}
-            // hover:border-accent-light, not hover:border-accent/50: this
-            // file's colour tokens are bare `var(--color-…)` values with no
-            // <alpha-value> channel, so a Tailwind opacity modifier here
-            // emits no CSS at all (same root cause as the map placeholder's
-            // border fix). accent-light is a real, already-defined token.
-            className="relative rounded-lg border border-border bg-surface transition-colors hover:border-accent-light"
+            key={group.retailerName}
+            className="space-y-3"
+            data-testid="route-manifest-group"
           >
-            <button
-              type="button"
-              onClick={() => onManifestClick(m.external_load_id)}
-              className="w-full text-left p-4 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              <div className="flex items-center justify-between gap-3 pr-11">
-                <div className="min-w-0">
-                  <h3 className="font-semibold text-text truncate">
-                    {m.retailer_name ?? 'Retailer desconocido'}
-                  </h3>
-                  <p className="font-mono text-xs text-text-secondary mt-0.5">
-                    {m.external_load_id}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3 text-sm text-text-secondary shrink-0">
-                  <div className="flex items-center gap-1">
-                    <ShoppingCart className="h-4 w-4" />
-                    <span className="font-mono">{m.total_orders ?? 0}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Package className="h-4 w-4" />
-                    <span className="font-mono">{progressLabel(m)}</span>
-                  </div>
-                  {/* spec-82 fase 1 (mock 5c) — same chip PickupMobileCompactRow
-                      already shows for its `completed` variant on the 3h
-                      screen, reused verbatim for visual consistency. */}
-                  {complete && (
-                    <span className="flex-none rounded border border-status-success-border bg-status-success-bg px-1.5 py-1 font-mono text-[10.5px] font-semibold text-status-success-text">
-                      COMPLETADA
-                    </span>
-                  )}
-                  {/* Menor, revisión de fase 2 — antes, la ausencia del
-                      chip significaba a la vez "descargada", "completada" y
-                      "todavía no lo sé": tres estados reales colapsados en
-                      un mismo vacío visual. Este estado afirmativo saca
-                      "descargada" de esa ambigüedad; COMPLETADA sigue
-                      ganando la colisión (mismo orden que showDownload). */}
-                  {!complete && isDownloaded && (
-                    <span className="flex-none rounded border border-border bg-surface-raised px-1.5 py-1 font-mono text-[10.5px] font-semibold text-text-secondary">
-                      DESCARGADA
-                    </span>
-                  )}
-                </div>
+            {/* spec-95 fase 1 (mock 5c) — cabecera de grupo: nombre, "N
+                puntos · M paquetes" y el chip de la regla única. No hay
+                slot de botón aquí: la ronda 2 del mock quita "Ver carga" y
+                deja el chip como único contenido de esa esquina en los
+                cuatro casos. */}
+            <div className="flex items-center gap-3 rounded-[13px] border border-border bg-surface-raised px-3.5 py-2.5">
+              <div className="min-w-0 flex-1">
+                {/* Review finding 4 (a11y) — este es el encabezado real de
+                    la jerarquía visual (cabecera de grupo, cliente); la fila
+                    de cada manifiesto debajo usa <h4>. Antes era al revés:
+                    la fila llevaba <h3> y esto era un <p> sin jerarquía,
+                    invertido respecto a lo que se ve en pantalla. */}
+                <h3 className="truncate text-[15px] font-semibold text-text">
+                  {group.retailerName}
+                </h3>
+                <p className="truncate text-[13.5px] text-text-secondary">
+                  {group.pointCount} {group.pointCount === 1 ? 'punto' : 'puntos'} ·{' '}
+                  {group.packageCount} {group.packageCount === 1 ? 'paquete' : 'paquetes'}
+                </p>
               </div>
-            </button>
-            {showDownload && (
-              // Sibling del <button> principal, no anidado dentro — un
-              // <button> dentro de otro <button> es HTML inválido, y el
-              // chip necesita su propio manejador de click que NO dispare
-              // onManifestClick. Bajo el contenido en vez de superpuesto
-              // arriba a la derecha (donde vive el control de "quitar")
-              // porque ambos pueden estar visibles a la vez en la misma
-              // fila (una carga recién agregada, sin escanear y sin
-              // descargar) y no deben competir por el mismo espacio.
-              <div className="px-4 pb-3 flex justify-end">
-                <button
-                  type="button"
-                  aria-label={`Descargar ${m.external_load_id}`}
-                  disabled={downloadingIds?.has(m.id) ?? false}
-                  onClick={() => onDownload!(m.id, m.external_load_id)}
-                  className="flex-none rounded-md border border-status-warning-border bg-status-warning-bg px-2.5 py-2 font-mono text-[11px] font-semibold text-status-warning-text disabled:opacity-50 disabled:pointer-events-none"
-                >
-                  DESCARGAR
-                </button>
-              </div>
-            )}
-            {canRemove && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label={`Quitar ${m.external_load_id} de la ruta en curso`}
-                    disabled={isRemoving}
-                    className="absolute right-1 top-1 grid h-11 w-11 place-items-center rounded text-text-secondary hover:bg-status-error-bg hover:text-status-error-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 disabled:pointer-events-none"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>¿Quitar esta carga de la ruta?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      {m.external_load_id} vuelve a la lista de cargas pendientes y puede
-                      agregarse de nuevo a esta u otra ruta.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => onRemove(m.id)}>
-                      Quitar
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            )}
+              <span
+                data-testid="route-manifest-group-status"
+                className={cn(
+                  'flex-none rounded-md border px-2 py-1.5 font-mono text-[12px] font-semibold',
+                  GROUP_STATUS_CLASSNAME[status],
+                )}
+              >
+                {GROUP_STATUS_LABEL[status]}
+              </span>
+            </div>
+
+            {group.manifests.map((m) => (
+              <ManifestCard
+                key={m.id}
+                manifest={m}
+                onManifestClick={onManifestClick}
+                onRemove={onRemove}
+                isRemoving={isRemoving}
+                downloadedIds={downloadedIds}
+                onDownload={onDownload}
+                downloadingIds={downloadingIds}
+              />
+            ))}
           </div>
         );
       })}

@@ -82,7 +82,10 @@ describe('RouteManifestList — chip DESCARGAR', () => {
         onDownload={() => {}}
       />,
     );
-    expect(screen.getByText('COMPLETADA')).toBeInTheDocument();
+    // spec-95 fase 1 — con un solo manifiesto, el chip por-manifiesto y el
+    // chip de grupo (mismo predicado ganador, COMPLETADA) coinciden en
+    // texto; ambos deben existir.
+    expect(screen.getAllByText('COMPLETADA')).toHaveLength(2);
     expect(screen.queryByRole('button', { name: /descargar/i })).toBeNull();
   });
 
@@ -201,7 +204,9 @@ describe('RouteManifestList — chip DESCARGAR', () => {
         onDownload={() => {}}
       />,
     );
-    expect(screen.getByText('COMPLETADA')).toBeInTheDocument();
+    // Mismo motivo que el test anterior — un solo manifiesto hace COMPLETADA
+    // tanto la fila como su grupo.
+    expect(screen.getAllByText('COMPLETADA')).toHaveLength(2);
     expect(screen.queryByText('DESCARGADA')).toBeNull();
   });
 });
