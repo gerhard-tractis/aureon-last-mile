@@ -65,9 +65,14 @@ check_true() { # $1 name, $2 condition result (0/1)
 }
 
 # A `psql` stub that fakes both invocations sql_tests_check makes, and logs
-# every call's argv AND the two env vars m1 added (PGOPTIONS, PGCONNECT_
-# TIMEOUT) so m3 can assert they actually reach psql instead of just
-# existing somewhere in the shell that never gets passed down.
+# the REAL argv of every call to PSQL_CALLS (one line per call — this is
+# what H5's count-floor assertions and H2's ON_ERROR_STOP assertion read)
+# plus the two env vars m1 added (PGOPTIONS, PGCONNECT_TIMEOUT) to
+# PSQL_ENV_LOG so m3 can assert they actually reach psql. Round 4 (H2): the
+# previous version of this stub wrote only the literal string "CALLED",
+# while its own comment claimed it logged "every call's argv" — nothing
+# ever verified `-v ON_ERROR_STOP=1` (the mechanism's own load-bearing
+# flag) actually reached psql; deleting it from deploy-qa.sh passed 40/40.
 #
 #   1. `-tAc "SELECT 1 FROM pg_extension ..."` (the pgtap probe) -> prints
 #      PGTAP_INSTALLED on STDOUT. PSQL_PROBE_FAIL simulates the probe
@@ -76,20 +81,28 @@ check_true() { # $1 name, $2 condition result (0/1)
 #      NOT change what pgtap_ok decides, only stdout may.
 #   2. `-f <path>` (one test file) -> decided by the fixture's basename,
 #      never by reading the file (control-flow test, not a SQL test):
-#        *pass*      -> ordinary output, exit 0
-#        *error*     -> a RAISE-EXCEPTION-shaped psql error, exit nonzero
-#                       (ON_ERROR_STOP=1's real behaviour)
-#        *tapfail*   -> a pgTAP "not ok" row on STDOUT, exit 0 (pgTAP never
-#                       raises — this is the one case content must decide)
-#        *notfound*  -> psql could not even open the file (M6), exit
-#                       nonzero, lowercase "error:" text
+#        *pass*        -> ordinary output, exit 0
+#        *error*       -> a RAISE-EXCEPTION-shaped psql error, exit nonzero
+#                         (ON_ERROR_STOP=1's real behaviour)
+#        *tapfail*     -> a pgTAP "not ok" row on STDOUT, exit 0 (pgTAP
+#                         never raises — content must decide)
+#        *planmismatch* -> pgTAP's OWN "planned N but ran M" diagnostic
+#                         (H4) — no "not ok" anywhere, exit 0
+#        *notfound*    -> psql could not even open the file (M6), exit
+#                         nonzero, lowercase "error:" text
+#        *bigfail*     -> H1/H3: ~5000 lines of filler BEFORE the real
+#                         ERROR: line at the very end (matching real
+#                         ON_ERROR_STOP=1 psql, which prints every prior
+#                         result set before the statement that aborted),
+#                         well past the ~64KiB pipe-buffer size a `head`
+#                         in the FAIL branch could SIGPIPE on
 #      PSQL_CONN_FAIL forces EVERY per-file call to fail as a connection
 #      refusal, regardless of fixture — the "total outage" case, which
 #      under this design just means every file's own $rc is nonzero; there
 #      is no longer a marker/section guard needed to catch it.
 cat > "$STUB_DIR/psql" <<'STUB'
 #!/usr/bin/env bash
-echo "CALLED" >> "$PSQL_CALLS"
+printf '%s\n' "$*" >> "$PSQL_CALLS"
 printf 'PGOPTIONS=%s PGCONNECT_TIMEOUT=%s\n' "${PGOPTIONS:-}" "${PGCONNECT_TIMEOUT:-}" >> "$PSQL_ENV_LOG"
 args=("$@")
 target=""
@@ -123,6 +136,19 @@ if [ -n "$target" ]; then
     *notfound*)
       echo "psql: error: ${target}: No such file or directory" >&2
       exit 1
+      ;;
+    *bigfail*)
+      i=0
+      while [ "$i" -lt 5000 ]; do
+        echo "NOTICE:  filler output line $i of a big test file"
+        i=$((i + 1))
+      done
+      echo "ERROR:  the real failure, at the very end"
+      exit 3
+      ;;
+    *planmismatch*)
+      echo "# Looks like you planned 5 tests but ran 3"
+      exit 0
       ;;
     *error*)
       echo "psql:${target}:2: ERROR:  boom" >&2
@@ -170,6 +196,23 @@ BEGIN;
 SELECT 1;
 ROLLBACK;
 SQL
+cat > "$FIXTURES/eee_bigfail_test.sql" <<'SQL'
+BEGIN;
+DO $$ BEGIN RAISE EXCEPTION 'boom, eventually'; END $$;
+ROLLBACK;
+SQL
+cat > "$FIXTURES/fff_planmismatch_test.sql" <<'SQL'
+BEGIN;
+SELECT plan(5);
+SELECT ok(true, 'only one of the planned five actually ran');
+SELECT * FROM finish();
+ROLLBACK;
+SQL
+cat > "$FIXTURES/zzz_after_test.sql" <<'SQL'
+BEGIN;
+SELECT 1;
+ROLLBACK;
+SQL
 
 export QA_CHECKOUT_DIR="$STUB_DIR/qa"
 export QA_ENV_FILE="$STUB_DIR/.env.qa"
@@ -184,9 +227,15 @@ extract() { sed -n "/^$1() {/,/^}/p" "$HERE/deploy-qa.sh"; }
 # m3 (round 3): pull QA_SQL_STATEMENT_TIMEOUT_MS/QA_SQL_CONNECT_TIMEOUT_SEC's
 # default straight out of the real script instead of re-typing "30000"/"10"
 # here by hand. If a future edit deletes that declaration from deploy-qa.sh,
-# extract_var returns nothing, the harness never defines the variable, and
-# `set -u` makes sql_tests_check() abort the instant it references it —
-# loudly, not silently, which is the whole point of pulling it live.
+# extract_var returns nothing and the harness never defines the variable.
+# Referencing it under `set -u` happens inside a `$( )` command
+# substitution (the probe's or a per-file psql call), so the unbound-
+# variable error kills that SUBSHELL, not sql_tests_check() itself — the
+# surrounding `&& rc=0 || rc=$?` guard (deliberately present for exactly
+# this kind of nonzero-exit capture) catches it and records it as a
+# regular probe/per-file FAIL. Still loud (a FAIL row, not a silent pass),
+# just not a hard abort of the whole function — corrected in round 4 (H9)
+# after the original wording overclaimed the failure mode.
 extract_var() { grep -m1 "^$1=" "$HERE/deploy-qa.sh"; }
 build_harness() {
   {
@@ -242,6 +291,28 @@ check "PSQL_ENV_LOG has one line per psql call, none missing PGCONNECT_TIMEOUT" 
 check "every psql call carries PGOPTIONS with a numeric statement_timeout" \
   "true" "$([ -s "$PSQL_ENV_LOG" ] && ! grep -qv 'PGOPTIONS=-c statement_timeout=[0-9][0-9]*' "$PSQL_ENV_LOG" && echo true)"
 
+# ── H2 (round 4): -v ON_ERROR_STOP=1 is the load-bearing flag the ENTIRE
+#    redesign stands on — it is what turns a RAISE EXCEPTION into a nonzero
+#    $rc at all. Nothing asserted it reached psql before this: the stub
+#    only ever logged the string "CALLED", so deleting the flag from
+#    deploy-qa.sh passed 40/40. PSQL_CALLS now holds the real argv (see the
+#    stub above), so this greps for it directly on the per-file calls
+#    (lines containing " -f ") ────────────────────────────────────────────
+check "every per-file psql call carries -v ON_ERROR_STOP=1" \
+  "true" "$([ -s "$PSQL_CALLS" ] && ! grep -- ' -f ' "$PSQL_CALLS" | grep -qv -- '-v ON_ERROR_STOP=1' && echo true)"
+
+# ── H5 (round 4): a count floor. Three SKIP paths (missing password,
+#    missing dir, empty dir) legitimately return green having run 0 of N
+#    files — that is documented and deliberate. But nothing asserted that
+#    a run which DOES have prerequisites actually attempted a call for
+#    every file it was handed; a bug that silently truncated the file list
+#    (or stopped the loop early) would still show a plausible-looking
+#    table for the files it did reach. This QA checkout has 3 files
+#    (aaa/bbb/ccc); ccc is skipped without invoking psql (pgtap absent),
+#    so exactly 1 (the probe) + 2 (aaa, bbb) = 3 psql calls are expected ──
+check "H5: exactly one psql call per file that should have run, plus the probe" \
+  "3" "$(wc -l < "$PSQL_CALLS" | tr -d ' ')"
+
 # ── M7 eliminated by construction: with a FAIL (bbb) and an ok (aaa) file in
 #    the SAME run, aaa's own separate psql invocation cannot be touched by
 #    bbb's — already asserted above ("the clean file is reported ok" in the
@@ -294,15 +365,42 @@ check "the pgTAP file is still reported SKIP, not FAIL, for the missing prerequi
   "sql: ccc_tapfail_test.sql|SKIP|pgtap extension not installed on QA" \
   "$(printf '%s\n' "$output2b" | grep '^sql: ccc_tapfail_test.sql')"
 
-# ── A per-file psql exit code ALONE now correctly decides FAIL — this IS
-#    the mechanism (unlike round 2, where an exit code was deliberately NOT
-#    trusted). A fixture whose own psql invocation exits nonzero with no
-#    textual "ERROR:"/"not ok" at all must still be FAIL ──────────────────
-PSQL_CALLS="$STUB_DIR/calls3"; export PSQL_CALLS; : > "$PSQL_CALLS"
-output3="$(run 'PGTAP_INSTALLED=' 2>&1)"; rc=$?
-check_true "a nonzero psql exit for one file does not propagate under set -e" $rc
-check "RESULT flips to 1 from the nonzero exit alone" \
-  "RESULT=1" "$(printf '%s\n' "$output3" | grep '^RESULT=')"
+# ── H1/H3 (round 4): a file whose own output is large enough to fill and
+#    overflow a pipe (~5000 lines here, real psql prints every prior result
+#    set before the ERROR: line under ON_ERROR_STOP=1) must NOT kill
+#    sql_tests_check via SIGPIPE in the old `head -20` — and the file AFTER
+#    it (zzz_after) must still run, proving the loop survived. Separate QA
+#    checkout: eee_bigfail (fails, large output) then zzz_after (passes) ──
+BIG_QA="$STUB_DIR/qa-bigfail"
+mkdir -p "$BIG_QA/packages/database/supabase/tests"
+cp "$FIXTURES/eee_bigfail_test.sql" "$FIXTURES/zzz_after_test.sql" \
+  "$BIG_QA/packages/database/supabase/tests/"
+PSQL_CALLS="$STUB_DIR/calls_h1"; export PSQL_CALLS; : > "$PSQL_CALLS"
+outputH1="$(run 'PGTAP_INSTALLED=' "$BIG_QA" 2>&1)"; rc=$?
+check_true "H1: a file with >64KiB of output does not SIGPIPE-kill the function" $rc
+check "H1: RESULT flips to 1 from the big file's real failure" \
+  "RESULT=1" "$(printf '%s\n' "$outputH1" | grep '^RESULT=')"
+check "H1: the big file is reported FAIL, not silently dropped" \
+  "true" "$(printf '%s\n' "$outputH1" | grep -q '^sql: eee_bigfail_test.sql|FAIL|' && echo true)"
+check "H1/H3: the file AFTER the big one still ran — the loop was not killed" \
+  "sql: zzz_after_test.sql|ok|" \
+  "$(printf '%s\n' "$outputH1" | grep '^sql: zzz_after_test.sql')"
+
+# ── H4 (round 4): pgTAP's plan()/ran() COUNT mismatch is a separate
+#    failure shape from an individual `not ok` — finish() emits a
+#    "# Looks like you planned N but ran M" diagnostic with no "not ok"
+#    anywhere, and psql still exits 0. The realistic trigger is editing a
+#    file and forgetting to update plan(N) — must be FAIL, not ok ────────
+PLANMIS_QA="$STUB_DIR/qa-planmismatch"
+mkdir -p "$PLANMIS_QA/packages/database/supabase/tests"
+cp "$FIXTURES/fff_planmismatch_test.sql" "$PLANMIS_QA/packages/database/supabase/tests/"
+PSQL_CALLS="$STUB_DIR/calls_h4"; export PSQL_CALLS; : > "$PSQL_CALLS"
+outputH4="$(run 'PGTAP_INSTALLED=1' "$PLANMIS_QA" 2>&1)"; rc=$?
+check_true "H4: runs to completion (exit 0) on a plan/ran mismatch" $rc
+check "H4: a plan/ran mismatch with no 'not ok' anywhere is still reported FAIL" \
+  "true" "$(printf '%s\n' "$outputH4" | grep -q '^sql: fff_planmismatch_test.sql|FAIL|' && echo true)"
+check "H4: RESULT flips to 1" \
+  "RESULT=1" "$(printf '%s\n' "$outputH4" | grep '^RESULT=')"
 
 # ── Total connection outage: EVERY per-file call fails as a connection
 #    refusal. Under this design there is no marker/section to go missing —

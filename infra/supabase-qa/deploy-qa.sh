@@ -70,8 +70,10 @@ QA_PGTAP_DEGRADED_MAX="${QA_PGTAP_DEGRADED_MAX:-3}"
 # ceiling is shared with migrations/seed/builds, and hitting it produces a
 # generic runner timeout indistinguishable from any other failure. An
 # explicit statement_timeout turns that into
-# "ERROR: canceling statement due to statement timeout" — a FAIL the
-# existing "ERROR:" grep already catches, with a cause a human can read.
+# "ERROR: canceling statement due to statement timeout" under
+# ON_ERROR_STOP=1 — a nonzero psql exit sql_tests_check already catches
+# (round 3 dropped the ERROR: text grep entirely; $rc decides now), with a
+# cause a human can read in the FAIL row's own log block.
 # 30s per statement is generous for both a metadata query and a
 # BEGIN/ROLLBACK test file; PGCONNECT_TIMEOUT covers the (much less likely)
 # case of the connection itself hanging before a statement ever starts.
@@ -1014,17 +1016,38 @@ sql_tests_check() {
 
     if [ "$rc" -ne 0 ]; then
       fail=$((fail + 1))
-      log "--- $base failed (psql exit ${rc}), first 20 lines of its own output:"
-      printf '%s\n' "$out" | head -20 | sed 's/^/    /'
+      log "--- $base failed (psql exit ${rc}), LAST 20 lines of its own output:"
+      # round 4 (H1+H3): was `head -20`. Two bugs at once: (1) under
+      # `ON_ERROR_STOP=1` psql prints every prior result set before the
+      # ERROR: line, which lands at the END of $out, not the start —
+      # `head -20` on a file with 19 RAISE NOTICE lines before its real
+      # failure, or a `not ok 34` inside `plan(64)`, showed the reader
+      # nothing but passing noise. (2) `head -20` closes its read end of
+      # the pipe once it has its 20 lines; if $out exceeds ~64KiB, `printf`
+      # gets SIGPIPE, the pipeline exits 141, and under `set -Eeuo
+      # pipefail` that kills sql_tests_check mid-run — no FAIL row for
+      # THIS file, and every file after it in the loop never runs, the
+      # exact B2 failure mode this fase exists to close. `tail` reads its
+      # input to EOF regardless of how much of it gets printed, so it
+      # cannot trigger SIGPIPE in the writer, and it shows the lines next
+      # to the actual error instead of 20 lines of preamble.
+      printf '%s\n' "$out" | tail -20 | sed 's/^/    /'
       record "sql: $base" FAIL "see the block above this table"
-    elif printf '%s' "$out" | grep -q "not ok [0-9]"; then
+    elif printf '%s' "$out" | grep -qE "not ok [0-9]|^# Looks like you planned"; then
       # pgTAP's own assertions never raise — finish() just returns a "not
       # ok N" row like any other SELECT, so $rc stays 0 even on a real
       # failure. Content-checked against THIS file's own $out only: no
       # neighbor to misattribute to, unlike round 2's shared $output.
+      # H4 (round 4): a plan()/ran() COUNT mismatch is a SEPARATE pgTAP
+      # failure shape from an individual `not ok` — finish() emits a
+      # "# Looks like you planned N tests but ran M" diagnostic line with
+      # no "not ok" anywhere, still exit 0. The realistic trigger is
+      # editing a test file and forgetting to update plan(N) to match —
+      # that would otherwise score "ok" forever under the new mechanism,
+      # the one content-checked path this fase has left uncovered.
       fail=$((fail + 1))
-      log "--- $base failed (pgTAP assertion, no exception), first 20 lines of its own output:"
-      printf '%s\n' "$out" | head -20 | sed 's/^/    /'
+      log "--- $base failed (pgTAP assertion or plan/ran mismatch, no exception), LAST 20 lines of its own output:"
+      printf '%s\n' "$out" | tail -20 | sed 's/^/    /'
       record "sql: $base" FAIL "see the block above this table"
     else
       pass=$((pass + 1))
