@@ -56,7 +56,13 @@ set -uo pipefail
 : "${SUPABASE_DB_PASSWORD:?missing}"
 : "${POOLER_HOST:?missing}"
 
-PSQL_CONN="sslmode=require host=$POOLER_HOST port=6543 dbname=postgres user=postgres.${SUPABASE_PROJECT_REF}"
+# Puerto y usuario se LEEN del connection_string que resuelve el workflow, no
+# se suponen: el usuario del pooler es `postgres.<ref>` y el puerto de modo
+# transaccion 6543, pero darlos por hechos es la clase de error que dejo las
+# siete superficies via psql a cero en la corrida 34544230110.
+: "${POOLER_PORT:?missing}"
+: "${POOLER_USER:?missing}"
+PSQL_CONN="sslmode=require host=$POOLER_HOST port=$POOLER_PORT dbname=postgres user=$POOLER_USER"
 export PGPASSWORD="$SUPABASE_DB_PASSWORD"
 
 # Canonical auth keys this guardrail tracks today. Expanding this list is a
