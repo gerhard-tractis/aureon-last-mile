@@ -425,7 +425,7 @@ Pure TypeScript plus Supabase reads and writes. No network call to any provider 
 
 The hash is sha256 over the normalised `street|comuna` string. `normalisation_version` is **not** an input to it (Fase 1 explains why).
 
-**Lo que viaja al proveedor es el texto normalizado, el mismo que produce la clave de caché.** Si se enviara el texto crudo, consulta y clave divergirían y la economía de la Decisión 3 dejaría de sostenerse: dos escrituras distintas de una dirección compartirían clave pero no respuesta. Consecuencia honesta que la Fase 4 debe verificar: las 20 sondas de la Fase 0 se hicieron con **texto crudo**, así que su tabla de formas describe el comportamiento sobre crudo. La Fase 4 repite una muestra pequeña con el texto ya normalizado antes de fijar sus expectativas — la normalización quita la puntuación, de modo que `S/N` llega como `s n` y la trampa del `/` puede no llegar nunca al cable. Se mantiene el `encodeURIComponent` igualmente: es correcto independientemente de qué texto se envíe, y la trampa vuelve en cuanto alguien llame al adaptador con texto crudo.
+**Lo que viaja al proveedor es el texto normalizado** — el mismo normalizado del que sale la clave de caché, con el separador que corresponda a una consulta. El `|` de `street|comuna` pertenece a la clave, no al cable: no se envía. Si se enviara el texto crudo, consulta y clave divergirían y la economía de la Decisión 3 dejaría de sostenerse: dos escrituras distintas de una dirección compartirían clave pero no respuesta. Consecuencia honesta que la Fase 4 debe verificar: las 20 sondas de la Fase 0 se hicieron con **texto crudo**, así que su tabla de formas describe el comportamiento sobre crudo. La Fase 4 repite una muestra pequeña con el texto ya normalizado antes de fijar sus expectativas — la normalización quita la puntuación, de modo que `S/N` llega como `s n` y la trampa del `/` puede no llegar nunca al cable. Se mantiene el `encodeURIComponent` igualmente: es correcto independientemente de qué texto se envíe, y la trampa vuelve en cuanto alguien llame al adaptador con texto crudo.
 
 The cache tool exposes exactly two operations — look up by `(address_hash, normalisation_version)`, and insert a result — plus the `orders` update. Keep the normaliser in its own file: it is the part Fase 5's tests exercise hardest, and the part a version bump will rewrite.
 
@@ -453,11 +453,33 @@ The agents app already has everything this needs; no new infrastructure is stood
 `apps/agents/src/providers/geocoding/types.ts`:
 
 ```ts
-export interface GeocodeQuery { address: string; comuna: string; region?: string }
+export interface GeocodeQuery {
+  address: string;
+  /** Canonical comuna name, resolved from orders.comuna_id by Fase 5.
+   *  Optional because orders.comuna_id is nullable and that case is real —
+   *  when absent the adapter cannot cross-check, and says so via matchClass. */
+  comuna?: string;
+  region?: string;
+}
+
+/** Why the adapter reached its verdict. Fase 5 needs this, not just `precision`:
+ *  `wrong_comuna` and `uncrosscheckable` are both 'approximate' yet take
+ *  OPPOSITE dispositions in the ladder — one discards the point, the other keeps
+ *  it. With only `precision` the worker cannot tell them apart without
+ *  re-parsing `raw`, which would drag MapTiler's response shape back into the
+ *  orchestration layer that "En qué capa se decide" deliberately keeps it out of. */
+export type GeocodeMatchClass =
+  | 'exact'              // house number matched AND comuna cross-check passed
+  | 'coarse'             // provider answered at locality/region granularity
+  | 'wrong_comuna'       // house number matched but context[] names another comuna
+  | 'uncrosscheckable';  // a point, but no comuna to check against, or no municipality.* in context[]
 
 export interface GeocodeResult {
   latitude: number;
   longitude: number;
+  matchClass: GeocodeMatchClass;
+  /** Derived, kept because it is what lands in the column:
+   *  'exact' when matchClass === 'exact', otherwise 'approximate'. */
   precision: 'exact' | 'approximate';
   source: string;
   raw?: unknown;
@@ -469,7 +491,7 @@ export interface GeocodingProvider {
 }
 ```
 
-`apps/agents/src/providers/geocoding/maptiler.ts` — country-biased to `cl`, proximity-biased to the comuna centroid from Fase 2, `exact` vs `approximate` decided by **Fase 0's measured rule**: `feature.address` present **and** the `municipality.*` entry of `context[]` resolving to the requested comuna. Not `place_type`, which Fase 0 measured returning `['address']` for results in the wrong comuna, and not a `relevance` floor, which Fase 0 measured inverting the truth.
+`apps/agents/src/providers/geocoding/maptiler.ts` — country-biased to `cl`, proximity-biased to the comuna centroid from Fase 2, `exact` vs `approximate` decided by **Fase 0's measured rule**: `feature.address` present **and** the `municipality.*` entry of `context[]` resolving to the requested comuna. Not `place_type`, which Fase 0 measured returning `['address']` for results in the wrong comuna, and not a `relevance` floor, which Fase 0 measured failing to separate the cases at all — there is no threshold that accepts the correct 0.667 match without also accepting the 1.0 and 0.994 street centroids.
 
 **The request must carry `User-Agent: aureon-geo`.** Fase 0 measured this as an allowlist on that exact string: `Mozilla/5.0`, `curl/8.0`, `x` and no header at all each return `HTTP 403`. Not optional politeness — it is the difference between a working adapter and one that 403s on every request. This applies to the **server** key only; spec-59's browser tile key is referrer-restricted and cannot carry a User-Agent at all.
 
@@ -549,20 +571,20 @@ FOR UPDATE SKIP LOCKED
 |---|---|---|---|
 | Cache hit, or provider returned a street-level match | `resolved` | — | never |
 | Provider answered at locality/region granularity → centroid | `fallback` | **+1** | `now() + 7 days` |
-| **House number matched but in the WRONG comuna** → centroid of the **requested** comuna | `fallback` | **+1** | `now() + 7 days` |
+| **House number matched but in the WRONG comuna** (`wrong_comuna`) → centroid of the **requested** comuna, the provider's point **discarded** | `fallback` | **+1** | `now() + 7 days` |
+| **The comuna could not be cross-checked at all** (`uncrosscheckable`) → **keep the provider's point** | `fallback` | **+1** | `now() + 7 days` |
 | Provider answered `null` — no match for this address → centroid | `fallback` | **+1** | `now() + 7 days` |
 | Provider **unavailable** — circuit-breaker open, 429, timeout, network → centroid | `fallback` | **unchanged** | `now() + 30 min` |
 | **Monthly quota exhausted**, or `MAPTILER_API_KEY` absent → centroid | `fallback` | **unchanged** | start of next month |
 | **Credential refused** — 401, or 403 identified as a key refusal → centroid | `fallback` | **unchanged** | **1 hour**, circuit latched. Log at error |
-| Provider returned a point but the comuna could not be cross-checked (no `comuna_id`, or no `municipality.*`) | `fallback` | **+1** | `now() + 7 days`. **Keep the provider's point**, not a centroid — see Fase 0 |
 | 2 attempts exhausted | `unresolvable` | 2 | never |
 | No `comuna_id` and no provider answer | `unresolvable` | — | never |
 
-Two rules do the work here.
+Five rules do the work here, and they are stated in the order they bite.
 
 **A plausible pin in the wrong region is worse than an obviously vague one.** When the provider returns a house number but `context[].municipality` is not the comuna we asked for, the answer is the **centroid of the comuna we asked for** — never the provider's point. The error of a centroid is bounded by the size of a comuna; the error of a confidently wrong match is not, and Fase 0 measured exactly that: `La Union` came back as Valdivia, about 100 km away, and `Lote 5 Parcela 12, Curacavi` came back as Puente Alto. Decision 4 permits an honestly approximate pin because it is actionable; a sharp pin in the wrong region is not approximate, it is false.
 
-Note this is the **opposite** disposition from the row above it, where the comuna could not be cross-checked at all. That asymmetry is deliberate and worth stating so nobody "harmonises" the two: when the check could not run, the provider's point is the best information anyone has; when the check ran and failed, the provider's point is known-wrong for this order.
+Note this is the **opposite** disposition from the row directly below it, and the two are deliberately adjacent in the table because they are only comprehensible as a pair. That asymmetry is deliberate and worth stating so nobody "harmonises" the two: when the check could not run, the provider's point is the best information anyone has; when the check ran and failed, the provider's point is known-wrong for this order.
 
 **A refused credential is not an outage, and must not be retried like one.** Fase 0 measured a 403 from a User-Agent-restricted key — indistinguishable from an `api_error` to any classifier that only asks "did the call fail". Left in the transport bucket it re-arms every thirty minutes forever: a worker that looks busy, spends nothing and geocodes nothing, while every order sits on a comuna centroid. So a refused credential trips a latched circuit for an hour and logs at error level. A wrong key must be loud within one cron tick, not inferred a week later from the `fallback` count. The latch is **one hour and not "until restart"**, because 403 is ambiguous: MapTiler also uses it for plan limits, and a permanent latch would turn a transient rate-limit into a month with every order on a centroid and `geocode_attempts` never incrementing — no signal in the counts at all, which is the very failure Decision 4 exists to prevent. Fase 4 owns measuring the discriminator between the two kinds of 403.
 
@@ -576,11 +598,15 @@ Note this is the **opposite** disposition from the row above it, where the comun
 
 **Coordinates held by an `unresolvable` row differ by path**, and spec-59 renders them differently, so the invariant is stated rather than left to guess. There are **three** classes, and `geocode_source` already distinguishes them — no new column is needed:
 
-- *2 attempts exhausted, comuna known* — holds the comuna centroid, `geocode_source='comuna_centroid'`, `precision='approximate'`. spec-59 draws a hollow marker.
-- *2 attempts exhausted, comuna unknown but the provider returned a point* — holds the **provider's** point, `geocode_source='maptiler'`, `precision='approximate'`. spec-59 draws a hollow marker too: it is a real position, just never cross-checked. This class exists because of the "could not cross-check" row above, which keeps the point instead of discarding it.
+- *`geocode_source='comuna_centroid'`* — holds the comuna centroid. Reached by any path that wrote a centroid: coarse match, null answer, or a house number in the wrong comuna. spec-59 draws a hollow marker.
+- *`geocode_source='maptiler'`* — holds a point the provider returned that was never cross-checked (`uncrosscheckable`), whether the comuna was unknown or simply absent from `context[]`. spec-59 draws a hollow marker too: it is a real position, just unverified.
+
+  Keying these two by `geocode_source` rather than by "was the comuna known" is deliberate. A row can reach `unresolvable` by **mixed** paths — coarse on the first attempt, uncrosscheckable on the second — and only the source column describes what it actually ends up holding.
 - *No `comuna_id` and no provider answer* — `latitude` / `longitude` stay NULL. spec-59 excludes it from the map and counts it under "sin ubicación".
 
 The rule spec-59 needs is simpler than the three cases: **draw anything with coordinates, hollow when `precision='approximate'`; count the NULLs separately.** `geocode_source` is there if it ever wants to tell the two hollow kinds apart.
+
+One caveat spec-59 must not miss: **a NULL coordinate is not necessarily a failure.** A freshly intaken order sits at `geocode_status='pending'` with NULL coordinates until the next cron tick, and lumping it with `unresolvable` under "sin ubicación" would report a self-healing state as a permanent one. Split that counter by `geocode_status`.
 
 **Surfacing `unresolvable`.** Manual correction is a Non-Goal, so **nothing can move a row out of this state, and `unresolvable` is genuinely terminal today.** No workflow is implied, because none exists: there is no `.from('orders').update(` anywhere in `apps/frontend/src`, and nothing outside intake writes `delivery_address`. An operator who spots a wrong pin has no in-app way to fix it. What this phase provides is visibility, not remedy: the worker logs a per-run count of `resolved` / `fallback` / `unresolvable` rows and of provider calls made versus cache hits. Fase 1's reset trigger is **forward-looking** — it protects re-intake of a corrected address and whatever correction UI a later spec adds; it is not a remedy available now.
 
@@ -621,6 +647,12 @@ Run the resolver against a sample of **200 real production `delivery_address` va
 | `exact` (street-level or better) | ≥ 80 % |
 | `approximate` (centroid fallback) | ≤ 20 % |
 | Provider hard failures | ≈ 0 % |
+| **`wrong_comuna`** — house number matched, `context[]` named another comuna | **no threshold: this is the measurement the comuna cross-check is on trial for** |
+| `uncrosscheckable` — a point, but nothing to check it against | report only |
+
+**The `wrong_comuna` count is not decoration, and it is the reason this table grew.** Fase 0 established that the comuna cross-check decided **zero** verdicts in 20 probes: every false positive it caught was already caught by the missing house number. The check is currently kept on an asymmetric argument, not on evidence. This is where the evidence comes from — and the number decides one of three things: the check stays as specified, it relaxes to comparing the **region** instead of the comuna (if the misses are mostly boundary cases or differing administrative labels), or it is withdrawn as cost without benefit.
+
+**The script must record the match class, not the stored `precision`.** By the time this gate runs, the resolver already implements the rule, so a wrong-comuna match leaves the pipeline as `approximate` holding a centroid — indistinguishable from a coarse answer. The sampler therefore reads `GeocodeMatchClass` from the resolver, which is exactly why that discriminator exists on `GeocodeResult` rather than being collapsed into `precision`.
 
 **If `exact` lands materially below 80 %, stop.** Re-evaluating the provider is one of two possible responses, and Fase 0 measured why it may be the wrong one: forms like `S/N`, `Lote` and `Parcela` resolve `approximate` with any geocoder, because there is no house number to match. So read the failure before acting on it — if the shortfall is concentrated in those forms, the answer is to revisit the threshold, not the vendor. Swapping providers only helps if the shortfall is in ordinary street-and-number addresses. This is why the gate precedes the backfill: afterwards there is no cheap swap, because `geocode_cache` and `orders.latitude` are both fully written and this spec specifies no cache-purge or re-geocode procedure.
 
