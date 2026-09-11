@@ -149,6 +149,13 @@ manifiesto quedó a medio limpiar.
 distinguen por un chip en la fila, no por pestaña. Es el precio de que la
 pestaña signifique un lugar y no un trámite.
 
+**Segundo coste, del mismo modelo:** si se cancela la ruta de una carga ya
+cerrada, el trigger la desengancha y limpia `reception_status`
+(`20260625000001:203-207`) pero no revierte `status`, así que aparece en «En
+bodega» sin haberse movido nunca del andén. Es raro —cancelar una ruta con
+cargas cerradas dentro— y no tiene arreglo desde este spec: haría falta que el
+trigger revirtiera `status`, que es cirugía sobre spec-47. Queda dicho.
+
 ## `'cancelled'`: quién lo escribe, y por qué no tiene pestaña
 
 `manifest_status_enum` incluye `'cancelled'` (`20260310100000:33`) y el frontend
@@ -197,6 +204,24 @@ como «viene hacia mí» y no compite con nada; la ambigüedad sólo existe en
 Recogida, que es donde hay dos tramos que nombrar. Queda anotado como lo que
 es: dos nombres para un mismo estado, en dos pantallas que rara vez se miran
 juntas.
+
+## Las fases 1 y 2 se mergean juntas
+
+**La fase 1 no se puede desplegar sola.** Su migración saca de
+`get_completed_manifests` toda carga cerrada en el andén con la ruta todavía
+`in_progress` — el estado normal de la operación durante horas — y quien la
+recoge es `get_routed_manifests`, a la que **ningún hook del frontend llama
+hasta la fase 2**. Entre un merge y el otro, esas cargas desaparecerían de
+«Completados», del StatTile «Completados hoy» y de `TodayClosuresPanel` con sus
+faltantes: el agujero de `CARGA-PARIS-001` ensanchado a la operación normal, y
+esta vez causado por nosotros.
+
+Como el merge a `main` despliega, las dos fases van en **un solo PR**. La fase 3
+sí puede ir aparte: añade una acción, no cambia ningún predicado.
+
+Hallado en el review de la fase 1 (2026-09-10), no al planificar — la tabla de
+dependencias decía «fase 2 depende de fase 1» y eso es cierto para construir,
+pero no dice nada sobre desplegar. Son dos preguntas distintas.
 
 ## Fase 1 — las cuatro RPC, y la partición demostrada `[in_progress]`
 
@@ -390,7 +415,7 @@ re-templar: representan «carga recibida en el hub», y hay que escribirles
 `scripts/pgtap-local.sh` — los tests SQL no corren en CI, y el contenedor es
 compartido entre worktrees.
 
-## Fase 2 — la pestaña «En punto de retiro» y el renombrado `[pending]`
+## Fase 2 — la pestaña «En punto de retiro» y el renombrado `[in_progress]`
 
 **Depende de:** spec-94 fase 1
 
