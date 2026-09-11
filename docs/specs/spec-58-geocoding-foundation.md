@@ -2,7 +2,7 @@
 
 > **Related:** [spec-59](spec-59-map-component-despacho-pins.md) (map component + Despacho pins — depends on this), [spec-60](spec-60-control-tower-fleet-map.md) (Control Tower fleet map), [spec-38](spec-38-route-activity-view.md) (created the map placeholder), [spec-54](spec-54-ui-rebrand.md) (tokenised the map surface, deferred the provider)
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit
 **Downstream:** spec-59-map-component-despacho-pins.md, spec-60-control-tower-fleet-map.md
 
@@ -85,7 +85,7 @@ The two are near-identical in practice, but the poll is suspect: the Show Route 
 
 | Fase | Delivers | Token |
 |---|---|---|
-| 0 | Precision mapping: which MapTiler response field carries match granularity | `[blocked]` |
+| 0 | Precision mapping: which MapTiler response field carries match granularity | `[done]` |
 | 1 | `orders` geocode columns, queue index, reset trigger, `geocode_cache` | `[pending]` |
 | 2 | `chile_comunas` centroids, 347 rows with provenance | `[pending]` |
 | 3 | Address normalisation v1 + cache read/write. No network. | `[pending]` |
@@ -101,26 +101,71 @@ Two ordering constraints that are not obvious from the table, and that `scripts/
 
 ---
 
-### Fase 0 — Precision mapping: what MapTiler actually calls a street-level match `[blocked]`
+### Fase 0 — Precision mapping: what MapTiler actually calls a street-level match `[done]`
 
 **Depende de:** ninguna
+
 **Archivos:** `docs/specs/spec-58-geocoding-foundation.md` (esta sección)
 
-The whole accuracy gate is measured off this mapping, so it cannot be left to the implementer's judgement, and it cannot be guessed from documentation.
+> Implementado por: orquestador (no un implementer — el entregable es una tabla en este fichero, no código) — rama docs/spec-58-fase-0-mapeo-precision
+> Review: sin revisión de `reviewer`. El hueco se declara en vez de maquillarse: es una fase de medición cuya evidencia son respuestas HTTP reproducibles, transcritas abajo junto a la consulta que las produjo, de modo que cualquiera las repite en un minuto. La Fase 4 ejerce esta regla contra `fetch` mockeado y ahí sí hay review.
+> QA: n/a — no se despliega nada. Las llamadas se hicieron contra la API real de MapTiler el 2026-09-11.
+> Downstream: revisado spec-59 y spec-60 — sin cambios. Ninguno de los dos lee la respuesta cruda del geocoder: consumen `orders.latitude/longitude` y `geocode_precision`, cuyo contrato no cambia. spec-59 sí hereda el requisito de `User-Agent` para los tiles, anotado abajo.
 
-Call MapTiler's geocoding endpoint with three real Chilean addresses — one dense-urban street with a number, one address in a comuna with a well-known name collision, one rural or peri-urban address — record the full responses, and write the mapping table **into this section**: which response field carries the match granularity (candidates: `place_type`, `properties.accuracy`, `relevance`), and exactly which values count as `exact`. Only street-level or better is `exact`; locality, municipality and region are `approximate`.
+Se llamó al endpoint de geocoding con direcciones chilenas reales el 2026-09-11. **El resultado invalida la suposición con la que se escribió este spec**, así que la tabla de abajo no es la que se esperaba.
 
-Deliverable is an edit to this file, not code. No adapter is written here — that is Fase 4, which consumes the table.
+#### Qué campo trae la granularidad
 
-> Bloqueo: se intentó localizar una `MAPTILER_API_KEY` utilizable en el repo o en el VPS antes de abrir la fase — verificado con `git grep -iE "maptiler|MAPTILER_API_KEY"` sobre `origin/main`, que no devuelve ni una referencia fuera del texto de este spec, y contra `apps/agents/src/config.ts`, donde la variable no está registrada — 2026-09-11 — desbloquea: usuario (dar de alta la cuenta MapTiler y entregar la key; es una cuenta con tarjeta, no algo que un agente pueda crear)
+| Campo | Dónde | Qué significa realmente |
+|---|---|---|
+| `feature.address` | raíz del feature, string o **ausente** | **El único indicador fiable.** Presente = MapTiler acertó el número de calle. Ausente = devolvió el centroide de la calle |
+| `feature.place_type` | array | `['address']` para **cualquier** cosa a nivel calle, acertada o no. `['municipality']` para una comuna. Inútil por sí solo |
+| `properties.kind` | string | `street` / `admin_area`. Misma limitación |
+| `feature.relevance` | 0..1 | Similitud **de texto**, no precisión. Ver la trampa 2 |
+| `properties.accuracy` | — | **No existe.** El spec lo listaba como candidato; no está en la respuesta |
+| `feature.context[]` | array | Trae una entrada `municipality.*` con la comuna que realmente devolvió |
 
+#### La regla
 
+```
+exact  <=>  feature.address está presente
+            Y  el municipality.* de context[] resuelve, vía normalize_comuna_id(),
+               a la misma comuna que se pidió
+
+approximate  <=>  cualquier otro feature devuelto
+sin match    <=>  features vacío  -> centroide, camino `fallback`
+```
+
+#### Tres trampas medidas, no supuestas
+
+**1. `place_type` miente.** `"Colon 1000, Concepcion"` devolvió `place_type=['address']`, `kind=street`, y el punto `(-73.02485, -36.90198)` — que es **Calle 1, Chiguayante**, otra comuna. `"Ruta G-60 km 12, Curacavi"` devolvió `Ruta G-380, Melipilla`, a unos 20 km. Las dos habrían pasado como `exact` con la regla que este spec daba por hecha. De ahí que el cruce de comuna contra `context[]` sea **obligatorio** y no un extra: el sesgo de proximidad al centroide no evitó ninguno de los dos.
+
+**2. `relevance` invierte la verdad si se usa como umbral.** Medido:
+
+| Consulta | `relevance` | `address` | Punto devuelto |
+|---|---|---|---|
+| `Avenida Providencia 1234, Providencia` | **1.0** | `'1234'` | el portal correcto |
+| `Avenida Providencia, Providencia` (sin número) | **1.0** | ausente | centroide de la calle |
+| `Avenida Providencia 1234 depto 42, Providencia` | **0.667** | `'1234'` | el portal correcto |
+| `Ruta G-60 km 12, Curacavi` | 0.372 | ausente | otra comuna |
+
+Un suelo de `relevance` aceptaría el centroide de calle (1.0, sin número) y **rechazaría** el acierto exacto con `depto` (0.667). Mide parecido de texto, no calidad del punto.
+
+**3. Esa misma fila del `depto` confirma la Decisión 3 por un motivo que no se había previsto.** Quitar la unidad no es sólo economía de caché: el texto del `depto` **degrada la puntuación de la propia respuesta**. La normalización de la Fase 3 mejora los resultados, no sólo su coste.
+
+Y un cuarto dato, éste sí como se esperaba: `"asdkjhasd 99999, Nowhereville"` devuelve `features: []`, que es el camino sin match → centroide de la Fase 5.
+
+#### Dos requisitos de infraestructura que salieron de aquí
+
+- **La key está restringida por User-Agent.** Sin la cabecera `User-Agent: aureon-geo` toda petición devuelve `HTTP 403 "Key usage restricted"`, en geocoding **y** en tiles, con o sin `Referer`. El adaptador de la Fase 4 **debe** enviarla, y spec-59 tendrá el mismo requisito para los tiles. Medido: 403 sin la cabecera, 200 con ella.
+- **Un 401/403 no es un fallo de transporte**, y la escalera de la Fase 5 no sabía distinguirlo. Ver la fila nueva allí.
 
 ---
 
 ### Fase 1 — `orders` geocode columns and `geocode_cache` `[pending]`
 
 **Depende de:** ninguna
+
 **Archivos:** `packages/database/supabase/migrations/<ts>_spec58_geocoding_schema.sql` (nueva), `packages/database/supabase/tests/spec58_geocoding.sql` (nuevo), `packages/database/src/database.types.ts`
 
 #### Changed: `public.orders`
@@ -250,6 +295,7 @@ Also regenerate `packages/database/src/database.types.ts` wholesale. That file i
 ### Fase 2 — Comuna centroids `[pending]`
 
 **Depende de:** spec-58 fase 1
+
 **Archivos:** `packages/database/supabase/migrations/<ts>_spec58_comuna_centroids.sql` (nueva), `packages/database/supabase/tests/spec58_comuna_centroids.sql` (nuevo), `packages/database/src/database.types.ts`
 
 ```sql
@@ -281,6 +327,7 @@ Seeded from **one** named source, committed as data in the migration exactly as 
 ### Fase 3 — Address normalisation and the cache layer `[pending]`
 
 **Depende de:** spec-58 fase 1
+
 **Archivos:** `apps/agents/src/lib/geocoding/normalise.ts` (nuevo), `apps/agents/src/lib/geocoding/normalise.test.ts` (nuevo), `apps/agents/src/tools/supabase/geocoding.ts` (nuevo), `apps/agents/src/tools/supabase/geocoding.test.ts` (nuevo)
 
 Pure TypeScript plus Supabase reads and writes. No network call to any provider — that is Fase 4 — so this phase is fully testable offline.
@@ -307,6 +354,7 @@ Run locally with `--pool=forks`.
 ### Fase 4 — The MapTiler adapter `[pending]`
 
 **Depende de:** spec-58 fase 0
+
 **Archivos:** `apps/agents/src/providers/geocoding/types.ts` (nuevo), `apps/agents/src/providers/geocoding/maptiler.ts` (nuevo), `apps/agents/src/providers/geocoding/maptiler.test.ts` (nuevo), `apps/agents/src/providers/types.ts`, `apps/agents/src/providers/openrouter.ts`, `apps/agents/src/config.ts`, `apps/agents/src/config.test.ts`, `apps/agents/.env.example`
 
 The agents app already has everything this needs; no new infrastructure is stood up. New files mirror the existing `providers/` shape (`providers/openrouter.ts`, `providers/types.ts`, `providers/circuit-breaker.ts`).
@@ -330,11 +378,20 @@ export interface GeocodingProvider {
 }
 ```
 
-`apps/agents/src/providers/geocoding/maptiler.ts` — country-biased to `cl`, proximity-biased to the comuna centroid from Fase 2, `exact` vs `approximate` decided by the mapping table Fase 0 writes. Wrapped in the existing `CircuitBreaker` so a provider outage degrades to centroid fallback instead of stalling the queue.
+`apps/agents/src/providers/geocoding/maptiler.ts` — country-biased to `cl`, proximity-biased to the comuna centroid from Fase 2, `exact` vs `approximate` decided by **Fase 0's measured rule**: `feature.address` present **and** the `municipality.*` entry of `context[]` resolving to the requested comuna. Not `place_type`, which Fase 0 measured returning `['address']` for results in the wrong comuna, and not a `relevance` floor, which Fase 0 measured inverting the truth.
 
-**Error classification.** Fase 5's retry ladder distinguishes "the provider told us something about this address" from "the provider was unreachable", so the adapter must return the second as a typed transport failure. The union already exists, spelled at `apps/agents/src/providers/types.ts:36` — `'rate_limit' | 'timeout' | 'api_error' | 'network'` — but it is currently a member of `LLMError`, so importing it as-is would type a geocoding failure as an LLM error. **Extract it to a shared `ProviderErrorType`** (which touches `openrouter.ts`) rather than inventing a second vocabulary that can drift.
+**The request must carry `User-Agent: aureon-geo`.** The key is User-Agent-restricted; without that header every call returns `HTTP 403 "Key usage restricted"`. Not optional politeness — it is the difference between a working adapter and one that 403s on every request. Wrapped in the existing `CircuitBreaker` so a provider outage degrades to centroid fallback instead of stalling the queue.
 
-**Env.** `MAPTILER_API_KEY` and `MAPTILER_MONTHLY_QUOTA` in `apps/agents/.env`, added to `.env.example`, registered in `apps/agents/src/config.ts` (which validates every var at startup). Production values live in `/home/aureon/.env` (chmod 600), read via `deploy/aureon-agents.service`.
+**Error classification.** Fase 5's retry ladder distinguishes three things, not two: "the provider told us something about this address", "the provider was unreachable", and "our credential is refused". The third needs its own type — `credential` — beyond the existing union. A 401/403 is **not** a transient outage: it never clears on its own, so classifying it as transport means the worker retries a doomed request every thirty minutes forever while reporting itself healthy. Fase 0 hit exactly this against a misconfigured key. The union already exists, spelled at `apps/agents/src/providers/types.ts:36` — `'rate_limit' | 'timeout' | 'api_error' | 'network'` — but it is currently a member of `LLMError`, so importing it as-is would type a geocoding failure as an LLM error. **Extract it to a shared `ProviderErrorType`** (which touches `openrouter.ts`) rather than inventing a second vocabulary that can drift.
+
+**Env.** `MAPTILER_API_KEY` and `MAPTILER_MONTHLY_QUOTA` in `apps/agents/.env` locally, added to `.env.example`, registered in `apps/agents/src/config.ts` (which validates every var at startup). On the VPS there are **two** files, and since Fase 5 verifies in QA, QA is the one that matters first:
+
+| Entorno | Fichero | Unidad que lo lee |
+|---|---|---|
+| QA | `/home/aureon/.env.qa` | `infra/supabase-qa/systemd/aureon-agents-qa.service` |
+| Producción | `/home/aureon/.env` | `apps/agents/deploy/aureon-agents.service` |
+
+Ambos `chmod 600`, propiedad de `aureon`, fuera del repo. (Este spec decía antes `deploy/aureon-agents.service` y no mencionaba QA en absoluto; las dos rutas se verificaron leyendo las unidades el 2026-09-11.)
 
 `MAPTILER_API_KEY` is **optional**: if absent the worker boots and Fase 5 resolves everything to centroids rather than refusing to start. A geocoding key must not be able to take down the agent suite. Log loudly at startup when it is missing.
 
@@ -349,6 +406,7 @@ Against a mocked `fetch`: a Chilean address fixture resolving `exact`; a localit
 ### Fase 5 — The `geocode.enrich` worker and its state machine `[pending]`
 
 **Depende de:** spec-58 fase 4
+
 **Archivos:** `apps/agents/src/orchestration/queues.ts`, `apps/agents/src/orchestration/queues.test.ts`, `apps/agents/src/orchestration/workers.ts`, `apps/agents/src/orchestration/workers.test.ts`, `apps/agents/src/orchestration/schedulers.ts`, `apps/agents/src/orchestration/schedulers.test.ts`, `apps/agents/src/agents/geocode/enrich.ts` (nuevo), `apps/agents/src/agents/geocode/enrich.test.ts` (nuevo)
 
 Add `'geocode.enrich'` to the exported `QueueName` union at `orchestration/queues.ts:5` **and** to `QUEUE_CONFIGS` at `:20` (`Record<QueueName, QueueConfig>` will not compile otherwise), `attempts: 3, backoffDelay: 60_000`. Worker in `orchestration/workers.ts`, scheduler in `orchestration/schedulers.ts`:
@@ -393,10 +451,13 @@ FOR UPDATE SKIP LOCKED
 | Provider answered `null` — no match for this address → centroid | `fallback` | **+1** | `now() + 7 days` |
 | Provider **unavailable** — circuit-breaker open, 429, timeout, network → centroid | `fallback` | **unchanged** | `now() + 30 min` |
 | **Monthly quota exhausted**, or `MAPTILER_API_KEY` absent → centroid | `fallback` | **unchanged** | start of next month |
+| **Credential refused** — HTTP 401/403 → centroid | `fallback` | **unchanged** | **never, until the process restarts.** Log at error, stop calling the provider |
 | 2 attempts exhausted | `unresolvable` | 2 | never |
 | No `comuna_id` and no provider answer | `unresolvable` | — | never |
 
 Two rules do the work here.
+
+**A refused credential is not an outage, and must not be retried like one.** Fase 0 measured a 403 from a User-Agent-restricted key — indistinguishable from an `api_error` to any classifier that only asks "did the call fail". Left in the transport bucket it re-arms every thirty minutes forever: a worker that looks busy, spends nothing and geocodes nothing, while every order sits on a comuna centroid. So 401/403 trips a circuit that stays open until the process restarts, and logs at error level. A wrong key must be loud within one cron tick, not inferred a week later from the `fallback` count.
 
 **A transport failure is not evidence about the address**, so it must not consume the attempt budget. That is what stops a provider outage of any length from marching a day's orders to `unresolvable` — it re-arms every 30 minutes indefinitely. Quota exhaustion and a missing key get their own row because they do not clear in half an hour: re-arming those every 30 minutes would churn the entire order book through the batch all month doing no useful work.
 
@@ -474,11 +535,11 @@ Then let the cron drain whatever the script leaves and watch, for a day: cache h
 
 ## Rollout order
 
-1. Fase 0 unblocks — the MapTiler key exists.
+1. ~~Fase 0~~ — done 2026-09-11. The key exists and the mapping rule is measured, not assumed.
 2. Fases 1 and 2 (schema, serialised), then 3 and 4.
 3. Fase 5, verified in QA.
 4. Fase 6, the gate. Do not proceed on a failure.
 5. Fase 7, the backfill, then a day of watching the counts.
 6. Only then, spec-59.
 
-Fases 1, 2 and 3 need no MapTiler key and can start today.
+Fases 1, 2 and 3 need no MapTiler key and can start today. Fase 4 is unblocked too, now that Fase 0 is `[done]`.
