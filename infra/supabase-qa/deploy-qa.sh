@@ -266,11 +266,36 @@ widen_changed_flags() {
   changed="$(git -C "$QA_CHECKOUT_DIR" diff --name-only "$prev" "$target" 2>/dev/null || true)"
   [ -n "$changed" ] || return 0
 
-  widen() { # $1 current flag, $2 path regex
-    if [ "$1" = true ]; then echo true
-    elif printf '%s\n' "$changed" | grep -qE "$2"; then echo true
-    else echo false
+  widen() { # $1 current flag, $2 path regex (anchored per LINE, e.g. '^apps/frontend/')
+    # spec-92 round 5 (B2's twin, found by the reviewer while checking for
+    # the SAME signature elsewhere): was
+    # `printf '%s\n' "$changed" | grep -qE "$2"`. `grep -q` exits on its
+    # first match and closes its end of the pipe; if `$changed` (the list
+    # of changed files between two commits) is large enough that `printf`
+    # is still writing when grep quits, SIGPIPE makes the pipeline exit
+    # 141 under `pipefail` — 141 != 0, so this `elif` reads FALSE and
+    # widen_changed_flags silently returns "false" for an app that DID
+    # change, skipping its rebuild/restart.
+    #
+    # Fixed with a herestring + a per-LINE loop, not a single
+    # `[[ $changed =~ $2 ]]`: bash's own regex engine has no REG_NEWLINE
+    # multiline mode, so `^` in `[[ =~ ]]` anchors to the start of the
+    # WHOLE string, not the start of each line — collapsing to one big
+    # match would silently only ever check the FIRST changed file. Reading
+    # line-by-line restores grep's actual per-line semantics; the
+    # herestring (not a pipe) still means no subprocess and no SIGPIPE.
+    if [ "$1" = true ]; then
+      echo true
+      return
     fi
+    local line
+    while IFS= read -r line; do
+      if [[ $line =~ $2 ]]; then
+        echo true
+        return
+      fi
+    done <<< "$changed"
+    echo false
   }
 
   CHANGED_FRONTEND="$(widen "${CHANGED_FRONTEND:-false}" '^apps/frontend/')"
@@ -859,9 +884,11 @@ ensure_pgtap() {
 }
 
 # --------------------------------------------------------------------------
-# SQL tests — packages/database/supabase/tests/*.sql (92 files as of
-# spec-92 review round 3, 21 of them using pgTAP's plan()/finish()), run
-# against QA's live Postgres after migrations+seed.
+# SQL tests — packages/database/supabase/tests/*.sql (some using pgTAP's
+# plan()/finish(), most using plain RAISE EXCEPTION — a hardcoded file
+# count in this comment went stale twice already, spec-92 rounds 3 and 5;
+# `ls packages/database/supabase/tests/*.sql | wc -l` is the number that
+# doesn't drift), run against QA's live Postgres after migrations+seed.
 #
 # BLOCKING as of spec-92, for the per-file pass/fail rows only. Through
 # 2026-09-09 this whole function was advisory-only, because none of these
@@ -894,8 +921,10 @@ ensure_pgtap() {
 # record_advisory() is reserved for the "a prerequisite was absent" SKIP
 # paths — appends to CHECKS but never touches RESULT.
 #
-# Verified by hand (all 92 files, reconfirmed in review round 3 after the
-# count moved from 31): every one is `BEGIN; ... ROLLBACK;` with no COMMIT
+# Verified by hand (every file in the corpus, reconfirmed in review round 3
+# after the count first moved from 31 — see the function header for why a
+# specific number is deliberately not restated here): every one is
+# `BEGIN; ... ROLLBACK;` with no COMMIT
 # anywhere, so nothing here can persist — including the one file
 # (spec52_open_route_reception.sql) that runs ALTER TABLE ... DISABLE/ENABLE
 # TRIGGER mid-test: DDL is transactional in Postgres, so ROLLBACK undoes it
@@ -922,7 +951,7 @@ ensure_pgtap() {
 #       under the same buffering, could land INSIDE a neighboring file's
 #       section and fail the wrong file.
 # Every one of these is a consequence of trying to attribute a merged
-# stream back to one of 92 files after the fact. One psql invocation per
+# stream back to one of many files after the fact. One psql invocation per
 # file removes the merge: there is nothing to attribute, because there is
 # only ever one file's output in $out. `-v ON_ERROR_STOP=1` (safe now —
 # unlike round 2, one file's early exit cannot touch a different file's
@@ -993,6 +1022,12 @@ sql_tests_check() {
     return 0
   fi
 
+  # round 5 (B1/B2): ERE for pgTAP's two non-raising failure shapes,
+  # matched with bash's own `[[ =~ ]]` (see the elif below for why this
+  # exists — no `grep`, no pipe). No `^` anchor: psql's aligned output
+  # format prepends a space to every data row, so the diagnostic never
+  # starts in column 0.
+  local sql_fail_content_re='not ok [0-9]|# Looks like you planned'
   local pass=0 fail=0 skip=0 f base out rc
   for f in "${files[@]}"; do
     base="$(basename "$f")"
@@ -1033,7 +1068,33 @@ sql_tests_check() {
       # to the actual error instead of 20 lines of preamble.
       printf '%s\n' "$out" | tail -20 | sed 's/^/    /'
       record "sql: $base" FAIL "see the block above this table"
-    elif printf '%s' "$out" | grep -qE "not ok [0-9]|^# Looks like you planned"; then
+    # round 5 (B1 + B2): this used to be
+    # `printf '%s' "$out" | grep -qE "not ok [0-9]|^# Looks like you planned"`.
+    # Two separate bugs in that one line:
+    #   B1 — the `^` anchor never matches. psql's default output format is
+    #   ALIGNED (no -A/-t here — this file's own output IS the log a human
+    #   reads, unlike the pgtap probe's -tAc), which prepends exactly one
+    #   space to every data row. finish()'s "# Looks like you planned N
+    #   but ran M" comes back as a ROW in that result set, so the real
+    #   line is " # Looks like ..." — never starts in column 0. Verified
+    #   against real pgTAP 1.2.0 output on PG15 and PG17 (QA's major).
+    #   Measured, not assumed: 0 of 93 files touch \pset/\a/ECHO, so no
+    #   file can produce an unindented row here — the anchor was pure dead
+    #   weight, never load-bearing, safe to drop entirely.
+    #   B2 — `grep -q` exits after its FIRST match and closes its read end
+    #   of the pipe. Under `pipefail`, that makes the pipeline's exit
+    #   status depend on how much of $out the upstream `printf` had
+    #   written before grep found its match and hung up: a `not ok 1` near
+    #   the START of a large $out (tens of thousands of pgTAP `ok N` rows
+    #   is a realistic single-file size) means `printf` is still writing
+    #   when grep quits — SIGPIPE, pipeline exits 141, 141 != 0 makes this
+    #   `elif` FALSE, falls through to the `else` and records "ok". Worse
+    #   than H1: H1 killed the function loudly (on_err, a red deploy for
+    #   the wrong reason); this is silent and GREEN. Fixed by removing the
+    #   pipe entirely — `[[ $out =~ $re ]]` is a single in-process bash
+    #   regex match against the whole string, no subprocess, no pipe, no
+    #   SIGPIPE possible.
+    elif [[ $out =~ $sql_fail_content_re ]]; then
       # pgTAP's own assertions never raise — finish() just returns a "not
       # ok N" row like any other SELECT, so $rc stays 0 even on a real
       # failure. Content-checked against THIS file's own $out only: no

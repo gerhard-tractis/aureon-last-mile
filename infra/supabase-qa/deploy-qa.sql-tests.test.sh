@@ -3,8 +3,10 @@
 # Tests for sql_tests_check() in deploy-qa.sh.
 #
 # spec-92 review round 3: sql_tests_check runs ONE psql PROCESS PER FILE
-# (packages/database/supabase/tests/*.sql, 92 files, 21 using pgTAP's
-# plan()/finish()) instead of round 2's one-connection-many-\i design. See
+# (packages/database/supabase/tests/*.sql, most using plain RAISE
+# EXCEPTION, some using pgTAP's plan()/finish() — a hardcoded file count in
+# this comment went stale twice already, rounds 3 and 5) instead of round
+# 2's one-connection-many-\i design. See
 # the function's own comment in deploy-qa.sh for why: round 2 grew a new
 # false-"ok" disguise on every review round (B1: stderr ERROR flushed
 # outside its BEGIN/END section; B2: the fix for B1 added a diagnostic
@@ -87,7 +89,22 @@ check_true() { # $1 name, $2 condition result (0/1)
 #        *tapfail*     -> a pgTAP "not ok" row on STDOUT, exit 0 (pgTAP
 #                         never raises — content must decide)
 #        *planmismatch* -> pgTAP's OWN "planned N but ran M" diagnostic
-#                         (H4) — no "not ok" anywhere, exit 0
+#                         (H4/B1), emitted in psql's REAL default ALIGNED
+#                         result-set format: a header, a "----" separator,
+#                         the diagnostic as a DATA ROW (psql prepends one
+#                         space to every data row — this is the exact shape
+#                         round 4's fixture got wrong by printing the
+#                         string in column 0, which is why round 4's
+#                         mutation test could not catch B1: the `^` anchor
+#                         never had anything real to fail against), and a
+#                         "(1 row)" footer. No "not ok" anywhere, exit 0.
+#        *bigtap*      -> B2: a `not ok 1` on almost the FIRST line,
+#                         followed by ~40000 "ok N" rows — pgTAP's own
+#                         format, well past a `grep -q`'s first-match/
+#                         SIGPIPE danger zone, and specifically front-
+#                         loaded so a first-match-then-quit reader hits it
+#                         almost immediately, while output is still being
+#                         written.
 #        *notfound*    -> psql could not even open the file (M6), exit
 #                         nonzero, lowercase "error:" text
 #        *bigfail*     -> H1/H3: ~5000 lines of filler BEFORE the real
@@ -147,7 +164,27 @@ if [ -n "$target" ]; then
       exit 3
       ;;
     *planmismatch*)
-      echo "# Looks like you planned 5 tests but ran 3"
+      # Real psql ALIGNED result-set format (no -A/-t on this call): a
+      # header, a "----" separator, ONE SPACE before the data row, and a
+      # row-count footer. finish()'s diagnostic is a plain text row, not a
+      # log line — it never starts in column 0.
+      printf '                   finish                   \n'
+      printf -- '--------------------------------------------\n'
+      printf ' # Looks like you planned 5 tests but ran 3\n'
+      printf '(1 row)\n'
+      printf '\n'
+      exit 0
+      ;;
+    *bigtap*)
+      printf '                   finish                   \n'
+      printf -- '--------------------------------------------\n'
+      printf ' not ok 1 - fixture says fail\n'
+      i=0
+      while [ "$i" -lt 40000 ]; do
+        printf ' ok %d - fixture filler\n' "$i"
+        i=$((i + 1))
+      done
+      printf '(40001 rows)\n'
       exit 0
       ;;
     *error*)
@@ -211,6 +248,14 @@ SQL
 cat > "$FIXTURES/zzz_after_test.sql" <<'SQL'
 BEGIN;
 SELECT 1;
+ROLLBACK;
+SQL
+cat > "$FIXTURES/ggg_bigtap_test.sql" <<'SQL'
+BEGIN;
+SELECT plan(40001);
+SELECT ok(false, 'fails almost immediately');
+SELECT ok(true, 'filler') FROM generate_series(1, 40000);
+SELECT * FROM finish();
 ROLLBACK;
 SQL
 
@@ -299,18 +344,17 @@ check "every psql call carries PGOPTIONS with a numeric statement_timeout" \
 #    stub above), so this greps for it directly on the per-file calls
 #    (lines containing " -f ") ────────────────────────────────────────────
 check "every per-file psql call carries -v ON_ERROR_STOP=1" \
-  "true" "$([ -s "$PSQL_CALLS" ] && ! grep -- ' -f ' "$PSQL_CALLS" | grep -qv -- '-v ON_ERROR_STOP=1' && echo true)"
+  "true" "$([ -s "$PSQL_CALLS" ] && ! grep -- ' -f ' "$PSQL_CALLS" | grep -qv -- '-v ON_ERROR_STOP=1' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
 
-# ── H5 (round 4): a count floor. Three SKIP paths (missing password,
-#    missing dir, empty dir) legitimately return green having run 0 of N
-#    files — that is documented and deliberate. But nothing asserted that
-#    a run which DOES have prerequisites actually attempted a call for
-#    every file it was handed; a bug that silently truncated the file list
-#    (or stopped the loop early) would still show a plausible-looking
-#    table for the files it did reach. This QA checkout has 3 files
-#    (aaa/bbb/ccc); ccc is skipped without invoking psql (pgtap absent),
-#    so exactly 1 (the probe) + 2 (aaa, bbb) = 3 psql calls are expected ──
-check "H5: exactly one psql call per file that should have run, plus the probe" \
+# ── H5 (round 4), secondary check only — see the REAL floor assertion in
+#    the pgtap-installed block above (H5/M1, round 5) for why. In THIS
+#    config (pgtap absent) ccc is SKIPped without calling psql at all, so
+#    this "3" cannot by itself distinguish "ran aaa+bbb correctly, skipped
+#    ccc" from "silently truncated the list to [aaa, bbb] and never looked
+#    at ccc" — both produce the same count here. Kept as a sanity check on
+#    THIS specific config (it does still catch e.g. a double-call bug),
+#    not as the count-floor guarantee ─────────────────────────────────────
+check "exactly one psql call per file that needed one in THIS config, plus the probe" \
   "3" "$(wc -l < "$PSQL_CALLS" | tr -d ' ')"
 
 # ── M7 eliminated by construction: with a FAIL (bbb) and an ok (aaa) file in
@@ -335,6 +379,16 @@ check "RESULT flips to 1 with pgtap installed and a real TAP failure" \
 check "a pgTAP 'not ok' (rc stays 0, only content fails) is still caught as FAIL" \
   "sql: ccc_tapfail_test.sql|FAIL|see the block above this table" \
   "$(printf '%s\n' "$output2" | grep '^sql: ccc_tapfail_test.sql')"
+# H5/M1 (round 5): THIS is the configuration the count floor must be
+# checked against, not the pgtap-absent run below. With pgtap absent, ccc
+# is SKIPped without ever calling psql, so a bug that silently truncated
+# the file list to [aaa, bbb] would produce the exact SAME call count (1
+# probe + 2 files = 3) as the correct behaviour — the floor would stay
+# green while 1 of 3 files silently never ran. Here, with pgtap installed,
+# ALL THREE files require their own psql call (1 probe + aaa + bbb + ccc =
+# 4), so a truncation that drops even the LAST file changes the count.
+check "H5/M1: exactly one psql call per file when every file requires one, plus the probe" \
+  "4" "$(wc -l < "$PSQL_CALLS" | tr -d ' ')"
 
 # ── M5 (round 3): a harmless NOTICE on the probe's STDERR must not change
 #    the pgtap_ok decision. If it did, this run — pgtap genuinely
@@ -381,7 +435,7 @@ check_true "H1: a file with >64KiB of output does not SIGPIPE-kill the function"
 check "H1: RESULT flips to 1 from the big file's real failure" \
   "RESULT=1" "$(printf '%s\n' "$outputH1" | grep '^RESULT=')"
 check "H1: the big file is reported FAIL, not silently dropped" \
-  "true" "$(printf '%s\n' "$outputH1" | grep -q '^sql: eee_bigfail_test.sql|FAIL|' && echo true)"
+  "true" "$(printf '%s\n' "$outputH1" | grep -q '^sql: eee_bigfail_test.sql|FAIL|' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
 check "H1/H3: the file AFTER the big one still ran — the loop was not killed" \
   "sql: zzz_after_test.sql|ok|" \
   "$(printf '%s\n' "$outputH1" | grep '^sql: zzz_after_test.sql')"
@@ -398,9 +452,30 @@ PSQL_CALLS="$STUB_DIR/calls_h4"; export PSQL_CALLS; : > "$PSQL_CALLS"
 outputH4="$(run 'PGTAP_INSTALLED=1' "$PLANMIS_QA" 2>&1)"; rc=$?
 check_true "H4: runs to completion (exit 0) on a plan/ran mismatch" $rc
 check "H4: a plan/ran mismatch with no 'not ok' anywhere is still reported FAIL" \
-  "true" "$(printf '%s\n' "$outputH4" | grep -q '^sql: fff_planmismatch_test.sql|FAIL|' && echo true)"
+  "true" "$(printf '%s\n' "$outputH4" | grep -q '^sql: fff_planmismatch_test.sql|FAIL|' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
 check "H4: RESULT flips to 1" \
   "RESULT=1" "$(printf '%s\n' "$outputH4" | grep '^RESULT=')"
+
+# ── B2 (round 5): the WORST of the two round-5 findings. The content check
+#    used to be `printf '%s' "$out" | grep -qE "$re"` — `grep -q` exits on
+#    its FIRST match and closes its read end. With a `not ok 1` near the
+#    START of $out and tens of thousands of `ok N` rows still queued behind
+#    it (a large single pgTAP file, entirely realistic), `printf` is still
+#    writing when grep quits: SIGPIPE, pipeline exits 141, 141 != 0 makes
+#    the `elif` FALSE, falls to `else`, records "ok" — SILENTLY, no crash,
+#    no FAIL row, nothing to notice. Strictly worse than H1 (which at
+#    least killed the function loudly). Fixed by removing the pipe
+#    entirely (`[[ $out =~ $re ]]`, no subprocess) ─────────────────────────
+BIGTAP_QA="$STUB_DIR/qa-bigtap"
+mkdir -p "$BIGTAP_QA/packages/database/supabase/tests"
+cp "$FIXTURES/ggg_bigtap_test.sql" "$BIGTAP_QA/packages/database/supabase/tests/"
+PSQL_CALLS="$STUB_DIR/calls_b2"; export PSQL_CALLS; : > "$PSQL_CALLS"
+outputB2="$(run 'PGTAP_INSTALLED=1' "$BIGTAP_QA" 2>&1)"; rc=$?
+check_true "B2: runs to completion (exit 0) on a large pgTAP failure" $rc
+check "B2: a 'not ok' near the start of a large output is still reported FAIL" \
+  "true" "$(printf '%s\n' "$outputB2" | grep -q '^sql: ggg_bigtap_test.sql|FAIL|' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
+check "B2: RESULT flips to 1 — not silently scored ok" \
+  "RESULT=1" "$(printf '%s\n' "$outputB2" | grep '^RESULT=')"
 
 # ── Total connection outage: EVERY per-file call fails as a connection
 #    refusal. Under this design there is no marker/section to go missing —
@@ -412,9 +487,9 @@ check_true "a connection failure does not propagate under set -e" $rc
 check "RESULT flips to 1 when every file's own connection failed" \
   "RESULT=1" "$(printf '%s\n' "$output3b" | grep '^RESULT=')"
 check "the clean file is reported FAIL, not ok, when its connection failed" \
-  "true" "$(printf '%s\n' "$output3b" | grep -q '^sql: aaa_pass_test.sql|FAIL|' && echo true)"
+  "true" "$(printf '%s\n' "$output3b" | grep -q '^sql: aaa_pass_test.sql|FAIL|' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
 check "no file is silently scored ok on a connection failure" \
-  "true" "$(printf '%s\n' "$output3b" | grep -q '|ok|' && echo false || echo true)"
+  "true" "$(printf '%s\n' "$output3b" | grep -q '|ok|' && echo false || echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
 
 # ── M6 (round 3): a file psql cannot even open (missing, permissions,
 #    disappeared between glob and run) produces psql's OWN lowercase
@@ -430,7 +505,7 @@ PSQL_CALLS="$STUB_DIR/calls_m6"; export PSQL_CALLS; : > "$PSQL_CALLS"
 outputM6="$(run 'PGTAP_INSTALLED=' "$DDD_QA" 2>&1)"; rc=$?
 check_true "runs to completion (exit 0) when one file cannot be opened" $rc
 check "M6: an unopenable file is reported FAIL, not ok" \
-  "true" "$(printf '%s\n' "$outputM6" | grep -q '^sql: ddd_notfound_test.sql|FAIL|' && echo true)"
+  "true" "$(printf '%s\n' "$outputM6" | grep -q '^sql: ddd_notfound_test.sql|FAIL|' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
 check "M6: RESULT flips to 1" \
   "RESULT=1" "$(printf '%s\n' "$outputM6" | grep '^RESULT=')"
 check "M6: the unrelated file is still reported ok" \
@@ -447,9 +522,9 @@ check_true "runs to completion (exit 0) when the pgtap probe itself fails" $rc
 check "RESULT flips to 1 when the pgtap probe could not run" \
   "RESULT=1" "$(printf '%s\n' "$outputM2" | grep '^RESULT=')"
 check "records a blocking FAIL naming the probe failure" \
-  "true" "$(printf '%s\n' "$outputM2" | grep -q '^sql tests|FAIL|could not determine whether pgtap is installed' && echo true)"
+  "true" "$(printf '%s\n' "$outputM2" | grep -q '^sql tests|FAIL|could not determine whether pgtap is installed' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
 check "no per-file row is recorded — the probe failure aborts before the loop" \
-  "true" "$(printf '%s\n' "$outputM2" | grep -q '^sql: ' && echo false || echo true)"
+  "true" "$(printf '%s\n' "$outputM2" | grep -q '^sql: ' && echo false || echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
 
 # ── Missing POSTGRES_PASSWORD: skip cleanly, never invoke psql ─────────────
 BAD_ENV="$STUB_DIR/.env.qa.blank"
@@ -478,7 +553,7 @@ output5="$(QA_CHECKOUT_DIR="$EMPTY_QA" bash -c \
 rc=$?
 check_true "skips cleanly when the tests dir is missing" $rc
 check "records a SKIP naming the missing dir" \
-  "true" "$(printf '%s\n' "$output5" | grep -q '^sql tests|SKIP|tests dir not found' && echo true)"
+  "true" "$(printf '%s\n' "$output5" | grep -q '^sql tests|SKIP|tests dir not found' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
 check "RESULT stays 0 when the tests dir itself is missing" \
   "RESULT=0" "$(printf '%s\n' "$output5" | grep '^RESULT=')"
 
@@ -490,7 +565,7 @@ output6="$(QA_CHECKOUT_DIR="$NO_SQL_QA" bash -c \
 rc=$?
 check_true "skips cleanly when there are no *.sql files" $rc
 check "records a SKIP naming the empty dir" \
-  "true" "$(printf '%s\n' "$output6" | grep -q '^sql tests|SKIP|no \*\.sql files' && echo true)"
+  "true" "$(printf '%s\n' "$output6" | grep -q '^sql tests|SKIP|no \*\.sql files' && echo true)"  # pipefail-safe: bounded test-harness output (a handful of CHECKS rows / stub argv lines)
 check "RESULT stays 0 when there are no *.sql files to run" \
   "RESULT=0" "$(printf '%s\n' "$output6" | grep '^RESULT=')"
 

@@ -176,6 +176,20 @@ jobs:
           bash ./infra/supabase-qa/deploy-qa.pgtap.test.sh
           bash ./infra/supabase-qa/deploy-qa.compose-recreate.test.sh
 
+      # spec-92 review round 5: `| grep -q` under pipefail is not a bug,
+      # it is a CLASS — five live instances found in one day across
+      # deploy.yml and deploy-qa.sh, all failing toward the unsafe side
+      # (a guard silently reading "nothing matched" instead of crashing or
+      # matching correctly). This closes the mechanism, not one instance:
+      # any new `| grep -q` in infra/supabase-qa/*.sh or
+      # .github/workflows/*.yml fails the build here before it can become
+      # instance six.
+      - name: Check for pipefail-unsafe `| grep -q`
+        run: bash ./scripts/check-pipefail-grep-q.sh
+
+      - name: Test the pipefail-grep-q guard
+        run: bash ./scripts/check-pipefail-grep-q.test.sh
+
       # scripts/pgtap-local.sh's `run` case is the only gate the 83 real SQL
       # test files under packages/database/supabase/tests have — those files
       # never run in CI (see the comment at the top of pgtap-local.sh), so a
