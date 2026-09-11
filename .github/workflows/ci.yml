@@ -401,6 +401,13 @@ jobs:
       - name: Test the QA<->prod parity coverage floor
         run: node ./scripts/qa-prod-parity-coverage.test.mjs
 
+      # spec-93 fase 3b: pure-function alias tables pulled out of
+      # measure-qa-surfaces.sh so they can be unit tested without docker.
+      # Regression-pins run 34545563792's finding — an alias that produced a
+      # key production never had.
+      - name: Test the QA surface alias tables
+        run: bash ./scripts/lib/qa-surface-aliases.test.sh
+
       - name: Lint
         run: npx turbo run lint
 

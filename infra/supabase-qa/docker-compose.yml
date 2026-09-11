@@ -214,7 +214,13 @@ services:
       PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
       PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS}
       PGRST_DB_MAX_ROWS: ${PGRST_DB_MAX_ROWS:-1000}
-      PGRST_DB_EXTRA_SEARCH_PATH: ${PGRST_DB_EXTRA_SEARCH_PATH:-public}
+      # Hardcoded, not `${PGRST_DB_EXTRA_SEARCH_PATH:-public}` — production's
+      # value is "public, extensions" (spec-93 fase 3b, run 34545563792),
+      # and .env.qa already sets this var explicitly to "public", so a
+      # `:-` default here would never have taken effect. An unqualified
+      # reference to something in the `extensions` schema resolves in
+      # production and fails in QA without this.
+      PGRST_DB_EXTRA_SEARCH_PATH: "public, extensions"
       PGRST_DB_ANON_ROLE: anon
 
       PGRST_ADMIN_SERVER_PORT: 3001

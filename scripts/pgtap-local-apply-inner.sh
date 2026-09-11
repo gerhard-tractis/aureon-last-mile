@@ -14,20 +14,21 @@ PSQL=(psql -U postgres -d postgres)
 # helper function's own `exit` would only kill the subshell the
 # substitution creates, not this script).
 
-# These two migrations fail on the stock supabase/postgres image for
+# These three migrations fail on the stock supabase/postgres image for
 # base-image fidelity gaps unrelated to this repo (a buckets.public
 # column the image never creates), not fixable by `apply`. Each entry is
 # "filename|expected error substring", matched with `test`/`grep -F` (no
 # globbing) — filename narrows WHICH file may fail, substring narrows
 # WHAT failure is allowed; a real new failure in either file, or a
 # different error in the same file, is never silently waved through. A
-# third entry lived here for spec30_dashboard_rpcs.sql (its error text
+# fourth entry lived here for spec30_dashboard_rpcs.sql (its error text
 # depended on migration-application order — see git history / the round
 # 5 PR review for the full story); fixed at the cause (`-1`, below) and
 # removed, not patched.
 KNOWN_BASE_IMAGE_FAILURES=(
   '20250130165844_example_storage.sql|column "public" of relation "buckets" does not exist'
   '20260430000001_create_manifests_storage_bucket.sql|column "public" of relation "buckets" does not exist'
+  '20261007000001_spec93_fase3b_create_raw_files_bucket.sql|column "public" of relation "buckets" does not exist'
 )
 # PGTAP_APPLY_TEST_ALLOWLIST_ENTRY: the self-test's own throwaway
 # "name|substring" entry, never touching the real list above. Restricted

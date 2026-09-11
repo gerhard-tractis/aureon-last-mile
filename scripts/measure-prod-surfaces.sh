@@ -71,7 +71,7 @@ export PGPASSWORD="$SUPABASE_DB_PASSWORD"
 # fields QA never declares (mailer_secure_email_change_enabled,
 # external_google_enabled, ...), and a regex that matched all of them would
 # be permanent, unfixable noise (review round 1, Serio 5).
-AUTH_KEYS="disable_signup mailer_autoconfirm jwt_exp hook_custom_access_token_hook_enabled external_email_enabled external_phone_enabled external_anonymous_users_enabled mfa_totp_enroll_enabled mfa_totp_verify_enabled refresh_token_rotation_enabled"
+AUTH_KEYS="disable_signup mailer_autoconfirm jwt_exp hook_custom_access_token_enabled external_email_enabled external_phone_enabled external_anonymous_users_enabled mfa_totp_enroll_enabled mfa_totp_verify_enabled refresh_token_rotation_enabled"
 POSTGREST_KEYS="db_schema max_rows db_extra_search_path db_anon_role db_use_legacy_gucs"
 
 surface_failed() {
