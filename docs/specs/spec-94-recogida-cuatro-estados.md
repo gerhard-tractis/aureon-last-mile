@@ -1,6 +1,6 @@
 # spec-94 — Recogida: cuatro estados, y la carga que no estaba en ninguno
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit, sql, e2e-qa
 **Downstream:** spec-82-recogida-movil-asignacion-y-ruta.md, spec-83-recogida-escritorio-datos-faltantes.md
 
@@ -164,7 +164,7 @@ Recogida, que es donde hay dos tramos que nombrar. Queda anotado como lo que
 es: dos nombres para un mismo estado, en dos pantallas que rara vez se miran
 juntas.
 
-## Fase 1 — las cuatro RPC, y la partición demostrada `[pending]`
+## Fase 1 — las cuatro RPC, y la partición demostrada `[in_progress]`
 
 **Depende de:** ninguna
 
