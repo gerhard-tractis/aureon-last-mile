@@ -224,11 +224,11 @@ ETA. **Sólo se implementan dirección y navegación.**
 > un spec de routing futuro; una distancia en línea recta tampoco sirve, porque
 > no es lo que conduce el operario y el mock no dice cuál de las dos dibuja.
 
-### Fase 4 — `5b` cuadrilla y selector de vehículo `[pending]`
+### Fase 4 — `5b` cuadrilla y selector de vehículo `[in_progress]`
 
 **Depende de:** ninguna
 
-**Archivos:** `apps/frontend/src/components/pickup/CrewSelect.tsx`, `apps/frontend/src/components/pickup/VehicleSelect.tsx`, `apps/frontend/src/components/pickup/PickupMobileStartRoute.tsx`, y sus tests
+**Archivos:** `apps/frontend/src/components/pickup/CrewSelect.tsx`, `apps/frontend/src/components/pickup/VehicleSelect.tsx`, `apps/frontend/src/components/pickup/PickupMobileStartRoute.tsx`, `apps/frontend/src/hooks/pickup/useCrewCandidates.ts`, y sus tests
 
 El bloque `ACOMPAÑANTES` ya existe (`spec-61`) — era lo que el mock viejo no
 dibujaba. La ronda 2 lo incorpora y le añade dos cosas que hoy no tiene.
@@ -238,9 +238,26 @@ dibujaba. La ronda 2 lo incorpora y le añade dos cosas que hoy no tiene.
 - [ ] Selector de vehículo con ícono de camión y chevron, conservando el placeholder «Patente» y **sin preselección** — el mock de esta ronda ya no muestra una patente elegida.
 - [ ] No se toca el título ni el eyebrow: la ronda 2 acepta «Recogidas de hoy» y «MANIFIESTOS POR RETIRAR» tal cual están.
 
-> **A verificar antes de implementar el rol:** que la fuente de `CrewSelect`
-> traiga un rol por persona. Si no lo trae, **no se deriva de un nombre ni se
-> inventa un default**: se para y se escribe qué falta.
+> **El rol sí estaba en los datos.** `useCrewCandidates.ts` ya declaraba
+> `role` y lo seleccionaba de `users` — se verificó antes de implementar, no
+> hubo que parar.
+>
+> **Tres roles, dos palabras — es una lectura, no una cita.** El mock rotula
+> `auxiliar` / `conductor`, pero `useCrewCandidates` trae **tres** roles. El
+> mapa es `pickup_crew → auxiliar` y `pickup_leader`/`ops_leader → conductor`,
+> y lo que lo justifica es `ROUTE_LEADER_ROLES` (`permissions.ts:98-103`): esos
+> dos pueden abrir ruta y `pickup_crew` no. **No** lo justifica
+> `ROLE_DEFAULT_PERMISSIONS`, donde `pickup_leader` es idéntico a `pickup_crew`
+> — el comentario original citaba ese artefacto y era falso; lo encontró el
+> review. Si el diseñador quiere una tercera palabra para `ops_leader`, es
+> decisión suya y el mock no la distingue hoy.
+>
+> **La costura está cerrada por tipos, no por vigilancia.** `CREW_ROLES` vive
+> una sola vez, alimenta el `.in(...)` de la consulta y tipa
+> `CrewCandidate.role`; las etiquetas son un `Record<CrewRole, string>`
+> exhaustivo. Verificado: añadir `'warehouse_staff'` a la lista **rompe la
+> compilación** (`TS2741`) hasta que alguien decida su palabra — en vez de
+> rotularlo «conductor» en silencio, que es lo que hacía el `else` atrapa-todo.
 
 ### Fase 5 — `5d` escaneo, y los cuatro textos en inglés `[pending]`
 
