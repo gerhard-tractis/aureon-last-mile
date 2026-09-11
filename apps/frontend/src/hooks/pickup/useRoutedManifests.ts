@@ -40,6 +40,11 @@ export interface RoutedManifest {
   /** Count of verified pickup_scans — remove_manifest_from_route's guard 7
    * (spec-64, fase 3) rejects removal once this is > 0. */
   verified_count: number;
+  /** `manifests.pickup_route_id` — the UUID `remove_manifest_from_route`
+   * needs as `p_route_id`. Added in the fase 3 migration
+   * (20261009000001): the fase 1 RPC only ever returned `route_code`,
+   * which is the label, not the id the RPC call needs. */
+  pickup_route_id: string;
 }
 
 export function useRoutedManifests(operatorId: string | null) {

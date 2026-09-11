@@ -40,7 +40,7 @@
 -- status<>completed) en el cubo 1.
 
 BEGIN;
-SELECT plan(28);
+SELECT plan(29);
 
 -- ── Fixtures: operador A (el caller) ─────────────────────────────────────────
 INSERT INTO public.operators (id, name, slug)
@@ -747,6 +747,17 @@ SELECT is(
      FROM t_pending WHERE external_load_id = 'CARGA-94-ORDERSDELETED'),
   (true, 2::bigint, 3::bigint, NULL::text),
   'CARGA-94-ORDERSDELETED: id SÍ presente (la fila de manifests vive), order_count/package_count son el total REAL de manifests (2/3) -- viene de m.total_orders/total_packages, nunca un 0 fijo'
+);
+
+-- ── fase 3: pickup_route_id es el UUID real de la ruta ──────────────────────
+-- Lo que remove_manifest_from_route(p_route_id, p_manifest_id) necesita para
+-- poder llamarse desde la fila -- get_routed_manifests nunca lo devolvió
+-- hasta 20261009000001. m.pickup_route_id, comparado contra la ruta real
+-- que el fixture usó para CARGA-94-DOCK, no contra un valor inventado.
+SELECT is(
+  (SELECT pickup_route_id FROM t_routed WHERE external_load_id = 'CARGA-94-DOCK'),
+  '00000000-0000-4000-8000-000000009410'::uuid,
+  'CARGA-94-DOCK: pickup_route_id es el UUID real de la ruta PR-94-DOCK -- fase 3, lo que remove_manifest_from_route necesita'
 );
 
 -- ── Ámbito de operador, no de usuario firmado ────────────────────────────────
