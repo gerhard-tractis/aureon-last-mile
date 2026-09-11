@@ -7,7 +7,15 @@
 #     in check-deploy-gating-autoapprove.test.sh — not repeated here)
 #   - changes.outputs.pg_net must exist and be wired to a real step
 #   - the filter step must still compute pg_net= from the content signal
-#     (net\.http_post / net\.http_get, escaped dot)
+#     (the widened, case-insensitive net\s*\.\s*http|pg_net\b|schema\s+net\b)
+#
+# This file only checks the SHAPE — that the signal's text and grep flags
+# were not deleted or narrowed. It deliberately does NOT check behavior
+# (whether the signal is wired to PG_NET=true with the right polarity, or
+# survives the fail-closed branch) — those mutants survive presence checks by
+# construction and are caught instead by
+# check-deploy-gating-pgnet-differential.test.sh, which runs the real step
+# under real bash. See check-deploy-gating-pgnet.mjs's file header (B3).
 #
 # Same convention as the rest of this family: checks only fire when a fixture
 # declares the relevant field (outputs:/steps:) at all — minimal fixtures
@@ -65,10 +73,10 @@ FULL_FILTER_STEPS='    steps:
         run: |
           AUTH_HOOK=false
           if echo "$CHANGED" | grep -qE '"'"'custom_access_token_hook'"'"'; then AUTH_HOOK=true; fi
-          if printf '"'"'%s'"'"' "$MIGRATIONS_DIFF" | grep -qE '"'"'supabase_auth_admin'"'"'; then AUTH_HOOK=true; fi
+          if grep -qE '"'"'supabase_auth_admin'"'"' <<< "$MIGRATIONS_DIFF"; then AUTH_HOOK=true; fi
           echo "auth_hook=${AUTH_HOOK}" >> "$GITHUB_OUTPUT"
           PG_NET=false
-          if printf '"'"'%s'"'"' "$MIGRATIONS_DIFF" | grep -qE '"'"'net\.http_(post|get)'"'"'; then PG_NET=true; fi
+          if grep -qiE '"'"'net\s*\.\s*http|pg_net\b|schema\s+net\b'"'"' <<< "$MIGRATIONS_DIFF"; then PG_NET=true; fi
           echo "pg_net=${PG_NET}" >> "$GITHUB_OUTPUT"'
 
 # base_wf <changes-outputs-block> <changes-steps-block>
@@ -128,21 +136,37 @@ BLIND_PG_NET_STEP='    steps:
           PG_NET=false
           echo "pg_net=${PG_NET}" >> "$GITHUB_OUTPUT"'
 BLIND_PG_NET="$(base_wf "$FULL_OUTPUTS" "$BLIND_PG_NET_STEP")"
-assert_exit 1 "removing the net.http_post/get detection signal fails" "$BLIND_PG_NET"
-assert_contains 'no longer references net\.http_(post|get)' "names the removed signal" "$BLIND_PG_NET"
+assert_exit 1 "removing the pg_net detection signal entirely fails" "$BLIND_PG_NET"
+assert_contains 'no longer references the widened' "names the removed signal" "$BLIND_PG_NET"
 
-# ── mutant: signal present but with an unescaped dot (looser than intended) ─
-UNESCAPED_DOT_STEP='    steps:
+# ── mutant: signal present but narrowed back to the old, unescaped-dot form ─
+NARROWED_STEP='    steps:
       - name: Filter paths
         run: |
           AUTH_HOOK=false
           if echo "$CHANGED" | grep -qE '"'"'custom_access_token_hook'"'"'; then AUTH_HOOK=true; fi
           echo "auth_hook=${AUTH_HOOK}" >> "$GITHUB_OUTPUT"
           PG_NET=false
-          if printf '"'"'%s'"'"' "$MIGRATIONS_DIFF" | grep -qE '"'"'nethttp_(post|get)'"'"'; then PG_NET=true; fi
+          if grep -qE '"'"'net\.http_(post|get)'"'"' <<< "$MIGRATIONS_DIFF"; then PG_NET=true; fi
           echo "pg_net=${PG_NET}" >> "$GITHUB_OUTPUT"'
-UNESCAPED_DOT="$(base_wf "$FULL_OUTPUTS" "$UNESCAPED_DOT_STEP")"
-assert_exit 1 "a mangled pattern missing the literal net\\.http_(post|get) fails" "$UNESCAPED_DOT"
+NARROWED="$(base_wf "$FULL_OUTPUTS" "$NARROWED_STEP")"
+assert_exit 1 "narrowing back to the old net\\.http_(post|get) form (no -i, no width) fails" "$NARROWED"
+assert_contains 'no longer references the widened' "names the narrowed fragment" "$NARROWED"
+assert_contains 'no longer uses grep -qiE' "names the missing -i flag" "$NARROWED"
+
+# ── mutant: signal has the width but lost the case-insensitive flag ────────
+NO_I_FLAG_STEP='    steps:
+      - name: Filter paths
+        run: |
+          AUTH_HOOK=false
+          if echo "$CHANGED" | grep -qE '"'"'custom_access_token_hook'"'"'; then AUTH_HOOK=true; fi
+          echo "auth_hook=${AUTH_HOOK}" >> "$GITHUB_OUTPUT"
+          PG_NET=false
+          if grep -qE '"'"'net\s*\.\s*http|pg_net\b|schema\s+net\b'"'"' <<< "$MIGRATIONS_DIFF"; then PG_NET=true; fi
+          echo "pg_net=${PG_NET}" >> "$GITHUB_OUTPUT"'
+NO_I_FLAG="$(base_wf "$FULL_OUTPUTS" "$NO_I_FLAG_STEP")"
+assert_exit 1 "dropping the -i flag (case-sensitive again) fails" "$NO_I_FLAG"
+assert_contains 'no longer uses grep -qiE' "names the missing -i flag" "$NO_I_FLAG"
 
 echo
 echo "  $pass passed, $fail failed"

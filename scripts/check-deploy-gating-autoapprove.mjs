@@ -162,11 +162,25 @@ export function checkAutoApproveShape(jobs) {
   // needs.changes.outputs.auth_hook then evaluates to '', '' == 'true' is
   // false, approve-production's environment ALWAYS resolves to
   // 'production-auto' — the human pause silently disappears from the repo
-  // with CI green. Only enforced when the fixture declares `outputs:` on
-  // `changes` at all (minimal fixtures across this test family often don't).
+  // with CI green.
+  //
+  // review round 2026-09-10 (B3, mutant 5): this used to gate on
+  // `changesJob.outputs` being a truthy object — meaning deleting the ENTIRE
+  // `outputs:` block from `changes` (not just the `auth_hook` key inside it)
+  // skipped this check altogether, against the REAL deploy.yml. Gating on
+  // the environment expression instead (does approve-production's
+  // environment actually READ needs.changes.outputs.* at all?) cannot be
+  // sidestepped that way: if the conditional form is in play, its inputs
+  // must genuinely exist, whether `outputs:` is missing entirely or merely
+  // incomplete. Minimal fixtures elsewhere in this family that use the
+  // conditional env now need real outputs backing it — see
+  // check-deploy-gating-autoapprove.test.sh's base_wf.
   const changesJob = jobs['changes'];
-  if (changesJob && changesJob.outputs && typeof changesJob.outputs === 'object') {
-    const authHookOutput = changesJob.outputs.auth_hook;
+  const usesConditionalEnv = typeof env === 'string' && env.includes('${{');
+  if (changesJob && usesConditionalEnv) {
+    const authHookOutput = changesJob.outputs && typeof changesJob.outputs === 'object'
+      ? changesJob.outputs.auth_hook
+      : undefined;
     if (!authHookOutput || !/auth_hook/.test(String(authHookOutput))) {
       errors.push(
         'changes.outputs.auth_hook is missing or does not reference an auth_hook step output — ' +
