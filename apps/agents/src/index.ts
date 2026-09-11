@@ -17,6 +17,8 @@ import { startBullBoard } from './orchestration/bull-board';
 import { startIntakeListener } from './orchestration/intake-listener';
 import { createIntakeHandler } from './agents/intake/intake-worker';
 import { createWismoHandler } from './agents/wismo/wismo-worker';
+import { createGeocodeEnrichHandler } from './agents/geocode/enrich';
+import { getMaptilerProvider } from './providers/geocoding/maptiler';
 import { registerDevRoutes } from './dev/index';
 
 Sentry.init({
@@ -57,13 +59,17 @@ async function main(): Promise<void> {
 
   const cfg = loadConfig();
 
-  await initRedis(cfg.REDIS_URL);
+  const redis = await initRedis(cfg.REDIS_URL);
   initSupabase(cfg.SUPABASE_URL, cfg.SUPABASE_SERVICE_ROLE_KEY);
 
   const queues = createQueues(cfg.REDIS_URL) as unknown as Record<string, Queue>;
   workers = createWorkers(cfg.REDIS_URL, {
     'intake.ingest': createIntakeHandler(supabase, cfg.OPENROUTER_API_KEY),
     'wismo.client': createWismoHandler(supabase),
+    // getMaptilerProvider() is a module-scoped singleton (spec-58 fase 4) --
+    // constructing it here, once, is what keeps its CircuitBreaker's state
+    // alive across cron ticks instead of resetting every job.
+    'geocode.enrich': createGeocodeEnrichHandler(supabase, getMaptilerProvider(), redis, cfg.MAPTILER_MONTHLY_QUOTA),
   });
   createFlowProducer(cfg.REDIS_URL);
 
