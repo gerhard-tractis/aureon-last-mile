@@ -2,7 +2,7 @@
 
 > **Related:** [spec-59](spec-59-map-component-despacho-pins.md) (map component + Despacho pins — depends on this), [spec-60](spec-60-control-tower-fleet-map.md) (Control Tower fleet map), [spec-38](spec-38-route-activity-view.md) (created the map placeholder), [spec-54](spec-54-ui-rebrand.md) (tokenised the map surface, deferred the provider)
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit
 **Downstream:** spec-59-map-component-despacho-pins.md, spec-60-control-tower-fleet-map.md
 
@@ -65,7 +65,7 @@ The two are near-identical in practice, but the poll is suspect: the Show Route 
 
    To answer the obvious question directly, because it came up: **Leaflet is not an alternative to MapTiler.** Leaflet is a client-side rendering library — it paints markers you already have onto tiles somebody else serves, and it has no geocoder, no address parser and no tile data of its own. spec-59 decision 1 already picks Leaflet + react-leaflet for the drawing. This spec never draws anything, so Leaflet has no role in it; what it needs is an HTTP service that turns `"Av. Providencia 1234, Providencia"` into a coordinate pair, which is a different layer entirely. Leaflet will render MapTiler's tiles using the coordinates this spec writes.
 
-   The real candidates were MapTiler, Google, LocationIQ and self-hosted Nominatim. MapTiler wins on being **one vendor and one key for both** geocoding (here) and tiles (spec-59) — and Leaflet needs a tile source from someone regardless, since OSM's public tile server forbids production use. Google's geocoding is likely more accurate on Chilean street addresses, but its terms restrict persisting coordinates long-term and we intend to store lat/lng permanently on `orders`. Self-hosted Nominatim is free per lookup and unrestricted on storage, but Chilean street-level OSM coverage is materially worse than a commercial geocoder, and the whole spec is gated on hitting ≥ 80 % street-level matches — so it would be betting the gate on the weakest option. The interface exists so swapping to any of them is a single adapter file.
+   The real candidates were MapTiler, Google, LocationIQ and self-hosted Nominatim. MapTiler wins on being **one vendor and one account for both** geocoding (here) and tiles (spec-59) — two keys of that one account, not one key: Fase 0 measured that the server key is User-Agent-restricted, which a browser cannot satisfy, so the tile key is a separate referrer-restricted one, exactly as `spec-59:52-54` already specified — and Leaflet needs a tile source from someone regardless, since OSM's public tile server forbids production use. Google's geocoding is likely more accurate on Chilean street addresses, but its terms restrict persisting coordinates long-term and we intend to store lat/lng permanently on `orders`. Self-hosted Nominatim is free per lookup and unrestricted on storage, but Chilean street-level OSM coverage is materially worse than a commercial geocoder, and the whole spec is gated on hitting ≥ 80 % street-level matches — so it would be betting the gate on the weakest option. The interface exists so swapping to any of them is a single adapter file.
 2. **First-class columns, not JSONB.** Coordinates go on `orders` as real columns. `destination_address` / `agent_metadata` stay untouched — they are already unwritten scaffolding and adding a second unwritten shape helps no one.
 3. **Cache aggressively, at street granularity.** Chilean last-mile has heavy address repetition. The cache key deliberately **excludes** the unit (departamento / oficina / piso): a street-level geocoder returns one point for all 40 flats in a building, so keying on the unit would turn one paid lookup into forty. The unit stays on the order; it is simply not part of the geocoding key.
 4. **Never permanently fail an order, and never permanently freeze a bad answer.** An unresolved address falls back to its comuna centroid marked `approximate`, but a centroid is a *retryable* state, not a terminal one — see Fase 5. An order with an honest, visibly-approximate pin is actionable; an order silently frozen at a centroid because the provider was down for twenty minutes is a lie.
@@ -85,7 +85,7 @@ The two are near-identical in practice, but the poll is suspect: the Show Route 
 
 | Fase | Delivers | Token |
 |---|---|---|
-| 0 | Precision mapping: which MapTiler response field carries match granularity | `[blocked]` |
+| 0 | Precision mapping: which MapTiler response field carries match granularity | `[done]` |
 | 1 | `orders` geocode columns, queue index, reset trigger, `geocode_cache` | `[pending]` |
 | 2 | `chile_comunas` centroids, 347 rows with provenance | `[pending]` |
 | 3 | Address normalisation v1 + cache read/write. No network. | `[pending]` |
@@ -101,26 +101,160 @@ Two ordering constraints that are not obvious from the table, and that `scripts/
 
 ---
 
-### Fase 0 — Precision mapping: what MapTiler actually calls a street-level match `[blocked]`
+### Fase 0 — Precision mapping: what MapTiler actually calls a street-level match `[done]`
 
 **Depende de:** ninguna
+
 **Archivos:** `docs/specs/spec-58-geocoding-foundation.md` (esta sección)
 
-The whole accuracy gate is measured off this mapping, so it cannot be left to the implementer's judgement, and it cannot be guessed from documentation.
+> Implementado por: orquestador (no un implementer — el entregable es una tabla en este fichero, no código) — rama `docs/spec-58-fase-0-mapeo-precision`, rango completo de la rama (dos commits: el contenido y esta línea; un SHA suelto no se puede auto-referenciar)
+> Review: `reviewer` (Opus), dos rondas. Ronda 1: 13 hallazgos, 5 bloqueantes. Ronda 2 verificó 12 cerrados, dejó el 1 «a medias» (ver «Lo que el cruce de comuna todavía no demuestra») y levantó 2 bloqueantes nuevos sobre el propio arreglo — cerrados en este commit. Dos hipótesis del reviewer se **refutaron midiendo** y quedan escritas abajo para que nadie las vuelva a plantear.
+> QA: n/a — no se despliega nada. 20 llamadas contra la API real de MapTiler el 2026-09-11.
+> Downstream: revisado spec-59 y spec-60 — **sin cambios en ninguno de los dos**. spec-59 ya tenía bien las dos keys (`spec-59:52-54`) y no menciona `User-Agent` en ningún sitio; lo que se retira es una afirmación que ESTE spec hacía sobre él, no un defecto suyo. spec-60 consume `orders.latitude/longitude` y `geocode_precision`, cuyo contrato no cambia.
 
-Call MapTiler's geocoding endpoint with three real Chilean addresses — one dense-urban street with a number, one address in a comuna with a well-known name collision, one rural or peri-urban address — record the full responses, and write the mapping table **into this section**: which response field carries the match granularity (candidates: `place_type`, `properties.accuracy`, `relevance`), and exactly which values count as `exact`. Only street-level or better is `exact`; locality, municipality and region are `approximate`.
+Se llamó al endpoint de geocoding con direcciones chilenas reales el 2026-09-11. **El resultado invalida la suposición con la que se escribió este spec**, así que la tabla de abajo no es la que se esperaba.
 
-Deliverable is an edit to this file, not code. No adapter is written here — that is Fase 4, which consumes the table.
+#### Qué campo trae la granularidad
 
-> Bloqueo: se intentó localizar una `MAPTILER_API_KEY` utilizable en el repo o en el VPS antes de abrir la fase — verificado con `git grep -iE "maptiler|MAPTILER_API_KEY"` sobre `origin/main`, que no devuelve ni una referencia fuera del texto de este spec, y contra `apps/agents/src/config.ts`, donde la variable no está registrada — 2026-09-11 — desbloquea: usuario (dar de alta la cuenta MapTiler y entregar la key; es una cuenta con tarjeta, no algo que un agente pueda crear)
+| Campo | Dónde | Qué significa realmente |
+|---|---|---|
+| `feature.address` | raíz del feature, string o **ausente** | Presente = MapTiler acertó el número de calle. Ausente = devolvió el centroide de la calle. Ver la comprobación de interpolación abajo |
+| `feature.context[]` | array | Trae una entrada `municipality.*` con la comuna que **realmente** devolvió. El segundo conjunto de la regla vive aquí |
+| `feature.place_type` | array | `['address']` para **cualquier** cosa a nivel calle, acertada o no. Inútil por sí solo |
+| `properties.kind` | string | `street` / `admin_area`. Misma limitación |
+| `feature.relevance` | 0..1 | Similitud **de texto**, no precisión. Ver la trampa 2 |
+| `properties.accuracy` | — | **Ausente en las 20 respuestas medidas.** No se afirma que el proveedor no lo emita nunca: si algún día aparece, léelo **antes** que `address`, porque en geocoders de esta familia distingue `rooftop` / `parcel` / `interpolated`, que es justo lo que `address` no distingue |
 
+#### La regla
 
+```
+exact  <=>  feature.address presente
+            Y  context[].municipality  ==  la comuna pedida
+               (comparadas ya normalizadas — ver «En qué capa se decide»)
+
+approximate  <=>  hay feature, pero falla alguno de los dos conjuntos
+sin match    <=>  features vacío  -> centroide, camino `fallback`
+```
+
+Los dos casos donde **no hay comuna que cruzar** están especificados abajo; no caen en `approximate` por defecto.
+
+#### El cruce de comuna, medido (era el hueco del review)
+
+La primera versión de esta fase afirmaba que el cruce atrapaba los falsos positivos sin transcribir un solo valor de `context[]`. Corregido — esto es lo que devuelve:
+
+| Consulta | `address` | `context[].municipality` | Comuna pedida | Veredicto |
+|---|---|---|---|---|
+| `Avenida Providencia 1234, Providencia` | `'1234'` | `Providencia` | Providencia | **exact** |
+| `Colon 1000, Concepcion` | ausente | **`Chiguayante`** | Concepción | approximate — atrapado |
+| `Ruta G-60 km 12, Curacavi` | ausente | **`Melipilla`** | Curacaví | approximate — atrapado |
+| `Arturo Prat 100, La Union` | ausente | **`Valdivia`** | La Unión | approximate — atrapado |
+| `Lote 5 Parcela 12, Curacavi` | ausente | **`Puente Alto`** | Curacaví | approximate — atrapado |
+
+Cuatro de cuatro falsos positivos atrapados, todos en comuna distinta a la pedida. `La Union` es además la colisión de nombre que el criterio original pedía y la primera versión no probó: devuelve Valdivia.
+
+**Lo que el cruce de comuna todavía no demuestra.** Mirando la columna `address` de esas cuatro filas: está **ausente en las cuatro**. O sea que el primer conjunto de la regla ya las rechaza solo, y **el cruce de comuna no decidió ni un veredicto en las 20 sondas**. Su beneficio sigue siendo teórico; su coste no: un falso negativo (punto bueno cerca de un límite comunal, o `municipality` que el proveedor etiqueta distinto) gasta un intento y una llamada pagada, y degrada un punto a nivel portal.
+
+Se mantiene igualmente, y la razón es asimétrica, no estadística: el caso que guarda —`address` presente y comuna equivocada— es el único en el que un pin **verosímil** aterriza en la región equivocada, y la Decisión 4 dice que un pin honestamente aproximado es accionable mientras que uno silenciosamente falso es una mentira. No haberlo observado en 20 sondas no dice que no ocurra; dice que no lo hemos visto. **La Fase 6 lo mide de verdad**: con 200 direcciones reales, contar cuántas traen `address` presente con comuna distinta a la pedida es una columna más en el informe, y ese número decide si el cruce se queda como está, se relaja a comprobar la región en vez de la comuna, o se retira.
+
+#### Tres trampas medidas, no supuestas
+
+**1. `place_type` miente.** Las cuatro filas de arriba devolvieron `place_type=['address']`, `kind=street`. Todas habrían pasado como `exact` con la regla que este spec daba por hecha.
+
+**2. `relevance` no separa los casos buenos de los malos.** Medido:
+
+| Consulta | `relevance` | `address` | Punto devuelto |
+|---|---|---|---|
+| `Avenida Providencia 1234, Providencia` | **1.0** | `'1234'` | el portal correcto |
+| `Avenida Providencia, Providencia` (sin número) | **1.0** | ausente | centroide de la calle |
+| `Avenida Providencia 1234 depto 42, Providencia` | **0.667** | `'1234'` | el portal correcto |
+| `Bandera 140, Santiago` | 0.994 | ausente | centroide de la calle |
+
+Para aceptar el acierto de 0.667 hace falta un suelo ≤ 0.667, que también acepta los dos centroides de 1.0 y 0.994. **No existe umbral que separe ese par**, que es una afirmación más fuerte y más honesta que «invierte la verdad».
+
+**3. El `depto` degrada la puntuación, y eso importa menos de lo que la primera versión decía.** Las filas con y sin `depto` devolvieron **el mismo punto** y el mismo `address: '1234'`, así que el único efecto medido está en una métrica que acabamos de declarar sin valor. El argumento defendible es más estrecho: `relevance` **ordena** los features, de modo que una puntuación más baja puede cambiar cuál sale primero cuando hay varios candidatos. Con `limit=1` y un solo candidato eso no se observó, y no se afirma. La Decisión 3 se sostiene por economía de caché, que es como estaba justificada desde el principio.
+
+#### Dos hipótesis del review, refutadas midiendo
+
+**«Quizá MapTiler sólo rechaza User-Agent vacío, y cualquier cadena sirve.»** No:
+
+| `User-Agent` | Respuesta |
+|---|---|
+| `aureon-geo` | **HTTP 200** |
+| `Mozilla/5.0` | HTTP 403 |
+| `curl/8.0` | HTTP 403 |
+| `x` | HTTP 403 |
+| *(sin cabecera)* | HTTP 403 |
+
+De cuatro cadenas sólo una pasa, así que se comporta como una **lista blanca sobre la cadena exacta**. Que el mecanismo sea literalmente una allowlist en la consola de MapTiler es inferencia razonable, no algo medido — nadie del equipo puede verlo desde el repo. Lo que sí es un hecho operativo, y por eso queda escrito aquí: **la restricción la configuró el usuario en la cuenta de MapTiler el 2026-09-11, es invisible para el repo, y editarla rompe el worker con 403 sin que ningún test lo vea venir.**
+
+**«Quizá `address` aparece por interpolación sobre rangos de portales, y entonces no significa que acertara.»** No:
+
+| Consulta | `address` | Devolvió |
+|---|---|---|
+| `Avenida Providencia 99999, Providencia` | **ausente** | centroide de la calle |
+| `Avenida Providencia 88888, Providencia` | **ausente** | centroide de la calle |
+| `Avenida Providencia 1234, Providencia` | `'1234'` | el portal |
+
+Un número inexistente en una calle existente **no** produce `address`, ni interpolado ni por snapping. La premisa sobre la que descansa el gate de la Fase 6 se sostiene. Era el hallazgo más peligroso del review y la medición lo cierra.
+
+#### Formas de dirección chilenas, medidas
+
+| Forma | Ejemplo | `address` | Comuna correcta | Veredicto |
+|---|---|---|---|---|
+| Urbana con número | `Los Militares 5620, Las Condes` | `'5620'` | sí | exact |
+| Urbana con número | `Irarrazaval 3400, Nunoa` | `'3400'` | sí | exact |
+| Número + letra | `Avenida Providencia 1234 A` | `'1234'` | sí | exact (cae al número base) [^1] |
+| Calle en mayúsculas sin portal en OSM | `Pajaritos 2020, Maipu` | ausente | sí | approximate |
+| `S/N` | `Avenida Providencia S/N` | ausente | sí | approximate |
+| `sin numero` | idem | ausente | sí | approximate |
+| Lote / Parcela | `Lote 5 Parcela 12, Curacavi` | ausente | **no** (Puente Alto) | approximate |
+| Basura | `asdkjhasd 99999, Nowhereville` | — | — | `features: []` |
+
+[^1]: Dos consecuencias que no son de esta fase pero nacen aquí. Para la **Fase 3**: la normalización v1 no quita el sufijo de letra, así que `1234` y `1234 a` son dos claves de caché para el mismo punto — coste menor, pero es input para esa fase. Para la **Fase 6**: si `1234 A` es en realidad un acceso distinto, se está contando como acierto un pin en el portal `1234`; al ojear los 20 puntos del gate, no cuente como `exact` ninguno de esa forma.
+
+**Aviso honesto para la Fase 6:** las formas que no son «calle + número urbano» resuelven a `approximate` de forma sistemática, no ocasional. El gate pide ≥ 80 % `exact`. Si el corpus real trae muchos `S/N`, lotes, parcelas o villas, **ese umbral puede no alcanzarse con ningún proveedor**, y la decisión entonces no es cambiar de proveedor sino revisar el umbral. La Fase 6 mide eso; esta fase sólo advierte de que el resultado no está garantizado.
+
+#### Una trampa de implementación para la Fase 4
+
+**La dirección va en el *path* de la URL, no en la query.** Cualquier `/` del texto —`S/N` es la forma más común en Chile, y `Km 5/2` aparece en rutas— rompe la ruta y devuelve **HTTP 404**, no un match vacío. Medido: `S/N` con el `/` sin escapar → 404; el mismo texto con el `/` percent-encoded → 200. El adaptador debe codificar el componente entero (`encodeURIComponent`, no `encodeURI`), y la Fase 4 debe tener un test con `S/N` exactamente por esto. Un 404 por esta causa es indistinguible de «no hay match» si nadie lo separa.
+
+#### En qué capa se decide
+
+`normalize_comuna_id()` es una función de Postgres, y la capa `providers/` no habla con Supabase. **El adaptador no resuelve la comuna: la recibe ya canónica.** `GeocodeQuery.comuna` lleva el nombre canónico que la Fase 5 obtiene de `orders.comuna_id`, y el adaptador compara ese string con `context[].municipality` usando la misma normalización de texto de la Fase 3 (minúsculas, sin acentos, espacios colapsados) — comparación de strings en TS, sin viaje a la base. Así el veredicto sigue dentro del adaptador sin sacarlo de su superficie declarada y sin un RPC por geocodificación.
+
+#### Los dos casos sin comuna que cruzar
+
+La regla exige cruzar contra la comuna pedida. Cuando no hay ninguna, o cuando la respuesta no trae `municipality.*`, el veredicto es `approximate` — pero **el punto devuelto se conserva**, no se sustituye por un centroide:
+
+| Caso | Qué se guarda | `geocode_status` |
+|---|---|---|
+| `orders.comuna_id` NULL y el proveedor devolvió un punto | el **punto del proveedor**, `precision='approximate'`, `source='maptiler'` | `fallback` |
+| `context[]` sin entrada `municipality.*`, con punto | el **punto del proveedor**, `precision='approximate'` | `fallback` |
+| Sin comuna **y** sin punto | nada — `latitude`/`longitude` NULL | `unresolvable` |
+
+Tirar un punto a nivel portal para escribir un centroide sería perder información y pagar por ello. Y sin `comuna_id` no hay centroide que escribir, así que la alternativa no existe: o se guarda el punto del proveedor, o la orden se queda sin ubicación teniendo una buena. La fila «No `comuna_id` y no provider answer → `unresolvable`» de la Fase 5 se lee ahora junto a esta tabla: el camino donde el proveedor **sí** responde existe, y es éste.
+
+#### Lo que spec-59 hereda (y lo que no)
+
+La primera versión de esta fase decía que spec-59 heredaba el requisito de `User-Agent` para los tiles. **Es falso, y además imposible** — y spec-59 nunca lo afirmó: el error era de este spec, no suyo. Un navegador no puede fijar `User-Agent`: está en la lista de cabeceras prohibidas de fetch/XHR, y los tiles de Leaflet se piden con `<img src=...>`, donde no hay cabeceras que fijar. Tomado al pie de la letra, dejaría a spec-59 con un requisito inimplementable y el mapa en blanco.
+
+Lo correcto, y coherente con `spec-59:54`, que ya especifica una key distinta restringida **por referrer**:
+
+- `MAPTILER_API_KEY` — key **de servidor**, restringida por User-Agent (`aureon-geo`), sólo para el worker de geocoding. Nunca sale del backend.
+- La key de tiles de spec-59 — key **de navegador**, restringida por referrer, expuesta en el bundle por diseño. **No** lleva ni puede llevar User-Agent.
+
+Dos keys de la misma cuenta. La Decisión 1 («un proveedor, una cuenta») se mantiene; lo que no se mantiene es «una key».
+
+#### Dónde está la key
+
+La custodia el usuario. **Todavía no está en ningún fichero del VPS** (ni `/home/aureon/.env.qa` ni `/home/aureon/.env`) y no está registrada en `config.ts` — eso lo hace la Fase 4. El implementador de la Fase 4 no la necesita: sus tests van contra `fetch` mockeado. La primera fase que necesita la key colocada es la 5, en QA.
 
 ---
 
 ### Fase 1 — `orders` geocode columns and `geocode_cache` `[pending]`
 
 **Depende de:** ninguna
+
 **Archivos:** `packages/database/supabase/migrations/<ts>_spec58_geocoding_schema.sql` (nueva), `packages/database/supabase/tests/spec58_geocoding.sql` (nuevo), `packages/database/src/database.types.ts`
 
 #### Changed: `public.orders`
@@ -250,6 +384,7 @@ Also regenerate `packages/database/src/database.types.ts` wholesale. That file i
 ### Fase 2 — Comuna centroids `[pending]`
 
 **Depende de:** spec-58 fase 1
+
 **Archivos:** `packages/database/supabase/migrations/<ts>_spec58_comuna_centroids.sql` (nueva), `packages/database/supabase/tests/spec58_comuna_centroids.sql` (nuevo), `packages/database/src/database.types.ts`
 
 ```sql
@@ -281,6 +416,7 @@ Seeded from **one** named source, committed as data in the migration exactly as 
 ### Fase 3 — Address normalisation and the cache layer `[pending]`
 
 **Depende de:** spec-58 fase 1
+
 **Archivos:** `apps/agents/src/lib/geocoding/normalise.ts` (nuevo), `apps/agents/src/lib/geocoding/normalise.test.ts` (nuevo), `apps/agents/src/tools/supabase/geocoding.ts` (nuevo), `apps/agents/src/tools/supabase/geocoding.test.ts` (nuevo)
 
 Pure TypeScript plus Supabase reads and writes. No network call to any provider — that is Fase 4 — so this phase is fully testable offline.
@@ -288,6 +424,8 @@ Pure TypeScript plus Supabase reads and writes. No network call to any provider 
 **Normalisation, version 1:** lowercase, strip accents, strip punctuation, collapse whitespace; `av.` / `avda.` → `avenida`, `pje.` → `pasaje`; **strip** the unit component (`depto` / `dpto` / `departamento` / `oficina` / `of.` / `piso` and its number) per Decision 3. Comuna resolution reuses `public.normalize_comuna_id(TEXT)` (`20260321000001_chile_comunas_normalization.sql:426`) rather than a second comuna matcher.
 
 The hash is sha256 over the normalised `street|comuna` string. `normalisation_version` is **not** an input to it (Fase 1 explains why).
+
+**Lo que viaja al proveedor es el texto normalizado** — el mismo normalizado del que sale la clave de caché, con el separador que corresponda a una consulta. El `|` de `street|comuna` pertenece a la clave, no al cable: no se envía. Si se enviara el texto crudo, consulta y clave divergirían y la economía de la Decisión 3 dejaría de sostenerse: dos escrituras distintas de una dirección compartirían clave pero no respuesta. Consecuencia honesta que la Fase 4 debe verificar: las 20 sondas de la Fase 0 se hicieron con **texto crudo**, así que su tabla de formas describe el comportamiento sobre crudo. La Fase 4 repite una muestra pequeña con el texto ya normalizado antes de fijar sus expectativas — la normalización quita la puntuación, de modo que `S/N` llega como `s n` y la trampa del `/` puede no llegar nunca al cable. Se mantiene el `encodeURIComponent` igualmente: es correcto independientemente de qué texto se envíe, y la trampa vuelve en cuanto alguien llame al adaptador con texto crudo.
 
 The cache tool exposes exactly two operations — look up by `(address_hash, normalisation_version)`, and insert a result — plus the `orders` update. Keep the normaliser in its own file: it is the part Fase 5's tests exercise hardest, and the part a version bump will rewrite.
 
@@ -307,18 +445,57 @@ Run locally with `--pool=forks`.
 ### Fase 4 — The MapTiler adapter `[pending]`
 
 **Depende de:** spec-58 fase 0
-**Archivos:** `apps/agents/src/providers/geocoding/types.ts` (nuevo), `apps/agents/src/providers/geocoding/maptiler.ts` (nuevo), `apps/agents/src/providers/geocoding/maptiler.test.ts` (nuevo), `apps/agents/src/providers/types.ts`, `apps/agents/src/providers/openrouter.ts`, `apps/agents/src/config.ts`, `apps/agents/src/config.test.ts`, `apps/agents/.env.example`
+
+**Archivos:** `apps/agents/src/providers/geocoding/types.ts` (nuevo), `apps/agents/src/providers/geocoding/maptiler.ts` (nuevo), `apps/agents/src/providers/geocoding/maptiler.test.ts` (nuevo), `apps/agents/src/providers/types.ts`, `apps/agents/src/providers/openrouter.ts`, `apps/agents/src/providers/circuit-breaker.ts`, `apps/agents/src/providers/circuit-breaker.test.ts`, `apps/agents/src/config.ts`, `apps/agents/src/config.test.ts`, `apps/agents/.env.example`
 
 The agents app already has everything this needs; no new infrastructure is stood up. New files mirror the existing `providers/` shape (`providers/openrouter.ts`, `providers/types.ts`, `providers/circuit-breaker.ts`).
 
 `apps/agents/src/providers/geocoding/types.ts`:
 
 ```ts
-export interface GeocodeQuery { address: string; comuna: string; region?: string }
+export interface GeocodeQuery {
+  address: string;
+  /** Canonical comuna name, resolved from orders.comuna_id by Fase 5.
+   *  Optional because orders.comuna_id is nullable and that case is real —
+   *  when absent the adapter cannot cross-check, and says so via matchClass. */
+  comuna?: string;
+  region?: string;
+}
+
+/** Why the adapter reached its verdict. Fase 5 needs this, not just `precision`:
+ *  `wrong_comuna` and `uncrosscheckable` are both 'approximate' yet take
+ *  OPPOSITE dispositions in the ladder — one discards the point, the other keeps
+ *  it. With only `precision` the worker cannot tell them apart without
+ *  re-parsing `raw`, which would drag MapTiler's response shape back into the
+ *  orchestration layer that "En qué capa se decide" deliberately keeps it out of. */
+export type GeocodeMatchClass =
+  | 'exact'              // house number matched AND comuna cross-check passed
+  | 'coarse'             // no house number — whatever context[] says about the comuna
+  | 'wrong_comuna'       // house number PRESENT but context[] names another comuna
+  | 'uncrosscheckable';  // a point, but no comuna to check against, or no municipality.* in context[]
+
+// The coarse / wrong_comuna boundary is load-bearing and easy to get backwards.
+// `wrong_comuna` REQUIRES `feature.address` to be present. A comuna mismatch with
+// no house number is `coarse`, full stop — even though context[] does name another
+// comuna. Both take the same disposition in the ladder, so getting it wrong is not
+// a behaviour bug; it corrupts the Fase 6 metric instead. All four of Fase 0's
+// measured mismatches had NO house number, so classifying them `wrong_comuna`
+// would fill the very counter the cross-check is on trial for with cases the
+// cross-check did not decide — and absolve it using the evidence that it was
+// unnecessary.
 
 export interface GeocodeResult {
   latitude: number;
   longitude: number;
+  matchClass: GeocodeMatchClass;
+  /** Derived, kept because it is what lands in the column:
+   *  'exact' when matchClass === 'exact', otherwise 'approximate'.
+   *  Never write this by hand — derive it with precisionOf(matchClass), exported
+   *  from this file and unit-tested over all four classes. A hand-built result
+   *  carrying matchClass:'uncrosscheckable' with precision:'exact' would not
+   *  merely draw a bad pin: the cache write predicate is the match class, but
+   *  anything that reads `precision` to decide durability freezes an unverified
+   *  point into the one structure this spec admits it cannot cheaply undo. */
   precision: 'exact' | 'approximate';
   source: string;
   raw?: unknown;
@@ -330,11 +507,36 @@ export interface GeocodingProvider {
 }
 ```
 
-`apps/agents/src/providers/geocoding/maptiler.ts` — country-biased to `cl`, proximity-biased to the comuna centroid from Fase 2, `exact` vs `approximate` decided by the mapping table Fase 0 writes. Wrapped in the existing `CircuitBreaker` so a provider outage degrades to centroid fallback instead of stalling the queue.
+`apps/agents/src/providers/geocoding/maptiler.ts` — country-biased to `cl`, proximity-biased to the comuna centroid from Fase 2 **when a comuna is supplied** (it is optional — see the interface), `exact` vs `approximate` decided by **Fase 0's measured rule**: `feature.address` present **and** the `municipality.*` entry of `context[]` resolving to the requested comuna. Not `place_type`, which Fase 0 measured returning `['address']` for results in the wrong comuna, and not a `relevance` floor, which Fase 0 measured failing to separate the cases at all — there is no threshold that accepts the correct 0.667 match without also accepting the 1.0 and 0.994 street centroids.
 
-**Error classification.** Fase 5's retry ladder distinguishes "the provider told us something about this address" from "the provider was unreachable", so the adapter must return the second as a typed transport failure. The union already exists, spelled at `apps/agents/src/providers/types.ts:36` — `'rate_limit' | 'timeout' | 'api_error' | 'network'` — but it is currently a member of `LLMError`, so importing it as-is would type a geocoding failure as an LLM error. **Extract it to a shared `ProviderErrorType`** (which touches `openrouter.ts`) rather than inventing a second vocabulary that can drift.
+**The request must carry `User-Agent: aureon-geo`.** Fase 0 measured this as an allowlist on that exact string: `Mozilla/5.0`, `curl/8.0`, `x` and no header at all each return `HTTP 403`. Not optional politeness — it is the difference between a working adapter and one that 403s on every request. This applies to the **server** key only; spec-59's browser tile key is referrer-restricted and cannot carry a User-Agent at all.
 
-**Env.** `MAPTILER_API_KEY` and `MAPTILER_MONTHLY_QUOTA` in `apps/agents/.env`, added to `.env.example`, registered in `apps/agents/src/config.ts` (which validates every var at startup). Production values live in `/home/aureon/.env` (chmod 600), read via `deploy/aureon-agents.service`.
+**Ask for one feature and classify it: `limit=1`, verdict on `features[0]`.** Measured 2026-09-11, because this decides the match class and therefore the Fase 6 number. Re-running Fase 0's three false positives with `limit=5`: in **none** of them did a deeper candidate carry a house number. `Colon 1000, Concepcion` returned Chiguayante then Hualqui; `Arturo Prat 100, La Union` returned Valdivia, then La Florida, then two comuna-level entries; `Ruta G-60 km 12, Curacavi` returned Melipilla, then María Pinto, then Curacaví at comuna level. So the tempting alternative — fetch several and pick the first whose `municipality` matches, turning the cross-check into something that *improves* results rather than only rejecting them — **buys nothing here and risks selecting a worse point**. It costs the same single call, so it can be revisited; it is not being adopted on the evidence available.
+
+Two of those deeper candidates came back with **no `municipality.*` entry at all**, which is the first direct observation that `uncrosscheckable` is a real response shape and not a defensive hypothesis.
+
+**Percent-encode the address into the path.** Fase 0 measured an unescaped `/` (as in `S/N`, the commonest Chilean form for "no street number") returning `HTTP 404` rather than an empty match. Use `encodeURIComponent`, and carry a test with `S/N` in it.
+
+**A query with no comuna is the weakest query the system makes**, and it is worth saying next to the code rather than leaving to be deduced: no comuna text, no proximity bias, and no way to cross-check what comes back. Its result is precisely what the `uncrosscheckable` row decides to keep. Keeping it is still right — the alternative is not a centroid but NULL, because with no `comuna_id` there is no centroid to write — but nobody should mistake it for a verified point.
+
+**The comuna arrives already canonical.** `GeocodeQuery.comuna` carries the canonical name resolved from `orders.comuna_id` by Fase 5; the adapter compares it to `context[].municipality` with Fase 3's text normalisation. `normalize_comuna_id()` is a Postgres function and this layer does not talk to Supabase — see Fase 0's "En qué capa se decide". Wrapped in the existing `CircuitBreaker` so a provider outage degrades to centroid fallback instead of stalling the queue.
+
+**Error classification.** Fase 5's retry ladder distinguishes three things, not two: "the provider told us something about this address", "the provider was unreachable", and "our credential is refused". The third needs its own type — `credential` — beyond the existing union. A 401 or a 403 whose body says the key is refused is **not** a transient outage: it never clears on its own, so classifying it as transport means the worker retries a doomed request every thirty minutes forever while reporting itself healthy. Fase 0 hit exactly this against a User-Agent-restricted key.
+
+**But 403 is ambiguous and must be disambiguated before this ships.** MapTiler returns 403 both for a refused key and, plausibly, for plan or rate limits — and the quota row below already claims 403-adjacent territory with a completely different backoff. **First task of this phase:** capture the response body for a refused key (Fase 0 recorded `"Key usage restricted"`) and, if it can be provoked, for a quota rejection, and write the discriminator here. Do not guess: a wrong split either bricks the worker on a rate limit or retries a dead key all month.
+
+**The provider and its breaker are module-scoped — one instance per process, not one per job.** `CircuitBreaker` keeps its state in private instance fields, and spec-58 would be its first production consumer (verified 2026-09-11: the only `new CircuitBreaker` in the repo is in its own test; `openrouter.ts` does not use it). If the adapter is constructed per job — the natural reading if nobody says otherwise — the latch lives for exactly one call, and a refused key produces 200 dead requests every cron tick instead of one an hour. Construct once at module load and reuse.
+
+Opening the circuit for a refused credential needs a mode `CircuitBreaker` does not have today — it only opens on `failureCount >= failureThreshold` and always re-arms after `recoveryTimeout` (`providers/circuit-breaker.ts`). Add an explicit trip, and give it a **finite one-hour latch, not "until restart"**: the spend is identical, and it cannot turn a transient 403 into a silently lost month. The union already exists, spelled at `apps/agents/src/providers/types.ts:36` — `'rate_limit' | 'timeout' | 'api_error' | 'network'` — but it is currently a member of `LLMError`, so importing it as-is would type a geocoding failure as an LLM error. **Extract it to a shared `ProviderErrorType`** (which touches `openrouter.ts`) rather than inventing a second vocabulary that can drift.
+
+**Env.** `MAPTILER_API_KEY` and `MAPTILER_MONTHLY_QUOTA` in `apps/agents/.env` locally, added to `.env.example`, registered in `apps/agents/src/config.ts` (which validates every var at startup). On the VPS there are **two** files, and since Fase 5 verifies in QA, QA is the one that matters first:
+
+| Entorno | Fichero | Unidad que lo lee |
+|---|---|---|
+| QA | `/home/aureon/.env.qa` | `infra/supabase-qa/systemd/aureon-agents-qa.service` |
+| Producción | `/home/aureon/.env` | `apps/agents/deploy/aureon-agents.service` |
+
+Ambos `chmod 600`, propiedad de `aureon`, fuera del repo. (Este spec decía antes `deploy/aureon-agents.service` y no mencionaba QA en absoluto; las dos rutas se verificaron leyendo las unidades el 2026-09-11.)
 
 `MAPTILER_API_KEY` is **optional**: if absent the worker boots and Fase 5 resolves everything to centroids rather than refusing to start. A geocoding key must not be able to take down the agent suite. Log loudly at startup when it is missing.
 
@@ -349,6 +551,7 @@ Against a mocked `fetch`: a Chilean address fixture resolving `exact`; a localit
 ### Fase 5 — The `geocode.enrich` worker and its state machine `[pending]`
 
 **Depende de:** spec-58 fase 4
+
 **Archivos:** `apps/agents/src/orchestration/queues.ts`, `apps/agents/src/orchestration/queues.test.ts`, `apps/agents/src/orchestration/workers.ts`, `apps/agents/src/orchestration/workers.test.ts`, `apps/agents/src/orchestration/schedulers.ts`, `apps/agents/src/orchestration/schedulers.test.ts`, `apps/agents/src/agents/geocode/enrich.ts` (nuevo), `apps/agents/src/agents/geocode/enrich.test.ts` (nuevo)
 
 Add `'geocode.enrich'` to the exported `QueueName` union at `orchestration/queues.ts:5` **and** to `QUEUE_CONFIGS` at `:20` (`Record<QueueName, QueueConfig>` will not compile otherwise), `attempts: 3, backoffDelay: 60_000`. Worker in `orchestration/workers.ts`, scheduler in `orchestration/schedulers.ts`:
@@ -362,7 +565,7 @@ Add `'geocode.enrich'` to the exported `QueueName` union at `orchestration/queue
 #### Resolution order
 
 1. `geocode_cache` hit on `(address_hash, normalisation_version)` → use it, bump `hit_count` / `last_used_at`. No network call. A cache hit is always `resolved`, because only `exact` results are ever cached.
-2. MapTiler → `source='maptiler'`, precision per Fase 0's mapping. **Written to the cache only when `precision='exact'`.**
+2. MapTiler → `source='maptiler'`, precision per Fase 0's mapping. **Written to the cache only when `matchClass === 'exact'`** — keyed on the match class, never on the derived `precision`.
 3. Comuna centroid → `source='comuna_centroid'`, `precision='approximate'`, `geocode_status='fallback'`. **Never written to the cache.**
 
 **Only `exact` results are cached.** Caching a coarse answer would silently defeat the retry this state machine promises: step 1 would short-circuit every subsequent attempt, the row would re-read the same approximate value on every run without a single network call, and it would land `unresolvable` while the spec claimed it was being retried. The same reasoning that has always excluded centroids applies to a provider's locality-level match — both are "we do not really know where this is", and neither should be frozen into the cache.
@@ -390,13 +593,22 @@ FOR UPDATE SKIP LOCKED
 |---|---|---|---|
 | Cache hit, or provider returned a street-level match | `resolved` | — | never |
 | Provider answered at locality/region granularity → centroid | `fallback` | **+1** | `now() + 7 days` |
+| **House number matched but in the WRONG comuna** (`wrong_comuna`) → centroid of the **requested** comuna, the provider's point **discarded** | `fallback` | **+1** | `now() + 7 days` |
+| **The comuna could not be cross-checked at all** (`uncrosscheckable`) → **keep the provider's point** | `fallback` | **+1** | `now() + 7 days` |
 | Provider answered `null` — no match for this address → centroid | `fallback` | **+1** | `now() + 7 days` |
 | Provider **unavailable** — circuit-breaker open, 429, timeout, network → centroid | `fallback` | **unchanged** | `now() + 30 min` |
 | **Monthly quota exhausted**, or `MAPTILER_API_KEY` absent → centroid | `fallback` | **unchanged** | start of next month |
+| **Credential refused** — 401, or 403 identified as a key refusal → centroid | `fallback` | **unchanged** | **1 hour**, circuit latched. Log at error |
 | 2 attempts exhausted | `unresolvable` | 2 | never |
 | No `comuna_id` and no provider answer | `unresolvable` | — | never |
 
-Two rules do the work here.
+Five rules do the work here, and they are stated in the order they bite.
+
+**A plausible pin in the wrong region is worse than an obviously vague one.** When the provider returns a house number but `context[].municipality` is not the comuna we asked for, the answer is the **centroid of the comuna we asked for** — never the provider's point. The error of a centroid is bounded by the size of a comuna; the error of a confidently wrong match is not, and Fase 0 measured exactly that: `La Union` came back as Valdivia, about 100 km away, and `Lote 5 Parcela 12, Curacavi` came back as Puente Alto. Decision 4 permits an honestly approximate pin because it is actionable; a sharp pin in the wrong region is not approximate, it is false.
+
+Note this is the **opposite** disposition from the row directly below it, and the two are deliberately adjacent in the table because they are only comprehensible as a pair. That asymmetry is deliberate and worth stating so nobody "harmonises" the two: when the check could not run, the provider's point is the best information anyone has; when the check ran and failed, the provider's point is known-wrong for this order.
+
+**A refused credential is not an outage, and must not be retried like one.** Fase 0 measured a 403 from a User-Agent-restricted key — indistinguishable from an `api_error` to any classifier that only asks "did the call fail". Left in the transport bucket it re-arms every thirty minutes forever: a worker that looks busy, spends nothing and geocodes nothing, while every order sits on a comuna centroid. So a refused credential trips a latched circuit for an hour and logs at error level. A wrong key must be loud within one cron tick, not inferred a week later from the `fallback` count. The latch is **one hour and not "until restart"**, because 403 is ambiguous: MapTiler also uses it for plan limits, and a permanent latch would turn a transient rate-limit into a month with every order on a centroid and `geocode_attempts` never incrementing — no signal in the counts at all, which is the very failure Decision 4 exists to prevent. Fase 4 owns measuring the discriminator between the two kinds of 403.
 
 **A transport failure is not evidence about the address**, so it must not consume the attempt budget. That is what stops a provider outage of any length from marching a day's orders to `unresolvable` — it re-arms every 30 minutes indefinitely. Quota exhaustion and a missing key get their own row because they do not clear in half an hour: re-arming those every 30 minutes would churn the entire order book through the batch all month doing no useful work.
 
@@ -406,10 +618,17 @@ Two rules do the work here.
 
 `orders.comuna_id` is nullable and `get_unmatched_comunas()` exists precisely because unmatched comunas are a live problem, so the no-comuna case is real and must terminate rather than loop forever.
 
-**Coordinates held by an `unresolvable` row differ by path**, and spec-59 renders the two differently, so the invariant is stated rather than left to guess:
+**Coordinates held by an `unresolvable` row differ by path**, and spec-59 renders them differently, so the invariant is stated rather than left to guess. There are **three** classes, and `geocode_source` already distinguishes them — no new column is needed:
 
-- *2 attempts exhausted* — holds the comuna centroid, `precision='approximate'`. spec-59 draws a hollow marker.
-- *No `comuna_id`* — `latitude` / `longitude` stay NULL. spec-59 excludes it from the map and counts it under "sin ubicación".
+- *`geocode_source='comuna_centroid'`* — holds the comuna centroid. Reached by any path that wrote a centroid: coarse match, null answer, or a house number in the wrong comuna. spec-59 draws a hollow marker.
+- *`geocode_source='maptiler'`* — holds a point the provider returned that was never cross-checked (`uncrosscheckable`), whether the comuna was unknown or simply absent from `context[]`. spec-59 draws a hollow marker too: it is a real position, just unverified.
+
+  Keying these two by `geocode_source` rather than by "was the comuna known" is deliberate. A row can reach `unresolvable` by **mixed** paths — coarse on the first attempt, uncrosscheckable on the second — and only the source column describes what it actually ends up holding.
+- *No `comuna_id` and no provider answer* — `latitude` / `longitude` stay NULL. spec-59 excludes it from the map and counts it under "sin ubicación".
+
+The rule spec-59 needs is simpler than the three cases: **draw anything with coordinates, hollow when `precision='approximate'`; count the NULLs separately.** `geocode_source` is there if it ever wants to tell the two hollow kinds apart.
+
+One caveat spec-59 must not miss: **a NULL coordinate is not necessarily a failure.** A freshly intaken order sits at `geocode_status='pending'` with NULL coordinates until the next cron tick, and lumping it with `unresolvable` under "sin ubicación" would report a self-healing state as a permanent one. Split that counter by `geocode_status`.
 
 **Surfacing `unresolvable`.** Manual correction is a Non-Goal, so **nothing can move a row out of this state, and `unresolvable` is genuinely terminal today.** No workflow is implied, because none exists: there is no `.from('orders').update(` anywhere in `apps/frontend/src`, and nothing outside intake writes `delivery_address`. An operator who spots a wrong pin has no in-app way to fix it. What this phase provides is visibility, not remedy: the worker logs a per-run count of `resolved` / `fallback` / `unresolvable` rows and of provider calls made versus cache hits. Fase 1's reset trigger is **forward-looking** — it protects re-intake of a corrected address and whatever correction UI a later spec adds; it is not a remedy available now.
 
@@ -421,6 +640,9 @@ Two rules do the work here.
 - An order with no `comuna_id` and no provider answer lands `unresolvable` with NULL coordinates.
 - Neither centroid nor coarse results are written to the cache, and a `fallback` row therefore re-queries the provider on its next run rather than re-reading a frozen answer.
 - The circuit breaker opens and the job continues via centroid fallback, marking rows `fallback` (not `resolved`).
+- A house number matched in the **wrong** comuna writes the **requested** comuna's centroid, not the provider's point — and the inverse case, a point that could **not** be cross-checked (no `comuna_id`, or no `municipality.*`), writes the **provider's** point and not a centroid. These two are the easiest pair in the spec to implement backwards, because "not exact → centroid" is the instinct; test them against each other.
+- An `unresolvable` row reached with no `comuna_id` but a provider point keeps that point, and is not NULL-coordinate.
+- An HTTP 404 from a malformed path (an unescaped `/`, per Fase 4) is classified as a transport failure, **not** as "no match" — it must not consume the attempt budget.
 - The quota guard stops calling the provider once exhausted, and its rows are `fallback`.
 - Missing `MAPTILER_API_KEY`: the worker boots and resolves to centroids.
 
@@ -447,14 +669,22 @@ Run the resolver against a sample of **200 real production `delivery_address` va
 | `exact` (street-level or better) | ≥ 80 % |
 | `approximate` (centroid fallback) | ≤ 20 % |
 | Provider hard failures | ≈ 0 % |
+| **`wrong_comuna`** — house number matched, `context[]` named another comuna | **no threshold: this is the measurement the comuna cross-check is on trial for** |
+| `uncrosscheckable` — a point, but nothing to check it against | report only |
 
-**If `exact` lands materially below 80 %, stop and re-evaluate the provider.** This is why the gate precedes the backfill: afterwards there is no cheap swap, because `geocode_cache` and `orders.latitude` are both fully written and this spec specifies no cache-purge or re-geocode procedure.
+**A count of zero does not license withdrawing the check.** With n=200 and a rare event, zero cannot separate "never happens" from "happens once in 500" — and one in 500 across ~61k orders is roughly 120 sharp pins in the wrong region. Withdrawing on a zero would be the mirror image of the error Fase 0 just corrected by hand: *not having seen it is not evidence of absence*. Fase 7 backfills tens of thousands of addresses and yields a far better estimate for free, so a zero here licenses **"keep as specified, re-count at backfill scale"** — not removal. Only a materially non-zero count justifies acting now, in either direction.
+
+**The `wrong_comuna` count is not decoration, and it is the reason this table grew.** Fase 0 established that the comuna cross-check decided **zero** verdicts in 20 probes: every false positive it caught was already caught by the missing house number. The check is currently kept on an asymmetric argument, not on evidence. This is where the evidence comes from — and the number decides one of three things: the check stays as specified, it relaxes to comparing the **region** instead of the comuna (if the misses are mostly boundary cases or differing administrative labels), or it is withdrawn as cost without benefit.
+
+**The script must record the match class, not the stored `precision`.** By the time this gate runs, the resolver already implements the rule, so a wrong-comuna match leaves the pipeline as `approximate` holding a centroid — indistinguishable from a coarse answer. The sampler therefore reads `GeocodeMatchClass` from the resolver, which is exactly why that discriminator exists on `GeocodeResult` rather than being collapsed into `precision`.
+
+**If `exact` lands materially below 80 %, stop.** Re-evaluating the provider is one of two possible responses, and Fase 0 measured why it may be the wrong one: forms like `S/N`, `Lote` and `Parcela` resolve `approximate` with any geocoder, because there is no house number to match. So read the failure before acting on it — if the shortfall is concentrated in those forms, the answer is to revisit the threshold, not the vendor. Swapping providers only helps if the shortfall is in ordinary street-and-number addresses. This is why the gate precedes the backfill: afterwards there is no cheap swap, because `geocode_cache` and `orders.latitude` are both fully written and this spec specifies no cache-purge or re-geocode procedure.
 
 A precision distribution cannot catch a systematically-shifted-yet-plausible result, so also eyeball 20 resolved points against their addresses before declaring the gate passed.
 
 The sampling and grading script lives under `scripts/`. The resulting numbers are written back **into this section** — the phase is not `[done]` until they are.
 
-> Bloqueo: se intentó acotar la fase a algo que un agente pueda cerrar por su cuenta y no se puede — lee direcciones reales de la Supabase de producción con la service key de `/home/aureon/.env` y gasta cuota del proveedor; verificado contra `CLAUDE.md`, que prohíbe tocar el VPS salvo que el usuario lo pida, y contra la fase 0, cuya key todavía no existe — 2026-09-11 — desbloquea: usuario (visto bueno explícito a la corrida en el VPS; la key de MapTiler llega por la fase 0)
+> Bloqueo: se intentó acotar la fase a algo que un agente pueda cerrar por su cuenta y no se puede — lee direcciones reales de la Supabase de producción con la service key de `/home/aureon/.env` y gasta cuota del proveedor; verificado contra `CLAUDE.md`, que prohíbe tocar el VPS salvo que el usuario lo pida — 2026-09-11 — desbloquea: usuario (visto bueno explícito a la corrida en el VPS). La key ya **no** es parte de este bloqueo: existe desde la fase 0, pero sigue sin colocarse en `/home/aureon/.env`, y colocarla es del usuario.
 
 
 ---
@@ -474,11 +704,11 @@ Then let the cron drain whatever the script leaves and watch, for a day: cache h
 
 ## Rollout order
 
-1. Fase 0 unblocks — the MapTiler key exists.
+1. ~~Fase 0~~ — done 2026-09-11. The key exists and the mapping rule is measured, not assumed.
 2. Fases 1 and 2 (schema, serialised), then 3 and 4.
 3. Fase 5, verified in QA.
 4. Fase 6, the gate. Do not proceed on a failure.
 5. Fase 7, the backfill, then a day of watching the counts.
 6. Only then, spec-59.
 
-Fases 1, 2 and 3 need no MapTiler key and can start today.
+Fases 1, 2 and 3 need no MapTiler key and can start today. Fase 4 is unblocked too, now that Fase 0 is `[done]`.
