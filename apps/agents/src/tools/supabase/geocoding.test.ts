@@ -1,0 +1,306 @@
+// src/tools/supabase/geocoding.test.ts
+import { describe, it, expect, vi } from 'vitest';
+import { lookupGeocodeCache, insertExactGeocodeCache, updateOrderGeocode } from './geocoding';
+
+function makeCacheDb(opts: {
+  found: unknown;
+  selectError?: unknown;
+  updateError?: unknown;
+}) {
+  const selectChain = {
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({ data: opts.found, error: opts.selectError ?? null }),
+  };
+  const updateChain = {
+    update: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockResolvedValue({ data: null, error: opts.updateError ?? null }),
+  };
+  let calls = 0;
+  const from = vi.fn().mockImplementation(() => {
+    calls += 1;
+    return calls === 1 ? selectChain : updateChain;
+  });
+  return { from, selectChain, updateChain };
+}
+
+describe('lookupGeocodeCache', () => {
+  it('returns null on a cache miss without attempting an update', async () => {
+    const db = makeCacheDb({ found: null });
+    const result = await lookupGeocodeCache(db as never, 'hash-1', 1);
+    expect(result).toBeNull();
+    expect(db.from).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the cached row on a hit', async () => {
+    const row = {
+      id: 'cache-1',
+      address_hash: 'hash-1',
+      normalisation_version: 1,
+      latitude: -33.44,
+      longitude: -70.65,
+      geocode_source: 'maptiler',
+      geocode_precision: 'exact',
+      hit_count: 3,
+      last_used_at: null,
+    };
+    const db = makeCacheDb({ found: row });
+    const result = await lookupGeocodeCache(db as never, 'hash-1', 1);
+    expect(result).toMatchObject({ id: 'cache-1', latitude: -33.44 });
+  });
+
+  it('bumps hit_count and last_used_at on a hit', async () => {
+    const row = {
+      id: 'cache-1',
+      address_hash: 'hash-1',
+      normalisation_version: 1,
+      latitude: -33.44,
+      longitude: -70.65,
+      geocode_source: 'maptiler',
+      geocode_precision: 'exact',
+      hit_count: 3,
+      last_used_at: null,
+    };
+    const db = makeCacheDb({ found: row });
+    await lookupGeocodeCache(db as never, 'hash-1', 1);
+
+    expect(db.updateChain.update).toHaveBeenCalledWith(
+      expect.objectContaining({ hit_count: 4, last_used_at: expect.any(String) }),
+    );
+    expect(db.updateChain.eq).toHaveBeenCalledWith('id', 'cache-1');
+  });
+
+  it('queries by both address_hash and normalisation_version', async () => {
+    const db = makeCacheDb({ found: null });
+    await lookupGeocodeCache(db as never, 'hash-1', 2);
+    expect(db.selectChain.eq).toHaveBeenNthCalledWith(1, 'address_hash', 'hash-1');
+    expect(db.selectChain.eq).toHaveBeenNthCalledWith(2, 'normalisation_version', 2);
+  });
+
+  it('throws on a select error', async () => {
+    const db = makeCacheDb({ found: null, selectError: { message: 'boom' } });
+    await expect(lookupGeocodeCache(db as never, 'hash-1', 1)).rejects.toThrow('boom');
+  });
+});
+
+function makeUpsertDb(
+  opts: { genuineError?: unknown; simulateConflictWithoutIgnoreDuplicates?: boolean } = {},
+) {
+  // `simulateConflictWithoutIgnoreDuplicates` models the real Postgres
+  // behaviour this fix depends on: a real (address_hash,
+  // normalisation_version) collision reports 23505 UNLESS the call's
+  // options carry `ignoreDuplicates`. Reacting to the actual call args
+  // (rather than always resolving) is what makes the collision test below
+  // fail if someone reverts to a plain `insert`, or drops the option --
+  // a mock that resolves unconditionally would stay green either way.
+  const chain = {
+    upsert: vi.fn().mockImplementation((_row: unknown, upsertOpts?: { ignoreDuplicates?: boolean }) => {
+      if (opts.genuineError) return Promise.resolve({ data: null, error: opts.genuineError });
+      if (opts.simulateConflictWithoutIgnoreDuplicates && !upsertOpts?.ignoreDuplicates) {
+        return Promise.resolve({
+          data: null,
+          error: {
+            code: '23505',
+            message:
+              'duplicate key value violates unique constraint "geocode_cache_address_hash_normalisation_version_key"',
+          },
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    }),
+  };
+  return { from: vi.fn().mockReturnValue(chain), chain };
+}
+
+describe('insertExactGeocodeCache', () => {
+  it('writes an exact result into geocode_cache via upsert', async () => {
+    const db = makeUpsertDb();
+    await insertExactGeocodeCache(db as never, {
+      addressHash: 'hash-1',
+      normalisationVersion: 1,
+      latitude: -33.44,
+      longitude: -70.65,
+      geocodeSource: 'maptiler',
+      matchClass: 'exact',
+    });
+    expect(db.from).toHaveBeenCalledWith('geocode_cache');
+    expect(db.chain.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        address_hash: 'hash-1',
+        normalisation_version: 1,
+        geocode_precision: 'exact',
+        geocode_source: 'maptiler',
+      }),
+      { onConflict: 'address_hash,normalisation_version', ignoreDuplicates: true },
+    );
+  });
+
+  // Review finding 4: two orders in the same building (Decision 3's exact
+  // case -- depto 42 and depto 7 sharing an address_hash) can both miss the
+  // cache and both geocode inside one fase-5 batch. Plain `insert` would
+  // throw an opaque 23505 on the second write; upsert+ignoreDuplicates lets
+  // it no-op instead, so fase 5 cannot mistake "already cached by a
+  // sibling in this batch" for a real failure and re-spend an attempt on
+  // an address that is already resolved.
+  //
+  // This is not a tautology (round-2 review, N2): the mock actually
+  // simulates the 23505 a real (address_hash, normalisation_version)
+  // collision produces, and only suppresses it when the call carries
+  // `ignoreDuplicates`. Reverting insertExactGeocodeCache to a plain
+  // `insert`, or dropping `ignoreDuplicates` from the upsert options,
+  // makes this test fail -- the options-object assertion in the test
+  // above is what pins the exact call shape, and this test pins its
+  // effect.
+  it('does not throw when the same (address_hash, normalisation_version) already exists', async () => {
+    const db = makeUpsertDb({ simulateConflictWithoutIgnoreDuplicates: true });
+    await expect(
+      insertExactGeocodeCache(db as never, {
+        addressHash: 'hash-shared-building',
+        normalisationVersion: 1,
+        latitude: -33.44,
+        longitude: -70.65,
+        geocodeSource: 'maptiler',
+        matchClass: 'exact',
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('lets two normalisation_version rows coexist for the same address_hash', async () => {
+    const db = makeUpsertDb();
+    await insertExactGeocodeCache(db as never, {
+      addressHash: 'hash-1',
+      normalisationVersion: 1,
+      latitude: -33.44,
+      longitude: -70.65,
+      geocodeSource: 'maptiler',
+      matchClass: 'exact',
+    });
+    await insertExactGeocodeCache(db as never, {
+      addressHash: 'hash-1',
+      normalisationVersion: 2,
+      latitude: -33.44,
+      longitude: -70.65,
+      geocodeSource: 'maptiler',
+      matchClass: 'exact',
+    });
+    expect(db.chain.upsert).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ address_hash: 'hash-1', normalisation_version: 1 }),
+      expect.anything(),
+    );
+    expect(db.chain.upsert).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ address_hash: 'hash-1', normalisation_version: 2 }),
+      expect.anything(),
+    );
+  });
+
+  it('refuses to write a non-exact result, without calling the database', async () => {
+    const db = makeUpsertDb();
+    await expect(
+      insertExactGeocodeCache(db as never, {
+        addressHash: 'hash-1',
+        normalisationVersion: 1,
+        latitude: -33.44,
+        longitude: -70.65,
+        geocodeSource: 'comuna_centroid',
+        // @ts-expect-error -- exercising the runtime guard against a caller that bypasses the type
+        matchClass: 'approximate',
+      }),
+    ).rejects.toThrow(/exact/i);
+    expect(db.from).not.toHaveBeenCalled();
+  });
+
+  it('throws on a genuine Supabase upsert error', async () => {
+    const db = makeUpsertDb({ genuineError: { message: 'connection reset' } });
+    await expect(
+      insertExactGeocodeCache(db as never, {
+        addressHash: 'hash-1',
+        normalisationVersion: 1,
+        latitude: -33.44,
+        longitude: -70.65,
+        geocodeSource: 'maptiler',
+        matchClass: 'exact',
+      }),
+    ).rejects.toThrow('connection reset');
+  });
+});
+
+function makeOrderUpdateDb(opts: { error?: unknown; data?: unknown } = {}) {
+  const chain = {
+    update: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    select: vi.fn().mockReturnThis(),
+    single: vi.fn().mockResolvedValue({
+      data: opts.data ?? { id: 'order-1' },
+      error: opts.error ?? null,
+    }),
+  };
+  return { from: vi.fn().mockReturnValue(chain), chain };
+}
+
+describe('updateOrderGeocode', () => {
+  it('updates the order scoped by both id and operator_id', async () => {
+    const db = makeOrderUpdateDb();
+    await updateOrderGeocode(db as never, 'order-1', 'op-1', {
+      latitude: -33.44,
+      longitude: -70.65,
+      geocoded_at: '2026-09-11T00:00:00.000Z',
+      geocode_source: 'maptiler',
+      geocode_precision: 'exact',
+      geocode_status: 'resolved',
+      geocode_attempts: 0,
+      geocode_last_attempt_at: '2026-09-11T00:00:00.000Z',
+      geocode_next_attempt_at: null,
+    });
+    expect(db.from).toHaveBeenCalledWith('orders');
+    expect(db.chain.eq).toHaveBeenNthCalledWith(1, 'id', 'order-1');
+    expect(db.chain.eq).toHaveBeenNthCalledWith(2, 'operator_id', 'op-1');
+  });
+
+  it('throws on a Supabase update error', async () => {
+    const db = makeOrderUpdateDb({ error: { message: 'row not found' } });
+    await expect(
+      updateOrderGeocode(db as never, 'order-1', 'op-1', {
+        latitude: null,
+        longitude: null,
+        geocoded_at: null,
+        geocode_source: null,
+        geocode_precision: null,
+        geocode_status: 'pending',
+        geocode_attempts: 0,
+        geocode_last_attempt_at: null,
+        geocode_next_attempt_at: null,
+      }),
+    ).rejects.toThrow('row not found');
+  });
+
+  // Review finding 3: a PostgREST UPDATE matching zero rows returns
+  // `error: null` by default -- a mismatched operator_id or a soft-deleted
+  // order would leave the worker believing the write succeeded while the
+  // row stays `pending`/`attempts=0` forever, re-claimed by the queue index
+  // on every run. `.select().single()` is what turns "zero rows matched"
+  // into a real error (PGRST116), the same fix orders.ts already uses for
+  // updateOrderStatus.
+  it('throws when the update matches zero rows (e.g. wrong operator_id)', async () => {
+    const db = makeOrderUpdateDb({
+      data: null,
+      error: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' },
+    });
+    await expect(
+      updateOrderGeocode(db as never, 'order-1', 'wrong-operator', {
+        latitude: -33.44,
+        longitude: -70.65,
+        geocoded_at: '2026-09-11T00:00:00.000Z',
+        geocode_source: 'maptiler',
+        geocode_precision: 'exact',
+        geocode_status: 'resolved',
+        geocode_attempts: 0,
+        geocode_last_attempt_at: '2026-09-11T00:00:00.000Z',
+        geocode_next_attempt_at: null,
+      }),
+    ).rejects.toThrow('JSON object requested');
+    expect(db.chain.select).toHaveBeenCalled();
+    expect(db.chain.single).toHaveBeenCalled();
+  });
+});
