@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><meta name="design_doc_mode" content="canvas"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
+body{margin:0;background:#e9e6e1;font-family:Inter,system-ui,sans-serif}
+a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
+.dv-turn{padding:44px 48px 36px;border-bottom:1px solid rgba(0,0,0,.08);scroll-margin-top:16px}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 22px}
+.dv-tid{font:600 10px/1 'JetBrains Mono',monospace;padding:4px 7px;background:#1e1a14;color:#e6c15c;border-radius:4px;text-decoration:none}
+.dv-tname{font:600 13px/1.2 Archivo,sans-serif;color:#1a1a1a}
+.dv-opts{display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:10px;scroll-margin-top:16px}
+.dv-oid{font:600 10.5px/1 'JetBrains Mono',monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#1a1a1a;border-radius:5px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11.5px/1.3 Inter,sans-serif;color:rgba(0,0,0,.55)}
+.dv-card{flex:none;background:#fff;border:1px solid rgba(0,0,0,.1);border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.07);overflow:hidden}
+.dv-opt:target .dv-oid{background:#ca9a04;color:#fff}
+.dv-next{margin:24px 0 0;font:12px/1.6 Inter,sans-serif;color:rgba(0,0,0,.5)}
+/* Token sets mirror globals.css (html.light / html.dark) so one markup serves both themes */
+[data-theme="light"]{
+--bg:#f8fafc;--surface:#ffffff;--raised:#f1f5f9;--border:#e2e8f0;--border-subtle:#f1f5f9;
+--text:#0f172a;--text-2:#64748b;--text-3:#94a3b8;
+--accent:#ca9a04;--accent-soft:#fffdf5;--accent-btn:#e6c15c;--accent-btn-text:#2b2620;
+--side-bg:#f5f3f0;--side-text:#64594d;--side-active:#ca9a04;--side-border:#e8e0d8;--side-raised:#e8e0d8;--side-muted:#a8a29e;
+--ok:#10b981;--ok-bg:#ecfdf5;--ok-border:#a7f3d0;--ok-text:#047857;
+--warn:#f59e0b;--warn-bg:#fffbeb;--warn-border:#fde68a;--warn-text:#b45309;
+--err:#ef4444;--err-bg:#fef2f2;--err-border:#fecaca;--err-text:#dc2626;
+--border-strong:#cbd5e1;--text-body:#334155;--map-bg:#eef1f5;--map-line:#5e6b7b;
+}
+[data-theme="dark"]{
+--bg:#13110d;--surface:#1e1a14;--raised:#2a2218;--border:#2a2218;--border-subtle:#221e19;
+--text:#f5ecd7;--text-2:#c8b99a;--text-3:#9a8e7d;
+--accent:#e6c15c;--accent-soft:rgba(230,193,92,.09);--accent-btn:#e6c15c;--accent-btn-text:#13110d;
+--side-bg:#1a1714;--side-text:#b8ab9a;--side-active:#e6c15c;--side-border:#2a2218;--side-raised:#2a2218;--side-muted:#78716c;
+--ok:#4ade80;--ok-bg:rgba(20,83,45,.27);--ok-border:#14532d;--ok-text:#4ade80;
+--warn:#fbbf24;--warn-bg:rgba(120,53,15,.27);--warn-border:#78350f;--warn-text:#fbbf24;
+--err:#f87171;--err-bg:rgba(127,29,29,.27);--err-border:#7f1d1d;--err-text:#f87171;
+--border-strong:#3a3128;--text-body:#d9cdb4;--map-bg:#12100c;--map-line:#4a4238;
+}
+</style></helmet>
+
+<section class="dv-turn" id="m4">
+<div class="dv-thd"><a class="dv-tid" href="#m4">D</a><span class="dv-tname">Distribución · escritorio (4a–4b) y móvil de cuadrilla (4c–4j)</span></div>
+<div class="dv-opts">
+<div class="dv-opt" id="4a"><div class="dv-olabel"><a class="dv-oid" href="#4a">4a</a>Distribución · estado inicial del módulo (antes de entrar al <a class="dv-oid" href="#4b">4b</a> modo rápido)</div>
+<div class="dv-card" style="width:1440px">
+<div data-screen-label="4a Distribucion inicial" data-theme="{{ theme }}" style="display:flex;height:900px;background:var(--bg);font-family:Inter,sans-serif;color:var(--text)">
+
+  <aside style="width:216px;flex:none;display:flex;flex-direction:column;background:var(--side-bg);border-right:1px solid var(--side-border)">
+    <div style="height:56px;flex:none;display:flex;align-items:center;gap:9px;padding:0 16px;border-bottom:1px solid var(--side-border)">
+      <svg viewBox="0 0 110 104" width="17" height="16" fill="var(--accent)" style="flex:none"><polygon points="0 41.766 30.817 57.54 30.817 93.694 51 104 51 67.846 51 45.08 0 19"></polygon><polygon points="59 45.08 59 67.846 59 104 79.183 93.694 79.183 57.54 110 41.766 110 19"></polygon><polygon points="105 11.955 85.674 0 54.017 14.451 22.326 0 3 11.955 54.017 38"></polygon></svg>
+      <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+        <span style="font:600 13.5px/1 Archivo,sans-serif;letter-spacing:-.01em;color:var(--text)">Aureon</span>
+        <span style="font:500 8px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:var(--side-muted)">LAST MILE</span>
+      </div>
+    </div>
+    <nav style="flex:1;display:flex;flex-direction:column;gap:2px;padding:14px 8px;overflow:hidden">
+      <div style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.13em;color:var(--side-muted);padding:6px 10px 8px">OPERACIÓN</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--side-text)" stroke-width="1.7" style="flex:none"><circle cx="12" cy="12" r="2.2"/><path d="M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4M4.9 19.1a10 10 0 0 1 0-14.2M19.1 4.9a10 10 0 0 1 0 14.2"/></svg>
+        <span style="font:500 12.5px/1 Inter,sans-serif;color:var(--side-text)">Torre de control</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--side-text)" stroke-width="1.7" style="flex:none"><path d="M3.5 6.5h17M3.5 12h17M3.5 17.5h11"/></svg>
+        <span style="font:500 12.5px/1 Inter,sans-serif;color:var(--side-text)">Pedidos</span>
+        <span style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--err-text);background:var(--err-bg);border-radius:4px;padding:3px 5px">47</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--side-text)" stroke-width="1.7" style="flex:none"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12.2l2.4 2.4 4.6-4.9"/></svg>
+        <span style="font:500 12.5px/1 Inter,sans-serif;color:var(--side-text)">Recogida</span>
+        <span style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--side-text);background:var(--side-raised);border-radius:4px;padding:3px 5px">12</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--side-text)" stroke-width="1.7" style="flex:none"><path d="M8 20V6M5 9l3-3 3 3M16 4v14M13 15l3 3 3-3"/></svg>
+        <span style="font:500 12.5px/1 Inter,sans-serif;color:var(--side-text)">Recepción</span>
+        <span style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--side-text);background:var(--side-raised);border-radius:4px;padding:3px 5px">4</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px;background:var(--surface);border-left:2px solid var(--accent)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.9" style="flex:none"><path d="M12 3l8.5 4.5L12 12 3.5 7.5 12 3z"/><path d="M3.5 12L12 16.5 20.5 12"/><path d="M3.5 16.5L12 21l8.5-4.5"/></svg>
+        <span style="font:600 12.5px/1 Inter,sans-serif;color:var(--side-active)">Distribución</span>
+        <span style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);border-radius:4px;padding:2px 5px">318</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--side-text)" stroke-width="1.7" style="flex:none"><path d="M2.5 16.5V7h11v9.5"/><path d="M13.5 10.5h4l4 4v2h-8"/><circle cx="6.5" cy="17.5" r="1.9"/><circle cx="16.5" cy="17.5" r="1.9"/></svg>
+        <span style="font:500 12.5px/1 Inter,sans-serif;color:var(--side-text)">Despacho</span>
+        <span style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--side-text);background:var(--side-raised);border-radius:4px;padding:3px 5px">27</span>
+      </div>
+      <div style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.13em;color:var(--side-muted);padding:18px 10px 8px">GESTIÓN</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--side-text)" stroke-width="1.7" style="flex:none"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg>
+        <span style="font:500 12.5px/1 Inter,sans-serif;color:var(--side-text)">Dashboard ejecutivo</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--side-text)" stroke-width="1.7" style="flex:none"><rect x="3.5" y="5" width="17" height="15.5" rx="2.4"/><path d="M3.5 10h17M8 3.5v3M16 3.5v3"/></svg>
+        <span style="font:500 12.5px/1 Inter,sans-serif;color:var(--side-text)">Capacidad</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--side-text)" stroke-width="1.7" style="flex:none"><path d="M14 3.5H6.5A2 2 0 0 0 4.5 5.5v13A2 2 0 0 0 6.5 20.5h11a2 2 0 0 0 2-2V9z"/><path d="M14 3.5V9h5.5M8.5 13.5h7M8.5 17h4"/></svg>
+        <span style="font:500 12.5px/1 Inter,sans-serif;color:var(--side-text)">Auditoría</span>
+      </div>
+    </nav>
+    <div style="flex:none;padding:10px 8px;border-top:1px solid var(--side-border)">
+      <div style="display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:7px;background:var(--surface);border:1px solid var(--side-border)">
+        <span style="width:26px;height:26px;flex:none;border-radius:50%;background:var(--raised);color:var(--accent);display:grid;place-items:center;font:600 10px/1 'JetBrains Mono',monospace">JN</span>
+        <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
+          <span style="font:600 11.5px/1 Inter,sans-serif;color:var(--text)">Javier N.</span>
+          <span style="font:400 10px/1 Inter,sans-serif;color:var(--side-muted)">Jefe de andén</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+    <header style="height:56px;flex:none;display:flex;align-items:center;gap:16px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:8px;font:400 12px/1 Inter,sans-serif;color:var(--text-3)">
+        <span>Operación</span><span>/</span><span style="color:var(--text);font-weight:600">Distribución</span>
+      </div>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+        <div style="display:flex;align-items:center;gap:8px;width:240px;height:34px;padding:0 11px;border:1px solid var(--border);border-radius:8px;background:var(--bg)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg>
+          <span style="font:400 12px/1 Inter,sans-serif;color:var(--text-3)">Buscar paquete o andén…</span>
+        </div>
+        <div onClick="{{ toggleTheme }}" style="display:flex;padding:2px;background:var(--raised);border:1px solid var(--border);border-radius:8px;gap:2px;cursor:pointer">
+          <span style="padding:6px 10px;border-radius:6px;background:{{ lightPillBg }};font:600 11px/1 Inter,sans-serif;color:{{ lightPillText }}">Claro</span>
+          <span style="padding:6px 10px;border-radius:6px;background:{{ darkPillBg }};font:600 11px/1 Inter,sans-serif;color:{{ darkPillText }}">Oscuro</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;height:34px;padding:0 10px;border-radius:8px;background:var(--ok-bg);border:1px solid var(--ok-border)">
+          <span style="width:6px;height:6px;border-radius:50%;background:var(--ok)"></span>
+          <span style="font:500 11px/1 'JetBrains Mono',monospace;color:var(--ok-text)">EN LÍNEA</span>
+        </div>
+      </div>
+    </header>
+
+    <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:16px;padding:22px 24px;overflow:hidden">
+
+      <div style="flex:none;display:flex;align-items:flex-end;gap:16px">
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <h1 style="margin:0;font:600 24px/1.1 Archivo,sans-serif;letter-spacing:-.02em;color:var(--text)">Distribución</h1>
+          <p style="margin:0;font:400 12.5px/1 Inter,sans-serif;color:var(--text-2)">6 andenes activos · 5 lotes abiertos · último cierre 11:40 · turno AM</p>
+        </div>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span style="display:flex;align-items:center;gap:7px;height:36px;padding:0 13px;border-radius:8px;border:1px solid var(--border-strong);background:var(--surface);font:500 12px/1 Inter,sans-serif;color:var(--text-body)">Configurar zonas</span>
+          <span style="display:flex;align-items:center;gap:7px;height:36px;padding:0 13px;border-radius:8px;border:1px solid var(--border-strong);background:var(--surface);font:500 12px/1 Inter,sans-serif;color:var(--text-body)">Cerrar lotes del turno</span>
+          <a href="#4b" style="display:flex;align-items:center;gap:7px;height:36px;padding:0 15px;border-radius:8px;background:var(--accent-btn);font:600 12.5px/1 Inter,sans-serif;color:var(--accent-btn-text);text-decoration:none">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5v14M6.5 5v14M10 5v14M13.5 5v14M17 5v14M20.5 5v14"/></svg>Entrar en modo rápido</a>
+        </div>
+      </div>
+
+      <div style="flex:none;display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+        <div style="background:var(--warn-bg);border:1px solid var(--warn-border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:7px">
+          <span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--warn-text)">POR CLASIFICAR</span>
+          <div style="display:flex;align-items:baseline;gap:8px"><span style="font:700 27px/1 'JetBrains Mono',monospace;color:var(--warn-text)">318</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--warn-text)">paquetes</span></div>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:7px">
+          <span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--text-3)">CLASIFICADOS HOY</span>
+          <div style="display:flex;align-items:baseline;gap:8px"><span style="font:700 27px/1 'JetBrains Mono',monospace;color:var(--text)">742</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">70 %</span></div>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:7px">
+          <span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--text-3)">RITMO</span>
+          <div style="display:flex;align-items:baseline;gap:8px"><span style="font:700 27px/1 'JetBrains Mono',monospace;color:var(--text)">214</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">paq./hora</span></div>
+        </div>
+        <div style="background:var(--err-bg);border:1px solid var(--err-border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:7px">
+          <span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--err-text)">EXCEPCIONES DE ANDÉN</span>
+          <div style="display:flex;align-items:baseline;gap:8px"><span style="font:700 27px/1 'JetBrains Mono',monospace;color:var(--err-text)">9</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--err-text)">requieren decisión</span></div>
+        </div>
+      </div>
+
+      <div style="flex:1;min-height:0;display:grid;grid-template-columns:1fr 320px;gap:16px">
+
+        <div style="min-width:0;display:flex;flex-direction:column;gap:12px;overflow:hidden">
+          <div style="flex:none;display:flex;align-items:center;gap:10px">
+            <span style="font:600 13px/1 Archivo,sans-serif;color:var(--text)">Andenes de salida</span>
+            <span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">capacidad y avance por destino</span>
+            <div style="margin-left:auto;display:flex;gap:5px">
+              <span style="font:600 11px/1 Inter,sans-serif;color:var(--text);background:var(--raised);border:1px solid var(--border);border-radius:6px;padding:5px 9px">Lotes abiertos</span>
+              <span style="font:500 11px/1 Inter,sans-serif;color:var(--text-2);border:1px solid var(--border);border-radius:6px;padding:5px 9px">Todas</span>
+            </div>
+          </div>
+
+          <div style="flex:1;min-height:0;display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:1fr;gap:12px">
+
+            <div style="display:flex;flex-direction:column;gap:10px;padding:14px;background:var(--surface);border:1px solid var(--warn-border);border-radius:11px;border-top:3px solid var(--warn)">
+              <div style="display:flex;align-items:baseline;gap:8px">
+                <span style="font:700 15px/1 'JetBrains Mono',monospace;color:var(--text)">A3</span>
+                <span style="font:400 11px/1 Inter,sans-serif;color:var(--text-2)">La Florida</span>
+                <span style="margin-left:auto;font:600 9.5px/1 'JetBrains Mono',monospace;color:var(--warn-text);background:var(--warn-bg);border-radius:4px;padding:3px 5px">CASI LLENO</span>
+              </div>
+              <div style="display:flex;align-items:baseline;gap:6px"><span style="font:700 22px/1 'JetBrains Mono',monospace;color:var(--text)">168</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">/ 180 paq.</span></div>
+              <div style="height:6px;border-radius:3px;background:var(--raised);overflow:hidden"><span style="display:block;width:93%;height:100%;background:var(--warn)"></span></div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:auto"><span style="font:400 10.5px/1 Inter,sans-serif;color:var(--text-3)">R-2481 · R-2483</span><span style="margin-left:auto;font:600 10.5px/1 Inter,sans-serif;color:var(--accent)">Ver</span></div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:10px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:11px;border-top:3px solid var(--ok)">
+              <div style="display:flex;align-items:baseline;gap:8px">
+                <span style="font:700 15px/1 'JetBrains Mono',monospace;color:var(--text)">A1</span>
+                <span style="font:400 11px/1 Inter,sans-serif;color:var(--text-2)">Providencia</span>
+                <span style="margin-left:auto;font:600 9.5px/1 'JetBrains Mono',monospace;color:var(--ok-text);background:var(--ok-bg);border-radius:4px;padding:3px 5px">EN RITMO</span>
+              </div>
+              <div style="display:flex;align-items:baseline;gap:6px"><span style="font:700 22px/1 'JetBrains Mono',monospace;color:var(--text)">96</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">/ 180 paq.</span></div>
+              <div style="height:6px;border-radius:3px;background:var(--raised);overflow:hidden"><span style="display:block;width:53%;height:100%;background:var(--ok)"></span></div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:auto"><span style="font:400 10.5px/1 Inter,sans-serif;color:var(--text-3)">R-2477</span><span style="margin-left:auto;font:600 10.5px/1 Inter,sans-serif;color:var(--accent)">Ver</span></div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:10px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:11px;border-top:3px solid var(--ok)">
+              <div style="display:flex;align-items:baseline;gap:8px">
+                <span style="font:700 15px/1 'JetBrains Mono',monospace;color:var(--text)">A2</span>
+                <span style="font:400 11px/1 Inter,sans-serif;color:var(--text-2)">Maipú</span>
+                <span style="margin-left:auto;font:600 9.5px/1 'JetBrains Mono',monospace;color:var(--ok-text);background:var(--ok-bg);border-radius:4px;padding:3px 5px">EN RITMO</span>
+              </div>
+              <div style="display:flex;align-items:baseline;gap:6px"><span style="font:700 22px/1 'JetBrains Mono',monospace;color:var(--text)">121</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">/ 200 paq.</span></div>
+              <div style="height:6px;border-radius:3px;background:var(--raised);overflow:hidden"><span style="display:block;width:61%;height:100%;background:var(--ok)"></span></div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:auto"><span style="font:400 10.5px/1 Inter,sans-serif;color:var(--text-3)">R-2470 · R-2474</span><span style="margin-left:auto;font:600 10.5px/1 Inter,sans-serif;color:var(--accent)">Ver</span></div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:10px;padding:14px;background:var(--surface);border:1px solid var(--err-border);border-radius:11px;border-top:3px solid var(--err)">
+              <div style="display:flex;align-items:baseline;gap:8px">
+                <span style="font:700 15px/1 'JetBrains Mono',monospace;color:var(--text)">A4</span>
+                <span style="font:400 11px/1 Inter,sans-serif;color:var(--text-2)">Puente Alto</span>
+                <span style="margin-left:auto;font:600 9.5px/1 'JetBrains Mono',monospace;color:var(--err-text);background:var(--err-bg);border-radius:4px;padding:3px 5px">DETENIDO</span>
+              </div>
+              <div style="display:flex;align-items:baseline;gap:6px"><span style="font:700 22px/1 'JetBrains Mono',monospace;color:var(--text)">44</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">/ 160 paq.</span></div>
+              <div style="height:6px;border-radius:3px;background:var(--raised);overflow:hidden"><span style="display:block;width:28%;height:100%;background:var(--err)"></span></div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:auto"><span style="font:400 10.5px/1 Inter,sans-serif;color:var(--err-text)">sin conductor asignado</span><span style="margin-left:auto;font:600 10.5px/1 Inter,sans-serif;color:var(--accent)">Asignar</span></div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:10px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:11px;border-top:3px solid var(--ok)">
+              <div style="display:flex;align-items:baseline;gap:8px">
+                <span style="font:700 15px/1 'JetBrains Mono',monospace;color:var(--text)">A5</span>
+                <span style="font:400 11px/1 Inter,sans-serif;color:var(--text-2)">Ñuñoa</span>
+                <span style="margin-left:auto;font:600 9.5px/1 'JetBrains Mono',monospace;color:var(--ok-text);background:var(--ok-bg);border-radius:4px;padding:3px 5px">EN RITMO</span>
+              </div>
+              <div style="display:flex;align-items:baseline;gap:6px"><span style="font:700 22px/1 'JetBrains Mono',monospace;color:var(--text)">88</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">/ 140 paq.</span></div>
+              <div style="height:6px;border-radius:3px;background:var(--raised);overflow:hidden"><span style="display:block;width:63%;height:100%;background:var(--ok)"></span></div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:auto"><span style="font:400 10.5px/1 Inter,sans-serif;color:var(--text-3)">R-2479</span><span style="margin-left:auto;font:600 10.5px/1 Inter,sans-serif;color:var(--accent)">Ver</span></div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:10px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:11px;border-top:3px solid var(--border-strong)">
+              <div style="display:flex;align-items:baseline;gap:8px">
+                <span style="font:700 15px/1 'JetBrains Mono',monospace;color:var(--text)">A6</span>
+                <span style="font:400 11px/1 Inter,sans-serif;color:var(--text-2)">Interregional</span>
+                <span style="margin-left:auto;font:600 9.5px/1 'JetBrains Mono',monospace;color:var(--text-2);background:var(--raised);border-radius:4px;padding:3px 5px">SIN ABRIR</span>
+              </div>
+              <div style="display:flex;align-items:baseline;gap:6px"><span style="font:700 22px/1 'JetBrains Mono',monospace;color:var(--text-3)">0</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">/ 120 paq.</span></div>
+              <div style="height:6px;border-radius:3px;background:var(--raised);overflow:hidden"></div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:auto"><span style="font:400 10.5px/1 Inter,sans-serif;color:var(--text-3)">lote sin abrir</span><span style="margin-left:auto;font:600 10.5px/1 Inter,sans-serif;color:var(--accent)">Abrir</span></div>
+            </div>
+
+          </div>
+        </div>
+
+        <div style="min-width:0;display:flex;flex-direction:column;gap:14px;overflow:hidden">
+
+          <div style="flex:none;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border)">
+              <span style="font:600 12.5px/1 Archivo,sans-serif;color:var(--text)">Operarios activos</span>
+              <span style="margin-left:auto;font:600 10.5px/1 'JetBrains Mono',monospace;color:var(--text-2)">3 escaneando</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--raised)">
+              <span style="width:26px;height:26px;flex:none;border-radius:50%;background:var(--raised);color:var(--accent);display:grid;place-items:center;font:600 9.5px/1 'JetBrains Mono',monospace">JN</span>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+                <span style="font:600 11.5px/1 Inter,sans-serif;color:var(--text)">J. Núñez · andén A3</span>
+                <span style="font:400 10.5px/1 Inter,sans-serif;color:var(--text-3)">96 escaneos · último 12:41</span>
+              </div>
+              <span style="width:6px;height:6px;border-radius:50%;background:var(--ok)"></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--raised)">
+              <span style="width:26px;height:26px;flex:none;border-radius:50%;background:var(--raised);color:var(--accent);display:grid;place-items:center;font:600 9.5px/1 'JetBrains Mono',monospace">DS</span>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+                <span style="font:600 11.5px/1 Inter,sans-serif;color:var(--text)">D. Soto · andén A2</span>
+                <span style="font:400 10.5px/1 Inter,sans-serif;color:var(--text-3)">74 escaneos · último 12:40</span>
+              </div>
+              <span style="width:6px;height:6px;border-radius:50%;background:var(--ok)"></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:11px 14px">
+              <span style="width:26px;height:26px;flex:none;border-radius:50%;background:var(--raised);color:var(--text-3);display:grid;place-items:center;font:600 9.5px/1 'JetBrains Mono',monospace">CA</span>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+                <span style="font:600 11.5px/1 Inter,sans-serif;color:var(--text)">C. Álvarez · andén A1</span>
+                <span style="font:400 10.5px/1 Inter,sans-serif;color:var(--warn-text)">sin escanear hace 12 min</span>
+              </div>
+              <span style="width:6px;height:6px;border-radius:50%;background:var(--warn)"></span>
+            </div>
+          </div>
+
+          <div style="flex:1;min-height:0;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--err-border);border-radius:12px;overflow:hidden">
+            <div style="flex:none;display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border)">
+              <span style="font:600 12.5px/1 Archivo,sans-serif;color:var(--text)">Excepciones de andén</span>
+              <span style="margin-left:auto;font:600 10.5px/1 'JetBrains Mono',monospace;color:var(--err-text);background:var(--err-bg);border-radius:4px;padding:3px 5px">9</span>
+            </div>
+            <div style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden">
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--raised)">
+                <span style="width:26px;height:26px;flex:none;border-radius:7px;background:var(--err-bg);border:1px solid var(--err-border);display:grid;place-items:center;font:700 10.5px/1 'JetBrains Mono',monospace;color:var(--err-text)">4</span>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+                  <span style="font:600 11.5px/1 Inter,sans-serif;color:var(--text)">Destino no reconocido</span>
+                  <span style="font:400 10.5px/1 Inter,sans-serif;color:var(--text-3)">comuna fuera de cobertura</span>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--raised)">
+                <span style="width:26px;height:26px;flex:none;border-radius:7px;background:var(--warn-bg);border:1px solid var(--warn-border);display:grid;place-items:center;font:700 10.5px/1 'JetBrains Mono',monospace;color:var(--warn-text)">3</span>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+                  <span style="font:600 11.5px/1 Inter,sans-serif;color:var(--text)">Orden incompleta</span>
+                  <span style="font:400 10.5px/1 Inter,sans-serif;color:var(--text-3)">falta 1 paquete para consolidar</span>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--raised)">
+                <span style="width:26px;height:26px;flex:none;border-radius:7px;background:var(--warn-bg);border:1px solid var(--warn-border);display:grid;place-items:center;font:700 10.5px/1 'JetBrains Mono',monospace;color:var(--warn-text)">2</span>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+                  <span style="font:600 11.5px/1 Inter,sans-serif;color:var(--text)">Zona incorrecta</span>
+                  <span style="font:400 10.5px/1 Inter,sans-serif;color:var(--text-3)">escaneado en un andén que no corresponde</span>
+                </div>
+              </div>
+              <span style="margin-top:auto;text-align:center;font:600 11.5px/1 Inter,sans-serif;color:var(--err-text);border-top:1px solid var(--border);padding:12px 14px">Resolver excepciones</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="dv-opt" id="4b"><div class="dv-olabel"><a class="dv-oid" href="#4b">4b</a>Distribución · modo rápido (escaneo en andén, alta densidad)</div>
+<div class="dv-card" style="width:1440px">
+<div data-screen-label="4b Modo rápido" data-theme="{{ theme }}" style="display:flex;flex-direction:column;height:900px;background:var(--bg);font-family:Inter,sans-serif;color:var(--text)">
+
+  <header style="height:56px;flex:none;display:flex;align-items:center;gap:14px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--border)">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>
+    <div style="display:flex;align-items:center;gap:8px;font:400 12px/1 Inter,sans-serif;color:var(--text-3)"><span>Distribución</span><span>/</span><span style="color:var(--text-body);font-weight:600">Modo rápido</span></div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+      <div style="display:flex;align-items:center;gap:6px;height:34px;padding:0 11px;border-radius:8px;background:var(--ok-bg);border:1px solid var(--ok-border)"><span style="width:6px;height:6px;border-radius:50%;background:var(--ok)"></span><span style="font:500 11px/1 'JetBrains Mono',monospace;color:var(--ok-text)">EN LÍNEA · COLA 0</span></div>
+      <span style="font:500 11px/1 'JetBrains Mono',monospace;color:var(--text-2)">TURNO 08:00–16:00 · BODEGA PUDAHUEL</span>
+    </div>
+  </header>
+
+  <div style="flex:none;display:grid;grid-template-columns:1fr 420px;gap:20px;padding:22px 24px 18px;background:var(--surface);border-bottom:1px solid var(--border)">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:14px;height:78px;padding:0 20px;border:2px solid var(--accent);border-radius:12px;background:var(--accent-soft);box-shadow:0 0 0 4px rgba(230,193,92,.1)">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8"><path d="M3 5v14M6.5 5v14M10 5v14M13.5 5v14M17 5v14M20.5 5v14"/></svg>
+        <span style="font:600 30px/1 'JetBrains Mono',monospace;letter-spacing:.02em;color:var(--text)">CL7742891003</span>
+        <span style="width:2px;height:34px;background:var(--accent);margin-left:2px"></span>
+        <span style="margin-left:auto;font:400 12px/1 Inter,sans-serif;color:var(--text-3)">Escanea o escribe el código y presiona Enter</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px;padding:16px 20px;border-radius:12px;background:var(--ok-bg);border:1px solid var(--ok-border)">
+        <span style="width:44px;height:44px;flex:none;border-radius:12px;background:var(--ok);display:grid;place-items:center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <span style="font:600 15px/1 Archivo,sans-serif;color:var(--ok-text)">ANDÉN 3 · SUR ORIENTE</span>
+          <span style="font:400 12px/1 Inter,sans-serif;color:var(--ok-text)">ORD-48213 · La Florida · Falabella · paquete 2 de 3</span>
+        </div>
+        <div style="margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+          <span style="font:700 34px/1 Archivo,sans-serif;color:var(--ok-text)">A3</span>
+          <span style="font:500 10.5px/1 'JetBrains Mono',monospace;color:var(--ok-text)">CONFIRMADO 12:41:07</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div style="border:1px solid var(--border);border-radius:10px;padding:13px 14px;display:flex;flex-direction:column;gap:6px"><span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--text-3)">SECTORIZADOS HOY</span><span style="font:700 26px/1 'JetBrains Mono',monospace;color:var(--text)">1.147</span></div>
+      <div style="border:1px solid var(--border);border-radius:10px;padding:13px 14px;display:flex;flex-direction:column;gap:6px"><span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--text-3)">RITMO</span><span style="font:700 26px/1 'JetBrains Mono',monospace;color:var(--text)">312<span style="font:500 12px/1 Inter,sans-serif;color:var(--text-3)"> /h</span></span></div>
+      <div style="border:1px solid var(--warn-border);background:var(--warn-bg);border-radius:10px;padding:13px 14px;display:flex;flex-direction:column;gap:6px"><span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--warn-text)">PENDIENTES</span><span style="font:700 26px/1 'JetBrains Mono',monospace;color:var(--warn-text)">318</span></div>
+      <div style="border:1px solid var(--border);border-radius:10px;padding:13px 14px;display:flex;flex-direction:column;gap:6px"><span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--text-3)">CONSOLIDACIÓN</span><span style="font:700 26px/1 'JetBrains Mono',monospace;color:var(--text)">46</span></div>
+    </div>
+  </div>
+
+  <div style="flex:1;min-height:0;display:grid;grid-template-columns:1fr 336px;gap:16px;padding:18px 24px 22px">
+
+    <div style="min-width:0;display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <span style="font:600 10.5px/1 'JetBrains Mono',monospace;letter-spacing:.12em;color:var(--text-3)">ANDENES</span>
+        <span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">6 activos · el andén iluminado es el destino del último escaneo</span>
+      </div>
+      <div style="flex:1;min-height:0;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:1fr 1fr;gap:12px">
+
+        <div style="background:var(--surface);border:2px solid var(--accent);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px;box-shadow:0 3px 12px rgba(230,193,92,.18)">
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <span style="font:700 30px/1 Archivo,sans-serif;color:var(--text)">A3</span>
+            <div style="display:flex;flex-direction:column;gap:4px;padding-top:3px"><span style="font:600 12px/1 Inter,sans-serif;color:var(--text)">Sur Oriente</span><span style="font:400 10.5px/1.35 Inter,sans-serif;color:var(--text-3)">La Florida · Puente Alto · La Pintana</span></div>
+            <span style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--accent-btn-text);background:var(--accent-btn);border-radius:5px;padding:4px 6px">ACTIVO</span>
+          </div>
+          <div style="margin-top:auto;display:flex;align-items:baseline;gap:7px"><span style="font:700 25px/1 'JetBrains Mono',monospace;color:var(--text)">412</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">paquetes · 3 rutas</span></div>
+          <div style="height:6px;border-radius:4px;background:var(--raised);overflow:hidden"><span style="display:block;width:82%;height:100%;background:var(--accent)"></span></div>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <span style="font:700 30px/1 Archivo,sans-serif;color:var(--text-body)">A1</span>
+            <div style="display:flex;flex-direction:column;gap:4px;padding-top:3px"><span style="font:600 12px/1 Inter,sans-serif;color:var(--text)">Norte</span><span style="font:400 10.5px/1.35 Inter,sans-serif;color:var(--text-3)">Quilicura · Conchalí · Renca</span></div>
+          </div>
+          <div style="margin-top:auto;display:flex;align-items:baseline;gap:7px"><span style="font:700 25px/1 'JetBrains Mono',monospace;color:var(--text)">238</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">paquetes · 2 rutas</span></div>
+          <div style="height:6px;border-radius:4px;background:var(--raised);overflow:hidden"><span style="display:block;width:48%;height:100%;background:var(--map-line)"></span></div>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <span style="font:700 30px/1 Archivo,sans-serif;color:var(--text-body)">A2</span>
+            <div style="display:flex;flex-direction:column;gap:4px;padding-top:3px"><span style="font:600 12px/1 Inter,sans-serif;color:var(--text)">Oriente</span><span style="font:400 10.5px/1.35 Inter,sans-serif;color:var(--text-3)">Las Condes · Providencia · Ñuñoa</span></div>
+          </div>
+          <div style="margin-top:auto;display:flex;align-items:baseline;gap:7px"><span style="font:700 25px/1 'JetBrains Mono',monospace;color:var(--text)">176</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">paquetes · 2 rutas</span></div>
+          <div style="height:6px;border-radius:4px;background:var(--raised);overflow:hidden"><span style="display:block;width:36%;height:100%;background:var(--map-line)"></span></div>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <span style="font:700 30px/1 Archivo,sans-serif;color:var(--text-body)">A4</span>
+            <div style="display:flex;flex-direction:column;gap:4px;padding-top:3px"><span style="font:600 12px/1 Inter,sans-serif;color:var(--text)">Poniente</span><span style="font:400 10.5px/1.35 Inter,sans-serif;color:var(--text-3)">Maipú · Estación Central · Cerrillos</span></div>
+          </div>
+          <div style="margin-top:auto;display:flex;align-items:baseline;gap:7px"><span style="font:700 25px/1 'JetBrains Mono',monospace;color:var(--text)">321</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">paquetes · 3 rutas</span></div>
+          <div style="height:6px;border-radius:4px;background:var(--raised);overflow:hidden"><span style="display:block;width:64%;height:100%;background:var(--map-line)"></span></div>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <span style="font:700 30px/1 Archivo,sans-serif;color:var(--text-body)">A5</span>
+            <div style="display:flex;flex-direction:column;gap:4px;padding-top:3px"><span style="font:600 12px/1 Inter,sans-serif;color:var(--text)">Sur</span><span style="font:400 10.5px/1.35 Inter,sans-serif;color:var(--text-3)">San Bernardo · El Bosque · San Miguel</span></div>
+          </div>
+          <div style="margin-top:auto;display:flex;align-items:baseline;gap:7px"><span style="font:700 25px/1 'JetBrains Mono',monospace;color:var(--text)">204</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">paquetes · 2 rutas</span></div>
+          <div style="height:6px;border-radius:4px;background:var(--raised);overflow:hidden"><span style="display:block;width:41%;height:100%;background:var(--map-line)"></span></div>
+        </div>
+
+        <div style="background:var(--warn-bg);border:1px solid var(--warn-border);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <span style="font:700 30px/1 Archivo,sans-serif;color:var(--warn-text)">CO</span>
+            <div style="display:flex;flex-direction:column;gap:4px;padding-top:3px"><span style="font:600 12px/1 Inter,sans-serif;color:var(--warn-text)">Consolidación</span><span style="font:400 10.5px/1.35 Inter,sans-serif;color:var(--warn-text)">órdenes incompletas · esperan hermanos</span></div>
+          </div>
+          <div style="margin-top:auto;display:flex;align-items:baseline;gap:7px"><span style="font:700 25px/1 'JetBrains Mono',monospace;color:var(--warn-text)">46</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--warn-text)">paquetes · 19 órdenes</span></div>
+          <div style="height:6px;border-radius:4px;background:var(--warn-bg);overflow:hidden"><span style="display:block;width:22%;height:100%;background:var(--warn)"></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="min-width:0;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">
+      <div style="flex:none;display:flex;align-items:baseline;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border)"><span style="font:600 12.5px/1 Archivo,sans-serif;color:var(--text)">Últimos escaneos</span><span style="margin-left:auto;font:500 10.5px/1 'JetBrains Mono',monospace;color:var(--text-3)">312/h</span></div>
+      <div style="flex:1;min-height:0;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--raised)"><span style="font:600 11px/1 'JetBrains Mono',monospace;color:var(--text)">CL7742891003</span><span style="margin-left:auto;font:600 11px/1 Archivo,sans-serif;color:var(--ok-text)">A3</span><span style="font:500 10px/1 'JetBrains Mono',monospace;color:var(--text-3)">12:41</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--raised)"><span style="font:600 11px/1 'JetBrains Mono',monospace;color:var(--text)">CL7742890871</span><span style="margin-left:auto;font:600 11px/1 Archivo,sans-serif;color:var(--ok-text)">A1</span><span style="font:500 10px/1 'JetBrains Mono',monospace;color:var(--text-3)">12:41</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--raised)"><span style="font:600 11px/1 'JetBrains Mono',monospace;color:var(--text)">CL7742890644</span><span style="margin-left:auto;font:600 11px/1 Archivo,sans-serif;color:var(--warn-text)">CO</span><span style="font:500 10px/1 'JetBrains Mono',monospace;color:var(--text-3)">12:40</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--raised)"><span style="font:600 11px/1 'JetBrains Mono',monospace;color:var(--text)">CL7742890512</span><span style="margin-left:auto;font:600 11px/1 Archivo,sans-serif;color:var(--ok-text)">A4</span><span style="font:500 10px/1 'JetBrains Mono',monospace;color:var(--text-3)">12:40</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--raised);background:var(--err-bg)"><span style="font:600 11px/1 'JetBrains Mono',monospace;color:var(--err-text)">CL7742119008</span><span style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--err-text)">NO EN MANIFIESTO</span><span style="font:500 10px/1 'JetBrains Mono',monospace;color:var(--err-border)">12:39</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--raised)"><span style="font:600 11px/1 'JetBrains Mono',monospace;color:var(--text)">CL7742890377</span><span style="margin-left:auto;font:600 11px/1 Archivo,sans-serif;color:var(--ok-text)">A2</span><span style="font:500 10px/1 'JetBrains Mono',monospace;color:var(--text-3)">12:39</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--raised)"><span style="font:600 11px/1 'JetBrains Mono',monospace;color:var(--text)">CL7742890201</span><span style="margin-left:auto;font:600 11px/1 Archivo,sans-serif;color:var(--ok-text)">A5</span><span style="font:500 10px/1 'JetBrains Mono',monospace;color:var(--text-3)">12:39</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 16px"><span style="font:600 11px/1 'JetBrains Mono',monospace;color:var(--text)">CL7742890144</span><span style="margin-left:auto;font:600 11px/1 Archivo,sans-serif;color:var(--ok-text)">A3</span><span style="font:500 10px/1 'JetBrains Mono',monospace;color:var(--text-3)">12:38</span></div>
+      </div>
+      <div style="flex:none;display:flex;flex-direction:column;gap:7px;padding:13px 16px;border-top:1px solid var(--border);background:var(--bg)">
+        <span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--text-3)">COMUNAS SIN ZONA</span>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <span style="font:500 10.5px/1 Inter,sans-serif;color:var(--warn-text);background:var(--warn-bg);border:1px solid var(--warn-border);border-radius:5px;padding:4px 7px">Colina</span>
+          <span style="font:500 10.5px/1 Inter,sans-serif;color:var(--warn-text);background:var(--warn-bg);border:1px solid var(--warn-border);border-radius:5px;padding:4px 7px">Lampa</span>
+          <span style="font:500 10.5px/1 Inter,sans-serif;color:var(--warn-text);background:var(--warn-bg);border:1px solid var(--warn-border);border-radius:5px;padding:4px 7px">Padre Hurtado</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="dv-opt" id="4c"><div class="dv-olabel"><a class="dv-oid" href="#4c">4c</a>Móvil · home de la cuadrilla de distribución (entrada a los cuatro procesos de la nave)</div>
+<div class="dv-card" style="width:390px;border-radius:26px">
+<div data-screen-label="4c Home distribucion movil" data-theme="{{ theme }}" style="display:flex;flex-direction:column;width:390px;height:844px;background:var(--bg);font-family:Inter,sans-serif;color:var(--text)">
+  <div style="flex:none;display:flex;align-items:center;gap:10px;height:44px;padding:0 20px;background:var(--side-bg)">
+    <span style="font:600 12px/1 'JetBrains Mono',monospace;color:var(--accent-btn-text)">14:06</span>
+    <span onClick="{{ toggleTheme }}" style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--accent);cursor:pointer">TEMA</span>
+    <span style="width:22px;height:11px;border:1.5px solid var(--side-muted);border-radius:3px;position:relative"><span style="position:absolute;inset:1.5px;right:6px;background:var(--side-muted);border-radius:1px"></span></span>
+  </div>
+
+  <div style="flex:none;display:flex;align-items:center;gap:11px;padding:8px 20px 16px;background:var(--side-bg);border-bottom:1px solid var(--side-border)">
+    <svg viewBox="0 0 110 104" width="18" height="17" fill="var(--accent)"><polygon points="0 41.766 30.817 57.54 30.817 93.694 51 104 51 67.846 51 45.08 0 19"></polygon><polygon points="59 45.08 59 67.846 59 104 79.183 93.694 79.183 57.54 110 41.766 110 19"></polygon><polygon points="105 11.955 85.674 0 54.017 14.451 22.326 0 3 11.955 54.017 38"></polygon></svg>
+    <div style="display:flex;flex-direction:column;gap:3px">
+      <span style="font:600 15px/1 Archivo,sans-serif;color:var(--accent-btn-text)">Hola, Marcela</span>
+      <span style="font:400 11.5px/1 Inter,sans-serif;color:var(--side-muted)">Nave Quilicura · turno 14:00 · distribución</span>
+    </div>
+    <span style="margin-left:auto;display:flex;align-items:center;gap:6px;background:var(--ok-bg);border:1px solid var(--ok-border);border-radius:7px;padding:6px 9px"><span style="width:6px;height:6px;border-radius:50%;background:var(--ok)"></span><span style="font:600 10px/1 'JetBrains Mono',monospace;color:var(--ok-text)">EN LÍNEA</span></span>
+  </div>
+
+  <div style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:11px;padding:16px 20px">
+
+    <div style="flex:none;display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:14px;background:var(--accent-btn-text)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.12em;color:var(--accent-btn)">TU TAREA AHORA</span>
+        <span style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:#f5ecd7;background:rgba(245,236,215,.14);border-radius:5px;padding:4px 6px">CLASIFICAR</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <span style="font:600 20px/1.15 Archivo,sans-serif;color:#f5ecd7">148 paquetes sin sectorizar</span>
+        <span style="font:400 12.5px/1.4 Inter,sans-serif;color:#b8ab9a">Deben quedar en cero al cierre · 12 andenes activos</span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:9px;height:56px;border-radius:11px;background:var(--accent-btn)">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-btn-text)" stroke-width="2"><path d="M3 5v14M6.5 5v14M10 5v14M13.5 5v14M17 5v14M20.5 5v14"/></svg>
+        <span style="font:600 15px/1 Inter,sans-serif;color:var(--accent-btn-text)">Escanear y clasificar</span>
+      </div>
+    </div>
+
+    <div style="flex:none;display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px"><span style="font:500 9px/1.2 'JetBrains Mono',monospace;letter-spacing:.08em;color:var(--text-3)">PENDIENTES</span><span style="font:700 24px/1 'JetBrains Mono',monospace;color:var(--text)">148</span></div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px"><span style="font:500 9px/1.2 'JetBrains Mono',monospace;letter-spacing:.08em;color:var(--text-3)">CONSOLID.</span><span style="font:700 24px/1 'JetBrains Mono',monospace;color:var(--text)">37</span></div>
+      <div style="background:var(--warn-bg);border:1px solid var(--warn-border);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px"><span style="font:500 9px/1.2 'JetBrains Mono',monospace;letter-spacing:.08em;color:var(--warn-text)">SALEN YA</span><span style="font:700 24px/1 'JetBrains Mono',monospace;color:var(--warn-text)">12</span></div>
+    </div>
+
+    <div style="flex:none;display:flex;flex-direction:column;gap:9px">
+      <span style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.12em;color:var(--text-3)">PROCESOS DE LA NAVE</span>
+
+      <div style="display:flex;align-items:center;gap:12px;min-height:60px;padding:13px 14px;background:var(--surface);border:1px solid var(--border);border-radius:12px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" style="flex:none"><path d="M3.5 6h17M3.5 12h17M3.5 18h11"/></svg>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px"><span style="font:600 13.5px/1 Inter,sans-serif;color:var(--text)">Pendientes de sectorizar</span><span style="font:400 11.5px/1 Inter,sans-serif;color:var(--text-3)">148 bultos · 62 órdenes</span></div>
+        <span style="font:700 13px/1 'JetBrains Mono',monospace;color:var(--text)">148</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px;min-height:60px;padding:13px 14px;background:var(--surface);border:1px solid var(--border);border-radius:12px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" style="flex:none"><path d="M4 8h16v12H4z"/><path d="M4 8l2.5-4h11L20 8"/><path d="M10 13h4"/></svg>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px"><span style="font:600 13.5px/1 Inter,sans-serif;color:var(--text)">Consolidación</span><span style="font:400 11.5px/1 Inter,sans-serif;color:var(--warn-text)">12 salen hoy o mañana</span></div>
+        <span style="font:700 13px/1 'JetBrains Mono',monospace;color:var(--text)">37</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px;min-height:60px;padding:13px 14px;background:var(--surface);border:1px solid var(--border);border-radius:12px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" style="flex:none"><path d="M3 20V9l9-5 9 5v11"/><path d="M9 20v-6h6v6"/></svg>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px"><span style="font:600 13.5px/1 Inter,sans-serif;color:var(--text)">Andenes</span><span style="font:400 11.5px/1 Inter,sans-serif;color:var(--text-3)">A3 al 94% de capacidad</span></div>
+        <span style="font:700 13px/1 'JetBrains Mono',monospace;color:var(--text)">12</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg>
+      </div>
+    </div>
+
+    <div style="flex:none;display:flex;align-items:center;gap:12px;padding:13px 14px;border-radius:12px;background:var(--warn-bg);border:1px solid var(--warn-border)">
+      <span style="width:32px;height:32px;flex:none;border-radius:9px;background:var(--surface);border:1px solid var(--warn-border);display:grid;place-items:center;font:700 13px/1 'JetBrains Mono',monospace;color:var(--warn-text)">!</span>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px"><span style="font:600 12.5px/1 Inter,sans-serif;color:var(--warn-text)">3 comunas sin andén asignado</span><span style="font:400 11px/1.35 Inter,sans-serif;color:var(--warn-text)">Sus bultos caen a consolidación · avisa al jefe de nave</span></div>
+    </div>
+  </div>
+
+  <div style="flex:none;display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--side-border);background:var(--side-bg);padding:9px 8px 22px">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.9"><path d="M4 10.5L12 4l8 6.5V20H4z"/></svg><span style="font:600 10px/1 Inter,sans-serif;color:var(--accent)">Hoy</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="var(--side-muted)" stroke-width="1.8"><path d="M3 5v14M6.5 5v14M10 5v14M13.5 5v14M17 5v14M20.5 5v14"/></svg><span style="font:500 10px/1 Inter,sans-serif;color:var(--side-muted)">Clasificar</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="var(--side-muted)" stroke-width="1.8"><path d="M3 20V9l9-5 9 5v11"/><path d="M9 20v-6h6v6"/></svg><span style="font:500 10px/1 Inter,sans-serif;color:var(--side-muted)">Andenes</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="var(--side-muted)" stroke-width="1.8"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c0-3.6 3.4-5.6 7.5-5.6s7.5 2 7.5 5.6"/></svg><span style="font:500 10px/1 Inter,sans-serif;color:var(--side-muted)">Perfil</span></div>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="dv-opt" id="4d"><div class="dv-olabel"><a class="dv-oid" href="#4d">4d</a>Móvil · pendientes de sectorizar, agrupados por el andén que calcula el motor (desde <a class="dv-oid" href="#4c">4c</a>)</div>
+<div class="dv-card" style="width:390px;border-radius:26px">
+<div data-screen-label="4d Pendientes de sectorizar" data-theme="{{ theme }}" style="display:flex;flex-direction:column;width:390px;height:844px;background:var(--bg);font-family:Inter,sans-serif;color:var(--text)">
+  <div style="flex:none;display:flex;align-items:center;gap:10px;height:44px;padding:0 20px;background:var(--surface)">
+    <span style="font:600 12px/1 'JetBrains Mono',monospace;color:var(--text)">14:09</span>
+    <span onClick="{{ toggleTheme }}" style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--accent);cursor:pointer">TEMA</span>
+    <span style="width:22px;height:11px;border:1.5px solid var(--text-3);border-radius:3px;position:relative"><span style="position:absolute;inset:1.5px;right:6px;background:var(--text-3);border-radius:1px"></span></span>
+  </div>
+
+  <div style="flex:none;display:flex;align-items:center;gap:11px;padding:6px 20px 14px;border-bottom:1px solid var(--border)">
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>
+    <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
+      <span style="font:600 14px/1 Archivo,sans-serif;color:var(--text)">Pendientes de sectorizar</span>
+      <span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">148 bultos · 62 órdenes · en bodega</span>
+    </div>
+    <span style="margin-left:auto;display:flex;flex:none;border:1px solid var(--border-strong);border-radius:8px;overflow:hidden">
+      <span style="display:grid;place-items:center;width:34px;height:34px;background:var(--text);color:var(--bg);font:600 10px/1 'JetBrains Mono',monospace">DET</span>
+      <span style="display:grid;place-items:center;width:34px;height:34px;border-left:1px solid var(--border-strong);color:var(--text-3);font:600 10px/1 'JetBrains Mono',monospace">CMP</span>
+    </span>
+  </div>
+
+  <div style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:16px;padding:16px 20px 0">
+
+    <div style="display:flex;flex-direction:column;gap:9px">
+      <div style="display:flex;align-items:baseline;gap:8px;padding-bottom:7px;border-bottom:1px solid var(--border)">
+        <span style="font:600 11px/1 'JetBrains Mono',monospace;letter-spacing:.16em;color:var(--text)">ANDÉN A3</span>
+        <span style="font:400 11px/1 'JetBrains Mono',monospace;color:var(--text-3)">▸ DOCK-003 · La Florida</span>
+        <span style="margin-left:auto;font:400 11px/1 'JetBrains Mono',monospace;color:var(--text-3)">14 pendientes</span>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:6px;padding:12px 13px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span style="font:600 12px/1 'JetBrains Mono',monospace;color:var(--text)">ORD-48213</span>
+          <span style="font:400 11.5px/1 Inter,sans-serif;color:var(--text-2)">Camila Fernández</span>
+          <span style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--text-3)">3 BULTOS</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;min-height:44px;padding-top:6px;border-top:1px solid var(--border-subtle)">
+          <span style="font:500 12px/1 'JetBrains Mono',monospace;color:var(--text-body)">CL7742891004</span>
+          <span style="margin-left:auto;font:400 10.5px/1 'JetBrains Mono',monospace;color:var(--text-3)">entrega 13/08</span>
+          <span style="flex:none;display:grid;place-items:center;width:44px;height:44px;margin-right:-8px;font:700 15px/1 Inter,sans-serif;color:var(--text-2)">⋯</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;min-height:44px;border-top:1px solid var(--border-subtle)">
+          <span style="font:500 12px/1 'JetBrains Mono',monospace;color:var(--text-body)">CL7742891005</span>
+          <span style="margin-left:auto;font:400 10.5px/1 'JetBrains Mono',monospace;color:var(--text-3)">entrega 13/08</span>
+          <span style="flex:none;display:grid;place-items:center;width:44px;height:44px;margin-right:-8px;font:700 15px/1 Inter,sans-serif;color:var(--text-2)">⋯</span>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px;min-height:52px;padding:12px 13px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+          <span style="font:600 12px/1 'JetBrains Mono',monospace;color:var(--text)">ORD-48219</span>
+          <span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">Rodrigo Silva · 1 bulto · entrega 13/08</span>
+        </div>
+        <span style="flex:none;display:grid;place-items:center;width:44px;height:44px;margin-right:-8px;font:700 15px/1 Inter,sans-serif;color:var(--text-2)">⋯</span>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:9px">
+      <div style="display:flex;align-items:baseline;gap:8px;padding-bottom:7px;border-bottom:1px solid var(--border)">
+        <span style="font:600 11px/1 'JetBrains Mono',monospace;letter-spacing:.16em;color:var(--warn-text)">SIN ANDÉN</span>
+        <span style="font:400 11px/1 'JetBrains Mono',monospace;color:var(--text-3)">▸ comuna sin mapear</span>
+        <span style="margin-left:auto;font:400 11px/1 'JetBrains Mono',monospace;color:var(--text-3)">6 pendientes</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;min-height:52px;padding:12px 13px;border-radius:12px;background:var(--warn-bg);border:1px solid var(--warn-border)">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+          <span style="font:600 12px/1 'JetBrains Mono',monospace;color:var(--warn-text)">ORD-48250</span>
+          <span style="font:400 11px/1 Inter,sans-serif;color:var(--warn-text)">Isla de Maipo · 2 bultos · sin andén</span>
+        </div>
+        <span style="flex:none;display:grid;place-items:center;width:44px;height:44px;margin-right:-8px;font:700 15px/1 Inter,sans-serif;color:var(--warn-text)">⋯</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex:none;display:flex;gap:10px;padding:14px 20px 26px;border-top:1px solid var(--border);background:var(--surface)">
+    <div style="flex:1;display:flex;align-items:center;justify-content:center;gap:9px;height:56px;border-radius:13px;background:var(--accent-btn)">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--accent-btn-text)" stroke-width="2"><path d="M3 5v14M6.5 5v14M10 5v14M13.5 5v14M17 5v14M20.5 5v14"/></svg>
+      <span style="font:600 14.5px/1 Inter,sans-serif;color:var(--accent-btn-text)">Escanear</span>
+    </div>
+    <span style="flex:none;display:grid;place-items:center;width:56px;height:56px;border-radius:13px;border:1px solid var(--border-strong);font:600 11px/1 'JetBrains Mono',monospace;color:var(--text-body)">SEL</span>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="dv-opt" id="4e"><div class="dv-olabel"><a class="dv-oid" href="#4e">4e</a>Móvil · hoja de envío desde <a class="dv-oid" href="#4d">4d</a>: a un andén (staging) o a consolidación</div>
+<div class="dv-card" style="width:390px;border-radius:26px">
+<div data-screen-label="4e Hoja enviar a" data-theme="{{ theme }}" style="position:relative;display:flex;flex-direction:column;width:390px;height:844px;background:var(--bg);font-family:Inter,sans-serif;color:var(--text)">
+  <div style="flex:none;display:flex;align-items:center;gap:10px;height:44px;padding:0 20px;background:var(--surface)">
+    <span style="font:600 12px/1 'JetBrains Mono',monospace;color:var(--text)">14:11</span>
+    <span onClick="{{ toggleTheme }}" style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--accent);cursor:pointer">TEMA</span>
+    <span style="width:22px;height:11px;border:1.5px solid var(--text-3);border-radius:3px;position:relative"><span style="position:absolute;inset:1.5px;right:6px;background:var(--text-3);border-radius:1px"></span></span>
+  </div>
+
+  <div style="flex:none;display:flex;align-items:center;gap:11px;padding:6px 20px 14px;border-bottom:1px solid var(--border);opacity:.4">
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>
+    <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
+      <span style="font:600 14px/1 Archivo,sans-serif;color:var(--text)">Pendientes de sectorizar</span>
+      <span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">148 bultos · 62 órdenes</span>
+    </div>
+  </div>
+
+  <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:9px;padding:16px 20px 0;opacity:.25">
+    <div style="height:14px;width:150px;border-radius:4px;background:var(--raised)"></div>
+    <div style="height:76px;border-radius:12px;background:var(--surface);border:1px solid var(--border)"></div>
+    <div style="height:52px;border-radius:12px;background:var(--surface);border:1px solid var(--border)"></div>
+    <div style="height:52px;border-radius:12px;background:var(--surface);border:1px solid var(--border)"></div>
+  </div>
+
+  <div style="position:absolute;left:0;right:0;bottom:0;top:0;background:rgba(0,0,0,.42)"></div>
+
+  <div style="position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:12px;padding:16px 20px 26px;border-radius:20px 20px 26px 26px;background:var(--surface);border-top:1px solid var(--border)">
+    <span style="align-self:center;width:38px;height:4px;border-radius:2px;background:var(--border-strong)"></span>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <span style="font:600 15px/1.2 Archivo,sans-serif;color:var(--text)">Enviar CL7742891004 a</span>
+      <span style="font:400 11.5px/1.4 Inter,sans-serif;color:var(--text-3)">ORD-48213 · La Florida · sugerido A3 por comuna</span>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:center;gap:12px;min-height:56px;padding:11px 14px;border-radius:12px;background:var(--accent-soft);border:2px solid var(--accent)">
+        <span style="font:700 20px/1 'JetBrains Mono',monospace;color:var(--text);width:38px">A3</span>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px"><span style="font:600 13px/1 Inter,sans-serif;color:var(--text)">La Florida</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--warn-text)">169 / 180 · casi lleno</span></div>
+        <span style="font:600 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--accent);background:var(--surface);border:1px solid var(--accent);border-radius:5px;padding:5px 7px">SUGERIDO</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px;min-height:56px;padding:11px 14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+        <span style="font:700 20px/1 'JetBrains Mono',monospace;color:var(--text-2);width:38px">A4</span>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px"><span style="font:600 13px/1 Inter,sans-serif;color:var(--text)">Puente Alto</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">88 / 180</span></div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px;min-height:56px;padding:11px 14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+        <span style="font:700 15px/1 'JetBrains Mono',monospace;color:var(--text-2);width:38px">CNS</span>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px"><span style="font:600 13px/1 Inter,sans-serif;color:var(--text)">Consolidación</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">queda retenido hasta su fecha</span></div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:11px;background:var(--raised)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" style="flex:none"><circle cx="12" cy="12" r="9"/><path d="M12 8.5v.5M12 11.5v4"/></svg>
+      <span style="font:400 11px/1.4 Inter,sans-serif;color:var(--text-2)">El envío manual queda registrado con tu nombre y hora</span>
+    </div>
+
+    <div style="display:flex;gap:10px">
+      <span style="flex:none;width:104px;text-align:center;font:600 13.5px/1 Inter,sans-serif;color:var(--text-body);border:1px solid var(--border-strong);border-radius:12px;padding:18px 0">Cancelar</span>
+      <span style="flex:1;text-align:center;font:600 14.5px/1 Inter,sans-serif;color:var(--accent-btn-text);background:var(--accent-btn);border-radius:12px;padding:18px 0">Enviar a A3</span>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="dv-opt" id="4f"><div class="dv-olabel"><a class="dv-oid" href="#4f">4f</a>Móvil · consolidación, con selección para mover a andén o liberar a sectorización</div>
+<div class="dv-card" style="width:390px;border-radius:26px">
+<div data-screen-label="4f Consolidacion movil" data-theme="{{ theme }}" style="display:flex;flex-direction:column;width:390px;height:844px;background:var(--bg);font-family:Inter,sans-serif;color:var(--text)">
+  <div style="flex:none;display:flex;align-items:center;gap:10px;height:44px;padding:0 20px;background:var(--surface)">
+    <span style="font:600 12px/1 'JetBrains Mono',monospace;color:var(--text)">14:24</span>
+    <span onClick="{{ toggleTheme }}" style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--accent);cursor:pointer">TEMA</span>
+    <span style="width:22px;height:11px;border:1.5px solid var(--text-3);border-radius:3px;position:relative"><span style="position:absolute;inset:1.5px;right:6px;background:var(--text-3);border-radius:1px"></span></span>
+  </div>
+
+  <div style="flex:none;display:flex;align-items:center;gap:11px;padding:6px 20px 14px;border-bottom:1px solid var(--border)">
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>
+    <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
+      <span style="font:600 14px/1 Archivo,sans-serif;color:var(--text)">Consolidación</span>
+      <span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">37 bultos retenidos · zona CNS</span>
+    </div>
+    <span style="margin-left:auto;flex:none;font:600 10px/1 'JetBrains Mono',monospace;color:var(--warn-text);background:var(--warn-bg);border:1px solid var(--warn-border);border-radius:6px;padding:6px 8px">12 SALEN YA</span>
+  </div>
+
+  <div style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:16px;padding:16px 20px 0">
+
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:baseline;gap:8px">
+        <span style="font:600 11px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:var(--warn-text)">URGENTES · HOY Y MAÑANA</span>
+        <span style="margin-left:auto;font:400 11px/1 'JetBrains Mono',monospace;color:var(--text-3)">12</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px;min-height:60px;padding:12px 13px;border-radius:12px;background:var(--warn-bg);border:1px solid var(--warn-border)">
+        <span style="flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:6px;background:var(--warn-text)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--warn-bg)" stroke-width="3"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+          <span style="font:600 12.5px/1 'JetBrains Mono',monospace;color:var(--warn-text)">CL7742887301</span>
+          <span style="font:400 11px/1 Inter,sans-serif;color:var(--warn-text)">La Florida → A3 · entrega hoy</span>
+        </div>
+        <span style="flex:none;font:600 10px/1 'JetBrains Mono',monospace;color:var(--warn-text)">HOY</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px;min-height:60px;padding:12px 13px;border-radius:12px;background:var(--warn-bg);border:1px solid var(--warn-border)">
+        <span style="flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:6px;background:var(--warn-text)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--warn-bg)" stroke-width="3"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+          <span style="font:600 12.5px/1 'JetBrains Mono',monospace;color:var(--warn-text)">CL7742887344</span>
+          <span style="font:400 11px/1 Inter,sans-serif;color:var(--warn-text)">Puente Alto → A4 · entrega 14/08</span>
+        </div>
+        <span style="flex:none;font:600 10px/1 'JetBrains Mono',monospace;color:var(--warn-text)">MAÑANA</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px;min-height:60px;padding:12px 13px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+        <span style="flex:none;width:22px;height:22px;border-radius:6px;border:1.5px solid var(--border-strong)"></span>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+          <span style="font:600 12.5px/1 'JetBrains Mono',monospace;color:var(--text)">CL7742887390</span>
+          <span style="font:400 11px/1 Inter,sans-serif;color:var(--err-text)">Isla de Maipo · sin andén · entrega 14/08</span>
+        </div>
+        <span style="flex:none;font:600 10px/1 'JetBrains Mono',monospace;color:var(--err-text)">SIN ANDÉN</span>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:baseline;gap:8px">
+        <span style="font:600 11px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:var(--text-3)">PRÓXIMOS</span>
+        <span style="margin-left:auto;font:400 11px/1 'JetBrains Mono',monospace;color:var(--text-3)">25</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;min-height:52px;padding:12px 13px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+        <span style="flex:none;width:22px;height:22px;border-radius:6px;border:1.5px solid var(--border-strong)"></span>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px"><span style="font:600 12.5px/1 'JetBrains Mono',monospace;color:var(--text-body)">CL7742888015</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">Maipú → A6 · entrega 17/08</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;min-height:52px;padding:12px 13px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+        <span style="flex:none;width:22px;height:22px;border-radius:6px;border:1.5px solid var(--border-strong)"></span>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px"><span style="font:600 12.5px/1 'JetBrains Mono',monospace;color:var(--text-body)">CL7742888077</span><span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">Ñuñoa → A1 · entrega 18/08</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex:none;display:flex;flex-direction:column;gap:10px;padding:14px 20px 26px;border-top:1px solid var(--border);background:var(--surface)">
+    <span style="font:600 11px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--text-2)">2 SELECCIONADOS</span>
+    <div style="display:flex;align-items:center;justify-content:center;gap:9px;height:56px;border-radius:13px;background:var(--accent-btn)">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--accent-btn-text)" stroke-width="2"><path d="M4 12h14M13 7l5 5-5 5"/></svg>
+      <span style="font:600 14.5px/1 Inter,sans-serif;color:var(--accent-btn-text)">Mover a andén</span>
+    </div>
+    <span style="text-align:center;font:600 13px/1 Inter,sans-serif;color:var(--text-body);border:1px solid var(--border-strong);border-radius:12px;padding:16px 0">Liberar a sectorización</span>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="dv-opt" id="4g"><div class="dv-olabel"><a class="dv-oid" href="#4g">4g</a>Móvil · paso 1 del escaneo: leer el paquete (estado inicial del modo rápido)</div>
+<div class="dv-card" style="width:390px;border-radius:26px">
+<div data-screen-label="4g Escanear paquete" data-theme="{{ theme }}" style="display:flex;flex-direction:column;width:390px;height:844px;background:var(--bg);font-family:Inter,sans-serif;color:var(--text)">
+  <div style="flex:none;display:flex;align-items:center;gap:10px;height:44px;padding:0 20px;background:var(--surface)">
+    <span style="font:600 12px/1 'JetBrains Mono',monospace;color:var(--text)">14:37</span>
+    <span onClick="{{ toggleTheme }}" style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--accent);cursor:pointer">TEMA</span>
+    <span style="width:22px;height:11px;border:1.5px solid var(--text-3);border-radius:3px;position:relative"><span style="position:absolute;inset:1.5px;right:6px;background:var(--text-3);border-radius:1px"></span></span>
+  </div>
+
+  <div style="flex:none;display:flex;align-items:center;gap:11px;padding:6px 20px 14px">
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>
+    <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
+      <span style="font:600 14px/1 Archivo,sans-serif;color:var(--text)">Clasificación en andén</span>
+      <span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">M. Rojas · paso 1 de 2 · 96 escaneos hoy</span>
+    </div>
+    <span style="margin-left:auto;flex:none;font:600 10px/1 'JetBrains Mono',monospace;color:var(--ok-text);background:var(--ok-bg);border:1px solid var(--ok-border);border-radius:6px;padding:6px 8px">EN LÍNEA</span>
+  </div>
+
+  <div style="flex:none;margin:4px 20px 0;padding:30px 20px;border-radius:18px;background:var(--surface);border:2px dashed var(--accent);display:flex;flex-direction:column;align-items:center;gap:16px">
+    <span style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.13em;color:var(--text-3)">PASO 1 · PAQUETE</span>
+    <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6"><path d="M3 5v14M6.5 5v14M10 5v14M13.5 5v14M17 5v14M20.5 5v14"/></svg>
+    <span style="font:600 22px/1.15 Archivo,sans-serif;color:var(--text);text-align:center">Escanea el paquete</span>
+    <span style="font:400 12.5px/1.45 Inter,sans-serif;color:var(--text-2);text-align:center;max-width:250px">El sistema te dirá a qué andén va antes de que lo muevas</span>
+    <div style="align-self:stretch;display:flex;align-items:center;gap:10px;height:52px;padding:0 14px;border-radius:12px;background:var(--bg);border:1px solid var(--border-strong)">
+      <span style="font:500 13px/1 'JetBrains Mono',monospace;color:var(--text-3)">CL…</span>
+      <span style="width:1.5px;height:20px;background:var(--accent)"></span>
+      <span style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--text-3)">ENTER</span>
+    </div>
+  </div>
+
+  <div style="flex:none;display:flex;align-items:center;gap:12px;margin:14px 20px 0;padding:13px 14px;border-radius:12px;background:var(--raised)">
+    <span style="font:700 22px/1 'JetBrains Mono',monospace;color:var(--text)">96</span>
+    <span style="font:400 11.5px/1.35 Inter,sans-serif;color:var(--text-2)">paquetes sectorizados en esta sesión · lote abierto 13:40</span>
+  </div>
+
+  <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:9px;padding:18px 20px 0;overflow:hidden">
+    <span style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.12em;color:var(--text-3)">ÚLTIMOS ESCANEOS</span>
+    <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:11px;background:var(--surface);border:1px solid var(--border)">
+      <span style="font:700 12px/1 'JetBrains Mono',monospace;color:var(--accent);width:24px">A3</span>
+      <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text)">CL7742891004</span>
+      <span style="margin-left:auto;font:500 10.5px/1 'JetBrains Mono',monospace;color:var(--text-3)">14:36</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:11px;background:var(--surface);border:1px solid var(--border)">
+      <span style="font:700 12px/1 'JetBrains Mono',monospace;color:var(--accent);width:24px">CNS</span>
+      <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text-2)">CL7742887390</span>
+      <span style="margin-left:auto;font:500 10.5px/1 'JetBrains Mono',monospace;color:var(--text-3)">14:35</span>
+    </div>
+  </div>
+
+  <div style="flex:none;display:flex;gap:10px;padding:16px 20px 26px">
+    <span style="flex:1;text-align:center;font:600 13px/1 Inter,sans-serif;color:var(--text-body);border:1px solid var(--border-strong);border-radius:12px;padding:17px 0">Ingresar código</span>
+    <span style="flex:1;text-align:center;font:600 13px/1 Inter,sans-serif;color:var(--text-body);border:1px solid var(--border-strong);border-radius:12px;padding:17px 0">Cerrar lote</span>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="dv-opt" id="4h"><div class="dv-olabel"><a class="dv-oid" href="#4h">4h</a>Móvil · paso 2: el destino aparece y el escaneo del andén queda armado — el andén físico es la confirmación</div>
+<div class="dv-card" style="width:390px;border-radius:26px">
+<div data-screen-label="4h Escanear anden" data-theme="{{ theme }}" style="display:flex;flex-direction:column;width:390px;height:844px;background:var(--bg);font-family:Inter,sans-serif;color:var(--text)">
+  <div style="flex:none;display:flex;align-items:center;gap:10px;height:44px;padding:0 20px;background:var(--surface)">
+    <span style="font:600 12px/1 'JetBrains Mono',monospace;color:var(--text)">14:38</span>
+    <span onClick="{{ toggleTheme }}" style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--accent);cursor:pointer">TEMA</span>
+    <span style="width:22px;height:11px;border:1.5px solid var(--text-3);border-radius:3px;position:relative"><span style="position:absolute;inset:1.5px;right:6px;background:var(--text-3);border-radius:1px"></span></span>
+  </div>
+
+  <div style="flex:none;display:flex;align-items:center;gap:11px;padding:6px 20px 14px">
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>
+    <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
+      <span style="font:600 14px/1 Archivo,sans-serif;color:var(--text)">Confirmar andén</span>
+      <span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">M. Rojas · paso 2 de 2 · lote abierto</span>
+    </div>
+    <span style="margin-left:auto;flex:none;font:600 10px/1 'JetBrains Mono',monospace;color:var(--ok-text);background:var(--ok-bg);border:1px solid var(--ok-border);border-radius:6px;padding:6px 8px">LEÍDO</span>
+  </div>
+
+  <div style="flex:none;margin:0 20px;padding:20px;border-radius:18px;background:var(--accent-soft);border:2px solid var(--accent);display:flex;flex-direction:column;gap:14px">
+    <span style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.13em;color:var(--text-3)">LLEVAR A</span>
+    <div style="display:flex;align-items:center;gap:16px">
+      <span style="font:700 62px/1 'JetBrains Mono',monospace;letter-spacing:-.02em;color:var(--text)">A3</span>
+      <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
+        <span style="font:600 19px/1.1 Archivo,sans-serif;color:var(--text)">La Florida</span>
+        <span style="font:400 12px/1 Inter,sans-serif;color:var(--text-2)">DOCK-003 · rutas R-2481 · R-2483</span>
+      </div>
+    </div>
+    <div style="height:1px;background:var(--accent)"></div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <span style="font:600 13px/1 'JetBrains Mono',monospace;color:var(--text)">CL7742891004</span>
+      <span style="font:400 12.5px/1.4 Inter,sans-serif;color:var(--text-body)">ORD-48213 · Camila Fernández · paquete 2 de 3</span>
+    </div>
+  </div>
+
+  <div style="flex:none;margin:14px 20px 0;padding:20px;border-radius:16px;background:var(--surface);border:2px solid var(--accent);display:flex;flex-direction:column;gap:13px">
+    <div style="display:flex;align-items:center;gap:9px">
+      <span style="width:9px;height:9px;border-radius:50%;background:var(--accent)"></span>
+      <span style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.13em;color:var(--accent)">AHORA ESCANEA EL ANDÉN</span>
+    </div>
+    <span style="font:600 16px/1.3 Archivo,sans-serif;color:var(--text)">Lee el código del andén A3 para asignar el paquete</span>
+    <div style="display:flex;align-items:center;gap:10px;height:56px;padding:0 14px;border-radius:12px;background:var(--bg);border:1px solid var(--border-strong)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="1.8" style="flex:none"><path d="M3 5v14M6.5 5v14M10 5v14M13.5 5v14M17 5v14M20.5 5v14"/></svg>
+      <span style="font:500 13px/1 'JetBrains Mono',monospace;color:var(--text-3)">DOCK-…</span>
+      <span style="width:1.5px;height:20px;background:var(--accent)"></span>
+      <span style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--text-3)">ENTER</span>
+    </div>
+    <span style="font:400 11.5px/1.4 Inter,sans-serif;color:var(--text-3)">Solo acepta A3 o Consolidación · sin escaneo no queda asignado</span>
+  </div>
+
+  <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:9px;padding:16px 20px 0;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:9px;padding:11px 13px;border-radius:11px;background:var(--warn-bg);border:1px solid var(--warn-border)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--warn-text)" stroke-width="2" style="flex:none"><path d="M12 8.5v5M12 16.5v.5"/><circle cx="12" cy="12" r="9"/></svg>
+      <span style="font:500 11.5px/1.4 Inter,sans-serif;color:var(--warn-text)">A3 va en 169 / 180 · si no cabe, mándalo a consolidación</span>
+    </div>
+  </div>
+
+  <div style="flex:none;display:flex;flex-direction:column;gap:10px;padding:14px 20px 26px">
+    <span style="text-align:center;font:600 13.5px/1 Inter,sans-serif;color:var(--text-body);border:1px solid var(--border-strong);border-radius:12px;padding:17px 0">Enviar a consolidación</span>
+    <span style="text-align:center;font:600 12.5px/1 Inter,sans-serif;color:var(--text-3)">Cancelar y volver al paso 1</span>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="dv-opt" id="4i"><div class="dv-olabel"><a class="dv-oid" href="#4i">4i</a>Móvil · andén incorrecto en el paso 2: se rechaza y el campo vuelve a quedar armado (desde <a class="dv-oid" href="#4h">4h</a>)</div>
+<div class="dv-card" style="width:390px;border-radius:26px">
+<div data-screen-label="4i Anden incorrecto" data-theme="{{ theme }}" style="display:flex;flex-direction:column;width:390px;height:844px;background:var(--bg);font-family:Inter,sans-serif;color:var(--text)">
+  <div style="flex:none;display:flex;align-items:center;gap:10px;height:44px;padding:0 20px;background:var(--surface)">
+    <span style="font:600 12px/1 'JetBrains Mono',monospace;color:var(--text)">14:39</span>
+    <span onClick="{{ toggleTheme }}" style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--accent);cursor:pointer">TEMA</span>
+    <span style="width:22px;height:11px;border:1.5px solid var(--text-3);border-radius:3px;position:relative"><span style="position:absolute;inset:1.5px;right:6px;background:var(--text-3);border-radius:1px"></span></span>
+  </div>
+
+  <div style="flex:none;display:flex;align-items:center;gap:11px;padding:6px 20px 14px">
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>
+    <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
+      <span style="font:600 14px/1 Archivo,sans-serif;color:var(--text)">Confirmar andén</span>
+      <span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">M. Rojas · paso 2 de 2 · lote abierto</span>
+    </div>
+    <span style="margin-left:auto;flex:none;font:600 10px/1 'JetBrains Mono',monospace;color:var(--err-text);background:var(--err-bg);border:1px solid var(--err-border);border-radius:6px;padding:6px 8px">RECHAZADO</span>
+  </div>
+
+  <div style="flex:none;margin:0 20px;padding:20px;border-radius:18px;background:var(--err-bg);border:2px solid var(--err);display:flex;flex-direction:column;gap:14px">
+    <span style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.13em;color:var(--err-text)">ASIGNACIÓN FALLIDA</span>
+    <div style="display:flex;align-items:center;gap:16px">
+      <span style="font:700 54px/1 'JetBrains Mono',monospace;letter-spacing:-.02em;color:var(--err-text);text-decoration:line-through">A5</span>
+      <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
+        <span style="font:600 17px/1.15 Archivo,sans-serif;color:var(--err-text)">Andén incorrecto</span>
+        <span style="font:400 12px/1.4 Inter,sans-serif;color:var(--err-text)">Esperado A3 o Consolidación</span>
+      </div>
+    </div>
+    <div style="height:1px;background:var(--err-border)"></div>
+    <span style="font:400 12px/1.45 Inter,sans-serif;color:var(--err-text)">CL7742891004 sigue sin asignar · no se movió nada en el sistema</span>
+  </div>
+
+  <div style="flex:none;margin:14px 20px 0;padding:18px 20px;border-radius:16px;background:var(--accent-soft);border:1px solid var(--accent);display:flex;align-items:center;gap:16px">
+    <span style="font:700 40px/1 'JetBrains Mono',monospace;color:var(--text)">A3</span>
+    <div style="display:flex;flex-direction:column;gap:5px;min-width:0">
+      <span style="font:600 15px/1.1 Archivo,sans-serif;color:var(--text)">La Florida</span>
+      <span style="font:400 11.5px/1 Inter,sans-serif;color:var(--text-2)">DOCK-003 · destino correcto de este bulto</span>
+    </div>
+  </div>
+
+  <div style="flex:none;margin:14px 20px 0;padding:20px;border-radius:16px;background:var(--surface);border:2px solid var(--accent);display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:center;gap:9px">
+      <span style="width:9px;height:9px;border-radius:50%;background:var(--accent)"></span>
+      <span style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.13em;color:var(--accent)">VUELVE A ESCANEAR EL ANDÉN</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;height:56px;padding:0 14px;border-radius:12px;background:var(--bg);border:1px solid var(--border-strong)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="1.8" style="flex:none"><path d="M3 5v14M6.5 5v14M10 5v14M13.5 5v14M17 5v14M20.5 5v14"/></svg>
+      <span style="font:500 13px/1 'JetBrains Mono',monospace;color:var(--text-3)">DOCK-…</span>
+      <span style="width:1.5px;height:20px;background:var(--accent)"></span>
+      <span style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--text-3)">ENTER</span>
+    </div>
+  </div>
+
+  <div style="flex:1"></div>
+
+  <div style="flex:none;display:flex;flex-direction:column;gap:10px;padding:14px 20px 26px">
+    <span style="text-align:center;font:600 13.5px/1 Inter,sans-serif;color:var(--text-body);border:1px solid var(--border-strong);border-radius:12px;padding:17px 0">Enviar a consolidación</span>
+    <span style="text-align:center;font:600 12.5px/1 Inter,sans-serif;color:var(--err-text)">Marcar excepción y seguir</span>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="dv-opt" id="4j"><div class="dv-olabel"><a class="dv-oid" href="#4j">4j</a>Móvil · clasificación en andén (el escaneo responde a qué andén va)</div>
+<div class="dv-card" style="width:390px;border-radius:26px">
+<div data-screen-label="4j Clasificacion movil" data-theme="{{ theme }}" style="display:flex;flex-direction:column;width:390px;height:844px;background:var(--bg);font-family:Inter,sans-serif;color:var(--text)">
+  <div style="flex:none;display:flex;align-items:center;gap:10px;height:44px;padding:0 20px;background:var(--surface)">
+    <span style="font:600 12px/1 'JetBrains Mono',monospace;color:var(--text)">12:41</span>
+    <span onClick="{{ toggleTheme }}" style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--accent);cursor:pointer">TEMA</span>
+    <span style="width:22px;height:11px;border:1.5px solid var(--text-3);border-radius:3px;position:relative"><span style="position:absolute;inset:1.5px;right:5px;background:var(--text-3);border-radius:1px"></span></span>
+  </div>
+
+  <div style="flex:none;display:flex;align-items:center;gap:11px;padding:6px 20px 14px">
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>
+    <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
+      <span style="font:600 14px/1 Archivo,sans-serif;color:var(--text)">Clasificación en andén</span>
+      <span style="font:400 11px/1 Inter,sans-serif;color:var(--text-3)">J. Núñez · lote abierto · 96 escaneos hoy</span>
+    </div>
+    <span style="margin-left:auto;flex:none;font:600 10px/1 'JetBrains Mono',monospace;color:var(--ok-text);background:var(--ok-bg);border:1px solid var(--ok-border);border-radius:6px;padding:6px 8px">EN LÍNEA</span>
+  </div>
+
+  <div style="flex:none;margin:0 20px;padding:22px 20px;border-radius:18px;background:var(--accent-soft);border:2px solid var(--accent);display:flex;flex-direction:column;gap:16px">
+    <span style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.13em;color:var(--text-3)">LLEVAR A</span>
+    <div style="display:flex;align-items:center;gap:16px">
+      <span style="font:700 62px/1 'JetBrains Mono',monospace;letter-spacing:-.02em;color:var(--text)">A3</span>
+      <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
+        <span style="font:600 19px/1.1 Archivo,sans-serif;color:var(--text)">La Florida</span>
+        <span style="font:400 12px/1 Inter,sans-serif;color:var(--text-2)">rutas R-2481 · R-2483</span>
+      </div>
+    </div>
+    <div style="height:1px;background:var(--accent)"></div>
+    <div style="display:flex;flex-direction:column;gap:7px">
+      <span style="font:600 13px/1 'JetBrains Mono',monospace;color:var(--text)">CL7742891004</span>
+      <span style="font:400 12.5px/1.4 Inter,sans-serif;color:var(--text-body)">ORD-48213 · Camila Fernández</span>
+      <span style="font:400 11.5px/1.4 Inter,sans-serif;color:var(--text-3)">Vicuña Mackenna 8420, dpto 703 · paquete 2 de 3</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:11px;background:var(--warn-bg);border:1px solid var(--warn-border)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--warn-text)" stroke-width="2" style="flex:none"><path d="M12 8.5v5M12 16.5v.5"/><circle cx="12" cy="12" r="9"/></svg>
+      <span style="font:500 11.5px/1.4 Inter,sans-serif;color:var(--warn-text)">Falta 1 paquete de esta orden · sale incompleta si cierras el andén</span>
+    </div>
+  </div>
+
+  <div style="flex:none;display:flex;flex-direction:column;gap:9px;padding:16px 20px 0">
+    <div style="display:flex;align-items:baseline;gap:8px">
+      <span style="font:600 11.5px/1 Inter,sans-serif;color:var(--text-2)">Andén A3</span>
+      <span style="margin-left:auto;font:600 12px/1 'JetBrains Mono',monospace;color:var(--warn-text)">169 / 180</span>
+    </div>
+    <div style="height:8px;border-radius:5px;background:var(--raised);overflow:hidden"><span style="display:block;width:94%;height:100%;background:var(--warn)"></span></div>
+    <span style="font:400 11px/1.4 Inter,sans-serif;color:var(--text-3)">Quedan 11 espacios · avisa al jefe de andén antes de llenarlo</span>
+  </div>
+
+  <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:9px;padding:18px 20px 0;overflow:hidden">
+    <span style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.12em;color:var(--text-3)">ÚLTIMOS ESCANEOS</span>
+    <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:11px;background:var(--surface);border:1px solid var(--border)">
+      <span style="font:700 12px/1 'JetBrains Mono',monospace;color:var(--accent);width:24px">A1</span>
+      <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text)">CL7742890871</span>
+      <span style="margin-left:auto;font:500 10.5px/1 'JetBrains Mono',monospace;color:var(--text-3)">12:40</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:11px;background:var(--err-bg);border:1px solid var(--err-border)">
+      <span style="font:700 12px/1 'JetBrains Mono',monospace;color:var(--err-text);width:24px">—</span>
+      <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--err-text)">CL7742119008</span>
+      <span style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:var(--err-text)">DESTINO NO RECONOCIDO</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:11px;background:var(--surface);border:1px solid var(--border)">
+      <span style="font:700 12px/1 'JetBrains Mono',monospace;color:var(--accent);width:24px">A2</span>
+      <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text-2)">CL7742890644</span>
+      <span style="margin-left:auto;font:500 10.5px/1 'JetBrains Mono',monospace;color:var(--text-3)">12:39</span>
+    </div>
+  </div>
+
+  <div style="flex:none;display:flex;flex-direction:column;gap:10px;padding:16px 20px 26px">
+    <div style="display:flex;align-items:center;justify-content:center;gap:10px;height:60px;border-radius:14px;background:var(--accent-btn)">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent-btn-text)" stroke-width="2"><path d="M3 5v14M6.5 5v14M10 5v14M13.5 5v14M17 5v14M20.5 5v14"/></svg>
+      <span style="font:600 16px/1 Inter,sans-serif;color:var(--accent-btn-text)">Escanear siguiente</span>
+    </div>
+    <div style="display:flex;gap:10px">
+      <span style="flex:1;text-align:center;font:600 13px/1 Inter,sans-serif;color:var(--text-body);border:1px solid var(--border-strong);border-radius:12px;padding:15px 0">Ingresar código</span>
+      <span style="flex:1;text-align:center;font:600 13px/1 Inter,sans-serif;color:var(--err-text);border:1px solid var(--err-border);border-radius:12px;padding:15px 0">Marcar excepción</span>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+</div>
+<p class="dv-next">Escritorio: <a href="#4a">4a</a> tablero → <a href="#4b">4b</a> modo rápido. Móvil: <a href="#4c">4c</a> home → <a href="#4d">4d</a> pendientes → <a href="#4e">4e</a> envío manual a andén o consolidación · <a href="#4f">4f</a> consolidación → mover a andén · <a href="#4g">4g</a> escanear paquete → <a href="#4h">4h</a> escanear andén → <a href="#4i">4i</a> rechazo. <a href="#4j">4j</a> queda como la variante del paso 2 con contexto de orden incompleta y capacidad del andén.</p>
+</section>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;'light' | 'dark'&quot;,&quot;section&quot;:&quot;Tema&quot;}}">
+class Component extends DCLogic {
+  state = { theme: null };
+  renderVals() {
+    const theme = this.state.theme ?? this.props.theme ?? 'light';
+    return {
+      theme,
+      toggleTheme: () => this.setState({ theme: theme === 'dark' ? 'light' : 'dark' }),
+    };
+  }
+}
+</script>
+</body>
+</html>
