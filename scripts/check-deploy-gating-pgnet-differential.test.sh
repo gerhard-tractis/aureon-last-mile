@@ -236,7 +236,7 @@ assert_auth_hook "200 KB CUM_CHANGED (path list) with the signal on line ONE sti
 # frontend. Worse than pg_net/auth_hook failing false: it decides WHAT
 # DEPLOYS, not whether to pause. `worker` (not `frontend` — a round-2
 # review correction, M1: deploy-vercel is gated only on approve-production
-# + changes succeeding, NOT on outputs.frontend at deploy.yml:436-480;
+# + changes succeeding, NOT on outputs.frontend at deploy.yml:471-480;
 # outputs.frontend's only consumer is deploy-qa.sh's CHANGED_FRONTEND env,
 # so frontend=false there means QA silently skips rebuilding the frontend
 # and e2e-qa runs green against a stale bundle — a real bug, just not a
