@@ -18,7 +18,8 @@ import {
   useDownloadedManifestIds,
   useDownloadManifest,
 } from '@/hooks/pickup/useManifestDownload';
-import { isManifestComplete } from '@/lib/pickup/manifestProgress';
+import { useNextManifestPickupAddress } from '@/hooks/pickup/useNextManifestPickupAddress';
+import { selectNextManifest } from '@/lib/pickup/nextManifestSelection';
 import { matchesRouteManifestQuery, hasActiveRouteSearchQuery } from '@/lib/pickup/routeManifestSearch';
 import { RouteProgressHeader } from '@/components/pickup/RouteProgressHeader';
 import { RouteMapPlaceholder } from '@/components/pickup/RouteMapPlaceholder';
@@ -75,6 +76,21 @@ export default function ActiveRoutePage() {
   // RouteManifestList).
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
 
+  // Computed here (before the early returns below), not further down where
+  // the rest of the render logic lives — spec-95 fase 3's map panel needs
+  // `nextManifest.external_load_id` to call a hook, and hooks cannot be
+  // called after a conditional `return`. See selectNextManifest's docstring.
+  const { nextIndex, nextManifest, routeComplete, upcoming } =
+    selectNextManifest(routeManifests);
+
+  // spec-95 fase 3 (mock 5c panel de mapa) — el panel cuelga de la carga
+  // SIGUIENTE, no de toda la ruta; ver el docstring del hook para por qué
+  // la dirección sale de pickup_points y no de manifests.pickup_location.
+  const { data: nextManifestAddress } = useNextManifestPickupAddress(
+    operatorId,
+    nextManifest?.external_load_id ?? null,
+  );
+
   if (routeLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -114,23 +130,6 @@ export default function ActiveRoutePage() {
   }
 
   const totalVerified = routeManifests.reduce((s, m) => s + m.verified_count, 0);
-
-  // `useRouteManifests` now orders by created_at ASCENDING (append-only
-  // queue — see the hook), so array position is stable across refetches and
-  // across adding a new manifest from this same screen. "Next" is the first
-  // one genuinely incomplete (a null or zero total_packages counts as
-  // incomplete/unknown, never as done). When nothing is incomplete the route
-  // IS finished — no fallback card that would advertise verification work
-  // that no longer exists.
-  const nextIndex = routeManifests.findIndex((m) => !isManifestComplete(m));
-  const nextManifest = nextIndex === -1 ? null : routeManifests[nextIndex];
-  const routeComplete = routeManifests.length > 0 && nextManifest === null;
-  // Upcoming manifests are the ones AFTER the highlighted one in the same
-  // order — not "everything except it", which could list already-completed
-  // manifests as if they were still ahead.
-  const upcoming = nextManifest
-    ? routeManifests.slice(nextIndex + 1, nextIndex + 4)
-    : [];
 
   const goToScan = (loadId: string) =>
     router.push(`/app/pickup/scan/${encodeURIComponent(loadId)}`);
@@ -264,7 +263,11 @@ export default function ActiveRoutePage() {
     <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-4 pb-56" data-testid="active-route-page">
       <RouteProgressHeader route={route} manifests={routeManifests} isLoading={rmLoading} />
 
-      <RouteMapPlaceholder pickupLocation={nextManifest?.pickup_location ?? null} />
+      {/* spec-95 fase 3 (mock 5c) — `nextManifestAddress` es `undefined`
+          mientras la query está en curso; se normaliza a `null` aquí (no
+          antes) para que RouteMapPlaceholder nunca reciba un dato a medio
+          cargar como si fuera una dirección real. */}
+      <RouteMapPlaceholder pickupLocation={nextManifestAddress ?? null} />
 
       {rmLoading ? (
         <div className="flex justify-center py-6">

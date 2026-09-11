@@ -84,6 +84,15 @@ vi.mock('@/hooks/pickup/useRouteManifests', () => ({
   useUnassignedManifests: () => ({ data: [], isLoading: false }),
 }));
 
+// spec-95 fase 3 (mock 5c panel de mapa) — la dirección real ya no sale de
+// `manifest.pickup_location` (siempre NULL en la práctica, ver el docstring
+// del hook); este mock aísla la página del hook real, que se prueba solo en
+// useNextManifestPickupAddress.test.ts.
+const nextManifestAddressMock = vi.fn();
+vi.mock('@/hooks/pickup/useNextManifestPickupAddress', () => ({
+  useNextManifestPickupAddress: (...args: unknown[]) => nextManifestAddressMock(...args),
+}));
+
 const addMutate = vi.fn();
 const closeMutate = vi.fn();
 const removeMutate = vi.fn();
@@ -135,6 +144,8 @@ describe('ActiveRoutePage', () => {
       data: [INCOMPLETE_MANIFEST, COMPLETE_MANIFEST],
       isLoading: false,
     });
+    nextManifestAddressMock.mockReset();
+    nextManifestAddressMock.mockReturnValue({ data: null, isLoading: false });
   });
 
   it('renders route header and the highlighted next manifest', async () => {
@@ -283,6 +294,55 @@ describe('ActiveRoutePage', () => {
     await waitFor(() =>
       expect(screen.getByTestId('route-map-placeholder')).toBeInTheDocument(),
     );
+  });
+
+  // spec-95 fase 3 (mock 5c panel de mapa) — el panel cuelga de la carga
+  // SIGUIENTE (la primera incompleta), no de la primera del array ni de la
+  // ruta como un todo.
+  it('asks for the pickup address of the highlighted next manifest, not any other one', async () => {
+    wrap(<Page />);
+    await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+    expect(nextManifestAddressMock).toHaveBeenCalledWith('op-1', 'LOAD-1');
+  });
+
+  it('does not ask for a pickup address when the route is already complete', async () => {
+    routeManifestsMock.mockReturnValue({
+      data: [{ ...COMPLETE_MANIFEST, id: 'm3', external_load_id: 'LOAD-3' }],
+      isLoading: false,
+    });
+    wrap(<Page />);
+    await waitFor(() =>
+      expect(screen.getByTestId('route-complete-notice')).toBeInTheDocument(),
+    );
+    expect(nextManifestAddressMock).toHaveBeenCalledWith('op-1', null);
+  });
+
+  // The real address comes from pickup_points.pickup_locations[0].address
+  // (via the hook, mocked here), never from manifests.pickup_location — see
+  // useNextManifestPickupAddress's docstring for why that column is dead.
+  it('renders the real pickup address from the hook, honouring the navigation button', async () => {
+    nextManifestAddressMock.mockReturnValue({
+      data: 'Av. Providencia 1234, Providencia',
+      isLoading: false,
+    });
+    wrap(<Page />);
+    const link = await screen.findByRole('link', { name: /abrir navegaci/i });
+    expect(link).toHaveAttribute(
+      'href',
+      'https://maps.google.com/?q=' + encodeURIComponent('Av. Providencia 1234, Providencia'),
+    );
+  });
+
+  // No fabricated placeholder while the address query is still in flight:
+  // `undefined` (loading) must render exactly like `null` (resolved, no
+  // address) — no button, not a blank-looking one.
+  it('does not render a dead navigation button while the address is still loading', async () => {
+    nextManifestAddressMock.mockReturnValue({ data: undefined, isLoading: true });
+    wrap(<Page />);
+    await waitFor(() =>
+      expect(screen.getByTestId('route-map-placeholder')).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('link', { name: /abrir navegaci/i })).toBeNull();
   });
 
   // spec-82 phase 1 (mock 5c) — "Digitalizar manifiesto" reuses the OCR

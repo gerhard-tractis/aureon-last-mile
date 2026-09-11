@@ -8,11 +8,23 @@ import { Map, Navigation } from 'lucide-react';
  * (`--color-map-surface` / `--color-map-line` in globals.css) — no map
  * library, no fake pins or polyline.
  *
- * The mock's "ABRIR NAVEGACIÓN" button IS honest, though: `manifests
- * .pickup_location` is a plain TEXT column on the same row `useRouteManifests`
- * already selects. A `https://maps.google.com/?q=<address>` search link needs
- * no map provider, so it is rendered whenever the highlighted manifest has an
- * address, and omitted (not stubbed) when it does not.
+ * The mock's "ABRIR NAVEGACIÓN" button IS honest, though: a
+ * `https://maps.google.com/?q=<address>` search link needs no map provider,
+ * so it is rendered whenever the highlighted manifest has an address, and
+ * omitted (not stubbed) when it does not.
+ *
+ * spec-95 fase 3 (mock 5c panel de mapa) — the address itself no longer
+ * comes from `manifests.pickup_location` (a free-text column with no
+ * writer anywhere in the schema — see `useNextManifestPickupAddress`'s
+ * docstring). It comes from `pickup_points.pickup_locations[0].address`,
+ * fetched by that hook and passed down by `route/active/page.tsx`.
+ *
+ * Also decided in that same round (2026-09-10, textual): the mock draws
+ * "4,2 km · 11 min" under the address — NOT implemented here. A driven-arc
+ * ETA needs a routing provider (deferred to a future spec); a straight-line
+ * Haversine distance is not what the driver actually drives, and the mock
+ * does not say which of the two it is drawing. Painting either would be
+ * inventing a number, so this component paints neither.
  */
 
 interface RouteMapPlaceholderProps {

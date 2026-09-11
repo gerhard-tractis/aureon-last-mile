@@ -1268,6 +1268,13 @@ export type Database = {
           imported_at: string
           created_at: string
           deleted_at: string | null
+          // spec-95 fase 3 — not covered by the generator this file's other
+          // rows were produced from; added by hand to match the schema
+          // (renamed from `generator_id` in 20260329000001, referenced by
+          // `pp.id = o.pickup_point_id` across a dozen RPC migrations) until
+          // types.ts is regenerated. Same drift already documented on
+          // `fleet_vehicles.capacity_packages` above.
+          pickup_point_id: string | null
         }
         Insert: {
           id?: string
@@ -1291,6 +1298,7 @@ export type Database = {
           imported_at: string
           created_at?: string
           deleted_at?: string | null
+          pickup_point_id?: string | null
         }
         Update: {
           id?: string
@@ -1314,6 +1322,7 @@ export type Database = {
           imported_at?: string
           created_at?: string
           deleted_at?: string | null
+          pickup_point_id?: string | null
         }
         Relationships: [
           {
@@ -1328,6 +1337,13 @@ export type Database = {
             columns: ["comuna_id"]
             isOneToOne: false
             referencedRelation: "chile_comunas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_pickup_point_id_fkey"
+            columns: ["pickup_point_id"]
+            isOneToOne: false
+            referencedRelation: "pickup_points"
             referencedColumns: ["id"]
           },
         ]
