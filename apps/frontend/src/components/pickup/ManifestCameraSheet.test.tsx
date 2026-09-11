@@ -786,7 +786,21 @@ describe('ManifestCameraSheet', () => {
       expect(await screen.findByRole('button', { name: /flash/i })).toBeInTheDocument();
     });
 
-    it('does not render the flash button when the track capabilities do not include torch', async () => {
+    // B1, bloqueante del review de 6817496 — el caso decisivo: la mayoría
+    // de las cámaras reales declaran `torch: false` explícito (frontal de
+    // Android, webcam de escritorio), no lo omiten. `{}` sin esa clave por
+    // sí solo no distingue una implementación correcta de una que trataba
+    // "la clave existe" como soporte.
+    it('does NOT render the flash button when the track reports torch: false', async () => {
+      const { stream } = makeFakeStream({ torch: false });
+      getUserMedia.mockResolvedValue(stream);
+      render(<ManifestCameraSheet {...baseProps} />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+      await waitFor(() => expect(screen.getByTestId('manifest-camera-video')).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: /flash/i })).not.toBeInTheDocument();
+    });
+
+    it('does not render the flash button when the track capabilities do not include torch at all', async () => {
       const { stream } = makeFakeStream({});
       getUserMedia.mockResolvedValue(stream);
       render(<ManifestCameraSheet {...baseProps} />);
@@ -813,29 +827,40 @@ describe('ManifestCameraSheet', () => {
       expect(screen.queryByRole('button', { name: /flash/i })).not.toBeInTheDocument();
     });
 
-    it('toggles the torch via applyConstraints, and its pressed state, on each click', async () => {
+    // "arriba a la derecha" de `5g` — el atributo que produce esa posición
+    // dentro del header flex, no sólo que el botón exista en el DOM.
+    it('positions the flash button at the far right of the header (ml-auto)', async () => {
+      const { stream } = makeFakeStream({ torch: true });
+      getUserMedia.mockResolvedValue(stream);
+      render(<ManifestCameraSheet {...baseProps} />);
+      const button = await screen.findByRole('button', { name: /flash/i });
+      expect(button.className).toContain('ml-auto');
+    });
+
+    // B2, bloqueante del review de 6817496 — el constraint va SIN envolver
+    // en `advanced` (eso es best-effort y resuelve aunque el UA lo salte).
+    it('toggles the torch via a bare { torch } constraint, and its pressed/icon state, on each click', async () => {
       const { stream, track } = makeFakeStream({ torch: true });
       getUserMedia.mockResolvedValue(stream);
       render(<ManifestCameraSheet {...baseProps} />);
       const button = await screen.findByRole('button', { name: /flash/i });
       expect(button).toHaveAttribute('aria-pressed', 'false');
+      expect(button.querySelector('svg')).toHaveAttribute('fill', 'none');
 
       fireEvent.click(button);
-      await waitFor(() =>
-        expect(track.applyConstraints).toHaveBeenCalledWith({ advanced: [{ torch: true }] })
-      );
+      await waitFor(() => expect(track.applyConstraints).toHaveBeenCalledWith({ torch: true }));
       await waitFor(() => expect(button).toHaveAttribute('aria-pressed', 'true'));
+      expect(button.querySelector('svg')).toHaveAttribute('fill', 'currentColor');
 
       fireEvent.click(button);
-      await waitFor(() =>
-        expect(track.applyConstraints).toHaveBeenCalledWith({ advanced: [{ torch: false }] })
-      );
+      await waitFor(() => expect(track.applyConstraints).toHaveBeenCalledWith({ torch: false }));
       await waitFor(() => expect(button).toHaveAttribute('aria-pressed', 'false'));
+      expect(button.querySelector('svg')).toHaveAttribute('fill', 'none');
     });
 
-    it('does not flip aria-pressed if the real device rejects applyConstraints', async () => {
+    it('does not flip aria-pressed if the real device rejects the constraint', async () => {
       const { stream, track } = makeFakeStream({ torch: true });
-      track.applyConstraints = vi.fn().mockRejectedValue(new Error('torch busy'));
+      track.applyConstraints = vi.fn().mockRejectedValue(new Error('OverconstrainedError'));
       getUserMedia.mockResolvedValue(stream);
       render(<ManifestCameraSheet {...baseProps} />);
       const button = await screen.findByRole('button', { name: /flash/i });
@@ -843,6 +868,102 @@ describe('ManifestCameraSheet', () => {
       fireEvent.click(button);
       await waitFor(() => expect(track.applyConstraints).toHaveBeenCalledOnce());
       expect(button).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    // Mutante superviviente (review 6817496): `if (!track?.applyConstraints)`
+    // → `if (!track)` — defensa muerta si nada la ejercita.
+    it('does not throw when clicked against a track that has no applyConstraints method', async () => {
+      const { stream, track } = makeFakeStream({ torch: true });
+      getUserMedia.mockResolvedValue(stream);
+      render(<ManifestCameraSheet {...baseProps} />);
+      const button = await screen.findByRole('button', { name: /flash/i });
+
+      // El track real queda sin `applyConstraints` (dispositivo/navegador
+      // que sólo expone la lectura de capacidades, no el control).
+      // @ts-expect-error - simular un track sin applyConstraints
+      delete track.applyConstraints;
+
+      expect(() => fireEvent.click(button)).not.toThrow();
+    });
+
+    // M1 del review — la pista se puede caer con el flash encendido.
+    describe('M1 — la pista se cae con el flash encendido', () => {
+      it('turns the flash off, but keeps the button, when the track mutes', async () => {
+        const { stream, track } = makeFakeStream({ torch: true });
+        getUserMedia.mockResolvedValue(stream);
+        render(<ManifestCameraSheet {...baseProps} />);
+        const button = await screen.findByRole('button', { name: /flash/i });
+        fireEvent.click(button);
+        await waitFor(() => expect(button).toHaveAttribute('aria-pressed', 'true'));
+
+        track.muted = true;
+        act(() => track.dispatchEvent(new Event('mute')));
+
+        await waitFor(() => expect(button).toHaveAttribute('aria-pressed', 'false'));
+        expect(screen.getByRole('button', { name: /flash/i })).toBeInTheDocument();
+      });
+
+      it('turns the flash off AND removes the button when the track ends for good', async () => {
+        const { stream, track } = makeFakeStream({ torch: true });
+        getUserMedia.mockResolvedValue(stream);
+        render(<ManifestCameraSheet {...baseProps} />);
+        const button = await screen.findByRole('button', { name: /flash/i });
+        fireEvent.click(button);
+        await waitFor(() => expect(button).toHaveAttribute('aria-pressed', 'true'));
+
+        track.readyState = 'ended';
+        act(() => track.dispatchEvent(new Event('ended')));
+
+        await waitFor(() =>
+          expect(screen.queryByRole('button', { name: /flash/i })).not.toBeInTheDocument()
+        );
+      });
+    });
+
+    // Mutante superviviente (review 6817496): borrar el reset de torch en
+    // la limpieza del efecto sobrevivía — nada probaba que no había fuga
+    // entre una apertura con soporte y una reapertura sin él.
+    // `registerTrack` en la reapertura YA vuelve a fijar `torchSupported`
+    // desde la capacidad del stream nuevo, así que un segundo stream SIN
+    // torch no distingue "hay reset" de "no lo hay" — habría enmascarado
+    // este mutante. `torchOn` es la señal limpia: `registerTrack` nunca la
+    // toca, sólo `reset()` en la limpieza del efecto. Por eso el segundo
+    // stream vuelve a soportar torch (mismo botón, mismo capabilities) y
+    // se comprueba `aria-pressed` SIN volver a tocarlo.
+    it('does not leak torchOn across an open/close/open cycle, even when the reopened track supports torch again', async () => {
+      const { stream: stream1 } = makeFakeStream({ torch: true });
+      getUserMedia.mockResolvedValueOnce(stream1);
+      const { rerender } = render(<ManifestCameraSheet {...baseProps} open />);
+      const button = await screen.findByRole('button', { name: /flash/i });
+      fireEvent.click(button);
+      await waitFor(() => expect(button).toHaveAttribute('aria-pressed', 'true'));
+
+      rerender(<ManifestCameraSheet {...baseProps} open={false} />);
+
+      const { stream: stream2 } = makeFakeStream({ torch: true });
+      getUserMedia.mockResolvedValueOnce(stream2);
+      rerender(<ManifestCameraSheet {...baseProps} open />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+
+      const reopenedButton = await screen.findByRole('button', { name: /flash/i });
+      expect(reopenedButton).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('does not leak torchSupported across an open/close/open cycle when the reopened track has no torch', async () => {
+      const { stream: stream1 } = makeFakeStream({ torch: true });
+      getUserMedia.mockResolvedValueOnce(stream1);
+      const { rerender } = render(<ManifestCameraSheet {...baseProps} open />);
+      await screen.findByRole('button', { name: /flash/i });
+
+      rerender(<ManifestCameraSheet {...baseProps} open={false} />);
+
+      const { stream: stream2 } = makeFakeStream({});
+      getUserMedia.mockResolvedValueOnce(stream2);
+      rerender(<ManifestCameraSheet {...baseProps} open />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(screen.getByTestId('manifest-camera-video')).toBeInTheDocument());
+
+      expect(screen.queryByRole('button', { name: /flash/i })).not.toBeInTheDocument();
     });
   });
 });
