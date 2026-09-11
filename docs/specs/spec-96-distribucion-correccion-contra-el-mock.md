@@ -6,6 +6,23 @@
 > Written in English on the user's instruction (2026-09-11). Every UI string is
 > quoted verbatim in Spanish — the product's language does not change.
 
+> **For agentic workers:** this file is both the spec and the plan
+> (`docs/specs/CLAUDE.md`: "One file per spec only"). Take exactly one
+> `[pending]` phase, use `superpowers:test-driven-development`, and work in a
+> worktree whose branch carries the phase number (`feat/spec-96-fase-N-…`).
+> Steps use `- [ ]` so progress is trackable in the branch.
+
+**Goal:** make every Distribución screen match the artboard that governs it in
+`docs/design/Distribucion.dc.html`.
+
+**Architecture:** no new data layer. Every phase is presentation plus wiring of
+hooks that already exist (`useDockZones`, `usePendingSectorization`,
+`useConsolidation`, `useDistributionOverview`) into components that already
+exist. One new route (Fase 9) and one new panel component (Fase 4).
+
+**Tech Stack:** Next.js App Router · React · Tailwind · TanStack Query ·
+Supabase · Vitest + Testing Library · Playwright for `e2e-qa`.
+
 ## The benchmark is the file, not this document
 
 **`docs/design/Distribucion.dc.html` is the acceptance criterion.** Thirteen
@@ -17,9 +34,9 @@ artboards, `4a`–`4m`, downloaded 2026-09-11 from project
 grep -oE 'dv-opt" id="[^"]*"' docs/design/Distribucion.dc.html
 ```
 
-Each phase below names **the artboard it must reproduce and the files it may
-touch — nothing else.** It does not describe what the artboard looks like. That
-is deliberate, and it is the user's instruction of 2026-09-11: prose drifts from
+Each phase names **the artboard it must reproduce and the files it may touch —
+nothing else.** It does not describe what the artboard looks like. That is
+deliberate, and it is the user's instruction of 2026-09-11: prose drifts from
 the file it paraphrases, and when the two disagree there is no way to tell which
 one is stale. Open the artboard, diff it against the screen, close the
 difference.
@@ -27,13 +44,30 @@ difference.
 Two things prose still carries, because the HTML cannot express them: **where
 the data comes from**, and **constraints the drawing cannot show** (scanner
 behaviour, the null-capacity contract, viewport limits). Those appear under
-`Notas no visuales` inside a phase. Anything that *is* visible in the artboard
-is absent here on purpose.
+`Notas no visuales`.
 
 To open an artboard: load the file in a browser and jump to its anchor (`#4k`),
 or read the block that starts at `<div class="dv-opt" id="4k">`. `support.js` is
 not copied into the repo — it is the generated runtime; render the file through
 the design project when you need it laid out.
+
+### What the unit tests may and may not assert
+
+**This is the rule that keeps the benchmark where it belongs.** A test that
+asserts a visual string makes the test the benchmark, and then the artboard can
+change without anything going red — exactly the drift this method exists to
+prevent.
+
+- **Tests assert behaviour, wiring and contracts:** that a prop reaches a
+  component, that a `null` capacity renders no bar, that a toggle changes which
+  rows render, that a header region exists and is not `sr-only`, that two
+  predicates stay separate.
+- **Tests do not assert appearance:** not copy, not colour, not chip text, not
+  order of decorative elements, not spacing. Those are closed by diffing the
+  artboard and are verified by `e2e-qa` and by eye.
+- **Existing tests that do assert copy stay as they are.** Do not go and delete
+  them; they were written under the old method and removing them is churn. Just
+  do not add more.
 
 ## How this spec came to be, in two rounds
 
@@ -65,10 +99,7 @@ One question is still open and is **not** in any phase below: the screen behind
 `4a`'s `Cerrar lotes` button. `/batch` exists and ships; no artboard governs it.
 It stays in `mock-feedback-distribucion.md`.
 
-## Two corrections carried over from round 1
-
-Both were first recorded as gaps and are not. They are repeated here because the
-screens still look empty in QA and the next reader will re-find them:
+## Three corrections carried over, so nobody re-finds them
 
 1. **Dock capacity is already wired** into the `4e` send sheet
    (`SendToDockSheet.tsx:194`), the scan step-2 screen
@@ -79,6 +110,11 @@ screens still look empty in QA and the next reader will re-find them:
    requirement, not a fallback.
 2. **`4b`'s comuna list and `ACTIVO` badge are already passed**
    (`quicksort/page.tsx:261,264`). The comuna array is empty in the QA fixture.
+3. **The tab bar already matches `4c`.** Verified in QA 2026-09-11 with
+   `bodega@musan.com`: the bar renders `Recogida · Recepción · Distribución ·
+   Despacho`. It was absent under `admin@musan.com` only because
+   `buildMobileTabs` returns nothing for admin/manager. Fase 6 has no tab-bar
+   work.
 
 ## Prerequisite — QA cannot demonstrate capacity today
 
@@ -92,6 +128,17 @@ exercised — and leave a third zone unconfigured if one can be created, since
 `4l` requires the unconfigured state to be correct too. Without this, Fase 0's
 `e2e-qa` evidence proves nothing.
 
+## Test commands, once, for every phase
+
+```
+cd apps/frontend && npx vitest run --pool=forks <path>   # one file
+cd apps/frontend && npm run test:run                      # the suite
+cd apps/frontend && npm run type-check
+```
+
+`--pool=forks` is required locally on Windows; without it the run hangs. Do not
+use `npx prettier` — this repo has no prettier.
+
 ---
 
 ### Fase 0 — Capacity on the two unwired dock tiles `[pending]`
@@ -102,7 +149,6 @@ exercised — and leave a third zone unconfigured if one can be created, since
 
 **Archivos:** `apps/frontend/src/components/distribution/OutboundDockGrid.tsx`,
 `apps/frontend/src/components/distribution/DockCard.tsx`,
-`apps/frontend/src/components/distribution/DockListMobile.tsx`,
 `apps/frontend/src/app/app/distribution/quicksort/page.tsx`, y sus tests
 hermanos.
 
@@ -110,15 +156,57 @@ hermanos.
 
 - Consume `lib/distribution/dock-capacity.ts` and `DockCapacityBar`. Do not
   reimplement the arithmetic — four screens read that module precisely so it
-  cannot drift.
-- `getDockCapacityStatus` returns `neutral` / `warning` / `error`. The artboards
-  show four chips; two of them are not capacity states — derive those from
-  `openBatches` and `is_active`, which the components already receive.
-- `routeCount` has no source in `useDockZones` today. If it cannot be resolved
-  without a new query, ship the rest and declare `routeCount` as an open finding
-  in this phase. Do not invent a count.
-- A zone with `capacity = null` must render as `4l`'s `A6` does. That is the
-  existing contract of `dock-capacity.ts`; this phase must not weaken it.
+  cannot drift. `getDockCapacityStatus(count, capacity)` returns
+  `{ configured, fillPct, tone, remainingLabel }` and treats `0` and negative
+  capacity as unconfigured.
+- The artboards show four chips on a dock tile. Only two of them are capacity
+  states; the other two are activity states. Derive those from `openBatches`
+  and `is_active`, which both components already receive.
+- `routeCount` has no source in `useDockZones` (see the `DockZoneRecord`
+  interface — there is no route field). If it cannot be resolved without a new
+  query, ship the rest and declare `routeCount` as an open finding in this
+  phase. **Do not invent a count.**
+- A zone with `capacity = null` must render as `4l`'s `A6` does.
+
+**Tareas:**
+
+**Task 0.1 — `OutboundDockGrid` reads capacity**
+
+- Modify: `apps/frontend/src/components/distribution/OutboundDockGrid.tsx`
+- Test: `apps/frontend/src/components/distribution/OutboundDockGrid.test.tsx` (create if absent)
+
+- [ ] Write a failing test: a zone with `capacity: 180` and a count of 169
+      renders a `dock-occupancy` element; a zone with `capacity: null` renders
+      none. Build zones from the real `DockZoneRecord` shape — `id`, `name`,
+      `code`, `is_consolidation`, `comunas`, `is_active`, `operator_id`,
+      `capacity`.
+- [ ] Run `npx vitest run --pool=forks src/components/distribution/OutboundDockGrid.test.tsx` — expect FAIL (no bar rendered in either case).
+- [ ] Implement: render `DockCapacityBar` with `count` and `zone.capacity`. Let the component decide; do not branch on `capacity` in the grid.
+- [ ] Run the same command — expect PASS.
+- [ ] Write a failing test for the activity chip: `openBatches[zone.id] > 0` and `is_active === false` each produce a distinguishable state, asserted by `data-testid`/`data-state`, **not by chip copy**.
+- [ ] Run — expect FAIL. Implement with a `data-state` attribute. Run — expect PASS.
+- [ ] Remove the "not wired to it yet" paragraph from the component's doc comment. It will be false.
+- [ ] Commit: `feat(spec-96): OutboundDockGrid consume dock-capacity (4a)`
+
+**Task 0.2 — `DockCard` receives occupancy**
+
+- Modify: `apps/frontend/src/components/distribution/DockCard.tsx:24-27` (the doc comment that says callers pass nothing), `apps/frontend/src/app/app/distribution/quicksort/page.tsx:257-265`
+- Test: `apps/frontend/src/components/distribution/DockCard.test.tsx`
+
+- [ ] `DockCard` already accepts `occupancyPct` and renders the bar — verify by reading the component before changing anything. The gap is the **call site**.
+- [ ] Write a failing test at the page level, or a focused test asserting `DockCard` is given a non-null `occupancyPct` when the zone has a capacity. Prefer computing the percentage with `getDockCapacityStatus` rather than inline arithmetic.
+- [ ] Run — expect FAIL. Implement in `quicksort/page.tsx`: pass `occupancyPct` derived from `getDockCapacityStatus(count, zone.capacity).fillPct ?? undefined`.
+- [ ] Run — expect PASS.
+- [ ] `routeCount`: check `useDockZones` for any route source. If there is none, leave the prop unpassed and write the open finding into this phase's evidence line.
+- [ ] Update `DockCard`'s doc comment, which currently states callers pass nothing.
+- [ ] Commit: `feat(spec-96): pasar occupancyPct a DockCard desde modo rápido (4b)`
+
+**Task 0.3 — Close the visual diff**
+
+- [ ] Open `4a`, `4b` and `4l` and diff each against the running app at 1442 px and 402 px.
+- [ ] Fix what differs, in the files listed above only.
+- [ ] Run `npm run test:run` and `npm run type-check` — expect PASS.
+- [ ] Commit, then open the PR with auto-merge.
 
 ---
 
@@ -147,6 +235,30 @@ hermanos.
   Reproduce the artboard's header at that width — do not shorten the string to
   make it fit.
 
+**Tareas:**
+
+**Task 1.1 — A real header on every scan state**
+
+- Modify: `QuickSortMobileView.tsx`, `QuickSortMobileDock.tsx`
+- Test: their sibling test files
+
+- [ ] Write a failing test: on step 2 and on the rejection state, a visible heading is rendered — assert it is **not** `sr-only` (e.g. the heading element is not inside an element with the `sr-only` class). Do not assert its text.
+- [ ] Run — expect FAIL on both states.
+- [ ] Implement one shared header region used by all four states, so they cannot drift apart again.
+- [ ] Run — expect PASS.
+- [ ] Commit: `fix(spec-96): cabecera visible en los cuatro estados del escaneo (4g-4j)`
+
+**Task 1.2 — The armed field survives**
+
+- [ ] Write a failing test (or confirm an existing one) that a scan is submitted **without** any click — simulate the gun by typing into the focused field, no Enter, and assert submission via `useScannerAutoSubmit`'s path.
+- [ ] Run. If it already passes, say so and add no code — this task exists to stop Fase 1 from regressing the hardware contract while restyling the footer.
+- [ ] Commit only if something changed.
+
+**Task 1.3 — Close the visual diff**
+
+- [ ] Diff `4g`, `4h`, `4i`, `4j` against the app at 402 px, including the header at that exact width.
+- [ ] Fix, run the suite and `type-check`, commit, PR with auto-merge.
+
 ---
 
 ### Fase 2 — Pendientes, móvil `[pending]`
@@ -172,6 +284,27 @@ hermanos.
   (`get_unmatched_comunas`). Keep them distinct in the data as the mock now
   keeps them distinct in the words.
 
+**Tareas:**
+
+**Task 2.1 — `DET` / `CMP`**
+
+- [ ] Write a failing test: in `CMP`, a three-bulto order renders one row; in `DET`, it renders the order line plus one row per bulto. Assert row counts, not copy.
+- [ ] Run — expect FAIL. Implement as a state in the page, passed down; `PendingMobileOrderGroup` already renders both shapes.
+- [ ] Run — expect PASS. Commit.
+
+**Task 2.2 — `SEL`**
+
+- [ ] Write a failing test: entering selection mode exposes a checkbox per order; selecting two and confirming calls the send handler once with both orders' package ids.
+- [ ] Run — expect FAIL. Implement, reusing `SendToDockSheet` with the selection.
+- [ ] Run — expect PASS. Commit.
+
+**Task 2.3 — Keep the two predicates apart**
+
+- [ ] Write a test asserting the no-dock group is computed per order via `determineDockZone`, not from the bucket-level flag. `PendingMobileList.tsx`'s own doc comment explains why — the consolidation bucket legitimately mixes three cases, so the bucket-level flag depends on whichever order was fetched first. This test locks that reasoning in before the group header is restyled.
+- [ ] Run, implement if needed, commit.
+
+**Task 2.4 — Close the visual diff** at 402 px, including the group header that truncates today. Run suite + type-check, PR with auto-merge.
+
 ---
 
 ### Fase 3 — Send sheet and consolidación `[pending]`
@@ -194,6 +327,15 @@ hermanos.
 - `URGENTES` carries overdue packages with an `AYER` row tag. The bare label is
   now the mock's too; do not restore a `HOY Y MAÑANA` qualifier.
 
+**Tareas:**
+
+**Task 3.1 — The sheet holds a real barcode**
+
+- [ ] Write a failing test rendering `SendToDockSheet` with `CARGA-EASY-001-ORD-03-CTN-1` and asserting the title element carries a wrap-safe class (or that the code is in its own element). Assert structure, not the rendered line count — jsdom does not lay out text.
+- [ ] Run, implement, run, commit. Then confirm by eye at 402 px; jsdom cannot prove this one.
+
+**Task 3.2 — Close the visual diff** on `4e` and `4f`, including the footer order and the selection counter. Run suite + type-check, PR with auto-merge.
+
 ---
 
 ### Fase 4 — Escritorio, estado inicial `[pending]`
@@ -210,17 +352,36 @@ componente nuevo para el panel de incidencias bajo
 **Notas no visuales:**
 
 - The three incidence types are now defined by the mock and each maps to a
-  different predicate. Wire each to its own source; do not collapse them into
-  one count:
-  - the unrecognised-comuna type — `get_unmatched_comunas`, the same source the
-    renamed StatTile already uses.
+  different predicate. Wire each to its own source; **do not collapse them into
+  one count**:
+  - the unrecognised-comuna type — `get_unmatched_comunas`, via
+    `useUnmatchedComunas`, the same source the renamed StatTile already uses.
   - the no-dock type — comuna resolves, no dock zone covers it. Same predicate
     as `4d`'s group, which `determineDockZone` already computes per order.
   - the wrong-dock type — the scanned dock is not the one the engine computed.
     `lib/distribution/quicksort-exception.ts` already records this event.
-- If a type cannot be sourced without a new query, ship the others and declare it
-  open in this phase.
+- If a type cannot be sourced without a new query, ship the others and declare
+  it open in this phase.
 - Depends on Fase 0 because the dock tiles carry the capacity denominator.
+
+**Tareas:**
+
+**Task 4.1 — The incidences panel**
+
+- Create: `apps/frontend/src/components/distribution/SectorizationIncidentsPanel.tsx` + test
+
+- [ ] Write a failing test: given three independent counts, the panel renders three distinct rows, each with its own count, and a footer action. Assert `data-testid` per type, not copy.
+- [ ] Run — expect FAIL (module does not exist). Implement the presentational component; it takes counts as props and owns no queries.
+- [ ] Run — expect PASS. Commit.
+- [ ] Write a failing test that the panel renders an empty state when all three are zero. Run, implement, run, commit.
+
+**Task 4.2 — Feed it**
+
+- [ ] Write a failing test at the page level: each row's count comes from its own source, and two types with different underlying values do not show the same number.
+- [ ] Run — expect FAIL. Implement the wiring in `page.tsx`. Any type without a source stays out and is declared — do not pass a placeholder zero that reads as "none".
+- [ ] Run — expect PASS. Commit.
+
+**Task 4.3 — Close the visual diff** on `4a`, including the consolidation table and the renamed tile. Run suite + type-check, PR with auto-merge.
 
 ---
 
@@ -242,6 +403,21 @@ hermanos.
   nothing today.
 - `EN ESTA SESIÓN`, which the app substituted for one of the artboard's tiles,
   is not in the artboard.
+
+**Tareas:**
+
+**Task 5.1 — Remove the in-place pendientes list**
+
+- [ ] Confirm Fase 9 is `[done]` and the route exists. If not, stop — this task cannot run first.
+- [ ] Write a failing test: the quicksort page renders no pendientes rows, and offers a way to reach the new route.
+- [ ] Run — expect FAIL. Remove the list, add the link. Run — expect PASS. Commit.
+
+**Task 5.2 — The confirmation banner**
+
+- [ ] Write a failing test: after a successful scan the page exposes a confirmation region carrying the dock and the scanned code. Assert presence and data, not styling.
+- [ ] Run, implement from the state the page already holds (`lastOkScan`), run, commit.
+
+**Task 5.3 — Close the visual diff** on `4b` at 1442 px. Run suite + type-check, PR with auto-merge.
 
 ---
 
@@ -266,7 +442,25 @@ tests hermanos.
   the phase evidence rather than leaving it as an unexplained deletion.
 - spec-68 Decisión 2 and Decisión 9 are **confirmed** by this round, not
   reversed: the mock now draws the app's tab bar and drops `turno`. Nothing to
-  undo.
+  undo, and no tab-bar work in this phase.
+- Verify with an operations account (`bodega@musan.com`). Under
+  `admin@musan.com` the tab bar does not render at all.
+
+**Tareas:**
+
+**Task 6.1 — Live subtitles**
+
+- [ ] Write a failing test: each process row's subtitle is derived from the data it links to, and the row for andenes carries a count. Assert the numbers come from props, not that the sentence reads a particular way.
+- [ ] Run — expect FAIL (subtitles are static strings today). Implement. Run — expect PASS. Commit.
+
+**Task 6.2 — Remove the KPI tiles**
+
+- [ ] Write a failing test asserting the tiles are absent.
+- [ ] Run — expect FAIL. Remove them. Run — expect PASS.
+- [ ] Write the reason into the commit body: they are not in `4c`, and the counts they carried now live on the process rows.
+- [ ] Commit.
+
+**Task 6.3 — Close the visual diff** on `4c` at 402 px, logged in as `bodega@musan.com`. Run suite + type-check, PR with auto-merge.
 
 ---
 
@@ -284,10 +478,20 @@ hermanos.
 **Notas no visuales:**
 
 - The mode already ships (spec-71). This phase reconciles it with the artboard
-  that now governs it; it does not build it from nothing.
+  that now governs it; it does not build it from nothing. Read the existing
+  components before planning any change.
 - Two entry points, and the artboard names both: `4g`'s `SECT`/`ESTIB` control
   and `4c`'s `Mover a posición` row. They must reach the same screen.
 - Same scanner constraint as Fase 1 — the position field is armed, not tapped.
+
+**Tareas:**
+
+**Task 7.1 — One destination, two doors**
+
+- [ ] Write a failing test: both entry points resolve to the same route.
+- [ ] Run. Implement if they diverge. Commit.
+
+**Task 7.2 — Close the visual diff** on `4k` at 402 px. Run suite + type-check, PR with auto-merge.
 
 ---
 
@@ -305,7 +509,18 @@ hermanos.
 - `A6` in the artboard is the unconfigured-capacity case and is as much a
   requirement as the configured ones. A zone with `capacity = null` gets no bar
   and says so; it must never render a bar at 0 %.
-- Depends on Fase 0 for the chip derivation shared with the other dock surfaces.
+- Depends on Fase 0 for the activity-chip derivation shared with the other dock
+  surfaces.
+
+**Tareas:**
+
+**Task 8.1 — The unconfigured zone is a first-class state**
+
+- [ ] Write a failing test: a zone with `capacity: null` renders no occupancy element **and** renders an explanatory region; a zone with a capacity renders the bar.
+- [ ] Run — expect the first half to pass already (`DockCapacityBar` returns nothing) and the explanatory region to fail.
+- [ ] Implement. Run — expect PASS. Commit.
+
+**Task 8.2 — Close the visual diff** on `4l` at 402 px. Run suite + type-check, PR with auto-merge.
 
 ---
 
@@ -313,22 +528,63 @@ hermanos.
 
 **Benchmark:** `4m`.
 
-**Depende de:** ninguna
+**Depende de:** spec-96 fase 2
 
-**Archivos:** una ruta nueva bajo `apps/frontend/src/app/app/distribution/`,
-componentes nuevos bajo `apps/frontend/src/components/distribution/`,
+**Archivos:** `apps/frontend/src/app/app/distribution/pendientes/page.tsx`,
 `apps/frontend/src/components/distribution/PendingDockList.tsx`,
 `apps/frontend/src/components/distribution/PendingDockListOrderGroup.tsx`, y sus
 tests hermanos.
 
 **Notas no visuales:**
 
-- The rows exist today inside the quicksort screen; this phase gives them their
-  own route. Reuse `usePendingSectorization` — no new query.
+- **This is not a new route.** `/app/distribution/pendientes` already exists and
+  renders `PendingMobileList` **at every width** — its doc comment says so
+  outright: "comfortable reading width, no `useIsBelowLg` branch. There is no
+  desktop equivalent of this screen to collide with". `4m` *is* that missing
+  desktop branch. Creating a second route would duplicate the screen.
+- Follow the pattern `app/app/distribution/page.tsx` already uses: `useIsBelowLg`
+  picks **exactly one** of the two trees with an early return. Its doc comment
+  records why — mounting both has shipped as a bug twice (spec-54's `3h` and
+  spec-62), two headers stacked on one phone screen. Do not hide one with CSS.
+- That route's doc comment becomes false with this phase. Update it.
+- The desktop rows already exist as `PendingDockList`, used by quicksort and
+  `/batch`. Reuse it; reuse `usePendingSectorization` — **no new query**.
 - `Exportar` and `Cargar más` are new behaviours. Paginate rather than render
   every order at once; the fixture's 50 will not reveal the difference, so state
-  the page size chosen.
-- Fase 5 removes the in-place list once this route exists.
+  the page size chosen in the phase evidence.
+- Depends on Fase 2 because both phases edit `pendientes/page.tsx`. Dispatching
+  them together is exactly the collision `check-phase-overlap.mjs` exists to
+  catch.
+- Fase 5 removes the in-place list from `quicksort/page.tsx` once this branch
+  exists. Do not remove it here.
+
+**Tareas:**
+
+**Task 9.1 — The desktop branch**
+
+- Modify: `apps/frontend/src/app/app/distribution/pendientes/page.tsx`
+- Test: `apps/frontend/src/app/app/distribution/pendientes/page.test.tsx`
+
+- [ ] Read the route and `app/app/distribution/page.tsx`'s `isBelowLg` early return before writing anything — the second is the pattern to copy.
+- [ ] Write a failing test: below `lg` the mobile list renders and the desktop table does not; at or above `lg` the reverse. Assert each tree is **absent**, not hidden.
+- [ ] Run `npx vitest run --pool=forks src/app/app/distribution/pendientes/page.test.tsx` — expect FAIL (the mobile list renders at both widths).
+- [ ] Implement with an early return, mirroring `distribution/page.tsx`. Reuse `PendingDockList` for the desktop tree.
+- [ ] Run — expect PASS.
+- [ ] Correct the route's doc comment: there is now a desktop equivalent.
+- [ ] Commit: `feat(spec-96): rama de escritorio de /pendientes (4m)`
+
+**Task 9.2 — Pagination**
+
+- [ ] Write a failing test: with more orders than the page size, only the first page renders and a load-more control is present; activating it renders the next page.
+- [ ] Run — expect FAIL. Implement client-side pagination over the existing query result.
+- [ ] Run — expect PASS. Commit.
+
+**Task 9.3 — Export**
+
+- [ ] Write a failing test: the export action produces a row per order with the columns the artboard's table shows.
+- [ ] Run — expect FAIL. Implement. Run — expect PASS. Commit.
+
+**Task 9.4 — Close the visual diff** on `4m` at 1442 px. Run suite + type-check, PR with auto-merge.
 
 ---
 
@@ -348,6 +604,28 @@ rather than worked around:
   cannot demonstrate its change in QA says so and names the data it would need;
   it does not claim `e2e-qa` green as proof of something the screen never
   displayed.
-- **Role changes what renders.** `admin@musan.com` gets no `MobileTabBar`
-  (`buildMobileTabs` returns none for admin/manager), so `4c`'s tab bar cannot be
-  verified from that account. Use an operations account.
+- **Role changes what renders.** Use `bodega@musan.com`, an operations account,
+  for every mobile check. `admin@musan.com` gets no `MobileTabBar`
+  (`buildMobileTabs` returns none for admin/manager) and falls back to the
+  hamburger, which is not what any `4c`–`4l` artboard draws.
+
+## Suggested order
+
+Fase 0 first — it unblocks 4, 5 and 8, and it is two components. Then Fase 2,
+then Fase 9 (which waits on 2 for the shared file), because Fase 5 waits on 9.
+
+Fases 1, 3, 6 and 7 have no dependencies and touch no file any other phase
+touches, so they can be dispatched in parallel, in separate worktrees, each on a
+branch carrying its phase number.
+
+The dependency chain in one line: `0 → {4, 8}`, `0 + 2 → 9 → 5`, and `1, 3, 6,
+7` free. Before dispatching any two together, run them past the guard:
+
+```
+node scripts/check-phase-overlap.mjs \
+  docs/specs/spec-96-distribucion-correccion-contra-el-mock.md#1 \
+  docs/specs/spec-96-distribucion-correccion-contra-el-mock.md#3
+```
+
+Exit `0` is dispatchable, `1` is a hard file collision, `4` is an unmet
+`**Depende de:**`.
