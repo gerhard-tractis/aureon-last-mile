@@ -185,7 +185,7 @@ Medido el 2026-09-10.
 | 5 | `pgtap` | **NO instalada** (disponible 1.3.3) — la fase 3 la instala | **NO instalada**, y así debe seguir: es una extensión de testing | **No, y peor:** ver «El hallazgo 1» |
 | 6 | `pg_graphql` | **NO instalada** (disponible 1.5.11) | **NO instalada** — converge | No — los dos exponen `graphql_public` sin la extensión detrás |
 | 7 | Roles y pertenencias | 16 roles. Extra: `supabase_functions_admin` (runtime de edge autohospedado) | 16 roles. Extra: `cli_login_postgres` | Indirecto — cada consulta del e2e pasa por RLS. Los dos extras se explican por la forma de cada entorno: **converge en lo que importa** |
-| 8 | **GUCs de base y de rol** | `app.settings.jwt_secret`, `app.settings.jwt_exp`. **Y nada más** | `app.settings.jwt_exp`, más `statement_timeout` 3s/8s, `lock_timeout=8s`, `idle_in_transaction_session_timeout=60000`, `session_preload_libraries=safeupdate`, `search_path="$user", public, auth, extensions` | **No** — ⚠️ la divergencia más consecuente de todo el inventario, ver «El hallazgo 4» |
+| 8 | **GUCs de base y de rol** | `statement_timeout` (anon 3s, authenticated/authenticator 8s), `lock_timeout=8s`, `idle_in_transaction_session_timeout=60000`, `default_transaction_read_only`, los 4 `search_path`, `session_preload_libraries=supautils, safeupdate`, `app.settings.{jwt_exp,jwt_secret}` | **Lo mismo**, salvo `session_preload_libraries` (sin `supautils`) y `app.settings.jwt_secret` (ausente) | **No** — pero **converge**. Ver «El hallazgo 4 — RETIRADO»: la divergencia que este spec afirmó aquí era un error de medición |
 | 9 | `cron.job` | **2** jobs, ambos `postgres`: `nightly-metrics`, `dashboard_monthly_rollup` | **3** — los dos de QA **más `archive_old_audit_logs`** (`0 2 * * *`, `postgres`) | **No** — el e2e no espera a las 02:00. ⚠️ un job que sólo corre en producción |
 | 10 | PostgREST — esquemas y `max-rows` | `DB_SCHEMAS=public,graphql_public`, `MAX_ROWS=1000` | `db_schema: public,graphql_public`, `max_rows: 1000` | Parcial — los datos del e2e no rozan `max-rows` |
 | 10b | **PostgREST — `extra_search_path`** | `public` | **`public, extensions`** | **No** — ⚠️ divergencia |
@@ -312,41 +312,65 @@ del runtime autohospedado). **`whatsapp-webhook` no está en ninguno de los dos.
 No es una divergencia QA↔prod — es código que no corre en ninguna parte, y va
 anotado aquí para que quien lo lea no asuma que está vivo.
 
-#### El hallazgo 4 — producción tiene límites de tiempo que QA no tiene
+#### El hallazgo 4 — RETIRADO. Era un error de medición mío, del tipo exacto que este spec persigue
 
-Es la divergencia más consecuente de las dieciséis filas, y no estaba en la
-lista de superficies que el spec enumeró.
+> **Corrección (2026-09-10, posterior).** Este spec afirmó que producción tenía
+> `statement_timeout`, `lock_timeout`, `idle_in_transaction_session_timeout` y
+> `safeupdate` y que **QA no tenía ninguno**. **Es falso.** QA los tiene, y son
+> prácticamente los mismos. La fila 8 **converge**.
 
-| GUC | Producción | QA |
+**Cómo se produjo el error, porque importa más que el error.** La consulta con
+la que medí QA era:
+
+```sql
+SELECT datname || ' :: ' || unnest(setconfig)
+  FROM pg_db_role_setting s LEFT JOIN pg_database d ON d.oid = s.setdatabase;
+```
+
+Sin `coalesce`. Los ajustes por rol a nivel de cluster tienen `setdatabase = 0`,
+así que `datname` es **NULL** — y en SQL `NULL || ' :: ' || x` es NULL. Las
+quince filas de QA salieron como **líneas en blanco**. Vi cuatro líneas vacías
+en la salida y las leí como «QA no tiene nada».
+
+La consulta de producción sí llevaba `coalesce(d.datname, '<cluster>')`, así que
+esas mismas filas sí se imprimieron. **Comparé una salida completa contra una
+mutilada y llamé divergencia a la diferencia.**
+
+Es literalmente el patrón que este spec existe para cazar —una medición que no
+midió, leída como un hecho— cometido por el propio inventario que lo persigue.
+Y sobrevivió porque nadie revisó la fase 1: su línea de evidencia dice que no
+hubo review adversarial porque «cada fila lleva escrito el comando que la
+produjo». El comando estaba escrito, sí, y **era el comando equivocado**. Tener
+el comando a la vista no sustituye a que alguien lo lea.
+
+**Medido de nuevo, con `coalesce` en los dos lados:**
+
+| Ajuste | Producción | QA |
 |---|---|---|
-| `statement_timeout` | **3s / 8s** según el rol | *sin fijar* |
-| `lock_timeout` | **8s** | *sin fijar* |
-| `idle_in_transaction_session_timeout` | **60000** (60s) | *sin fijar* |
-| `session_preload_libraries` | **`safeupdate`** | *sin fijar* |
-| `search_path` | `"$user", public, auth, extensions` | *sin fijar* |
+| `statement_timeout` | `anon` 3s · `authenticated` 8s · `authenticator` 8s | **idéntico** |
+| `lock_timeout` | `authenticator` 8s | **idéntico** |
+| `idle_in_transaction_session_timeout` | `supabase_auth_admin` 60000 | **idéntico** |
+| `default_transaction_read_only` | `supabase_read_only_user` on | **idéntico** |
+| `search_path` (4 roles) | `auth`, `storage`, `postgres`, `supabase_admin` | **idéntico** |
+| `session_preload_libraries` | `safeupdate` | `supautils, safeupdate` |
+| `app.settings.jwt_secret` | *ausente* | presente |
 
-**Una consulta lenta se corta en producción y en QA no.** Una migración, un
-backfill o una RPC que tarde 10 segundos pasa `e2e-qa` en verde y muere en
-producción con `canceling statement due to statement timeout`. QA no puede
-reproducirlo porque no tiene reloj.
+Divergencias reales que quedan, las tres **menores**:
 
-Esto explica, y por fin **mide**, algo que ya se sabía por experiencia: los
-backfills de migración revientan en producción y en ningún otro sitio. Se
-atribuía sólo al volumen de datos (~112k despachos / ~61k bultos). El volumen
-es real, pero **no es la única causa**: hay un `statement_timeout` de 3 a 8
-segundos que en QA sencillamente no existe.
+1. **`session_preload_libraries`** — QA carga `supautils` además de
+   `safeupdate`. QA tiene de más, no de menos: no abre ningún agujero de
+   cobertura.
+2. **`app.settings.jwt_secret`** — existe sólo en QA, que es autohospedado y lo
+   necesita. Producción gestiona su secreto por otra vía.
+3. **`supabase_functions_admin` y su `search_path`** — sólo en QA, por el
+   runtime de edge autohospedado. Ya recogido en la fila 7.
 
-`session_preload_libraries=safeupdate` es de la misma familia: en producción
-un `UPDATE`/`DELETE` sin `WHERE` se rechaza; en QA se ejecuta. Y el
-`search_path` de producción incluye `auth` y `extensions`, que en QA no están —
-la misma clase de problema que la fila 10b, en la capa de la base en vez de en
-PostgREST.
-
-**Está fuera del alcance declarado del spec** («fuera de alcance: el volumen de
-datos»), y con razón: esto **no es volumen**, es configuración, que es
-exactamente lo que el spec sí persigue. La exclusión de «hacer QA más grande»
-sigue siendo correcta; lo que hay que copiar a QA no son los datos, son los
-relojes.
+**Lo que se cae con esta corrección:** la explicación de que los backfills
+revientan en producción «porque QA no tiene reloj». **QA tiene el mismo reloj.**
+Vuelve a ser lo que ya se sabía: el volumen de datos (~112k despachos / ~61k
+bultos), que el spec declara explícitamente fuera de alcance. La conclusión
+anterior —«lo que hay que copiar a QA no son los datos, son los relojes»— era
+falsa y queda retirada.
 
 #### El hallazgo 2, resuelto: no es una divergencia, es un bug de producto
 
@@ -375,8 +399,19 @@ entorno se explica solo (`supabase_functions_admin` en QA por el runtime
 autohospedado; `cli_login_postgres` en producción).
 
 El spec preguntaba «qué superficies de producción no existen en QA». La
-respuesta honesta es: **menos de las que se temía, pero las que faltan son
-peores de lo que se temía** — nadie había mirado los relojes.
+respuesta honesta, después de corregir el error de medición de la fila 8, es
+que **QA se parece a producción bastante más de lo que este spec supuso al
+empezar**. Lo que queda es real y está arriba —el alta de usuarios, MFA, la
+rotación de refresh tokens, el `extra_search_path` de PostgREST, un cron job de
+más y `pg_net` de menos— pero ninguna de esas cosas es la catástrofe silenciosa
+que la primera lectura creyó ver.
+
+La lección de la fase 1 no acabó siendo una divergencia concreta. Es ésta: **el
+inventario se equivocó exactamente igual que el pipeline que audita** — una
+consulta que devolvió NULLs, leída como un hecho. La regla de admisión del spec
+(«cada fila se llena con el resultado de un comando, y el comando queda escrito
+en la fila») es necesaria y **no es suficiente**: el comando estaba escrito y
+era el equivocado. Lo que faltó fue que alguien lo leyera.
 
 #### Tres hallazgos que no necesitaban la columna de producción
 
