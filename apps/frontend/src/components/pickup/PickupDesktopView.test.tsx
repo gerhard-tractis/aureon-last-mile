@@ -115,5 +115,45 @@ describe('PickupDesktopView', () => {
       expect(screen.queryByRole('button', { name: 'Cargar más' })).toBeNull();
       expect(screen.getByText('Mostrando 5 de 5')).toBeInTheDocument();
     });
+
+    // A "load more" that never resets is a trap for tab 2: click "Cargar
+    // más" once on the pending tab (revealing more than PAGE_SIZE), then
+    // switch away — without a reset, `Math.min(visibleCount, totalForTab)`
+    // hides the bug whenever the new list happens to be shorter than what
+    // was already revealed, so both fixtures below stay ABOVE PAGE_SIZE.
+    it('resets to the first page when the tab changes', async () => {
+      const props = baseProps({
+        pendingRows: manyRows(12),
+        visibleRows: manyRows(12),
+        totals: { manifests: 12, orders: 1, packages: 1 },
+      });
+      const { rerender } = render(<PickupDesktopView {...props} />);
+      await userEvent.click(screen.getByRole('button', { name: 'Cargar más' }));
+      expect(screen.getByText('Mostrando 12 de 12')).toBeInTheDocument();
+
+      rerender(
+        <PickupDesktopView
+          {...props}
+          tab="in_transit"
+          inTransitRows={manyRows(9)}
+          visibleRows={manyRows(9)}
+        />,
+      );
+      expect(screen.getByText('Mostrando 7 de 9')).toBeInTheDocument();
+    });
+
+    it('resets to the first page when the search term changes', async () => {
+      const props = baseProps({
+        pendingRows: manyRows(12),
+        visibleRows: manyRows(12),
+        totals: { manifests: 12, orders: 1, packages: 1 },
+      });
+      const { rerender } = render(<PickupDesktopView {...props} />);
+      await userEvent.click(screen.getByRole('button', { name: 'Cargar más' }));
+      expect(screen.getByText('Mostrando 12 de 12')).toBeInTheDocument();
+
+      rerender(<PickupDesktopView {...props} searchTerm="CARGA-1" visibleRows={manyRows(9)} />);
+      expect(screen.getByText('Mostrando 7 de 9')).toBeInTheDocument();
+    });
   });
 });

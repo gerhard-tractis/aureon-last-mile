@@ -105,9 +105,8 @@ function PickupPageContent() {
   // spec-94 fase 2 — the union of all four cubes, not just pending: a
   // retailer with every load already routed would otherwise lose its
   // filter chip exactly when it's needed.
-  // spec-95 fase 8 — the counts themselves are what feeds the chips now
-  // (mock 5a:88-95); dropping down to `.name` here, like this used to,
-  // would leave ClientFilter with nothing to render but a fabricated "· 0".
+  // spec-95 fase 8 — the counts feed the chips now (mock 5a:88-95); mapping
+  // down to `.name` here would leave ClientFilter with a fabricated "· 0".
   const clients = clientBreakdown([...pending, ...routed, ...inTransit, ...completed]);
 
   const visibleRows = rowsForTab(tab, pendingRows, inTransitRows, completedRows)
@@ -176,10 +175,9 @@ function PickupPageContent() {
    * Making it required would be a tsc error on that prop type and, at
    * runtime, would hand `undefined` to the RPC as the crew.
    */
-  // spec-95 fase 8 — `viewQr` (mock 5a:224-225, "Ver QR de la ruta") sends
-  // the driver to the new route's own QR page instead of the active-route
-  // screen. Defaulted, for the same reason `crewIds` is: mobile calls this
-  // with `(vehicleId, crewIds)` and never knows about the QR shortcut.
+  // spec-95 fase 8 — `viewQr` (mock 5a:224-225) sends the driver to the new
+  // route's QR page instead of the active-route screen. Defaulted, like
+  // `crewIds`: mobile calls this without knowing about the QR shortcut.
   const handleCreateRoute = (vehicleId: string, crewIds: string[] = [], viewQr = false) => {
     startMut.mutate(
       { vehicleId, crewUserIds: crewIds },
@@ -198,9 +196,7 @@ function PickupPageContent() {
             toast.error(partialAttachMessage(failedLoadIds, attempted));
           }
           setSelectedIds(new Set());
-          router.push(
-            viewQr ? `/app/pickup/route/${route.id}/qr` : '/app/pickup/route/active',
-          );
+          router.push(viewQr ? `/app/pickup/route/${route.id}/qr` : '/app/pickup/route/active');
         },
         // spec-61 Task 5 — ONE surface per screen, not two. Mobile renders
         // this same message as a persistent role="alert" inside 3j, right
@@ -279,9 +275,8 @@ function PickupPageContent() {
           onOpen={(row) => { void handleRowOpen(row); }}
           operatorId={operatorId}
           selectedManifests={selectedManifests}
-          // Desktop's second arg is `viewQr`, not `crewIds` — `1l` has no
-          // crew picker, so it lands in the THIRD position here instead of
-          // handleCreateRoute's own second.
+          // Desktop's 2nd arg is `viewQr`, not `crewIds` — `1l` has no crew
+          // picker, so it lands in handleCreateRoute's 3rd position here.
           onCreateRoute={(vehicleId, viewQr) => handleCreateRoute(vehicleId, [], viewQr)}
           isCreatingRoute={startMut.isPending || addMut.isPending}
           canLead={canLeadPickupRoute(role)}

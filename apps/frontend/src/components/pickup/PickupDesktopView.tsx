@@ -1,13 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Search, X } from 'lucide-react';
-import { Input } from '@/components/ui/input';
 import { StatTile } from '@/components/StatTile';
 import { ClientFilter, type ClientCount } from '@/components/pickup/ClientFilter';
 import { ActiveRouteBanner } from '@/components/pickup/ActiveRouteBanner';
 import { ManifestTable, type ManifestRow } from '@/components/pickup/ManifestTable';
 import { RoutedManifestTable } from '@/components/pickup/RoutedManifestTable';
+import { ManifestListFooter } from '@/components/pickup/ManifestListFooter';
+import { ManifestSearchBar } from '@/components/pickup/ManifestSearchBar';
 import { PickupRouteDraftPanel } from '@/components/pickup/PickupRouteDraftPanel';
 import { TodayClosuresPanel } from '@/components/pickup/TodayClosuresPanel';
 import type { ClosureRow } from '@/hooks/pickup/pickupSummary';
@@ -182,32 +182,7 @@ export function PickupDesktopView({
           <StatTile label="Completados hoy" value={closures.length} tone="success" />
         </div>
 
-        {/* spec-95 fase 8 (mock 5a:82-95) — the module's OWN search bar gets
-            its own bar, ahead of the client chips. The app-wide search
-            (orden/paquete/RUT, mock 5a:63-67) already lives in TopBar
-            (`onOpenSearch`, gated by `showOpsTools`) — nothing to add here
-            for that half of the checklist, it was never owned by this
-            module. */}
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
-          <Input
-            type="search"
-            placeholder="Buscar carga, punto de recogida o cliente en este módulo"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-9 pr-9"
-          />
-          {searchTerm && (
-            <button
-              type="button"
-              aria-label="Limpiar búsqueda"
-              onClick={() => setSearchTerm('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </div>
+        <ManifestSearchBar value={searchTerm} onChange={setSearchTerm} />
 
         {clients.length > 0 && (
           <ClientFilter clients={clients} selected={selectedClient} onSelect={setSelectedClient} />
@@ -285,22 +260,11 @@ export function PickupDesktopView({
             }
           })()}
 
-          {totalForTab > 0 && (
-            <div className="flex flex-none items-center gap-2.5 border-t border-border bg-background px-4 py-2.5">
-              <span className="text-[11px] text-text-secondary">
-                Mostrando {shownCount} de {totalForTab}
-              </span>
-              {shownCount < totalForTab && (
-                <button
-                  type="button"
-                  onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
-                  className="ml-auto rounded-md border border-border bg-surface px-2.5 py-1.5 text-[11px] font-medium text-text hover:bg-surface-raised"
-                >
-                  Cargar más
-                </button>
-              )}
-            </div>
-          )}
+          <ManifestListFooter
+            shownCount={shownCount}
+            totalCount={totalForTab}
+            onLoadMore={() => setVisibleCount((c) => c + PAGE_SIZE)}
+          />
         </section>
       </div>
 
