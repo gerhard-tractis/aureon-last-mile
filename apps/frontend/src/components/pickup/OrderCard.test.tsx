@@ -91,7 +91,7 @@ describe('OrderCard', () => {
   it('shows empty state for order with 0 packages', () => {
     render(<OrderCard {...defaultProps} order={{ ...mockOrder, packages: [] }} />);
     fireEvent.click(screen.getByLabelText('Toggle order details'));
-    expect(screen.getByText(/No packages/)).toBeInTheDocument();
+    expect(screen.getByText(/Sin bultos/i)).toBeInTheDocument();
   });
 
   // spec-82 fase 2, revisión B2 (ronda 3) — "0/2" con badge gris, sin red,

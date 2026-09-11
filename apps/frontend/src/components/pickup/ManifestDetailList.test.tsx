@@ -44,12 +44,12 @@ describe('ManifestDetailList', () => {
 
   it('renders section title', () => {
     render(<ManifestDetailList {...defaultProps} />);
-    expect(screen.getByText('Orders & Packages')).toBeInTheDocument();
+    expect(screen.getByText('Órdenes y bultos')).toBeInTheDocument();
   });
 
   it('renders summary badge with correct counts', () => {
     render(<ManifestDetailList {...defaultProps} />);
-    expect(screen.getByText('1/3 verified')).toBeInTheDocument();
+    expect(screen.getByText('1/3 verificados')).toBeInTheDocument();
   });
 
   it('renders all order cards', () => {
@@ -67,14 +67,14 @@ describe('ManifestDetailList', () => {
   it('shows error state with retry button', () => {
     const onRetry = vi.fn();
     render(<ManifestDetailList {...defaultProps} isError={true} orders={[]} onRetry={onRetry} />);
-    expect(screen.getByText(/Failed to load/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    expect(screen.getByText(/No se pudieron cargar/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /reintentar/i }));
     expect(onRetry).toHaveBeenCalled();
   });
 
   it('shows empty state when no orders', () => {
     render(<ManifestDetailList {...defaultProps} orders={[]} />);
-    expect(screen.getByText(/No orders found/)).toBeInTheDocument();
+    expect(screen.getByText(/No se encontraron órdenes/i)).toBeInTheDocument();
   });
 
   // spec-82 fase 2, revisión B2 (ronda 3) — sin red, `scans` llega vacío
@@ -82,15 +82,15 @@ describe('ManifestDetailList', () => {
   // haya verificado. "0/3 verified" es una afirmación fabricada sobre
   // trabajo que sí existe pero no se puede confirmar sin conexión.
   describe('scansUnknown (B2, ronda 3)', () => {
-    it('shows "—/N verified" instead of a fabricated 0 when scan data is unknown', () => {
+    it('shows "—/N verificados" instead of a fabricated 0 when scan data is unknown', () => {
       render(<ManifestDetailList {...defaultProps} scans={[]} scansUnknown />);
-      expect(screen.getByText('—/3 verified')).toBeInTheDocument();
-      expect(screen.queryByText('0/3 verified')).toBeNull();
+      expect(screen.getByText('—/3 verificados')).toBeInTheDocument();
+      expect(screen.queryByText('0/3 verificados')).toBeNull();
     });
 
     it('still shows the real count when scansUnknown is false (default)', () => {
       render(<ManifestDetailList {...defaultProps} />);
-      expect(screen.getByText('1/3 verified')).toBeInTheDocument();
+      expect(screen.getByText('1/3 verificados')).toBeInTheDocument();
     });
   });
 });

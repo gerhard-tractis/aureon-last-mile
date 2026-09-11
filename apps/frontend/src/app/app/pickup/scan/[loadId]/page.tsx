@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { ScannerInput } from '@/components/pickup/ScannerInput';
+import { ScannerInput, type ScannerInputHandle } from '@/components/pickup/ScannerInput';
 import { ScanHistoryList } from '@/components/pickup/ScanHistoryList';
 import { ScanResultPopup } from '@/components/pickup/ScanResultPopup';
 import { ScanResultCard } from '@/components/pickup/ScanResultCard';
@@ -25,6 +25,8 @@ import { useOfflineScanSource } from '@/hooks/pickup/useOfflineScanSource';
 import { ManifestNotDownloadedNotice } from '@/components/pickup/ManifestNotDownloadedNotice';
 import { OfflinePickupNotice } from '@/components/pickup/OfflinePickupNotice';
 import { effectiveManifestFields } from '@/lib/pickup/effectiveManifestFields';
+import { openPendingManifest } from '@/lib/pickup/openPendingManifest';
+import { ScanScreenFooter } from '@/components/pickup/ScanScreenFooter';
 
 export default function ScanningPage() {
   const params = useParams();
@@ -41,6 +43,7 @@ export default function ScanningPage() {
   const [startTime] = useState(() => Date.now());
   const [elapsed, setElapsed] = useState('00:00');
   const [userId, setUserId] = useState<string | null>(null);
+  const scannerRef = useRef<ScannerInputHandle>(null);
 
   // spec-54 mock 1h — real device queue state for the "COLA N" badge.
   // spec-81 fase 1: `useSyncQueue` now also counts `db.pickup_queue`, the
@@ -70,6 +73,21 @@ export default function ScanningPage() {
     // abajo. Evita una llamada de red condenada a quedar pendiente/fallar.
     if (sync.status === 'offline') return;
     const supabase = createSPAClient();
+    // Ampliación de alcance, fase 5 (coordinación 2026-09-10) — este es el
+    // único punto de entrada real de la cuadrilla al escaneo: abre ruta →
+    // toca manifiesto → navega aquí sin pasar por `openPendingManifest`
+    // (hoy sólo la llama el escritorio, ver `app/pickup/page.tsx`). Sin
+    // esto `manifests.started_at` se queda NULL para siempre en ese camino
+    // y `DURACIÓN` en la pantalla de firma pinta "—" siempre, no a veces.
+    // `openPendingManifest` es idempotente por status ('pending' → escribe
+    // una vez; 'in_progress' → no vuelve a tocar `started_at`), así que
+    // reabrir esta pantalla no reinicia el reloj.
+    // L1, review de fase 5 — `.catch`, no dejar el rechazo sin manejar: sin
+    // esto, un fallo de red aquí salía como *unhandled rejection* en vez de
+    // un error visible/registrado.
+    openPendingManifest(supabase, operatorId, loadId).catch((error) => {
+      console.error('No se pudo marcar el inicio del escaneo (started_at)', error);
+    });
     supabase
       .from('manifests')
       .select('id, total_packages, pickup_route_id, retailer_name, pickup_location')
@@ -299,7 +317,15 @@ export default function ScanningPage() {
           simplemente no existía para el operario. Con `w-full` el ancho
           vuelve a ser el del contenedor y `max-w-2xl` es sólo un techo en
           escritorio. */}
-      <div className="w-full space-y-4 p-4 sm:p-6 pb-28 max-w-2xl mx-auto">
+      {/* pb-44 (176px), no pb-28 (112px) — Review de fase 5, B1. El pie fijo
+          de dos filas mide pt-4(16) + primario h-[60px](60) +
+          space-y-2.5(10) + secundario py-[15px]+lh+2 bordes(52) +
+          pb-[26px](26) = 164px; pb-28 dejaba 112px, 52px cortos. Sin holgura
+          del tabbar (`/app/pickup/scan` está en MOBILE_IMMERSIVE_PREFIXES,
+          así que AppLayout no añade su propio padding), esos 52px de
+          "Historial de escaneos" quedaban bajo el pie fijo — que no ocupa
+          flujo — sin forma de hacer scroll hasta ellos. */}
+      <div className="w-full space-y-4 p-4 sm:p-6 pb-44 max-w-2xl mx-auto">
         <ScanResultPopup
           visible={showNotFoundPopup}
           onDismiss={() => setShowNotFoundPopup(false)}
@@ -373,6 +399,7 @@ export default function ScanningPage() {
         )}
 
         <ScannerInput
+          ref={scannerRef}
           onScan={handleScan}
           disabled={scanMutation.isPending || sync.status === 'offline'}
         />
@@ -387,15 +414,11 @@ export default function ScanningPage() {
 
         <ScanResultCard {...latestScanResult} />
 
-        <div className="bg-surface border border-border rounded-lg">
-          <div className="px-3 pt-3 pb-1">
-            <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">Escaneos recientes</p>
-          </div>
-          <div className="p-3">
-            <ScanHistoryList scans={scans} scansUnknown={scansUnknown} />
-          </div>
-        </div>
-
+        {/* fase 5 (ronda 2 del mock, 5d) — "ÓRDENES Y BULTOS" va ENCIMA de
+            "HISTORIAL DE ESCANEOS": el mock viejo no dibujaba esta lista en
+            absoluto y el orden anterior (historial primero) era un
+            artefacto de cuándo se añadió cada bloque, no una decisión del
+            mock. */}
         <ManifestDetailList
           orders={effectiveOrders}
           scans={scans}
@@ -411,39 +434,26 @@ export default function ScanningPage() {
           isError={offline.snapshot ? false : ordersError}
           onRetry={() => refetchOrders()}
         />
-      </div>
 
-      {/*
-        spec-54 mock 1h fixed footer — 60px primary action, padding
-        16px/20px/26px per the handoff. The mock also specifies two
-        secondary 50%-width buttons here, both omitted deliberately:
-
-        - "Ingresar código" would open a manual-entry field that is already
-          on screen (ScannerInput doubles as the manual-entry surface for
-          this flow) — adding a second entry point would duplicate it
-          rather than unblock anything.
-        - "Cerrar carga" has no backing mutation at the manifest level on
-          this screen. The only close action that exists today is
-          `useClosePickupRoute`, which closes the whole pickup route
-          (potentially several manifests), not "this load" — using it here
-          would silently do something bigger than the label promises. A
-          per-manifest "finish this load" RPC would unblock adding it.
-      */}
-      <div className="fixed bottom-0 inset-x-0 bg-background border-t border-border pt-4 px-4 pb-[26px] sm:px-6">
-        <div className="max-w-2xl mx-auto">
-          <Button
-            onClick={() =>
-              router.push(
-                `/app/pickup/review/${encodeURIComponent(loadId)}`
-              )
-            }
-            className="w-full h-[60px] text-base"
-            size="lg"
-          >
-            Continuar a revisión
-          </Button>
+        <div className="bg-surface border border-border rounded-lg">
+          <div className="px-3 pt-3 pb-1">
+            <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">Historial de escaneos</p>
+          </div>
+          <div className="p-3">
+            <ScanHistoryList scans={scans} scansUnknown={scansUnknown} />
+          </div>
         </div>
       </div>
+
+      <ScanScreenFooter
+        onContinue={() => router.push(`/app/pickup/review/${encodeURIComponent(loadId)}`)}
+        onManualEntryRequested={() => scannerRef.current?.focus()}
+        // Review de fase 5, M3 — misma condición que deshabilita
+        // `ScannerInput` (línea de arriba): `focus()` sobre un
+        // `<input disabled>` no hace nada, así que el control no puede
+        // quedar habilitado cuando el campo al que apunta no lo está.
+        manualEntryDisabled={scanMutation.isPending || sync.status === 'offline'}
+      />
     </>
   );
 }

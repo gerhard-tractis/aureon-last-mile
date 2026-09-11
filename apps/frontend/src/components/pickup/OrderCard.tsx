@@ -108,7 +108,7 @@ export function OrderCard({ order, scans, onManualVerify, scansUnknown = false }
         <CardContent className="pt-0 pb-3 px-3 space-y-1">
           <p className="text-xs text-text-muted mb-2 truncate">{order.delivery_address}</p>
           {order.packages.length === 0 ? (
-            <p className="text-sm text-text-muted text-center py-2">No packages</p>
+            <p className="text-sm text-text-muted text-center py-2">Sin bultos</p>
           ) : (
             sortedPackages.map(pkg => (
               <PackageRow

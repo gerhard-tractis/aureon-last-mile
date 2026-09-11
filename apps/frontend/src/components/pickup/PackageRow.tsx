@@ -145,9 +145,14 @@ export function PackageRow({ pkg, isVerified, onManualVerify, existingBoxCount =
               // recuperar señal. Prometer el registro sería la misma
               // mentira que ManifestNotDownloadedNotice ya no dice.
               title={!isOnline ? 'Sin conexión — no se puede registrar el escaneo' : undefined}
-              aria-label="Mark verified"
+              // Review de fase 5, M1 — el mock (`5d`) escribe "Marcar"; el
+              // texto largo ("Marcar verificado") reabría la presión de
+              // ancho que #772 arregló a 375px. `aria-label` se queda más
+              // descriptivo porque, siendo explícito, reemplaza el texto
+              // visible como nombre accesible — no cuesta ancho de pantalla.
+              aria-label="Marcar verificado"
             >
-              Mark Verified
+              Marcar
             </Button>
           )}
         </div>
@@ -170,7 +175,7 @@ export function PackageRow({ pkg, isVerified, onManualVerify, existingBoxCount =
             <thead>
               <tr className="text-text-secondary">
                 <th className="text-left font-medium py-0.5 pr-3">SKU</th>
-                <th className="text-left font-medium py-0.5 pr-3">Descripcion</th>
+                <th className="text-left font-medium py-0.5 pr-3">Descripción</th>
                 <th className="text-right font-medium py-0.5">Cant.</th>
               </tr>
             </thead>

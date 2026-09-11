@@ -301,11 +301,11 @@ dibujaba. La ronda 2 lo incorpora y le añade dos cosas que hoy no tiene.
 > este mismo PR**: su decisión del 2026-08-21 fija el formato `ACOMPAÑANTES · N`
 > y ahora la cabecera es `ACOMPAÑANTES` + `N de M`.
 
-### Fase 5 — `5d` escaneo, y los cuatro textos en inglés `[pending]`
+### Fase 5 — `5d` escaneo, y los cuatro textos en inglés `[in_progress]`
 
 **Depende de:** ninguna
 
-**Archivos:** `apps/frontend/src/app/app/pickup/scan/[loadId]/page.tsx`, `apps/frontend/src/components/pickup/ScanHistoryList.tsx`, `apps/frontend/src/components/pickup/ScannerInput.tsx`, `apps/frontend/src/components/pickup/ManifestDetailList.tsx`, `apps/frontend/src/components/pickup/PackageRow.tsx`, y sus tests
+**Archivos:** `apps/frontend/src/app/app/pickup/scan/[loadId]/page.tsx`, `apps/frontend/src/components/pickup/ScanHistoryList.tsx`, `apps/frontend/src/components/pickup/ScannerInput.tsx`, `apps/frontend/src/components/pickup/ManifestDetailList.tsx`, `apps/frontend/src/components/pickup/PackageRow.tsx`, `apps/frontend/src/components/pickup/ScanScreenFooter.tsx`, `apps/frontend/src/components/pickup/ScanResultPopup.tsx`, `apps/frontend/src/components/pickup/OrderCard.tsx`, `apps/frontend/src/lib/pickup/openPendingManifest.ts`, y sus tests
 
 La ronda 2 **adopta** lo que la app ya tenía y el mock viejo no dibujaba: miga de
 pan, temporizador de sesión, «Imprimir etiquetas» y la lista de órdenes y bultos.
@@ -415,7 +415,7 @@ irreversible»). `5f2` lo rediseña como **hoja inferior** y le añade datos.
 - [ ] «Mostrando 7 de 12 · Cargar más» en vez de paginación con Anterior/Siguiente.
 - [ ] **No** se implementa la barra de ocupación: sigue `[parked]` en `spec-83` fase 3.
 
-### Fase 9 — `5g` el botón de flash `[in_progress]`
+### Fase 9 — `5g` el botón de flash `[done]`
 
 **Depende de:** ninguna
 
@@ -428,6 +428,22 @@ ya lo dibujaba antes de esta ronda.
 - [ ] Degradar en silencio donde el dispositivo no lo soporte — no mostrar un control muerto.
 
 ---
+
+> Implementado por: implementer — rama `feat/spec-95-fase-9-flash-camara`,
+> SHAs `20d8ac4` (flash con degradación silenciosa) + `0466273` (los cinco
+> hallazgos del review).
+> Review: reviewer (opus), una ronda, **veredicto NO mergeable** —
+> `'torch' in capabilities` daba `true` con `torch: false`, que es como los
+> dispositivos sin linterna se declaran, y **cinco mutaciones sobrevivían**.
+> Los cinco cerrados; el orquestador reverificó B1 a mano (reponer
+> `'torch' in capabilities` mata un test).
+> QA: PR #783 merged 2026-09-11, `gh pr checks 783` sin ningún check en rojo.
+> 70 tests sobre la superficie + 190 en pantallas contiguas. **`e2e-qa` no se
+> leyó por separado** — hueco declarado, no maquillado.
+> Downstream: revisado spec-80 (fase 4, que construyó esta hoja) y spec-81 —
+> **sin cambios**: ninguno afirma nada sobre capacidad de flash ni sobre
+> `applyConstraints`, y la extracción a `useTorch.ts` no cambió la API de
+> `ManifestCameraSheet` que ambos describen.
 
 ## Riesgos
 
@@ -476,3 +492,21 @@ persona con el teléfono en la mano, no de este spec.
 >
 > La lógica vive en `hooks/pickup/useTorch.ts` (capa `components → hooks`), lo
 > que devolvió `ManifestCameraSheet.tsx` a 299 líneas, bajo el límite de 300.
+
+> **Fase 5 — decisiones y desviaciones.** La ampliación de alcance
+> (`openPendingManifest`) es la que arregla `DURACIÓN`: ningún escritor fijaba
+> `manifests.started_at` en el camino de la cuadrilla. Verificado dos veces —
+> es el **único** escritor de `in_progress`, y añadirle `operator_id` al
+> `UPDATE` no puede vaciarlo porque el `id` sale de un `SELECT` filtrado por ese
+> mismo valor. La duración pasa a medirse desde que **se abre la pantalla de
+> escaneo**: decisión de producto, escrita aquí y no sólo en un commit.
+>
+> **Divergencias con `5d`, declaradas:** bajo «ÓRDENES Y BULTOS» el mock muestra
+> el conteo de **órdenes** y el código la **fracción verificada** (se mantuvo la
+> fracción); el mock dibuja una insignia `LECTOR LISTO` que no se añadió.
+>
+> **Deuda:** `page.tsx` queda en 459 líneas, sobre el límite de 300 — ya estaba
+> en 450 antes de esta fase. Y el efecto que fija `started_at` se re-dispara con
+> cada vaivén `online↔syncing`: coste de red redundante y una carrera de
+> milisegundos, **sin** pérdida de dato (el guard por `status === 'pending'` es
+> correcto y está testeado).
