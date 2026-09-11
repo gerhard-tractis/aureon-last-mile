@@ -123,7 +123,17 @@ jobs:
           CHANGED=$(git diff --name-only "${BASE}" "${DEPLOY_SHA}")
           echo "$CHANGED"
 
-          matches() { echo "$CHANGED" | grep -qE "$1" && echo true || echo false; }
+          # `echo "$VAR" | grep -q` es inseguro bajo `pipefail` (el shell por
+          # defecto de todo `run:` de Actions es `bash -eo pipefail`): `grep -q`
+          # sale en la PRIMERA coincidencia y cierra su extremo del pipe, el
+          # `echo` recibe SIGPIPE, el pipeline devuelve 141, y el `if` lo lee
+          # como "no coincidio". Falla ABIERTO — y aqui eso decide QUE SE
+          # DESPLIEGA: con una lista de rutas >64 KiB y la coincidencia al
+          # principio, `frontend`/`worker`/`agents`/`solver` quedan en `false`
+          # y ese job no corre, con la corrida en verde.
+          # La herestring no crea subproceso que matar. Medido en Ubuntu 22.04:
+          # 200 KB por pipe -> rc 141; por herestring -> rc 0.
+          matches() { grep -qE "$1" <<< "$CHANGED" && echo true || echo false; }
 
           # force_db overrides the database path filter only. It exists so a
           # migration backlog can be applied without an unrelated commit that
