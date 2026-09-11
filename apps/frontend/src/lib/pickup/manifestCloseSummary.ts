@@ -133,6 +133,36 @@ export function custodyNoticeCopy(
   return `${verifiedSentence} ${missingSentence}`;
 }
 
+/**
+ * spec-95 fase 7, mock `5f2` — la hoja de confirmación irreversible entre
+ * `5f` y `5i`. Mismas dos mitades que `custodyNoticeCopy` (verificados que
+ * pasan a custodia de Aureon, faltantes que quedan registrados), pero la
+ * frase del mock es OTRA: una sola oración de cuenta seguida siempre de
+ * "Esta acción es irreversible." — esa cola no depende de si hay faltantes,
+ * a diferencia de la segunda oración de `custodyNoticeCopy`, que se omite
+ * entera. No se reutiliza `custodyNoticeCopy` tal cual porque el texto no
+ * coincide (5f dice "quedan a nombre del local hasta que se resuelvan"; 5f2
+ * dice "quedan registrados como faltantes") — mismas cifras, copy distinto
+ * del mock, con el mismo criterio de concordancia ya establecido en este
+ * fichero (M1/M2 de `custodyNoticeCopy`).
+ */
+export function custodyConfirmationCopy(
+  verifiedCount: number,
+  missingCount: number,
+): string {
+  const verifiedNoun = verifiedCount === 1 ? 'paquete' : 'paquetes';
+  const verifiedVerb = verifiedCount === 1 ? 'pasa' : 'pasan';
+  const base = `${verifiedCount} ${verifiedNoun} ${verifiedVerb} a custodia de Aureon`;
+
+  if (missingCount === 0) return `${base}. Esta acción es irreversible.`;
+
+  const missingVerb = missingCount === 1 ? 'queda' : 'quedan';
+  const missingAdj = missingCount === 1 ? 'registrado' : 'registrados';
+  const missingNoun = missingCount === 1 ? 'faltante' : 'faltantes';
+
+  return `${base} y ${missingCount} ${missingVerb} ${missingAdj} como ${missingNoun}. Esta acción es irreversible.`;
+}
+
 export function summarizePendingRouteManifests(
   manifests: PendingRouteManifest[],
   closedManifestId: string,

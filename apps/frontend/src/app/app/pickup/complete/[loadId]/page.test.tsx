@@ -15,6 +15,39 @@ vi.mock('@/components/pickup/ManifestPhotoStrip', () => ({
   },
 }));
 
+// Ronda 2 de review de spec-95 fase 7 (hallazgo 3, mayor) — mismo patrón que
+// `ManifestPhotoStrip` arriba: `CustodyConfirmationSheet` tiene su propia
+// suite exhaustiva (`CustodyConfirmationSheet.test.tsx` — título, copy,
+// tirador, Firmas/Respaldo en sus dos ramas, foco, `role`, botón Close
+// oculto). Aquí sólo importa el CABLEADO página → hoja: sin este doble que
+// registra los props recibidos, una mutación que sustituye
+// `serverPhotosCount`/`queuedPhotosCount`/`isSubmitting` por literales fijos
+// pasaba los 45/45 tests de este fichero — la hoja que TRANSFIERE CUSTODIA
+// habría dicho "Respaldo: 0 fotos" con fotos reales confirmadas, y nada lo
+// habría atrapado. El doble no cierra solo al confirmar (a diferencia del
+// componente real, que si cierra) — así puede quedarse abierto el tiempo
+// suficiente para que un test lea `isSubmitting` en pleno vuelo.
+const mockCustodySheetProps: Array<Record<string, unknown>> = [];
+vi.mock('@/components/pickup/CustodyConfirmationSheet', () => ({
+  CustodyConfirmationSheet: (props: Record<string, unknown>) => {
+    mockCustodySheetProps.push(props);
+    if (!props.open) return null;
+    return (
+      <div data-testid="custody-sheet-mock">
+        <button type="button" onClick={() => (props.onConfirm as () => void)()}>
+          Sí, cerrar la carga
+        </button>
+        <button
+          type="button"
+          onClick={() => (props.onOpenChange as (open: boolean) => void)(false)}
+        >
+          Volver a revisar
+        </button>
+      </div>
+    );
+  },
+}));
+
 const mockUsePickupScans = vi.fn();
 vi.mock('@/hooks/pickup/usePickupScans', () => ({
   usePickupScans: (...args: unknown[]) => mockUsePickupScans(...args),
@@ -159,6 +192,7 @@ vi.mock('@/hooks/useOfflineQueue', () => ({
 describe('CompletionPage', () => {
   beforeEach(() => {
     mockManifestPhotoStripProps.length = 0;
+    mockCustodySheetProps.length = 0;
     mockManifestRow = {
       id: 'm1',
       started_at: new Date().toISOString(),
@@ -498,6 +532,125 @@ describe('CompletionPage', () => {
     });
   });
 
+  // spec-95 fase 7, mock `5f2` — el diálogo irreversible pasa de
+  // `AlertDialog` centrado a una hoja inferior (`CustodyConfirmationSheet`,
+  // mockeado arriba con captura de props — su propio render real, con foco,
+  // `role` y contenido, vive en `CustodyConfirmationSheet.test.tsx`). Este
+  // grupo cubre SÓLO el cableado desde la página: qué valores le llegan.
+  //
+  // Ronda 2 de review (hallazgo 3, mayor) — la versión anterior de este
+  // grupo comprobaba el DOM del componente real; una mutación que sustituía
+  // `serverPhotosCount`/`queuedPhotosCount`/`isSubmitting` por literales fijos
+  // pasaba esos 45/45 tests igual, porque nada leía esos props concretos.
+  describe('5f2 — custody confirmation sheet (cableado página → hoja)', () => {
+    const openSheet = async () => {
+      render(<CompletionPage />);
+      const sigPad = await screen.findByTestId('signature-pad-Firma del operador (obligatoria)');
+      fireEvent.click(sigPad);
+      fireEvent.click(await screen.findByRole('button', { name: /confirmar y cerrar carga/i }));
+      await screen.findByTestId('custody-sheet-mock');
+    };
+
+    // scans por defecto (beforeEach): 2 verificados; missingPackages: 1.
+    it('passes the real verified/missing counts, not zeros', async () => {
+      await openSheet();
+      const lastProps = mockCustodySheetProps.at(-1);
+      expect(lastProps).toEqual(
+        expect.objectContaining({ open: true, verifiedCount: 2, missingCount: 1 })
+      );
+    });
+
+    // Mata la mutación `serverPhotosCount={0}, queuedPhotosCount={0}`: con
+    // documentos confirmados y algo en cola (valores DISTINTOS de 0 y entre
+    // sí), un literal fijo no puede coincidir con ambos a la vez.
+    it('passes the real serverPhotosCount and queuedPhotosCount, not hardcoded zeros', async () => {
+      mockUseManifestDocuments.mockReturnValue({ data: [{ id: 'd1' }, { id: 'd2' }] });
+      mockUseQueuedManifestPhotoCount.mockReturnValue(3);
+
+      await openSheet();
+
+      const lastProps = mockCustodySheetProps.at(-1);
+      expect(lastProps).toEqual(
+        expect.objectContaining({ serverPhotosCount: 2, queuedPhotosCount: 3 })
+      );
+    });
+
+    it('passes operatorName, and clientName=null when the client has not signed', async () => {
+      await openSheet();
+      const lastProps = mockCustodySheetProps.at(-1);
+      expect(lastProps).toEqual(
+        expect.objectContaining({ operatorName: 'Test User', clientName: null })
+      );
+    });
+
+    it('passes clientName once the client actually signed', async () => {
+      render(<CompletionPage />);
+      const sigPad = await screen.findByTestId('signature-pad-Firma del operador (obligatoria)');
+      fireEvent.click(sigPad);
+
+      fireEvent.click(screen.getByLabelText('Agregar firma del cliente'));
+      fireEvent.change(screen.getByPlaceholderText('Nombre del cliente'), {
+        target: { value: 'Marcela Rojas' },
+      });
+      const clientSig = await screen.findByTestId('signature-pad-Firma del cliente (opcional)');
+      fireEvent.click(clientSig);
+
+      fireEvent.click(await screen.findByRole('button', { name: /confirmar y cerrar carga/i }));
+      await screen.findByTestId('custody-sheet-mock');
+
+      const lastProps = mockCustodySheetProps.at(-1);
+      expect(lastProps).toEqual(expect.objectContaining({ clientName: 'Marcela Rojas' }));
+    });
+
+    // Mata la mutación de leer `clientName` sin el guard de
+    // `clientSignature`: un nombre escrito en el campo sin trazo dibujado
+    // NO es una firma — "Firmas" no puede afirmar que el local firmó
+    // cuando sólo tecleó su nombre.
+    it('keeps clientName=null when the name was typed but never signed', async () => {
+      render(<CompletionPage />);
+      const sigPad = await screen.findByTestId('signature-pad-Firma del operador (obligatoria)');
+      fireEvent.click(sigPad);
+
+      fireEvent.click(screen.getByLabelText('Agregar firma del cliente'));
+      fireEvent.change(screen.getByPlaceholderText('Nombre del cliente'), {
+        target: { value: 'Marcela Rojas' },
+      });
+      // Sin clic en el pad de firma del cliente — sólo el nombre, sin trazo.
+
+      fireEvent.click(await screen.findByRole('button', { name: /confirmar y cerrar carga/i }));
+      await screen.findByTestId('custody-sheet-mock');
+
+      const lastProps = mockCustodySheetProps.at(-1);
+      expect(lastProps).toEqual(expect.objectContaining({ clientName: null }));
+    });
+
+    // Mata la mutación `isSubmitting={false}`: `handleComplete` marca
+    // `isSubmitting=true` de forma SÍNCRONA (antes del primer `await`), así
+    // que ese render ya está confirmado en cuanto `fireEvent.click` retorna
+    // — sin esperar a que el RPC (una promesa ya resuelta en el doble)
+    // drene su microtarea. Este doble, a diferencia del componente real, NO
+    // se cierra solo al confirmar — por eso sigue montado para poder leerlo.
+    it('flips isSubmitting to true synchronously once confirm is tapped', async () => {
+      await openSheet();
+      mockCustodySheetProps.length = 0; // sólo interesa lo que pasa DESPUÉS del clic
+
+      fireEvent.click(screen.getByRole('button', { name: 'Sí, cerrar la carga' }));
+
+      expect(mockCustodySheetProps.some((p) => p.isSubmitting === true)).toBe(true);
+    });
+
+    it('"Volver a revisar" closes the sheet WITHOUT calling close_manifest', async () => {
+      await openSheet();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Volver a revisar' }));
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('custody-sheet-mock')).not.toBeInTheDocument();
+      });
+      expect(mockRpc).not.toHaveBeenCalledWith('close_manifest', expect.anything());
+    });
+  });
+
   // spec-80 fase 3 — "bloque de fotos arriba" (5f): el respaldo fotográfico
   // se monta antes de la línea de seguridad offline y de ambas firmas.
   it('renders the manifest photo strip before the offline-safety line (5f: fotos arriba)', async () => {
@@ -550,7 +703,7 @@ describe('CompletionPage', () => {
     fireEvent.click(submitButton);
 
     const confirmButton = await screen.findByRole('button', {
-      name: /confirmar y completar/i,
+      name: 'Sí, cerrar la carga',
     });
     fireEvent.click(confirmButton);
 
@@ -584,7 +737,7 @@ describe('CompletionPage', () => {
     fireEvent.click(submitButton);
 
     const confirmButton = await screen.findByRole('button', {
-      name: /confirmar y completar/i,
+      name: 'Sí, cerrar la carga',
     });
     fireEvent.click(confirmButton);
   };
@@ -655,14 +808,19 @@ describe('CompletionPage', () => {
     const operatorSig = await screen.findByTestId('signature-pad-Firma del operador (obligatoria)');
     fireEvent.click(operatorSig);
 
-    // "Agregar firma del cliente" → firma del cliente, para que
-    // signaturesCount sea 2, no el 1 por defecto.
+    // "Agregar firma del cliente" → nombre + firma del cliente, para que
+    // signaturesCount sea 2, no el 1 por defecto. Ronda 2 de review de
+    // spec-95 fase 7 (hallazgo 5a) — signaturesCount ahora exige AMBOS
+    // (nombre y trazo), no sólo el trazo.
     fireEvent.click(screen.getByLabelText('Agregar firma del cliente'));
+    fireEvent.change(screen.getByPlaceholderText('Nombre del cliente'), {
+      target: { value: 'Marcela Rojas' },
+    });
     const clientSig = await screen.findByTestId('signature-pad-Firma del cliente (opcional)');
     fireEvent.click(clientSig);
 
     fireEvent.click(screen.getByRole('button', { name: /confirmar y cerrar carga/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /confirmar y completar/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Sí, cerrar la carga' }));
 
     await screen.findByText('Carga cerrada');
     expect(within(screen.getByTestId('summary-row-unexpected')).getByText('1')).toBeInTheDocument();
@@ -675,6 +833,29 @@ describe('CompletionPage', () => {
   // "Respaldo" de `5i`. `documents.length` fijo en 3 aquí (ver el test de
   // arriba) — si el merge se rompiera y `photosCount` volviera a leer sólo
   // `documents.length`, este test seguiría viendo "3 fotos", no "5 fotos".
+  // Ronda 2 de review de spec-95 fase 7 (hallazgo 5a) — un trazo de firma
+  // SIN nombre no debe contarse como un segundo firmante en `5i`, o esta
+  // pantalla contradice a `5f2` (que, con el mismo dato, NO nombra a nadie
+  // bajo "Firmas" — ver `CustodyConfirmationSheet.test.tsx`).
+  it('does not count an unnamed client signature as a second "firma" in 5i, matching 5f2', async () => {
+    render(<CompletionPage />);
+    const sigPad = await screen.findByTestId('signature-pad-Firma del operador (obligatoria)');
+    fireEvent.click(sigPad);
+
+    fireEvent.click(screen.getByLabelText('Agregar firma del cliente'));
+    const clientSig = await screen.findByTestId('signature-pad-Firma del cliente (opcional)');
+    fireEvent.click(clientSig);
+    // Sin nombre tecleado.
+
+    fireEvent.click(screen.getByRole('button', { name: /confirmar y cerrar carga/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Sí, cerrar la carga' }));
+
+    await screen.findByText('Carga cerrada');
+    expect(
+      within(screen.getByTestId('summary-row-backup')).getByText(/· 1 firmas$/)
+    ).toBeInTheDocument();
+  });
+
   it('adds queuedPhotoCount to documents.length in "Respaldo" — server-confirmed plus not-yet-confirmed', async () => {
     mockUseManifestDocuments.mockReturnValue({
       data: [{ id: 'd1' }, { id: 'd2' }, { id: 'd3' }],

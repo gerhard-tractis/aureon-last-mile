@@ -210,7 +210,7 @@ campo ya viaja en `RouteManifestRow` — y que lo caro era la semántica, no el
 > una lista plana» y que agrupar era «la reconstrucción que esta fase no es» —
 > `RouteManifestList` ya agrupa por cliente desde `a89cada`.
 
-### Fase 2 — `5c` cabecera de ruta y pie de dos filas `[in_progress]`
+### Fase 2 — `5c` cabecera de ruta y pie de dos filas `[done]`
 
 **Depende de:** spec-95 fase 1
 
@@ -257,6 +257,21 @@ dibuja exactamente eso (código de ruta, `12/28`, barra y las tres cifras
 >
 > **Deuda:** `page.tsx` en 367 líneas, sobre el límite de 300 — ya estaba en 366
 > antes de que este spec la tocara.
+
+> Implementado por: implementer — rama `feat/spec-95-fase-2-cabecera-y-pie`,
+> SHAs `f99cc55` + `09db65e` (los nueve hallazgos del review).
+> Review: reviewer (opus), una ronda. Encontró que **bajo búsqueda el chip de
+> grupo mentía** (`groupManifestStatus` sobre el subconjunto filtrado → un grupo
+> con una carga cerrada y otra sin tocar se pintaba `COMPLETADA`), que `pb-40`
+> ya no cubría un pie de ~184-200px, y que se había caído el `scrollIntoView`
+> que el precedente añadió en su propia ronda 3. Nueve mutaciones reproducidas,
+> las nueve mueren; el orquestador reverificó H1 a mano (26 tests caen).
+> QA: PR #785 merged 2026-09-11T04:26Z, `gh pr checks 785` sin checks en rojo.
+> 91 ficheros / 1004 tests. **`e2e-qa` no se leyó por separado** — hueco declarado.
+> Downstream: revisado spec-82 (fase 1, que dejó `Digitalizar manifiesto` y
+> `Cancelar ruta` como puntos abiertos sobre esta barra) — **ambos quedan
+> cerrados por esta fase**, anotado allí. spec-61 Task 5 revisado: `Cancelar
+> ruta` sólo cambia de sitio, diálogo y RPC intactos (`git diff` vacío).
 
 ### Fase 3 — `5c` panel de mapa `[pending]`
 
@@ -333,7 +348,7 @@ dibujaba. La ronda 2 lo incorpora y le añade dos cosas que hoy no tiene.
 > este mismo PR**: su decisión del 2026-08-21 fija el formato `ACOMPAÑANTES · N`
 > y ahora la cabecera es `ACOMPAÑANTES` + `N de M`.
 
-### Fase 5 — `5d` escaneo, y los cuatro textos en inglés `[in_progress]`
+### Fase 5 — `5d` escaneo, y los cuatro textos en inglés `[done]`
 
 **Depende de:** ninguna
 
@@ -358,7 +373,22 @@ Así que esta fase es sobre todo de orden y de copy.
 > cinco ficheros. No se revierte ninguno de sus `w-full` ni el `flex-wrap` de
 > `PackageRow` — son load-bearing y están comentados como tal en el código.
 
-### Fase 6 — `5f` firma y finalización `[in_progress]`
+> Implementado por: implementer — rama `feat/spec-95-fase-5-escaneo-y-textos`,
+> SHAs `89855e0`, `d4be835`, `56d1bb2` (ampliación de alcance) y `f5af355`.
+> Review: reviewer (opus), una ronda. **El pie creció ~62px y nadie subió el
+> `pb-28`** — los últimos ~52px del historial quedaban bajo una barra `fixed`,
+> la misma clase de fallo que PR #772 acababa de cerrar. Y el «commit de
+> traducciones» seguía diciendo `"Package Not Included"` a pantalla completa en
+> **cada** escaneo `not_found`, teniendo el mock la frase canónica dos bloques
+> más abajo. Cerrados; el orquestador reverificó el `pb-44` a mano.
+> QA: PR #784 merged 2026-09-11T04:22Z, sin checks en rojo. 89 ficheros / 957
+> tests. **`e2e-qa` no se leyó por separado** — hueco declarado.
+> Downstream: revisado spec-80 — **queda afectado y se anota allí**: `DURACIÓN`
+> en `5f` pasa a medirse desde que se abre la pantalla de escaneo; antes no se
+> medía nunca para la cuadrilla. spec-81 revisado — sin cambios, la cola offline
+> no se tocó.
+
+### Fase 6 — `5f` firma y finalización `[done]`
 
 **Depende de:** ninguna
 
@@ -415,7 +445,23 @@ rejilla de cifras, el aviso legal y la firma del cliente opt-in.
 > extrayendo `CompletionSkeleton` y `custodyNoticeCopy`. Sigue siendo deuda y no
 > se disimula.
 
-### Fase 7 — `5f2` la confirmación irreversible `[pending]`
+> Implementado por: implementer — rama `feat/spec-95-fase-6-firma-y-finalizacion`,
+> SHAs `52b100f` + `e0fff58`.
+> Review: reviewer (opus), **dos rondas; la primera devolvió NO mergeable.**
+> El aviso de custodia podía afirmar cifras falsas (las cuentas entraban con
+> `= []`, y una query en pausa pintaba «los **0** paquetes verificados pasan a
+> custodia» encima del botón de firmar), hardcodear el copy pasaba 34/34, y
+> borrar `whitespace-pre-line` pasaba 43/43. También destapó que la cita SQL
+> que cerraba `DURACIÓN` apuntaba a `route_receptions`, no a `manifests` — de
+> ahí salió el bug real que arregló la fase 5.
+> QA: PR #782 merged 2026-09-11T03:14Z, sin checks en rojo. Suite completa
+> 668 ficheros / 6644 tests. **`e2e-qa` no se leyó por separado** — hueco
+> declarado.
+> Downstream: revisado spec-80 (fase 3, que construyó esta pantalla) y spec-81
+> (fase 2, la cola offline) — **sin cambios**: ninguna rama de `handleComplete`
+> ni de la cola se tocó, verificado sobre el diff.
+
+### Fase 7 — `5f2` la confirmación irreversible `[in_progress]`
 
 **Depende de:** spec-95 fase 6
 

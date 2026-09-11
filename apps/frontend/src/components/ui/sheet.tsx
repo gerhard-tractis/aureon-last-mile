@@ -51,12 +51,26 @@ const sheetVariants = cva(
 
 interface SheetContentProps
   extends React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>,
-    VariantProps<typeof sheetVariants> {}
+    VariantProps<typeof sheetVariants> {
+  /**
+   * Ronda 2 de review de spec-95 fase 7 (hallazgo 1c) — `SheetContent`
+   * montaba SIEMPRE este `Close` absoluto, con `<span class="sr-only">
+   * Close</span>` — en inglés, y sin contraparte en ningún mock. Para una
+   * hoja de confirmación IRREVERSIBLE (`5f2`, `CustodyConfirmationSheet`)
+   * cuyo mock no dibuja ninguna X y que ya ofrece sus propios botones
+   * explícitos ("Sí, cerrar la carga" / "Volver a revisar"), ese tercer
+   * control de descarte silencioso es ruido — y en un lector de pantalla,
+   * un "Close" en inglés dentro de una PWA íntegramente en español.
+   * `false` por defecto: ningún consumidor existente cambia de
+   * comportamiento.
+   */
+  hideClose?: boolean
+}
 
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
->(({ side = "right", className, children, ...props }, ref) => (
+>(({ side = "right", className, children, hideClose = false, ...props }, ref) => (
   <SheetPortal>
     <SheetOverlay />
     <SheetPrimitive.Content
@@ -65,10 +79,12 @@ const SheetContent = React.forwardRef<
       {...props}
     >
       {children}
-      <SheetPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
-        <X className="h-4 w-4" />
-        <span className="sr-only">Close</span>
-      </SheetPrimitive.Close>
+      {!hideClose && (
+        <SheetPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
+          <X className="h-4 w-4" />
+          <span className="sr-only">Close</span>
+        </SheetPrimitive.Close>
+      )}
     </SheetPrimitive.Content>
   </SheetPortal>
 ))
