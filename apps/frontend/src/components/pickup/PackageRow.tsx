@@ -145,9 +145,9 @@ export function PackageRow({ pkg, isVerified, onManualVerify, existingBoxCount =
               // recuperar señal. Prometer el registro sería la misma
               // mentira que ManifestNotDownloadedNotice ya no dice.
               title={!isOnline ? 'Sin conexión — no se puede registrar el escaneo' : undefined}
-              aria-label="Mark verified"
+              aria-label="Marcar verificado"
             >
-              Mark Verified
+              Marcar verificado
             </Button>
           )}
         </div>

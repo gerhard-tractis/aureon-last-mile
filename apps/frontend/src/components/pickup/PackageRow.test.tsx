@@ -53,7 +53,7 @@ describe('PackageRow', () => {
 
   it('shows Mark Verified button when not verified', () => {
     render(<PackageRow {...defaultProps} />);
-    expect(screen.getByRole('button', { name: /mark verified/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /marcar verificado/i })).toBeInTheDocument();
   });
 
   // Hotfix móvil 2026-09-10 — esta fila apila etiqueta, nº de bulto,
@@ -76,7 +76,7 @@ describe('PackageRow', () => {
 
     it('el grupo de acciones también puede envolverse y no bloquea el encogido', () => {
       render(<PackageRow {...defaultProps} />);
-      const actions = screen.getByRole('button', { name: /mark verified/i }).parentElement!;
+      const actions = screen.getByRole('button', { name: /marcar verificado/i }).parentElement!;
       expect(actions.className).toContain('flex-wrap');
       expect(actions.className).not.toContain('flex-shrink-0');
     });
@@ -90,7 +90,7 @@ describe('PackageRow', () => {
   it('disables Mark Verified when offline, with the reason in the title', () => {
     window.navigator.onLine = false;
     render(<PackageRow {...defaultProps} />);
-    const button = screen.getByRole('button', { name: /mark verified/i });
+    const button = screen.getByRole('button', { name: /marcar verificado/i });
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute('title', expect.stringMatching(/sin conexión/i));
   });
@@ -99,20 +99,20 @@ describe('PackageRow', () => {
     window.navigator.onLine = false;
     const onManualVerify = vi.fn();
     render(<PackageRow {...defaultProps} onManualVerify={onManualVerify} />);
-    fireEvent.click(screen.getByRole('button', { name: /mark verified/i }));
+    fireEvent.click(screen.getByRole('button', { name: /marcar verificado/i }));
     expect(onManualVerify).not.toHaveBeenCalled();
   });
 
   it('calls onManualVerify with label when button clicked', () => {
     const onManualVerify = vi.fn();
     render(<PackageRow {...defaultProps} onManualVerify={onManualVerify} />);
-    fireEvent.click(screen.getByRole('button', { name: /mark verified/i }));
+    fireEvent.click(screen.getByRole('button', { name: /marcar verificado/i }));
     expect(onManualVerify).toHaveBeenCalledWith('CTN001');
   });
 
   it('shows checkmark and hides button when verified', () => {
     render(<PackageRow {...defaultProps} isVerified={true} />);
-    expect(screen.queryByRole('button', { name: /mark verified/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /marcar verificado/i })).not.toBeInTheDocument();
     expect(screen.getByTestId('verified-icon')).toBeInTheDocument();
   });
 

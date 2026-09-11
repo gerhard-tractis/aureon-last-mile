@@ -44,12 +44,12 @@ describe('ManifestDetailList', () => {
 
   it('renders section title', () => {
     render(<ManifestDetailList {...defaultProps} />);
-    expect(screen.getByText('Orders & Packages')).toBeInTheDocument();
+    expect(screen.getByText('Órdenes y bultos')).toBeInTheDocument();
   });
 
   it('renders summary badge with correct counts', () => {
     render(<ManifestDetailList {...defaultProps} />);
-    expect(screen.getByText('1/3 verified')).toBeInTheDocument();
+    expect(screen.getByText('1/3 verificados')).toBeInTheDocument();
   });
 
   it('renders all order cards', () => {
@@ -82,15 +82,15 @@ describe('ManifestDetailList', () => {
   // haya verificado. "0/3 verified" es una afirmación fabricada sobre
   // trabajo que sí existe pero no se puede confirmar sin conexión.
   describe('scansUnknown (B2, ronda 3)', () => {
-    it('shows "—/N verified" instead of a fabricated 0 when scan data is unknown', () => {
+    it('shows "—/N verificados" instead of a fabricated 0 when scan data is unknown', () => {
       render(<ManifestDetailList {...defaultProps} scans={[]} scansUnknown />);
-      expect(screen.getByText('—/3 verified')).toBeInTheDocument();
-      expect(screen.queryByText('0/3 verified')).toBeNull();
+      expect(screen.getByText('—/3 verificados')).toBeInTheDocument();
+      expect(screen.queryByText('0/3 verificados')).toBeNull();
     });
 
     it('still shows the real count when scansUnknown is false (default)', () => {
       render(<ManifestDetailList {...defaultProps} />);
-      expect(screen.getByText('1/3 verified')).toBeInTheDocument();
+      expect(screen.getByText('1/3 verificados')).toBeInTheDocument();
     });
   });
 });

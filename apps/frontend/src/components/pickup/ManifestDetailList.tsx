@@ -51,10 +51,10 @@ export function ManifestDetailList({
     <Card>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm">Orders & Packages</CardTitle>
+          <CardTitle className="text-sm">Órdenes y bultos</CardTitle>
           {!isLoading && !isError && orders.length > 0 && (
             <span className="text-xs text-text-secondary">
-              {scansUnknown ? '—' : verifiedCount}/{totalPackages} verified
+              {scansUnknown ? '—' : verifiedCount}/{totalPackages} verificados
             </span>
           )}
         </div>

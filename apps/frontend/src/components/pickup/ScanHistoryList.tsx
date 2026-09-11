@@ -40,7 +40,7 @@ export function ScanHistoryList({
       <p className="text-sm text-text-secondary text-center py-4">
         {scansUnknown
           ? 'Sin conexión: no se puede mostrar el historial de escaneos.'
-          : 'No scans yet'}
+          : 'Sin escaneos todavía'}
       </p>
     );
   }

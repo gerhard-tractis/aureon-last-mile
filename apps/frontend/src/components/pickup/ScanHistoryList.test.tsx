@@ -35,7 +35,7 @@ describe('ScanHistoryList', () => {
 
   it('shows empty message when no scans', () => {
     render(<ScanHistoryList scans={[]} />);
-    expect(screen.getByText('No scans yet')).toBeInTheDocument();
+    expect(screen.getByText('Sin escaneos todavía')).toBeInTheDocument();
   });
 
   it('limits to maxItems', () => {
@@ -78,14 +78,14 @@ describe('ScanHistoryList', () => {
   // señal y reabre esta pantalla sin red leía literalmente "No scans yet" —
   // la misma clase de cero fabricado que B2 (ronda 3) vino a eliminar dos
   // capas más arriba, sólo que aquí sobrevivió.
-  it('shows a Spanish "sin conexión" message, not "No scans yet", when scans is empty because of scansUnknown', () => {
+  it('shows a Spanish "sin conexión" message, not "Sin escaneos todavía", when scans is empty because of scansUnknown', () => {
     render(<ScanHistoryList scans={[]} scansUnknown />);
-    expect(screen.queryByText('No scans yet')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sin escaneos todavía')).not.toBeInTheDocument();
     expect(screen.getByText(/sin conexión/i)).toBeInTheDocument();
   });
 
-  it('still shows "No scans yet" when scans is genuinely empty (not scansUnknown)', () => {
+  it('still shows "Sin escaneos todavía" when scans is genuinely empty (not scansUnknown)', () => {
     render(<ScanHistoryList scans={[]} scansUnknown={false} />);
-    expect(screen.getByText('No scans yet')).toBeInTheDocument();
+    expect(screen.getByText('Sin escaneos todavía')).toBeInTheDocument();
   });
 });
