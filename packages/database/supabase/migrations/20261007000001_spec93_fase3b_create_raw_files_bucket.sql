@@ -15,10 +15,15 @@
 -- like `manifests`), and every writer found in the repo
 -- (apps/worker/n8n/workflows/beetrack-excel-import.json,
 -- easy-wms-webhook.json, paris-dispatchtrack-webhook.json) uploads with the
--- Supabase SERVICE ROLE key, which bypasses RLS entirely — same situation
--- as `manifests`' worker path. No storage.objects policy is added here for
--- the same reason none exists for `manifests` beyond the service-role note:
--- there is no authenticated-user path into this bucket to scope.
+-- Supabase SERVICE ROLE key, which bypasses RLS entirely.
+--
+-- Unlike `manifests` (20260430000001_create_manifests_storage_bucket.sql),
+-- which DOES define four storage.objects policies scoped to
+-- `(storage.foldername(name))[1]::uuid = public.get_operator_id()` — no
+-- storage.objects policy is added here because there is no authenticated-
+-- user path into this bucket to scope: the path uses slugs, not
+-- `operator_id`, and the only writers are the n8n workflows above, all
+-- using the service role, which never evaluates RLS in the first place.
 --
 -- Configuration mirrors what fase 4 measured in production (run
 -- 34545563792): public=false, no file_size_limit, no allowed_mime_types

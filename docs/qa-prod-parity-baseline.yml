@@ -110,8 +110,8 @@ accepted_divergences:
     key: pg_net
     qa: "0.20.3"
     production: "<absent>"
-    reason: "instalada en QA pero ninguna migración la usa (verificado: grep -rlE 'net.http_(post|get)' packages/database/supabase/migrations/ no encuentra nada) — QA tiene de más, no de menos"
-    uncovered_change_class: "ninguno hoy — si una futura migración empieza a usar net.http_post/net.http_get, producción necesitaría la extensión instalada también antes de que esa migración pueda aplicarse ahí; hasta entonces no hay comportamiento que dependa de ella"
+    reason: "instalada por el bootstrap de la imagen self-hosted (infra/supabase-qa/volumes/db/webhooks.sql:3, CREATE EXTENSION IF NOT EXISTS pg_net), no a mano; ninguna migración la usa hoy (verificado: grep -rlE 'net.http_(post|get)' packages/database/supabase/migrations/ no encuentra nada) — QA tiene de más, no de menos"
+    uncovered_change_class: "dirección peligrosa, no benigna: una futura migración que use net.http_post/net.http_get aplicaría en verde contra QA (que ya tiene la extensión desde el bootstrap) y fallaría al aplicarse en producción (que no la tiene) — nada en QA ejercita nunca esa ruta de fallo porque QA nunca puede reproducir la ausencia de la extensión"
 
   - surface: edge_function
     key: main

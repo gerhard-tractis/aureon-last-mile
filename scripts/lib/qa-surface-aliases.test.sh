@@ -33,8 +33,18 @@ assert_alias() {
 }
 
 # assert_alias_fails <fn> <input> <test name>
+#
+# Checks `declare -F` before calling — without it, a missing/misnamed
+# function would fail with "command not found" (exit 127), which this
+# assertion would have counted as "ok, rejected the key" instead of failing
+# loudly for the real reason (review round 1, M3).
 assert_alias_fails() {
   local fn="$1" input="$2" name="$3"
+  if ! declare -F "$fn" >/dev/null; then
+    fail=$((fail + 1))
+    echo "  FAIL $name — function '$fn' does not exist (not a rejection, it never ran)"
+    return
+  fi
   if "$fn" "$input" >/dev/null 2>&1; then
     fail=$((fail + 1))
     echo "  FAIL $name — expected non-zero exit, got success"
