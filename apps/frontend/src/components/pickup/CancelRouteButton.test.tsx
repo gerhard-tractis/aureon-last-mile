@@ -43,10 +43,12 @@ describe('CancelRouteButton', () => {
   });
 
   /**
-   * spec-61 Task 5 — "Say what happens in the confirm: the loads go back to
-   * the pending list and any scanning progress on this route stops counting.
-   * Do not make the leader infer it." Two separate assertions because they
-   * are two separate consequences: deleting either sentence must fail.
+   * spec-61 Task 5 dice "any scanning progress on this route stops counting",
+   * pero `cancel_pickup_route` (20260821000001) sólo actualiza `pickup_routes`
+   * y nunca toca `pickup_scans` — verificado también en QA el 2026-09-11
+   * (cabecera 1/56 tras reabrir con el escaneo previo). Esa frase era falsa:
+   * el escaneo sigue contando. Dos aserciones separadas porque son dos
+   * consecuencias distintas: borrar cualquiera de las dos frases debe fallar.
    */
   it('says the loads return to the pending list', async () => {
     render(<CancelRouteButton {...baseProps()} />);
@@ -54,10 +56,11 @@ describe('CancelRouteButton', () => {
     expect(screen.getByText(/vuelven a la lista de pendientes/i)).toBeInTheDocument();
   });
 
-  it('says the scanning progress on this route stops counting', async () => {
+  it('says the scanning progress on this route still counts, not that it stops', async () => {
     render(<CancelRouteButton {...baseProps()} />);
     await userEvent.click(screen.getByRole('button', OPEN_CONFIRM));
-    expect(screen.getByText(/deja de contar/i)).toBeInTheDocument();
+    expect(screen.getByText(/lo escaneado en esta ruta sigue valiendo/i)).toBeInTheDocument();
+    expect(screen.queryByText(/deja de contar/i)).not.toBeInTheDocument();
   });
 
   it('cancels this route, and only this route, once confirmed', async () => {

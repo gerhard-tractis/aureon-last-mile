@@ -86,7 +86,7 @@ export function CancelRouteButton({ routeId, operatorId, onCancelled }: CancelRo
             <DialogTitle>¿Cancelar esta ruta?</DialogTitle>
             <DialogDescription>
               Las cargas de esta ruta vuelven a la lista de pendientes y quedan disponibles para
-              otro equipo. Lo que ya escaneaste en esta ruta deja de contar.
+              otro equipo. Lo escaneado en esta ruta sigue valiendo.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

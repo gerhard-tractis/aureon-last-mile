@@ -3273,6 +3273,27 @@ Requirements, since this is destructive and reachable one-handed on a phone:
 - Confirm before firing. The cancel must not be a single stray tap next to *Cerrar ruta*.
 - Say what happens in the confirm: the loads go back to the pending list and any scanning
   progress on this route stops counting. Do not make the leader infer it.
+
+  > **Corrección 2026-09-11 — la segunda mitad de este requisito era falsa, y el
+  > copy que produjo llegó a producción.** `cancel_pickup_route` (definición
+  > autoritativa, `20260821000001_spec61_cancel_pickup_route_authz.sql`) sólo
+  > hace `UPDATE public.pickup_routes SET status='cancelled'…` y deja que un
+  > trigger desenganche los manifiestos: **no toca `pickup_scans`**. Los
+  > escaneos siguen contando.
+  >
+  > Verificado en QA el 2026-09-11: cancelada una ruta con 1 bulto escaneado de
+  > `CARGA-EASY-002`, una ruta nueva con esa misma carga abrió en `1/56`, con la
+  > carga en `1/28`.
+  >
+  > El diálogo decía «Lo que ya escaneaste en esta ruta deja de contar» —
+  > directamente de este requisito— y ahora dice **«Lo escaneado en esta ruta
+  > sigue valiendo»**, con un test que muere si alguien repone el texto viejo.
+  >
+  > **No se cambió el comportamiento, y la decisión está abierta.** Que los
+  > escaneos sobrevivan es defendible: un `pickup_scan` registra que un bulto
+  > físico fue verificado, y eso no deja de ser cierto porque la ruta se cancele
+  > — borrarlos destruiría trabajo real del operario. Si alguna vez se decide lo
+  > contrario, es un cambio de producto, no una corrección de copy.
 - Only the route's own leader may cancel. Verify `cancel_pickup_route`'s own authorisation
   before relying on the UI to enforce it — if the RPC does not check, say so rather than
   gating in the client alone.
