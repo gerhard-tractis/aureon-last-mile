@@ -32,15 +32,36 @@
 -- Nominatim returned instead (city/town/hamlet points for 05502, 10201,
 -- 10205, 12101, 13101, 14104 -- verified by hand to be the correct named
 -- place; see "MANUAL CORRECTIONS" below for the two that were NOT correct
--- as returned, plus one address ambiguity).
+-- as returned, plus one address ambiguity). All five are marked inline in
+-- the VALUES list below.
 --
--- Verification pass: every non-exception row was checked to fall inside a
--- generous Chile mainland bounding box (-56 to -17 lat, -76 to -66 lng),
--- and every row was checked against its own region's median point (a same-
--- region outlier beyond 3 degrees was treated as a wrong-place match and
--- re-queried). This caught codigo_cut 05502 (below); it did not flag
--- 12201 (Cabo de Hornos, genuinely the southernmost comuna, correctly far
--- from its region's other comunas) as a false positive.
+-- Verification pass, run twice (once during the first draft, once again
+-- against review feedback):
+--
+--   1. Every non-exception row checked to fall inside a generous Chile
+--      mainland bounding box (-56 to -17 lat, -76 to -66 lng).
+--   2. Every row checked against its own region's median point -- a
+--      same-region outlier beyond 3 degrees was treated as a wrong-place
+--      match and re-queried. This caught codigo_cut 05502 (below); it did
+--      not flag 12201 (Cabo de Hornos, genuinely the southernmost comuna,
+--      correctly far from its region's other comunas) as a false positive.
+--   3. A full reverse-geocode of all 347 points against Nominatim (review
+--      round), confirming 346/347 land inside the correct comuna's
+--      administrative boundary and region -- the one exception being
+--      05502, already caught and fixed by pass 2 in the same round it was
+--      introduced. Zero duplicate coordinate pairs across all 347 rows.
+--   4. A forward search for the actual town/populated place in each of
+--      the ten southernmost/most remote comunas, to catch the failure
+--      mode pass 1-3 cannot see: `ST_PointOnSurface` is correct *for the
+--      polygon* but can land 20-142km from any road, building or named
+--      place when the polygon interior is open water or high cordillera
+--      (real for Aysén and Magallanes region comunas covering fjords and
+--      icefields). Ten rows were replaced with the town/village/hamlet
+--      node instead -- see "TOWN-NODE REPLACEMENTS" below. This is a
+--      second, distinct extraction method from the general rule above,
+--      documented explicitly per-row for exactly that reason: a uniform
+--      "one source, one method" claim would not survive an audit of these
+--      ten rows otherwise.
 --
 -- MANUAL CORRECTIONS (3 of 347 rows), each called out again inline below:
 --
@@ -61,7 +82,12 @@
 --      street in Chillán. Hand-picked Villa Las Estrellas / Base
 --      Presidente Eduardo Frei Montalva (-62.2004259, -58.9653690, King
 --      George Island) -- the only permanently inhabited Chilean
---      settlement within this comuna.
+--      settlement within this comuna. This is a deliberate deviation
+--      from the original spec draft's expected `~-75 to -80 lat` range
+--      for this CUT code -- Villa Las Estrellas is the more useful
+--      fallback pin for an actual delivery/fleet use case than any point
+--      further into the uninhabited territorial claim, and the spec is
+--      being updated to reflect it.
 --
 --   3. `05502` ('Calera', comuna of Quillota province, Valparaíso) --
 --      `city=Calera` matched a same-named hamlet near Pica, ~1,400 km
@@ -70,6 +96,31 @@
 --      Re-queried as "La Calera" (the comuna's full/official name) and
 --      got the correct administrative relation (-32.7889810,
 --      -71.2035460, Provincia de Quillota, Región de Valparaíso).
+--
+-- TOWN-NODE REPLACEMENTS (10 of 347 rows) -- found during review, not in
+-- the original draft. Each of these ten comunas' polygon-interior point
+-- (`ST_PointOnSurface`) returned nothing at all when forward-searched at
+-- street level -- no road, building or populated place -- because the
+-- polygon interior is open water (fjords) or uninhabited cordillera/
+-- icefield. As a fallback DELIVERY pin (this column backs
+-- orders.geocode_source = 'comuna_centroid'), a point 20-142km out to sea
+-- or on a glacier is actively worse than no pin at all. Replaced with the
+-- comuna's own town/village/hamlet OSM node instead, individually queried
+-- and cross-checked against its `display_name` for the correct comuna:
+--
+--   `11201` Aysén            -> Puerto Aysén      (was 142.4km away)
+--   `11202` Cisnes           -> Puerto Cisnes      (was  81.5km away)
+--   `12201` Cabo de Hornos   -> Puerto Williams    (was  75.0km away)
+--   `11303` Tortel           -> Caleta Tortel      (was  60.6km away)
+--   `12302` Torres del Paine -> Cerro Castillo     (was  44.8km away)
+--   `12104` San Gregorio     -> Punta Delgada      (was  43.0km away)
+--   `11402` Río Ibáñez       -> Pto. Ing. Ibáñez   (was  34.3km away)
+--   `10403` Hualaihué        -> Hornopirén         (was  27.6km away)
+--   `08314` Alto Biobío      -> Ralco              (was  20.5km away)
+--   `11302` O'Higgins        -> Villa O'Higgins    (was  19.5km away)
+--
+-- Distances are from the review's forward-search of the town as a
+-- distinct OSM object versus the original polygon-interior point.
 --
 -- Two traps the spec calls out, both handled here rather than left for a
 -- later reader to rediscover:
@@ -304,7 +355,7 @@ FROM (VALUES
   ('08311', -37.6680813, -72.0214080),
   ('08312', -37.2925581, -71.9495236),
   ('08313', -37.0978676, -72.5622801),
-  ('08314', -37.8352212, -71.4113391),
+  ('08314', -37.8820267, -71.6373781),  -- populated-place node replacing a polygon-interior point over water/cordillera; see header
   ('09101', -38.7358908, -72.5905380),
   ('09102', -38.7115844, -73.1651699),
   ('09103', -38.9329729, -72.0320894),
@@ -340,7 +391,7 @@ FROM (VALUES
   ('14101', -39.8141262, -73.2459859),
   ('14102', -39.8877399, -73.4314543),
   ('14103', -40.1311960, -72.3826602),
-  ('14104', -40.2952392, -73.0820366),
+  ('14104', -40.2952392, -73.0820366),  -- non-relation fallback: La Unión town-place node (correct place; no admin relation returned)
   ('14105', -40.3216708, -72.4813502),
   ('14106', -39.4522225, -72.7754222),
   ('14107', -39.8634009, -72.8129655),
@@ -359,11 +410,11 @@ FROM (VALUES
   ('10107', -41.2575704, -73.0047428),
   ('10108', -41.6160139, -73.5950711),
   ('10109', -41.3178020, -72.9829073),
-  ('10201', -42.4823750, -73.7642918),
+  ('10201', -42.4823750, -73.7642918),  -- non-relation fallback: Castro city-place node (correct place; no admin relation returned)
   ('10202', -41.8682162, -73.8287225),
   ('10203', -42.6239756, -73.7724416),
   ('10204', -42.4396611, -73.6028415),
-  ('10205', -42.3795533, -73.6472998),
+  ('10205', -42.3795533, -73.6472998),  -- non-relation fallback: Dalcahue town-place node (correct place; no admin relation returned)
   ('10206', -42.5992585, -73.6762714),
   ('10207', -42.8898582, -73.4720620),
   ('10208', -43.1200305, -73.6203025),
@@ -378,30 +429,30 @@ FROM (VALUES
   ('10307', -40.4127606, -73.0115777),
   ('10401', -42.9165335, -72.7084192),
   ('10402', -43.1857710, -71.8667020),
-  ('10403', -42.1948455, -72.3393175),
+  ('10403', -41.9660516, -72.4706795),  -- populated-place node replacing a polygon-interior point over water/cordillera; see header
   ('10404', -43.6178268, -71.8039587),
   ('11101', -45.5711804, -72.0684863),
   ('11102', -44.2402147, -71.8492779),
-  ('11201', -46.1434629, -74.2135758),
-  ('11202', -44.4010470, -73.6006538),
+  ('11201', -45.4068167, -72.6976787),  -- populated-place node replacing a polygon-interior point over water/cordillera; see header
+  ('11202', -44.7272567, -72.6804630),  -- populated-place node replacing a polygon-interior point over water/cordillera; see header
   ('11203', -43.9174310, -73.9078915),
   ('11301', -47.2541656, -72.5732128),
-  ('11302', -48.4730258, -72.8238709),
-  ('11303', -47.9764670, -74.3110852),
+  ('11302', -48.4684802, -72.5592493),  -- populated-place node replacing a polygon-interior point over water/cordillera; see header
+  ('11303', -47.8036754, -73.5374644),  -- populated-place node replacing a polygon-interior point over water/cordillera; see header
   ('11401', -46.5396625, -71.7245816),
-  ('11402', -46.3020768, -72.3841154),
-  ('12101', -53.1625688, -70.9078220),
+  ('11402', -46.2919029, -71.9374916),  -- populated-place node replacing a polygon-interior point over water/cordillera; see header
+  ('12101', -53.1625688, -70.9078220),  -- non-relation fallback: Punta Arenas city-place node (correct place; no admin relation returned)
   ('12102', -52.4270382, -71.4141605),
   ('12103', -52.9455498, -72.6512719),
-  ('12104', -52.3966582, -70.1717665),
-  ('12201', -55.1564263, -68.7234212),
+  ('12104', -52.4546486, -69.5435253),  -- populated-place node replacing a polygon-interior point over water/cordillera; see header
+  ('12201', -54.9357749, -67.6062504),  -- populated-place node replacing a polygon-interior point over water/cordillera; see header
   ('12202', -62.2004259, -58.9653690),  -- hand-picked: Villa Las Estrellas (only inhabited settlement); see header
   ('12301', -51.7295251, -72.4738605),
-  ('12302', -51.0827249, -72.9254451),
+  ('12302', -51.2562493, -72.3446885),  -- populated-place node replacing a polygon-interior point over water/cordillera; see header
   ('12401', -53.2956738, -70.3687401),
   ('12402', -52.7093328, -69.2947818),
   ('12403', -54.1570930, -69.3779651),
-  ('13101', -33.4376995, -70.6510671),
+  ('13101', -33.4376995, -70.6510671),  -- non-relation fallback: Santiago city-place node (correct place; no admin relation returned)
   ('13102', -33.5023396, -70.7158417),
   ('13103', -33.4252778, -70.7461548),
   ('13104', -33.3843233, -70.6747382),

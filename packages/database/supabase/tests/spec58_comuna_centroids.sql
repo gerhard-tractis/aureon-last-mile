@@ -19,17 +19,22 @@
 --     de Pascua), 05104 (Juan Fernández), 12202 (Antártica). TEST 3 is
 --     "mainland box OR one of those three", never a single rectangle.
 --
--- TEST 4 is the transposition guard: in Chile, every longitude is more
--- negative than -65 and no mainland latitude is (mainland latitudes bottom
--- out around -56, at the tip of Patagonia). A swapped lat/lng pair for any
--- mainland comuna puts a value more negative than -65 into centroid_lat
--- (the old longitude) and a value less negative than -65 into centroid_lng
--- (the old latitude) -- this test fails on that swap even though TEST 3's
--- box check might not, since a swapped Santiago pair (-70.65, -33.45) can
--- still coincidentally fall inside generous box bounds on one axis.
+-- Review finding (round 1): the mainland box (TEST 3) and a same-row
+-- transposition check are NOT independent -- the transposition check's
+-- bounds (`lat > -65 AND lng < -65`) are strict subsets of the box's
+-- (`lat BETWEEN -56 AND -17 AND lng BETWEEN -76 AND -66`), so nothing can
+-- fail the transposition check without already having failed the box
+-- check. It is dropped in favour of TEST 5 below, which is the assertion
+-- it was actually trying to be: catching a plausible-looking point that is
+-- still wrong. TEST 5 catches what neither the box nor a single-row
+-- transposition check can -- a point that is a real, in-range Chilean
+-- coordinate but belongs to a DIFFERENT region (e.g. Arica's point copied
+-- onto Punta Arenas' row, or vice versa: both pass every box/transposition
+-- check individually, and only a cross-check against the row's own
+-- region_num catches it).
 
 BEGIN;
-SELECT plan(6);
+SELECT plan(7);
 
 -- ── TEST 1 -- every comuna row has a non-NULL centroid_lat ─────────────────
 SELECT is(
@@ -78,23 +83,54 @@ SELECT is(
   'the three island/Antarctic exceptions are genuinely outside the mainland box (not a vacuous OR)'
 );
 
--- ── TEST 4 -- no mainland centroid has lat/lng transposed ──────────────────
--- Every Chilean longitude is more negative than -65; no mainland latitude
--- is. A swapped pair puts the old longitude into centroid_lat (more
--- negative than -65, failing "> -65") and/or the old latitude into
--- centroid_lng (less negative than -65, failing "< -65").
+-- ── TEST 5 -- every mainland centroid's latitude falls inside its own
+--             region's real latitude band -- catches a cross-region swap
+--             (e.g. 15101 Arica <-> 12101 Punta Arenas) that TEST 3's
+--             single wide box cannot, because both points are individually
+--             valid Chilean coordinates ───────────────────────────────────
+-- Bands are the real min/max centroid_lat per region_num from this
+-- migration's own seed (computed by the fase 2 review), widened by ±0.5°
+-- slack. 05201/05104 (region 5) and 12202 (region 12) are excluded, same
+-- as TEST 3/4 -- they are documented exceptions, not band members.
 SELECT is(
   (
     SELECT COUNT(*)::int
-      FROM public.chile_comunas
-     WHERE codigo_cut NOT IN ('05201', '05104', '12202')
-       AND NOT (centroid_lat > -65 AND centroid_lng < -65)
+      FROM public.chile_comunas c
+      JOIN (VALUES
+        (15, -18.97, -17.83), (1,  -20.50, -19.27), (2,  -25.41, -21.22),
+        (3,  -28.76, -26.34), (4,  -31.92, -29.51), (5,  -33.79, -32.25),
+        (6,  -34.73, -33.95), (7,  -36.15, -34.87), (16, -37.12, -36.13),
+        (8,  -38.35, -36.61), (9,  -39.38, -37.67), (14, -40.34, -39.45),
+        (10, -43.62, -40.41), (11, -48.48, -43.91), (12, -55.16, -51.08),
+        (13, -34.04, -33.09)
+      ) AS b(region_num, lat_min, lat_max)
+        ON c.region_num = b.region_num
+     WHERE c.codigo_cut NOT IN ('05201', '05104', '12202')
+       AND NOT (c.centroid_lat BETWEEN b.lat_min - 0.5 AND b.lat_max + 0.5)
   ),
   0,
-  'no mainland comuna has centroid_lat/centroid_lng transposed'
+  'every comuna centroid latitude falls within its own region''s real latitude band (±0.5° slack)'
 );
 
--- ── TEST 5 -- the hand-picked provincia row (14201 Ranco) got a real,
+-- ── TEST 6 -- no two comunas share the exact same centroid point ──────────
+-- A copy-paste from a neighbouring row (e.g. Las Condes given Maipú's
+-- point) would be a real, in-region, in-band coordinate and pass every
+-- test above -- this is the only assertion that would catch it.
+SELECT is(
+  (
+    SELECT COUNT(*)::int
+      FROM (
+        SELECT centroid_lat, centroid_lng
+          FROM public.chile_comunas
+         GROUP BY centroid_lat, centroid_lng
+        HAVING COUNT(*) > 1
+      ) dupes
+  ),
+  0,
+  'no two chile_comunas rows share the exact same centroid point'
+);
+
+-- ── TEST 7 -- the hand-picked provincia row (14201 Ranco) got a real,
 --             sane centroid, not a placeholder like (0,0) or a copy of
 --             a neighbouring comuna's exact point ─────────────────────────
 SELECT ok(
@@ -106,4 +142,4 @@ SELECT ok(
 );
 
 SELECT * FROM finish();
-COMMIT;
+ROLLBACK;
