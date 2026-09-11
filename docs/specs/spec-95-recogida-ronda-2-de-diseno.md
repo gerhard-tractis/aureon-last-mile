@@ -107,7 +107,7 @@ Dos colisiones reales, las dos decididas por el usuario el 2026-09-10:
 > Con el selector correcto: las fases 1, 4, 5, 6 y 9 salen despachables en
 > paralelo, sin conflicto duro.
 
-### Fase 1 — `5c` chip único y agrupación por cliente `[in_progress]`
+### Fase 1 — `5c` chip único y agrupación por cliente `[done]`
 
 **Depende de:** ninguna
 
@@ -188,6 +188,27 @@ campo ya viaja en `RouteManifestRow` — y que lo caro era la semántica, no el
 >    chips `COMPLETADA`** (fila + cabecera). En el mock no ocurre porque el grupo
 >    está plegado. Un test congela hoy ese duplicado — si se implementa (1), hay
 >    que revisarlo.
+
+> Implementado por: implementer — rama `feat/spec-95-fase-1-chip-unico-agrupacion`,
+> SHAs `c3b8b37` (agrupación y chip), `3164d9a` (regla A tras la decisión del
+> diseñador), `86e83d2` (hallazgos 1-4 del review).
+> Review: reviewer (opus) — dos rondas sobre `c686fe4..e93029d`. Ronda 1
+> encontró **un bug real** (`packageCount` sumaba `total_packages ?? 0`,
+> presentando una suma parcial como total del grupo, contra el contrato escrito
+> en `manifestProgress.ts:44-47`) y **tres mutaciones supervivientes**
+> (`pointCount` por filas, fallback de `retailer_name`, el `?? 0`). Las cuatro
+> cerradas en `86e83d2`; el orquestador reverificó a mano dos de ellas
+> (`||`→`??` mata un test; `every`→`some` en `completada` mata dos).
+> QA: PR #779 merged 2026-09-11T02:04Z, `gh pr checks 779` verde. Suite dirigida
+> 113 ficheros / 1113 tests; `tsc` limpio. **`e2e-qa` no se leyó por separado en
+> esta fase** — se declara el hueco en vez de afirmar lo que no se comprobó.
+> Downstream: revisado spec-94 y spec-83 — **sin cambios** (ninguno menciona
+> `RouteManifestList`/`RouteManifestCard`/`routeManifestGrouping`; spec-94 es
+> escritorio y spec-83 también). **spec-82 sí queda desactualizado y se corrige
+> en este mismo PR**: su línea 240-242 afirmaba que
+> «`NextManifestCard`/`UpcomingManifestList`/`RouteManifestList` trabajan sobre
+> una lista plana» y que agrupar era «la reconstrucción que esta fase no es» —
+> `RouteManifestList` ya agrupa por cliente desde `a89cada`.
 
 ### Fase 2 — `5c` cabecera de ruta y pie de dos filas `[pending]`
 
