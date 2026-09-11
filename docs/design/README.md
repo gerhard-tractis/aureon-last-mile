@@ -19,15 +19,24 @@ Ocurrió el 2026-09-08 con spec-82 fase 1: el agente no pudo decidir dónde iban
 | Fichero | Proyecto | Pantallas |
 |---|---|---|
 | `Recogida.dc.html` | `4656dcbc-00da-4548-a4da-b53e614264c1` | **`5a`–`5i` más `5f2`**, y solo esas: `5a` es el escritorio, el resto el móvil de cuadrilla |
+| `Distribucion.dc.html` | `4656dcbc-00da-4548-a4da-b53e614264c1` | **`4a`–`4j`**, y solo esas: `4a`/`4b` son el escritorio (estado inicial y modo rápido), `4c`–`4j` el móvil de la nave |
 
 Verificable en el propio fichero:
 
 ```
 grep -oE 'dv-opt" id="[^"]*"' docs/design/Recogida.dc.html
+grep -oE 'dv-opt" id="[^"]*"' docs/design/Distribucion.dc.html
 ```
 
-devuelve **diez** artboards tras la ronda del 2026-09-10: `5a`–`5i` más `5f2`, el diálogo
-irreversible de transferencia de custodia, que cuelga de `5f`.
+devuelve, para Recogida, **diez** artboards tras la ronda del 2026-09-10: `5a`–`5i` más `5f2`,
+el diálogo irreversible de transferencia de custodia, que cuelga de `5f`. Para Distribución
+devuelve **diez** también: `4a`–`4j`, sin sufijos.
+
+> **Distribución se baja el 2026-09-11 con la dirección invertida.** En Recogida la copia sirvió
+> para escribir lo que la implementación sabía y el mock no (`mock-feedback-recogida.md`). Aquí
+> el usuario fijó lo contrario: **el mock manda y la app se corrige contra él**. La copia existe
+> para que `implementer` y `reviewer` puedan verificar esa corrección pantalla a pantalla sin
+> `DesignSync`.
 
 > La etiqueta de turno del documento sigue diciendo «Recogida · escritorio (5a) y móvil de
 > cuadrilla (5b–5i)» — **no se actualizó** al añadir `5f2`, así que el `grep` de arriba es la
