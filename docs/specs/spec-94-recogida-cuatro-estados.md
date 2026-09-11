@@ -52,29 +52,44 @@ así que un admin tampoco puede liberar la ruta desde la UI — aunque
 
 ## El modelo de estados
 
-Los cubos miran **dónde están los bultos** (`reception_status` y
-`pickup_route_id`), no en qué punto del papeleo va la carga (`status`). Es una
-corrección deliberada sobre el primer borrador de este spec, y la razón está en
-la sección siguiente.
+Los cubos miran **dónde están los bultos**, no en qué punto del papeleo va la
+carga. Y la columna que sabe dónde están, cuando hay una ruta de por medio, es
+**`pickup_routes.status`** — no `manifests.reception_status`, que no distingue
+una carga cerrada en el andén de una que ya salió. La sección siguiente explica
+por qué, y cuánto costó averiguarlo.
 
-| Pestaña | Predicado sobre `manifests` (vivas: `deleted_at IS NULL AND status <> 'cancelled'`) | Significado |
+**Cuando hay ruta viva, manda la ruta.** «Ruta viva» = existe la fila de
+`pickup_routes` referenciada por `pickup_route_id` y su `deleted_at IS NULL`.
+
+| Pestaña | Predicado (manifiestos vivos: `deleted_at IS NULL AND status <> 'cancelled'`) | Significado |
 |---|---|---|
-| **Por retirar** | `pickup_route_id IS NULL AND reception_status IS NULL AND status <> 'completed'` | sigue en el punto de recogida, sin cuadrilla asignada |
-| **En punto de retiro** | `pickup_route_id IS NOT NULL AND reception_status IS NULL` | cuadrilla asignada: yendo, escaneando, o ya cerrada con el camión todavía allí |
-| **Camino a bodega** | `reception_status IN ('awaiting_reception','reception_in_progress')` | retiro verificado, el camión vuelve al hub |
-| **En bodega** | `reception_status = 'received'`, **o** `status='completed' AND pickup_route_id IS NULL AND reception_status IS NULL` | recibida en el hub, o cerrada sin ruta (flujo viejo) |
+| **Por retirar** | sin ruta viva, `reception_status IS NULL`, `status <> 'completed'` | sigue en el punto de recogida, sin cuadrilla asignada |
+| **En punto de retiro** | ruta viva con `pr.status NOT IN ('in_transit','received')` | la cuadrilla está allí: yendo, escaneando, o ya cerrada con el camión sin arrancar |
+| **Camino a bodega** | ruta viva con `pr.status = 'in_transit'`, **o** sin ruta viva y `reception_status IN ('awaiting_reception','reception_in_progress')` | el camión salió hacia el hub |
+| **En bodega** | ruta viva con `pr.status = 'received'`, **o** sin ruta viva y (`reception_status = 'received'` **o** `status='completed' AND reception_status IS NULL`) | recibida en el hub, o cerrada sin ruta (flujo viejo) |
 
-**Exhaustivo y disjunto**, y se comprueba así: con `reception_status` no nulo,
-su valor decide entre el cubo 3 y el 4 — el enum tiene exactamente tres valores
-(`20260318000001:72`), así que los dos cubos cubren el dominio no-nulo sin
-solaparse; con `reception_status` nulo, decide `pickup_route_id` (cubo 2 si lo
-hay); sin ninguno de los dos, decide `status` (cubo 4 si `completed`, cubo 1 si
-no). Ningún estado vivo queda fuera y ninguno cae en dos.
+**Exhaustivo y disjunto**, y se comprueba así: **con** ruta viva decide
+`pr.status`, y el cubo 2 se lleva todo lo que no sea `in_transit` ni `received`
+— incluido `draft`, y cualquier valor que el enum gane mañana. Por eso está
+escrito como negación y no como lista: una lista positiva abriría un hueco
+nuevo cada vez que alguien añada un estado de ruta, que es exactamente el fallo
+que este spec existe para cerrar. **Sin** ruta viva decide `reception_status`
+(cubo 3 sus dos valores intermedios, cubo 4 `received`), y si también es NULL
+decide `status` (cubo 4 si `completed`, cubo 1 si no). El enum de recepción
+tiene exactamente tres valores (`20260318000001:72`), así que los cubos 3 y 4
+cubren el dominio no-nulo sin solaparse. Ningún estado vivo queda fuera y
+ninguno cae en dos.
+
+**Una ruta soft-deleted ya no esconde nada.** No vacía
+`manifests.pickup_route_id`, pero tampoco es «ruta viva», así que el manifiesto
+cae por sus propias columnas en el cubo 1, 3 o 4 en vez de desaparecer. Esa
+trampa la resuelve ahora el modelo, no una cláusula del `JOIN`.
 
 `reception_status='received'` con `status <> 'completed'` **no es alcanzable**:
 `20260812000006:185-189` escribe las dos columnas en el mismo `UPDATE`, y la
 rama `'received'` del trigger (`20260625000001:197-200`) sólo dispara después
-de él. Por eso el brazo 1 del cubo 4 no necesita mirar `status`.
+de él. Por eso el brazo sin-ruta del cubo 4 no necesita mirar `status` para el
+caso `received`.
 
 Las claves internas siguen siendo `pending` / `routed` / `in_transit` /
 `completed`: **sólo cambian las etiquetas en castellano**, así que ni los tests
@@ -86,20 +101,38 @@ punto: `get_my_active_pickup_route()` es por usuario a propósito — responde
 distinta, «¿dónde está cada carga ahora mismo?». Heredar aquel alcance
 reproduciría el agujero.
 
-## Por qué los cubos no miran `status`
+## Por qué manda la ruta, y no `status` ni `reception_status`
 
-`close_manifest` (`20260916000001:167-174`) escribe `status='completed'` y **no
-toca `pickup_route_id` ni `reception_status`** — verificado contra la función
-viva en QA, no deducido del fichero. Así que una carga cerrada y firmada en el
-andén del retailer, con la ruta todavía `in_progress`, queda `completed` con
-`reception_status IS NULL`: los bultos están en el camión, en el punto de
-retiro, y pueden estarlo durante horas.
+**Contra `status`.** `close_manifest` (`20260916000001:167-174`) escribe
+`status='completed'` y su `UPDATE` no toca `pickup_route_id` ni
+`reception_status`. Así que una carga cerrada y firmada en el andén del
+retailer, con la ruta todavía `in_progress`, es `completed` con los bultos en
+el camión, en el punto de retiro, y pueden estarlo durante horas. Un modelo que
+la mandara a «En bodega» por su `status` afirmaría algo falso sobre dónde están
+los bultos — y nombrar el lugar físico es justamente la regla que elegimos. La
+etiqueta vieja («Completados») nunca afirmó una ubicación, así que nunca se
+equivocó; la nueva sí lo haría.
 
-Un modelo que mandara esa carga a «En bodega» por su `status` afirmaría algo
-falso sobre dónde están los bultos — y nombrar el lugar físico es justamente la
-regla que elegimos. La etiqueta vieja («Completados») nunca afirmó una
-ubicación, así que nunca se equivocó; la nueva sí lo haría. Ejemplo del mismo
-camión, al mismo tiempo, con el modelo corregido:
+**Contra `reception_status`, que es lo que costó la tercera vuelta.** Leer el
+cuerpo de `close_manifest` no basta: hay un trigger `BEFORE UPDATE` vivo desde
+spec-08 y nunca redefinido, `trg_manifest_reception_status`
+(`20260318000001:295-319`), que rellena `reception_status='awaiting_reception'`
+en **toda** transición hacia `status='completed'` cuando viene NULL — sin mirar
+`pickup_route_id` ni la ruta. Verificado contra `pg_proc` en la base de QA, no
+deducido del fichero.
+
+Consecuencia: `awaiting_reception` **no significa «va en camino»**. Significa
+«cerrada, sin recibir todavía», y se escribe en dos situaciones que no se
+parecen: cuando la ruta arranca de verdad (`close_pickup_route` → ruta
+`in_transit` → trigger de spec-47), y cuando se cierra una carga con el camión
+todavía parado en el andén. Un modelo que leyera esa columna mandaría la
+segunda a «Camino a bodega» con la cuadrilla aún dentro de la bodega del
+retailer — la misma mentira que la versión anterior, una columna más allá.
+
+La única columna del sistema que sabe si el camión salió es
+`pickup_routes.status`. Por eso manda ella.
+
+Ejemplo del mismo camión, al mismo tiempo, con el modelo corregido:
 
 | | CARGA-A (cerrada en el andén 09:00) | CARGA-B (sin cerrar) |
 |---|---|---|
@@ -108,8 +141,9 @@ camión, al mismo tiempo, con el modelo corregido:
 
 `reopen_pickup_route` (`20260812000005:255-262`) llega al mismo estado por el
 otro lado: devuelve la ruta a `in_progress` y limpia `reception_status`, pero
-no revierte `manifests.status`. Con cubos que miran ubicación, esa carga vuelve
-sola a «En punto de retiro», que es donde está.
+no revierte `manifests.status`. Con la ruta mandando, esa carga vuelve sola a
+«En punto de retiro», que es donde está — y ya no depende de qué columna del
+manifiesto quedó a medio limpiar.
 
 **Coste aceptado:** el cubo 2 mezcla «por escanear» con «ya cerrada». Se
 distinguen por un chip en la fila, no por pestaña. Es el precio de que la
@@ -173,11 +207,10 @@ juntas.
 **Las cuatro, no una.** Un borrador anterior creaba `get_routed_manifests` y
 dejaba `get_in_transit_manifests` y `get_completed_manifests` particionando por
 `status`. Eso no es un matiz de redacción: con esas dos intactas, la carga
-cerrada en el andén (`status='completed'`, ruta `in_progress`, `rs NULL`) la
-devuelven **`get_routed_manifests` y `get_completed_manifests` a la vez** — un
-solape real, en el estado normal de la operación — y en cuanto sale el camión
-la devuelve sólo `get_completed_manifests`, o sea «En bodega» con el camión en
-la carretera: el hallazgo original, intacto. La verificación de más abajo
+cerrada en el andén la devolvían **dos RPC a la vez** — un solape real, en el
+estado normal de la operación — y en cuanto salía el camión la devolvía sólo
+`get_completed_manifests`, o sea «En bodega» con el camión en la carretera: el
+hallazgo original, intacto. La verificación de más abajo
 falla contra su propio fixture obligatorio. Una migración, cuatro funciones.
 
 Cada una se re-templa desde su última definición — la regla de `CLAUDE.md`:
@@ -186,8 +219,14 @@ Cada una se re-templa desde su última definición — la regla de `CLAUDE.md`:
 |---|---|---|
 | `get_pending_manifests` | `20261003000001` | cubo 1, más el brazo `UNION ALL` de abajo |
 | `get_routed_manifests` | *nueva* | cubo 2 |
-| `get_in_transit_manifests` | `20260813000001` | `reception_status IN ('awaiting_reception','reception_in_progress')` |
-| `get_completed_manifests` | `20261004000001` | `reception_status='received' OR (status='completed' AND pickup_route_id IS NULL AND reception_status IS NULL)` |
+| `get_in_transit_manifests` | `20260813000001` | cubo 3 |
+| `get_completed_manifests` | `20261004000001` | cubo 4 |
+
+**Las cuatro necesitan el `LEFT JOIN` a `pickup_routes`**, no sólo la nueva:
+desde que manda la ruta, «sin ruta viva» es parte del predicado de los cubos 1,
+3 y 4, y eso no se puede evaluar sin mirar la tabla. `ruta_viva` se escribe una
+vez —`pr.id IS NOT NULL`, con el `JOIN` trayendo sólo filas no soft-deleted— y
+las cuatro la usan.
 
 Las cuatro añaden `status <> 'cancelled'`, **pero no en el mismo sitio**. En
 las tres que parten de `manifests` va en el `WHERE`. En `get_pending_manifests`
@@ -210,27 +249,36 @@ por `public.get_operator_id()` y `deleted_at IS NULL`. Predicado literal, para
 que no haya que ir a buscarlo a la tabla del modelo:
 
 ```sql
+FROM public.manifests m
+LEFT JOIN public.pickup_routes pr
+       ON pr.id = m.pickup_route_id
+      AND pr.deleted_at IS NULL
 WHERE m.operator_id = public.get_operator_id()
   AND m.deleted_at IS NULL
-  AND m.pickup_route_id IS NOT NULL
-  AND m.reception_status IS NULL
   AND m.status <> 'cancelled'
+  AND pr.id IS NOT NULL                              -- ruta viva
+  AND pr.status NOT IN ('in_transit','received')
 ```
+
+`NOT IN`, no `IN ('draft','in_progress')`: el cubo 2 es el complemento, así que
+un valor nuevo en `pickup_route_status_enum` aterriza aquí en vez de caerse del
+modelo. Un estado de ruta nuevo que no cayera en ninguna RPC sería este mismo
+bug otra vez.
+
+**La condición de soft-delete va en el `ON`, no en el `WHERE`, en las cuatro
+funciones.** En el `WHERE` convierte el `LEFT JOIN` en un `INNER` de hecho y
+recrea el agujero original: una ruta soft-deleted **no** vacía
+`manifests.pickup_route_id`, así que ese manifiesto se caería de esta RPC y de
+las otras tres a la vez — invisible, exactamente como `CARGA-PARIS-001`. En el
+`ON`, `pr.id` sale NULL, el manifiesto no tiene «ruta viva», y cae por sus
+propias columnas en el cubo 1, 3 o 4, como dice el modelo.
 
 Devuelve lo que sus hermanas, más:
 
-- `route_code`, `route_started_at`, `driver_name`, `route_status` — vía
-  **`LEFT JOIN public.pickup_routes pr ON pr.id = m.pickup_route_id AND
-  pr.deleted_at IS NULL`**, y de ahí a `users`.
-
-  **`LEFT`, y la condición en el `ON`, no en el `WHERE`.** Un borrador anterior
-  filtraba la fila por `pr.deleted_at IS NULL`, lo que recrea el agujero
-  original: una ruta soft-deleted **no** vacía `manifests.pickup_route_id`, así
-  que ese manifiesto quedaba excluido de esta RPC, excluido de
-  `get_pending_manifests` por tener ruta, y fuera de las otras dos por no tener
-  `reception_status` — invisible, exactamente como `CARGA-PARIS-001`. Con
-  `LEFT JOIN` la fila sobrevive y `route_status` sale NULL, que es justo la
-  señal que la fase 3 necesita (guarda 2 del RPC de quitar, no la 3).
+- `route_code`, `route_started_at`, `driver_name`, `route_status` — del mismo
+  `JOIN`, y de ahí a `users`. `route_status` es además la señal que la fase 3
+  necesita para deshabilitar el botón cuando la ruta no está `in_progress`
+  (guardas 2 y 3 del RPC de quitar).
 - `closed_at` — `completed_at` cuando `status='completed'`, para el chip
   «cerrada HH:MM» **y para «Cierres de hoy»** (ver abajo).
 - `missing_count` — la misma subconsulta que spec-83 fase 1 puso en
@@ -326,8 +374,19 @@ ciega justo donde el `status <> 'cancelled'` mal colocado haría daño.
 
 Fixture, sobre el conjunto real de la tabla y no sobre cuatro filas elegidas:
 carga cerrada en el andén con ruta `in_progress`, la misma tras salir el
-camión, carga con órdenes vivas y sin fila de manifiesto, carga con todas sus
-órdenes soft-deleted, carga `cancelled`, ruta soft-deleted.
+camión (ruta `in_transit`), la misma ya recibida, carga con órdenes vivas y sin
+fila de manifiesto, carga con todas sus órdenes soft-deleted, carga
+`cancelled`, ruta soft-deleted, y **una ruta en `draft`** — la rama que hace
+falsificable el `NOT IN` del cubo 2.
+
+**Un fixture que cierre una carga tiene que hacerlo en dos pasos.**
+`trg_manifest_reception_status` rellena `reception_status='awaiting_reception'`
+en cualquier `UPDATE` que lleve a `status='completed'` con la columna en NULL,
+así que un fixture de un solo paso nunca produce el estado que cree producir.
+Es lo que rompió los fixtures de spec-80 fase 2b y spec-83 fase 1 al
+re-templar: representan «carga recibida en el hub», y hay que escribirles
+`reception_status='received'` explícitamente.
+
 `scripts/pgtap-local.sh` — los tests SQL no corren en CI, y el contenedor es
 compartido entre worktrees.
 
