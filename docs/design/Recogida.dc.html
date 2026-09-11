@@ -57,7 +57,7 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
     <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
       <div style="display:flex;align-items:center;gap:8px;width:330px;height:34px;padding:0 11px;border:1px solid var(--border);border-radius:8px;background:var(--bg)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg>
-        <span style="font:400 12px/1 Inter,sans-serif;color:var(--text-3)">Buscar por carga, retailer o punto de recogida…</span>
+        <span style="font:400 12px/1 Inter,sans-serif;color:var(--text-3)">Buscar orden, paquete o RUT</span>
       </div>
       <span style="display:flex;align-items:center;gap:7px;height:34px;padding:0 14px;border-radius:8px;background:var(--accent-btn);font:600 12px/1 Inter,sans-serif;color:var(--accent-btn-text)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 8.5A2 2 0 0 1 5 6.5h2l1.5-2h7L17 6.5h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.4"/></svg>Nuevo manifiesto</span>
@@ -96,6 +96,12 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
         <div style="background:var(--ok-bg);border:1px solid var(--ok-border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:7px"><span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--ok-text)">COMPLETADOS HOY</span><span style="font:700 27px/1 'JetBrains Mono',monospace;color:var(--ok-text)">8</span></div>
       </div>
 
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;background:var(--surface)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg>
+        <span style="font:400 12px/1 Inter,sans-serif;color:var(--text-3)">Buscar carga, punto de recogida o cliente en este módulo</span>
+        <span style="margin-left:auto;font:500 10px/1 'JetBrains Mono',monospace;color:var(--text-3);border:1px solid var(--border);border-radius:5px;padding:4px 6px">/</span>
+      </div>
+
       <div style="display:flex;align-items:center;gap:8px">
         <span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--text-3)">CLIENTE</span>
         <div style="display:flex;flex-wrap:wrap;gap:6px">
@@ -116,7 +122,7 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
           <span style="margin-left:auto;font:400 11px/1 Inter,sans-serif;color:var(--text-3)">Marca los manifiestos y agrégalos a una ruta de recogida</span>
         </div>
 
-        <div style="flex:none;display:grid;grid-template-columns:22px 120px 1fr 108px 74px 74px 96px;gap:12px;padding:9px 16px;background:var(--bg);border-bottom:1px solid var(--border)">
+        <div style="flex:none;display:grid;grid-template-columns:22px 112px 1fr 100px 62px 56px 88px 86px;gap:12px;padding:9px 16px;background:var(--bg);border-bottom:1px solid var(--border)">
           <span></span>
           <span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.09em;color:var(--text-2)">CARGA</span>
           <span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.09em;color:var(--text-2)">PUNTO DE RECOGIDA</span>
@@ -124,11 +130,12 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
           <span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.09em;color:var(--text-2);text-align:right">ÓRDENES</span>
           <span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.09em;color:var(--text-2);text-align:right">PAQ.</span>
           <span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.09em;color:var(--text-2);text-align:right">VENTANA</span>
+          <span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.09em;color:var(--text-2);text-align:right">ETIQUETAS</span>
         </div>
 
         <div style="flex:1;min-height:0;display:flex;flex-direction:column">
 
-          <div style="display:grid;grid-template-columns:22px 120px 1fr 108px 74px 74px 96px;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-subtle);background:var(--accent-soft);border-left:3px solid var(--accent)">
+          <div style="display:grid;grid-template-columns:22px 112px 1fr 100px 62px 56px 88px 86px;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-subtle);background:var(--accent-soft);border-left:3px solid var(--accent)">
             <span style="width:16px;height:16px;border-radius:4px;background:var(--accent);display:grid;place-items:center"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--surface)" stroke-width="3.4"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text)">CARGA-99814</span>
             <span style="font:400 12px/1.3 Inter,sans-serif;color:var(--text-2)">Mall Plaza Vespucio, <b style="font-weight:600;color:var(--text)">La Florida</b></span>
@@ -136,9 +143,10 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text);text-align:right">18</span>
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text);text-align:right">42</span>
             <span style="font:500 11px/1 'JetBrains Mono',monospace;color:var(--text-2);text-align:right">09:00–13:00</span>
+            <span style="justify-self:end;display:flex;align-items:center;gap:6px;font:600 10.5px/1 Inter,sans-serif;color:var(--text-body);border:1px solid var(--border);background:var(--surface);border-radius:6px;padding:6px 9px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 9V4h10v5M7 18H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v6H7z"/></svg>Imprimir</span>
           </div>
 
-          <div style="display:grid;grid-template-columns:22px 120px 1fr 108px 74px 74px 96px;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-subtle);background:var(--accent-soft);border-left:3px solid var(--accent)">
+          <div style="display:grid;grid-template-columns:22px 112px 1fr 100px 62px 56px 88px 86px;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-subtle);background:var(--accent-soft);border-left:3px solid var(--accent)">
             <span style="width:16px;height:16px;border-radius:4px;background:var(--accent);display:grid;place-items:center"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--surface)" stroke-width="3.4"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text)">CARGA-99820</span>
             <span style="font:400 12px/1.3 Inter,sans-serif;color:var(--text-2)">Ripley Alto Las Condes, <b style="font-weight:600;color:var(--text)">Las Condes</b></span>
@@ -146,9 +154,10 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text);text-align:right">21</span>
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text);text-align:right">57</span>
             <span style="font:500 11px/1 'JetBrains Mono',monospace;color:var(--text-2);text-align:right">10:00–14:00</span>
+            <span style="justify-self:end;display:flex;align-items:center;gap:6px;font:600 10.5px/1 Inter,sans-serif;color:var(--text-body);border:1px solid var(--border);background:var(--surface);border-radius:6px;padding:6px 9px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 9V4h10v5M7 18H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v6H7z"/></svg>Imprimir</span>
           </div>
 
-          <div style="display:grid;grid-template-columns:22px 120px 1fr 108px 74px 74px 96px;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-subtle);border-left:3px solid var(--err)">
+          <div style="display:grid;grid-template-columns:22px 112px 1fr 100px 62px 56px 88px 86px;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-subtle);border-left:3px solid var(--err)">
             <span style="width:16px;height:16px;border-radius:4px;border:1.5px solid var(--border-strong)"></span>
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text)">CARGA-99827</span>
             <span style="font:400 12px/1.3 Inter,sans-serif;color:var(--text-2)">Sodimac Puente Alto, <b style="font-weight:600;color:var(--text)">Puente Alto</b></span>
@@ -156,9 +165,10 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text);text-align:right">9</span>
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text);text-align:right">22</span>
             <span style="font:600 11px/1 'JetBrains Mono',monospace;color:var(--err-text);text-align:right">cierra 12:30</span>
+            <span style="justify-self:end;display:flex;align-items:center;gap:6px;font:600 10.5px/1 Inter,sans-serif;color:var(--text-body);border:1px solid var(--border);background:var(--surface);border-radius:6px;padding:6px 9px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 9V4h10v5M7 18H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v6H7z"/></svg>Imprimir</span>
           </div>
 
-          <div style="display:grid;grid-template-columns:22px 120px 1fr 108px 74px 74px 96px;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-subtle);border-left:3px solid var(--warn)">
+          <div style="display:grid;grid-template-columns:22px 112px 1fr 100px 62px 56px 88px 86px;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-subtle);border-left:3px solid var(--warn)">
             <span style="width:16px;height:16px;border-radius:4px;border:1.5px solid var(--border-strong)"></span>
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text)">CARGA-99831</span>
             <span style="font:400 12px/1.3 Inter,sans-serif;color:var(--text-2)">Paris Costanera Center, <b style="font-weight:600;color:var(--text)">Providencia</b></span>
@@ -166,9 +176,10 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text);text-align:right">12</span>
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text);text-align:right">27</span>
             <span style="font:600 11px/1 'JetBrains Mono',monospace;color:var(--warn-text);text-align:right">cierra 14:00</span>
+            <span style="justify-self:end;display:flex;align-items:center;gap:6px;font:600 10.5px/1 Inter,sans-serif;color:var(--text-body);border:1px solid var(--border);background:var(--surface);border-radius:6px;padding:6px 9px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 9V4h10v5M7 18H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v6H7z"/></svg>Imprimir</span>
           </div>
 
-          <div style="display:grid;grid-template-columns:22px 120px 1fr 108px 74px 74px 96px;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-subtle);border-left:3px solid var(--border)">
+          <div style="display:grid;grid-template-columns:22px 112px 1fr 100px 62px 56px 88px 86px;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-subtle);border-left:3px solid var(--border)">
             <span style="width:16px;height:16px;border-radius:4px;border:1.5px solid var(--border-strong)"></span>
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text)">CARGA-99835</span>
             <span style="font:400 12px/1.3 Inter,sans-serif;color:var(--text-2)">Bodega Mercado Libre, <b style="font-weight:600;color:var(--text)">Quilicura</b></span>
@@ -176,9 +187,10 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text);text-align:right">31</span>
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text);text-align:right">68</span>
             <span style="font:500 11px/1 'JetBrains Mono',monospace;color:var(--text-2);text-align:right">08:00–18:00</span>
+            <span style="justify-self:end;display:flex;align-items:center;gap:6px;font:600 10.5px/1 Inter,sans-serif;color:var(--text-body);border:1px solid var(--border);background:var(--surface);border-radius:6px;padding:6px 9px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 9V4h10v5M7 18H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v6H7z"/></svg>Imprimir</span>
           </div>
 
-          <div style="display:grid;grid-template-columns:22px 120px 1fr 108px 74px 74px 96px;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-subtle);border-left:3px solid var(--border)">
+          <div style="display:grid;grid-template-columns:22px 112px 1fr 100px 62px 56px 88px 86px;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-subtle);border-left:3px solid var(--border)">
             <span style="width:16px;height:16px;border-radius:4px;border:1.5px solid var(--border-strong)"></span>
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text)">CARGA-99840</span>
             <span style="font:400 12px/1.3 Inter,sans-serif;color:var(--text-2)">Falabella Mall Plaza Oeste, <b style="font-weight:600;color:var(--text)">Cerrillos</b></span>
@@ -186,9 +198,10 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text);text-align:right">15</span>
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text);text-align:right">34</span>
             <span style="font:500 11px/1 'JetBrains Mono',monospace;color:var(--text-2);text-align:right">11:00–16:00</span>
+            <span style="justify-self:end;display:flex;align-items:center;gap:6px;font:600 10.5px/1 Inter,sans-serif;color:var(--text-body);border:1px solid var(--border);background:var(--surface);border-radius:6px;padding:6px 9px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 9V4h10v5M7 18H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v6H7z"/></svg>Imprimir</span>
           </div>
 
-          <div style="display:grid;grid-template-columns:22px 120px 1fr 108px 74px 74px 96px;gap:12px;align-items:center;padding:12px 16px;border-left:3px solid var(--border)">
+          <div style="display:grid;grid-template-columns:22px 112px 1fr 100px 62px 56px 88px 86px;gap:12px;align-items:center;padding:12px 16px;border-left:3px solid var(--border)">
             <span style="width:16px;height:16px;border-radius:4px;border:1.5px solid var(--border-strong)"></span>
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text)">CARGA-99846</span>
             <span style="font:400 12px/1.3 Inter,sans-serif;color:var(--text-2)">Ripley Mall Plaza Norte, <b style="font-weight:600;color:var(--text)">Huechuraba</b></span>
@@ -196,15 +209,13 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text);text-align:right">11</span>
             <span style="font:600 11.5px/1 'JetBrains Mono',monospace;color:var(--text);text-align:right">25</span>
             <span style="font:500 11px/1 'JetBrains Mono',monospace;color:var(--text-2);text-align:right">12:00–17:00</span>
+            <span style="justify-self:end;display:flex;align-items:center;gap:6px;font:600 10.5px/1 Inter,sans-serif;color:var(--text-body);border:1px solid var(--border);background:var(--surface);border-radius:6px;padding:6px 9px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 9V4h10v5M7 18H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v6H7z"/></svg>Imprimir</span>
           </div>
         </div>
 
         <div style="flex:none;display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--border);background:var(--bg)">
-          <span style="font:400 11px/1 Inter,sans-serif;color:var(--text-2)">7 de 12 · página 1 de 2</span>
-          <div style="margin-left:auto;display:flex;gap:6px">
-            <span style="font:500 11px/1 Inter,sans-serif;color:var(--text-3);border:1px solid var(--border);background:var(--surface);border-radius:6px;padding:6px 10px">Anterior</span>
-            <span style="font:500 11px/1 Inter,sans-serif;color:var(--text);border:1px solid var(--border);background:var(--surface);border-radius:6px;padding:6px 10px">Siguiente</span>
-          </div>
+          <span style="font:400 11px/1 Inter,sans-serif;color:var(--text-2)">Mostrando 7 de 12</span>
+          <span style="margin-left:auto;font:500 11px/1 Inter,sans-serif;color:var(--text);border:1px solid var(--border);background:var(--surface);border-radius:6px;padding:6px 10px">Cargar más</span>
         </div>
       </div>
     </div>
@@ -217,11 +228,10 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
           <span style="margin-left:auto;font:600 10.5px/1 'JetBrains Mono',monospace;color:var(--accent);background:var(--accent-soft);border:1px solid var(--warn-border);border-radius:5px;padding:3px 6px">BORRADOR</span>
         </div>
         <div style="flex:none;display:flex;flex-direction:column;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border)">
-          <span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--text-3)">VEHÍCULO Y CONDUCTOR</span>
-          <div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;background:var(--bg)">
-            <span style="width:28px;height:28px;flex:none;border-radius:50%;background:var(--raised);color:var(--accent);display:grid;place-items:center;font:600 10px/1 'JetBrains Mono',monospace">PV</span>
-            <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px"><span style="font:600 12px/1 Inter,sans-serif;color:var(--text)">Paulina Vergara</span><span style="font:400 10.5px/1 Inter,sans-serif;color:var(--text-3)">Furgón · 12,4 m³ · RTHK-72</span></div>
-            <span style="font:500 10.5px/1 Inter,sans-serif;color:var(--accent)">Cambiar</span>
+          <span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--text-3)">VEHÍCULO</span>
+          <div style="display:flex;align-items:center;gap:10px;padding:11px;border:1px dashed var(--border-strong);border-radius:8px;background:var(--bg)">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="1.8" style="flex:none"><path d="M2.5 16.5V7h11v9.5"/><path d="M13.5 10.5h4l4 4v2h-8"/><circle cx="6.5" cy="17.5" r="1.9"/><circle cx="16.5" cy="17.5" r="1.9"/></svg>
+            <span style="font:400 11.5px/1.3 Inter,sans-serif;color:var(--text-2)">Se elige al confirmar la ruta. La cuadrilla la asigna quien la lidera.</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:6px">
             <div style="display:flex;align-items:baseline;gap:8px"><span style="font:400 11px/1 Inter,sans-serif;color:var(--text-2)">Ocupación estimada</span><span style="margin-left:auto;font:600 11px/1 'JetBrains Mono',monospace;color:var(--ok-text)">68%</span></div>
@@ -246,7 +256,8 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
         </div>
         <div style="flex:none;display:flex;flex-direction:column;gap:9px;padding:13px 16px;border-top:1px solid var(--border);background:var(--bg)">
           <div style="display:flex;align-items:baseline;gap:8px"><span style="font:600 12px/1 Inter,sans-serif;color:var(--text)">39 órdenes · 99 paquetes</span></div>
-          <span style="display:block;text-align:center;font:600 12.5px/1 Inter,sans-serif;color:var(--accent-btn-text);background:var(--accent-btn);border-radius:8px;padding:11px 0">Crear ruta y generar QR</span>
+          <span style="display:block;text-align:center;font:600 12.5px/1 Inter,sans-serif;color:var(--accent-btn-text);background:var(--accent-btn);border-radius:8px;padding:11px 0">Iniciar ruta de retiro</span>
+          <span style="display:block;text-align:center;font:500 11px/1 Inter,sans-serif;color:var(--text-2);border:1px solid var(--border-strong);border-radius:8px;padding:10px 0">Ver QR de la ruta</span>
         </div>
       </div>
 
@@ -296,7 +307,7 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
 
   <div style="flex:none;display:flex;align-items:center;gap:12px;padding:10px 20px 18px;background:var(--surface);border-bottom:1px solid var(--border)">
     <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
-      <span style="font:600 20px/1.1 Archivo,sans-serif;color:var(--text)">Recogida</span>
+      <span style="font:600 20px/1.1 Archivo,sans-serif;color:var(--text)">Recogidas de hoy</span>
       <span style="font:500 14px/1 Inter,sans-serif;color:var(--text-2)">Marcela R. · mié 13/08</span>
     </div>
     <span style="margin-left:auto;flex:none;width:44px;height:44px;border-radius:50%;background:var(--raised);color:var(--accent);display:grid;place-items:center;font:600 14px/1 'JetBrains Mono',monospace">MR</span>
@@ -307,12 +318,32 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
       <span style="font:600 12px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--text-2)">NO TIENES RUTA ACTIVA</span>
       <span style="font:500 15px/1.35 Inter,sans-serif;color:var(--text-body)">Abre una ruta antes de escanear.</span>
     </div>
-    <div style="display:flex;flex-direction:column;gap:8px">
+    <div style="display:flex;flex-direction:column;gap:10px">
       <div style="display:flex;align-items:center;gap:11px;min-height:48px;padding:0 14px;border-radius:12px;background:var(--surface);border:1px solid var(--border-strong)">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="1.8" style="flex:none"><path d="M2.5 16.5V7h11v9.5"/><path d="M13.5 10.5h4l4 4v2h-8"/><circle cx="6.5" cy="17.5" r="1.9"/><circle cx="16.5" cy="17.5" r="1.9"/></svg>
-        <span style="font:600 15px/1 'JetBrains Mono',monospace;color:var(--text)">JKLM-42</span>
-        <span style="font:500 13.5px/1 Inter,sans-serif;color:var(--text-2)">vehículo</span>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="1.8" style="flex:none"><path d="M2.5 16.5V7h11v9.5"/><path d="M13.5 10.5h4l4 4v2h-8"/><circle cx="6.5" cy="17.5" r="1.9"/><circle cx="16.5" cy="17.5" r="1.9"/></svg>
+        <span style="font:500 15px/1 Inter,sans-serif;color:var(--text-3)">Patente</span>
         <span style="margin-left:auto;flex:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="2.2"><path d="M6 9.5l6 6 6-6"/></svg></span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;padding:12px 14px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font:600 11.5px/1 'JetBrains Mono',monospace;letter-spacing:.09em;color:var(--text-2)">ACOMPAÑANTES</span>
+          <span style="margin-left:auto;font:600 12.5px/1 'JetBrains Mono',monospace;color:var(--text-2)">2 de 3</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;min-height:44px">
+          <span style="flex:none;width:24px;height:24px;border-radius:7px;background:var(--accent);display:grid;place-items:center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--surface)" stroke-width="3.2"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
+          <span style="font:500 14.5px/1 Inter,sans-serif;color:var(--text)">Ignacio Tapia</span>
+          <span style="margin-left:auto;font:500 13px/1 Inter,sans-serif;color:var(--text-3)">auxiliar</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;min-height:44px">
+          <span style="flex:none;width:24px;height:24px;border-radius:7px;background:var(--accent);display:grid;place-items:center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--surface)" stroke-width="3.2"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
+          <span style="font:500 14.5px/1 Inter,sans-serif;color:var(--text)">Paulina Vergara</span>
+          <span style="margin-left:auto;font:500 13px/1 Inter,sans-serif;color:var(--text-3)">auxiliar</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;min-height:44px">
+          <span style="flex:none;width:24px;height:24px;border-radius:7px;border:1.5px solid var(--border-strong)"></span>
+          <span style="font:500 14.5px/1 Inter,sans-serif;color:var(--text-2)">Diego Salas</span>
+          <span style="margin-left:auto;font:500 13px/1 Inter,sans-serif;color:var(--text-3)">conductor</span>
+        </div>
       </div>
     </div>
     <div style="display:flex;align-items:center;justify-content:center;gap:11px;height:64px;border-radius:14px;background:var(--accent-btn)">
@@ -323,7 +354,7 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
 
   <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:12px;padding:20px 20px 0;overflow-y:auto">
     <div style="flex:none;display:flex;align-items:center;gap:9px">
-      <span style="font:600 12px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--text-2)">MANIFIESTOS ASIGNADOS A TI · 4</span>
+      <span style="font:600 12px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--text-2)">MANIFIESTOS POR RETIRAR · 4</span>
     </div>
 
     <div style="flex:none;display:flex;flex-direction:column;border-radius:14px;background:var(--surface);border:1px solid var(--border);overflow:hidden;margin-bottom:4px">
@@ -415,13 +446,18 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
     <span style="margin-left:auto;flex:none;width:34px;height:34px;border-radius:50%;background:var(--raised);color:var(--accent);display:grid;place-items:center;font:600 11px/1 'JetBrains Mono',monospace">MR</span>
   </div>
 
-  <div style="flex:none;display:flex;align-items:center;gap:11px;padding:11px 20px;background:var(--accent-soft);border-top:1px solid var(--accent);border-bottom:1px solid var(--accent)">
-    <span style="width:7px;height:7px;flex:none;border-radius:50%;background:var(--ok)"></span>
-    <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
+  <div style="flex:none;display:flex;flex-direction:column;gap:11px;padding:12px 20px 14px;background:var(--accent-soft);border-top:1px solid var(--accent);border-bottom:1px solid var(--accent)">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="width:7px;height:7px;flex:none;border-radius:50%;background:var(--ok)"></span>
       <span style="font:600 13.5px/1 'JetBrains Mono',monospace;color:var(--text)">PR-2026-0148 · en curso</span>
-      <span style="font:500 12px/1 Inter,sans-serif;color:var(--text-2)">JKLM-42 · 2 manifiestos en la ruta</span>
+      <span style="margin-left:auto;font:700 20px/1 'JetBrains Mono',monospace;color:var(--text)">12<span style="font:500 13px/1 Inter,sans-serif;color:var(--text-3)"> / 28</span></span>
     </div>
-    <span style="margin-left:auto;flex:none;font:600 12.5px/1 Inter,sans-serif;color:var(--text-body);border:1px solid var(--border-strong);background:var(--surface);border-radius:9px;min-height:44px;display:grid;place-items:center;padding:0 12px">Cerrar ruta</span>
+    <div style="height:7px;border-radius:5px;background:var(--raised);overflow:hidden"><span style="display:block;width:43%;height:100%;background:var(--ok)"></span></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+      <div style="display:flex;flex-direction:column;gap:4px;padding:9px 10px;border-radius:10px;background:var(--surface);border:1px solid var(--border)"><span style="font:600 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.08em;color:var(--text-3)">VERIFICADOS</span><span style="font:700 17px/1 'JetBrains Mono',monospace;color:var(--ok-text)">12</span></div>
+      <div style="display:flex;flex-direction:column;gap:4px;padding:9px 10px;border-radius:10px;background:var(--surface);border:1px solid var(--border)"><span style="font:600 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.08em;color:var(--text-3)">RESTAN</span><span style="font:700 17px/1 'JetBrains Mono',monospace;color:var(--text)">16</span></div>
+      <div style="display:flex;flex-direction:column;gap:4px;padding:9px 10px;border-radius:10px;background:var(--surface);border:1px solid var(--border)"><span style="font:600 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.08em;color:var(--text-3)">MANIFIESTOS</span><span style="font:700 17px/1 'JetBrains Mono',monospace;color:var(--text)">4</span></div>
+    </div>
   </div>
 
   <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:9px;padding:14px 20px 0;overflow-y:auto">
@@ -449,6 +485,19 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
         <span style="font:600 16px/1 Inter,sans-serif;color:var(--accent-btn-text)">Iniciar recogida</span>
       </div>
     </div>
+    <div style="flex:none;display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:12px;background:var(--map-bg);border:1px solid var(--border)">
+      <span style="flex:none;position:relative;width:52px;height:44px;border-radius:9px;background:var(--map-bg);border:1px solid var(--border);overflow:hidden">
+        <svg width="52" height="44" viewBox="0 0 52 44" fill="none" stroke="var(--map-line)" stroke-width="1.2" style="position:absolute;inset:0;opacity:.55"><path d="M0 14h52M0 30h52M15 0v44M36 0v44"/></svg>
+        <span style="position:absolute;left:21px;top:16px;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid var(--surface)"></span>
+      </span>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+        <span style="font:600 13.5px/1.25 Inter,sans-serif;color:var(--text)">Av. Vicuña Mackenna 7110</span>
+        <span style="font:500 12.5px/1 Inter,sans-serif;color:var(--text-2)">4,2 km · 11 min</span>
+      </div>
+      <span style="flex:none;display:grid;place-items:center;gap:0;width:52px;min-height:44px;border-radius:11px;border:1px solid var(--border-strong);background:var(--surface)">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-body)" stroke-width="1.9"><path d="M21 3L10.5 21l-2-8.5L0 10.5z" transform="translate(1.5 0)"/></svg>
+      </span>
+    </div>
     <div style="flex:none;display:flex;align-items:center;gap:10px;min-height:52px;margin-left:22px;padding:5px 11px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="1.9" style="flex:none"><path d="M12 21s7-6.3 7-11.4A7 7 0 0 0 5 9.6C5 14.7 12 21 12 21z"/><circle cx="12" cy="9.6" r="2.4"/></svg>
       <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
@@ -464,6 +513,7 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
         <span style="font:600 15px/1 Inter,sans-serif;color:var(--text)">Ripley</span>
         <span style="font:500 13.5px/1 Inter,sans-serif;color:var(--text-2)">1 punto · 25 paquetes</span>
       </div>
+      <span style="flex:none;font:600 12px/1 'JetBrains Mono',monospace;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);border-radius:6px;padding:6px 8px">EN RUTA</span>
     </div>
     <div style="flex:none;display:flex;align-items:center;gap:10px;min-height:52px;margin-left:22px;padding:5px 11px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="1.9" style="flex:none"><path d="M12 21s7-6.3 7-11.4A7 7 0 0 0 5 9.6C5 14.7 12 21 12 21z"/><circle cx="12" cy="9.6" r="2.4"/></svg>
@@ -480,7 +530,7 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
         <span style="font:600 15px/1 Inter,sans-serif;color:var(--text)">Paris</span>
         <span style="font:500 13.5px/1 Inter,sans-serif;color:var(--text-2)">1 punto · 61 paquetes</span>
       </div>
-      <span style="flex:none;font:600 13.5px/1 Inter,sans-serif;color:var(--accent);border:1px solid var(--accent);border-radius:9px;min-height:44px;display:grid;place-items:center;padding:0 12px">Ver carga</span>
+      <span style="flex:none;font:600 12px/1 'JetBrains Mono',monospace;color:var(--text-2);background:var(--surface);border:1px solid var(--border-strong);border-radius:6px;padding:6px 8px">PENDIENTE</span>
     </div>
 
     <div style="flex:none;display:flex;align-items:center;gap:11px;padding:6px 11px;border-radius:13px;background:var(--raised);border:1px solid var(--border)">
@@ -494,11 +544,23 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
     <span style="flex:none;height:4px"></span>
   </div>
 
-  <div style="flex:none;display:flex;gap:10px;padding:14px 20px 26px">
-    <span style="flex:none;text-align:center;font:600 14px/1 Inter,sans-serif;color:var(--text-body);border:1px solid var(--border-strong);border-radius:12px;min-height:52px;display:grid;place-items:center;padding:0 15px">Buscar</span>
-    <div style="flex:1;display:flex;align-items:center;justify-content:center;gap:9px;min-height:52px;border-radius:12px;border:1px solid var(--accent);background:var(--accent-soft)">
-      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" style="flex:none"><rect x="3" y="5.5" width="18" height="14" rx="2.4"/><circle cx="12" cy="12.5" r="3.4"/><path d="M16.5 9h1.5"/></svg>
-      <span style="font:600 14.5px/1 Inter,sans-serif;color:var(--text)">Digitalizar manifiesto</span>
+  <div style="flex:none;display:flex;flex-direction:column;gap:9px;padding:12px 20px 24px;border-top:1px solid var(--border);background:var(--surface)">
+    <div style="display:flex;gap:9px">
+      <span style="flex:none;display:grid;place-items:center;width:52px;min-height:48px;border-radius:12px;border:1px solid var(--border-strong)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-body)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg>
+      </span>
+      <span style="flex:1;text-align:center;font:600 13.5px/1 Inter,sans-serif;color:var(--text-body);border:1px solid var(--border-strong);border-radius:12px;min-height:48px;display:grid;place-items:center;padding:0 8px">Ver manifiesto</span>
+      <span style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;min-height:48px;border-radius:12px;border:1px solid var(--accent);background:var(--accent-soft);padding:0 8px">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" style="flex:none"><rect x="3" y="5.5" width="18" height="14" rx="2.4"/><circle cx="12" cy="12.5" r="3.4"/><path d="M16.5 9h1.5"/></svg>
+        <span style="font:600 13.5px/1 Inter,sans-serif;color:var(--text)">Digitalizar</span>
+      </span>
+      <span style="flex:none;display:grid;place-items:center;width:52px;min-height:48px;border-radius:12px;border:1px solid var(--border-strong)">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--text-body)" stroke-width="2.2"><path d="M12 5.5v13M5.5 12h13"/></svg>
+      </span>
+    </div>
+    <div style="display:flex;gap:10px">
+      <span style="flex:1;text-align:center;font:600 15px/1 Inter,sans-serif;color:var(--accent-btn-text);background:var(--accent-btn);border-radius:13px;min-height:52px;display:grid;place-items:center">Cerrar ruta</span>
+      <span style="flex:none;text-align:center;font:600 14px/1 Inter,sans-serif;color:var(--err-text);border:1px solid var(--err-border);border-radius:13px;min-height:52px;display:grid;place-items:center;padding:0 14px">Cancelar ruta</span>
     </div>
   </div>
 </div>
@@ -514,42 +576,102 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
     <span style="width:22px;height:11px;border:1.5px solid #9a8e7d;border-radius:3px;position:relative"><span style="position:absolute;inset:1.5px;right:9px;background:#9a8e7d;border-radius:1px"></span></span>
   </div>
 
-  <div style="flex:none;display:flex;align-items:center;gap:10px;padding:6px 20px 12px">
-    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#b8ab9a" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>
-    <div style="display:flex;flex-direction:column;gap:3px">
-      <span style="font:600 14px/1 Archivo,sans-serif;color:#f5ecd7">CARGA-99814</span>
-      <span style="font:400 11px/1 Inter,sans-serif;color:#9a8e7d">Falabella · Mall Plaza Vespucio</span>
+  <div style="flex:none;display:flex;flex-direction:column;gap:9px;padding:4px 20px 12px">
+    <div style="display:flex;align-items:center;gap:7px;font:500 10.5px/1 'JetBrains Mono',monospace;letter-spacing:.06em;color:#78716c">
+      <span>RECOGIDA</span><span>›</span><span style="color:#e6c15c">ESCANEO</span><span>›</span><span>REVISIÓN</span><span>›</span><span>FIRMA</span>
     </div>
-    <span style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:#fbbf24;background:rgba(120,53,15,.4);border:1px solid #78350f;border-radius:6px;padding:6px 8px">COLA 27</span>
+    <div style="display:flex;align-items:center;gap:10px">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#b8ab9a" stroke-width="2" style="flex:none"><path d="M15 5l-7 7 7 7"/></svg>
+      <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
+        <span style="font:600 14px/1 Archivo,sans-serif;color:#f5ecd7">CARGA-99814</span>
+        <span style="font:400 11px/1 Inter,sans-serif;color:#9a8e7d">Falabella · Mall Plaza Vespucio</span>
+      </div>
+      <span style="margin-left:auto;flex:none;font:600 10px/1 'JetBrains Mono',monospace;color:#fbbf24;background:rgba(120,53,15,.4);border:1px solid #78350f;border-radius:6px;padding:6px 7px">COLA 27</span>
+      <span style="flex:none;font:600 10px/1 'JetBrains Mono',monospace;color:#9a8e7d;border:1px solid #2a2218;border-radius:6px;padding:6px 7px">14:32</span>
+      <span style="flex:none;display:grid;place-items:center;width:44px;height:44px;border-radius:11px;border:1px solid #2a2218">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#b8ab9a" stroke-width="1.8"><path d="M7 9V4h10v5M7 18H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v6H7z"/></svg>
+      </span>
+    </div>
   </div>
 
-  <div style="flex:none;display:flex;flex-direction:column;gap:9px;padding:0 20px 16px">
+  <div style="flex:none;display:flex;flex-direction:column;gap:8px;padding:0 20px 12px">
     <div style="display:flex;align-items:baseline;gap:8px">
-      <span style="font:700 32px/1 'JetBrains Mono',monospace;color:#e6c15c">27</span>
+      <span style="font:700 26px/1 'JetBrains Mono',monospace;color:#e6c15c">27</span>
       <span style="font:400 13px/1 Inter,sans-serif;color:#9a8e7d">de 42 paquetes</span>
       <span style="margin-left:auto;font:600 12px/1 'JetBrains Mono',monospace;color:#b8ab9a">64%</span>
     </div>
     <div style="height:9px;border-radius:5px;background:#2a2218;overflow:hidden"><span style="display:block;width:64%;height:100%;background:#e6c15c"></span></div>
   </div>
 
-  <div style="flex:none;margin:0 20px;padding:20px;border-radius:16px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.35);display:flex;flex-direction:column;gap:14px">
-    <div style="display:flex;align-items:center;gap:13px">
-      <span style="width:46px;height:46px;flex:none;border-radius:13px;background:#4ade80;display:grid;place-items:center"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#13110d" stroke-width="3.2"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
-      <div style="display:flex;flex-direction:column;gap:5px">
-        <span style="font:600 17px/1 Archivo,sans-serif;color:#4ade80">Paquete verificado</span>
-        <span style="font:400 12px/1 'JetBrains Mono',monospace;color:#b8ab9a">CL7742891003</span>
+  <div style="flex:none;margin:0 20px;padding:13px;border-radius:14px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.35);display:flex;flex-direction:column;gap:9px">
+    <div style="display:flex;align-items:center;gap:12px">
+      <span style="width:38px;height:38px;flex:none;border-radius:11px;background:#4ade80;display:grid;place-items:center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#13110d" stroke-width="3.2"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+        <span style="font:600 14.5px/1 'JetBrains Mono',monospace;color:#f5ecd7">CL7742891003</span>
+        <span style="font:400 12px/1.3 Inter,sans-serif;color:#9a8e7d">ORD-48213 · Camila Fernández · paquete 2 de 3</span>
       </div>
+      <span style="flex:none;font:600 12px/1 Inter,sans-serif;color:#4ade80">verificado</span>
     </div>
-    <div style="height:1px;background:rgba(74,222,128,.2)"></div>
-    <div style="display:flex;flex-direction:column;gap:6px">
-      <span style="font:600 13.5px/1.3 Inter,sans-serif;color:#f5ecd7">ORD-48213 · Camila Fernández</span>
-      <span style="font:400 12px/1.4 Inter,sans-serif;color:#9a8e7d">Vicuña Mackenna 8420, La Florida · paquete 2 de 3</span>
-    </div>
-    <span style="font:600 10.5px/1 'JetBrains Mono',monospace;color:#fbbf24">GUARDADO EN EL DISPOSITIVO · SE ENVIARÁ AL VOLVER LA SEÑAL</span>
+    <span style="font:600 10px/1.3 'JetBrains Mono',monospace;color:#fbbf24">GUARDADO EN EL DISPOSITIVO · SE ENVIARÁ AL VOLVER LA SEÑAL</span>
   </div>
 
-  <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;padding:18px 20px 0;overflow:hidden">
-    <span style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.12em;color:#78716c">HISTORIAL DE ESCANEOS</span>
+  <div style="flex:none;display:flex;align-items:center;gap:11px;margin:14px 20px 0;padding:0 14px;min-height:54px;border-radius:13px;background:#1e1a14;border:1.5px solid #e6c15c">
+    <span style="width:2px;height:22px;background:#e6c15c"></span>
+    <span style="font:500 14px/1 'JetBrains Mono',monospace;color:#78716c">Esperando el disparo del lector…</span>
+    <span style="margin-left:auto;font:600 10px/1 'JetBrains Mono',monospace;color:#4ade80">LECTOR LISTO</span>
+  </div>
+
+  <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:9px;padding:14px 20px 0;overflow-y:auto">
+    <div style="flex:none;display:flex;align-items:center;gap:9px">
+      <span style="font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.12em;color:#78716c">ÓRDENES Y BULTOS</span>
+      <span style="margin-left:auto;font:500 11px/1 'JetBrains Mono',monospace;color:#9a8e7d">18 órdenes</span>
+    </div>
+
+    <div style="flex:none;display:flex;flex-direction:column;border-radius:12px;background:#1e1a14;border:1px solid #2a2218;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:11px;min-height:52px;padding:9px 13px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b8ab9a" stroke-width="2.4" style="flex:none"><path d="M6 9.5l6 6 6-6"/></svg>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+          <span style="font:600 13.5px/1 'JetBrains Mono',monospace;color:#f5ecd7">ORD-48213</span>
+          <span style="font:500 12.5px/1 Inter,sans-serif;color:#9a8e7d">Camila Fernández</span>
+        </div>
+        <span style="flex:none;font:700 13px/1 'JetBrains Mono',monospace;color:#fbbf24">2/3</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:11px;min-height:44px;padding:7px 13px 7px 30px;border-top:1px solid #2a2218">
+        <span style="width:7px;height:7px;flex:none;border-radius:50%;background:#4ade80"></span>
+        <span style="font:600 12.5px/1 'JetBrains Mono',monospace;color:#b8ab9a">CL7742891003</span>
+        <span style="margin-left:auto;font:500 11px/1 'JetBrains Mono',monospace;color:#78716c">08:34</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:11px;min-height:44px;padding:7px 13px 7px 30px;border-top:1px solid #2a2218">
+        <span style="width:7px;height:7px;flex:none;border-radius:50%;background:#4ade80"></span>
+        <span style="font:600 12.5px/1 'JetBrains Mono',monospace;color:#b8ab9a">CL7742891004</span>
+        <span style="margin-left:auto;font:500 11px/1 'JetBrains Mono',monospace;color:#78716c">08:32</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:11px;min-height:44px;padding:7px 13px 7px 30px;border-top:1px solid #2a2218">
+        <span style="width:7px;height:7px;flex:none;border-radius:50%;border:1.5px solid #4a4238"></span>
+        <span style="font:600 12.5px/1 'JetBrains Mono',monospace;color:#78716c">CL7742891005</span>
+        <span style="margin-left:auto;font:600 11px/1 Inter,sans-serif;color:#e6c15c;border:1px solid #2a2218;border-radius:8px;min-height:36px;display:grid;place-items:center;padding:0 10px">Marcar</span>
+      </div>
+    </div>
+
+    <div style="flex:none;display:flex;align-items:center;gap:11px;min-height:52px;padding:9px 13px;border-radius:12px;background:#1e1a14;border:1px solid #2a2218">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#78716c" stroke-width="2.4" style="flex:none"><path d="M9 6l6 6-6 6"/></svg>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+        <span style="font:600 13.5px/1 'JetBrains Mono',monospace;color:#f5ecd7">ORD-48227</span>
+        <span style="font:500 12.5px/1 Inter,sans-serif;color:#9a8e7d">Rodrigo Peña</span>
+      </div>
+      <span style="flex:none;font:700 13px/1 'JetBrains Mono',monospace;color:#4ade80">2/2</span>
+    </div>
+
+    <div style="flex:none;display:flex;align-items:center;gap:11px;min-height:52px;padding:9px 13px;border-radius:12px;background:#1e1a14;border:1px solid #2a2218">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#78716c" stroke-width="2.4" style="flex:none"><path d="M9 6l6 6-6 6"/></svg>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+        <span style="font:600 13.5px/1 'JetBrains Mono',monospace;color:#f5ecd7">ORD-48231</span>
+        <span style="font:500 12.5px/1 Inter,sans-serif;color:#9a8e7d">Ferretería Los Andes</span>
+      </div>
+      <span style="flex:none;font:700 13px/1 'JetBrains Mono',monospace;color:#78716c">0/4</span>
+    </div>
+
+    <span style="flex:none;font:600 10px/1 'JetBrains Mono',monospace;letter-spacing:.12em;color:#78716c;padding-top:6px">HISTORIAL DE ESCANEOS</span>
     <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:11px;background:#1e1a14;border:1px solid #2a2218">
       <span style="width:7px;height:7px;border-radius:50%;background:#fbbf24"></span><span style="font:600 12px/1 'JetBrains Mono',monospace;color:#f5ecd7">CL7742891003</span><span style="margin-left:auto;font:500 11px/1 'JetBrains Mono',monospace;color:#78716c">08:34</span>
     </div>
@@ -564,15 +686,12 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
     </div>
   </div>
 
-  <div style="flex:none;display:flex;flex-direction:column;gap:10px;padding:16px 20px 26px">
-    <div style="display:flex;align-items:center;justify-content:center;gap:10px;height:60px;border-radius:14px;background:#e6c15c">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#13110d" stroke-width="2"><path d="M3 5v14M6.5 5v14M10 5v14M13.5 5v14M17 5v14M20.5 5v14"/></svg>
-      <span style="font:600 16px/1 Inter,sans-serif;color:#13110d">Escanear siguiente</span>
+  <div style="flex:none;display:flex;flex-direction:column;gap:10px;padding:14px 20px 26px">
+    <div style="display:flex;align-items:center;justify-content:center;gap:10px;height:58px;border-radius:14px;background:#e6c15c">
+      <span style="font:600 16px/1 Inter,sans-serif;color:#13110d">Continuar a revisión</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#13110d" stroke-width="2.4"><path d="M9 5l7 7-7 7"/></svg>
     </div>
-    <div style="display:flex;gap:10px">
-      <span style="flex:1;text-align:center;font:600 13px/1 Inter,sans-serif;color:#b8ab9a;border:1px solid #2a2218;border-radius:12px;padding:15px 0">Ingresar código</span>
-      <span style="flex:1;text-align:center;font:600 13px/1 Inter,sans-serif;color:#b8ab9a;border:1px solid #2a2218;border-radius:12px;padding:15px 0">Cerrar carga</span>
-    </div>
+    <span style="text-align:center;font:600 13px/1 Inter,sans-serif;color:#b8ab9a;border:1px solid #2a2218;border-radius:12px;padding:15px 0">Ingresar código a mano</span>
   </div>
 </div>
 </div>
@@ -671,11 +790,23 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
   </div>
 
   <div style="flex:none;display:flex;flex-direction:column;gap:5px;padding:6px 20px 14px">
-    <span style="font:600 19px/1.1 Archivo,sans-serif;color:#f5ecd7">Cerrar CARGA-99814</span>
-    <span style="font:500 13.5px/1 Inter,sans-serif;color:#9a8e7d">39 verificados · 3 faltantes · 1 ajeno</span>
+    <span style="font:600 19px/1.1 Archivo,sans-serif;color:#f5ecd7">Firma y finalización</span>
+    <span style="font:600 13.5px/1 'JetBrains Mono',monospace;color:#9a8e7d">CARGA-99814 · Falabella</span>
   </div>
 
   <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:16px;padding:4px 20px 0;overflow-y:auto">
+
+    <div style="flex:none;display:grid;grid-template-columns:1fr 1fr;gap:9px">
+      <div style="display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:12px;background:#1e1a14;border:1px solid #2a2218"><span style="font:600 10px/1.3 'JetBrains Mono',monospace;letter-spacing:.08em;color:#78716c">VERIFICADOS</span><span style="font:700 22px/1 'JetBrains Mono',monospace;color:#4ade80">39</span></div>
+      <div style="display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:12px;background:#1e1a14;border:1px solid #2a2218"><span style="font:600 10px/1.3 'JetBrains Mono',monospace;letter-spacing:.08em;color:#78716c">FALTANTES<br>(CON NOTA)</span><span style="font:700 22px/1 'JetBrains Mono',monospace;color:#f87171">3</span></div>
+      <div style="display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:12px;background:#1e1a14;border:1px solid #2a2218"><span style="font:600 10px/1.3 'JetBrains Mono',monospace;letter-spacing:.08em;color:#78716c">PRECISIÓN</span><span style="font:700 22px/1 'JetBrains Mono',monospace;color:#f5ecd7">93%</span></div>
+      <div style="display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:12px;background:#1e1a14;border:1px solid #2a2218"><span style="font:600 10px/1.3 'JetBrains Mono',monospace;letter-spacing:.08em;color:#78716c">DURACIÓN</span><span style="font:700 22px/1 'JetBrains Mono',monospace;color:#f5ecd7">38<span style="font:500 13px/1 Inter,sans-serif;color:#78716c"> min</span></span></div>
+    </div>
+
+    <div style="flex:none;display:flex;flex-direction:column;gap:7px;padding:14px;border-radius:12px;background:#1e1a14;border:1px solid #2a2218">
+      <span style="font:600 13px/1 Inter,sans-serif;color:#f5ecd7">Aviso de transferencia de custodia</span>
+      <span style="font:500 13px/1.45 Inter,sans-serif;color:#b8ab9a">Al firmar, los 39 paquetes verificados pasan a custodia de Aureon. Los 3 faltantes quedan a nombre del local hasta que se resuelvan.</span>
+    </div>
 
     <div style="flex:none;display:flex;flex-direction:column;gap:11px">
       <div style="display:flex;align-items:center;gap:9px">
@@ -705,6 +836,11 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
     </div>
 
     <div style="flex:none;display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:center;gap:12px;min-height:48px">
+        <span style="flex:none;width:24px;height:24px;border-radius:7px;background:#e6c15c;display:grid;place-items:center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#13110d" stroke-width="3.2"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
+        <span style="font:600 14.5px/1.3 Inter,sans-serif;color:#f5ecd7">Agregar firma del cliente</span>
+        <span style="margin-left:auto;font:500 12.5px/1 Inter,sans-serif;color:#78716c">opcional</span>
+      </div>
       <span style="font:600 12px/1 'JetBrains Mono',monospace;letter-spacing:.11em;color:#9a8e7d">FIRMA DEL LOCAL</span>
       <div style="height:96px;border-radius:12px;background:#1e1a14;border:1px solid #2a2218;display:grid;place-items:center">
         <svg width="150" height="52" viewBox="0 0 150 52" fill="none" stroke="#f5ecd7" stroke-width="2.2" stroke-linecap="round"><path d="M10 38c8-16 14 8 22-6s12 10 20-4 14 6 22-8 16 12 24 2 14 4 22-6"/></svg>
@@ -716,14 +852,14 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
     </div>
 
     <div style="flex:none;display:flex;flex-direction:column;gap:11px">
-      <span style="font:600 12px/1 'JetBrains Mono',monospace;letter-spacing:.11em;color:#9a8e7d">TU FIRMA</span>
+      <div style="display:flex;align-items:baseline;gap:9px">
+        <span style="font:600 12px/1 'JetBrains Mono',monospace;letter-spacing:.11em;color:#9a8e7d">TU FIRMA</span>
+        <span style="margin-left:auto;font:500 12.5px/1 Inter,sans-serif;color:#b8ab9a">Operador: Marcela Rojas</span>
+      </div>
       <div style="height:96px;border-radius:12px;background:#1e1a14;border:1px solid #2a2218;display:grid;place-items:center">
         <svg width="140" height="48" viewBox="0 0 140 48" fill="none" stroke="#f5ecd7" stroke-width="2.2" stroke-linecap="round"><path d="M12 34c10-14 16 6 26-4s10 8 18-2 12 6 20-4 12 8 20 0 16 2 22-6"/></svg>
       </div>
-      <div style="display:flex;align-items:center;gap:11px;min-height:52px;padding:0 13px;border-radius:11px;background:#1e1a14;border:1px solid #2a2218">
-        <span style="font:500 14px/1 Inter,sans-serif;color:#9a8e7d">Nombre</span>
-        <span style="margin-left:auto;font:600 14px/1 Inter,sans-serif;color:#f5ecd7">Marcela Rojas</span>
-      </div>
+      <span style="font:500 12.5px/1.4 Inter,sans-serif;color:#78716c">Firma del operador (obligatoria)</span>
     </div>
 
     <span style="flex:none;height:4px"></span>
@@ -733,6 +869,44 @@ a{color:#ca9a04;text-decoration:none}a:hover{color:#a37c03}
     <div style="display:flex;align-items:center;justify-content:center;gap:10px;height:60px;border-radius:14px;background:#e6c15c">
       <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#13110d" stroke-width="2.6"><path d="M5 12.5l4.5 4.5L19 7"/></svg>
       <span style="font:600 17px/1 Inter,sans-serif;color:#13110d">Confirmar y cerrar carga</span>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="dv-opt" id="5f2"><div class="dv-olabel"><a class="dv-oid" href="#5f2">5f2</a>Móvil · confirmación irreversible de la transferencia de custodia (entre <a class="dv-oid" href="#5f">5f</a> y <a class="dv-oid" href="#5i">5i</a>)</div>
+<div class="dv-card" style="width:390px;border-radius:26px;border-color:rgba(0,0,0,.5)">
+<div data-screen-label="5f2 Confirmar transferencia" style="display:flex;flex-direction:column;justify-content:flex-end;width:390px;height:844px;background:#0a0908;font-family:Inter,sans-serif;color:#f5ecd7">
+
+  <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:14px;padding:56px 20px 0;opacity:.32">
+    <span style="font:600 19px/1.1 Archivo,sans-serif;color:#f5ecd7">Firma y finalización</span>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+      <div style="height:66px;border-radius:12px;background:#1e1a14;border:1px solid #2a2218"></div>
+      <div style="height:66px;border-radius:12px;background:#1e1a14;border:1px solid #2a2218"></div>
+      <div style="height:66px;border-radius:12px;background:#1e1a14;border:1px solid #2a2218"></div>
+      <div style="height:66px;border-radius:12px;background:#1e1a14;border:1px solid #2a2218"></div>
+    </div>
+    <div style="height:96px;border-radius:12px;background:#1e1a14;border:1px solid #2a2218"></div>
+    <div style="height:96px;border-radius:12px;background:#1e1a14;border:1px solid #2a2218"></div>
+  </div>
+
+  <div style="flex:none;display:flex;flex-direction:column;gap:16px;padding:24px 20px 28px;border-top:1px solid #2a2218;border-radius:22px 22px 0 0;background:#13110d">
+    <span style="align-self:center;width:44px;height:4px;border-radius:3px;background:#2a2218"></span>
+    <div style="display:flex;align-items:center;gap:13px">
+      <span style="width:46px;height:46px;flex:none;border-radius:13px;background:rgba(120,53,15,.4);border:1px solid #78350f;display:grid;place-items:center">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2.2"><path d="M12 8.5v5M12 16.5v.5"/><circle cx="12" cy="12" r="9"/></svg>
+      </span>
+      <span style="font:600 19px/1.2 Archivo,sans-serif;color:#f5ecd7">¿Confirmar transferencia de custodia?</span>
+    </div>
+    <span style="font:500 14.5px/1.5 Inter,sans-serif;color:#b8ab9a">39 paquetes pasan a custodia de Aureon y 3 quedan registrados como faltantes. Esta acción es irreversible.</span>
+    <div style="display:flex;flex-direction:column;gap:9px;padding:13px;border-radius:12px;background:#1e1a14;border:1px solid #2a2218">
+      <div style="display:flex;align-items:center;gap:10px"><span style="font:500 13.5px/1 Inter,sans-serif;color:#9a8e7d">Firmas</span><span style="margin-left:auto;font:600 13.5px/1 Inter,sans-serif;color:#f5ecd7">Jorge Aliaga · Marcela Rojas</span></div>
+      <div style="display:flex;align-items:center;gap:10px"><span style="font:500 13.5px/1 Inter,sans-serif;color:#9a8e7d">Respaldo</span><span style="margin-left:auto;font:600 13.5px/1 Inter,sans-serif;color:#f5ecd7">2 fotos del manifiesto</span></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <span style="text-align:center;font:600 16px/1 Inter,sans-serif;color:#13110d;background:#e6c15c;border-radius:14px;min-height:58px;display:grid;place-items:center">Sí, cerrar la carga</span>
+      <span style="text-align:center;font:600 15px/1 Inter,sans-serif;color:#b8ab9a;border:1px solid #2a2218;border-radius:13px;min-height:52px;display:grid;place-items:center">Volver a revisar</span>
     </div>
   </div>
 </div>
