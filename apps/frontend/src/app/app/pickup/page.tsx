@@ -105,9 +105,10 @@ function PickupPageContent() {
   // spec-94 fase 2 — the union of all four cubes, not just pending: a
   // retailer with every load already routed would otherwise lose its
   // filter chip exactly when it's needed.
-  const clients = clientBreakdown([...pending, ...routed, ...inTransit, ...completed]).map(
-    (c) => c.name,
-  );
+  // spec-95 fase 8 — the counts themselves are what feeds the chips now
+  // (mock 5a:88-95); dropping down to `.name` here, like this used to,
+  // would leave ClientFilter with nothing to render but a fabricated "· 0".
+  const clients = clientBreakdown([...pending, ...routed, ...inTransit, ...completed]);
 
   const visibleRows = rowsForTab(tab, pendingRows, inTransitRows, completedRows)
     .filter((r) => matchesClient(r.retailerName, selectedClient))

@@ -1,9 +1,10 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { StatTile } from '@/components/StatTile';
-import { ClientFilter } from '@/components/pickup/ClientFilter';
+import { ClientFilter, type ClientCount } from '@/components/pickup/ClientFilter';
 import { ActiveRouteBanner } from '@/components/pickup/ActiveRouteBanner';
 import { ManifestTable, type ManifestRow } from '@/components/pickup/ManifestTable';
 import { RoutedManifestTable } from '@/components/pickup/RoutedManifestTable';
@@ -59,12 +60,19 @@ const EMPTY_MESSAGES: Record<TabKey, string> = {
   completed: 'Ningún manifiesto completado todavía.',
 };
 
+// spec-95 fase 8 (mock 5a:216-217) — "Mostrando 7 de 12 · Cargar más"
+// replaces the Anterior/Siguiente pager spec-83 fase 4 found nowhere in the
+// code (it was never built). This reveals more of the already-fetched rows
+// client-side — there is no server-side page to ask for — 7 to match the
+// mock's own first page.
+const PAGE_SIZE = 7;
+
 interface PickupDesktopViewProps {
   activeRoute: ActivePickupRoute | null | undefined;
   activeManifests: RouteManifestRow[];
   totals: { manifests: number; orders: number; packages: number };
   closures: ClosureRow[];
-  clients: string[];
+  clients: ClientCount[];
   selectedClient: string | null;
   setSelectedClient: (client: string | null) => void;
   searchTerm: string;
@@ -138,6 +146,19 @@ export function PickupDesktopView({
     completed: completedRows.length,
   };
 
+  // spec-95 fase 8 — "Cargar más" grows this; switching tab, searching or
+  // picking a client resets it, or the ninth row of a brand-new filter
+  // would render as if it had already been revealed by a click nobody made.
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [tab, searchTerm, selectedClient]);
+
+  const totalForTab = tab === 'routed' ? visibleRoutedRows.length : visibleRows.length;
+  const shownCount = Math.min(visibleCount, totalForTab);
+  const pagedRows = visibleRows.slice(0, visibleCount);
+  const pagedRoutedRows = visibleRoutedRows.slice(0, visibleCount);
+
   return (
     <div className="grid min-h-0 gap-4 xl:grid-cols-[1fr_340px]">
       <div className="flex min-w-0 flex-col gap-4">
@@ -157,19 +178,17 @@ export function PickupDesktopView({
           <StatTile label="Completados hoy" value={closures.length} tone="success" />
         </div>
 
-        {clients.length > 0 && (
-          <ClientFilter clients={clients} selected={selectedClient} onSelect={setSelectedClient} />
-        )}
-
+        {/* spec-95 fase 8 (mock 5a:82-95) — the module's OWN search bar gets
+            its own bar, ahead of the client chips. The app-wide search
+            (orden/paquete/RUT, mock 5a:63-67) already lives in TopBar
+            (`onOpenSearch`, gated by `showOpsTools`) — nothing to add here
+            for that half of the checklist, it was never owned by this
+            module. */}
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
           <Input
             type="search"
-            placeholder={
-              tab === 'routed'
-                ? 'Buscar por carga, retailer, ruta o líder…'
-                : 'Buscar por carga, retailer o punto de recogida…'
-            }
+            placeholder="Buscar carga, punto de recogida o cliente en este módulo"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-9 pr-9"
@@ -185,6 +204,10 @@ export function PickupDesktopView({
             </button>
           )}
         </div>
+
+        {clients.length > 0 && (
+          <ClientFilter clients={clients} selected={selectedClient} onSelect={setSelectedClient} />
+        )}
 
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-border bg-surface">
           <div className="flex flex-none flex-wrap items-center gap-1 border-b border-border px-4 py-2.5">
@@ -222,11 +245,11 @@ export function PickupDesktopView({
             // arrow function fail to return on every path (TS2366).
             switch (tab) {
               case 'routed':
-                return <RoutedManifestTable rows={visibleRoutedRows} emptyMessage={EMPTY_MESSAGES.routed} />;
+                return <RoutedManifestTable rows={pagedRoutedRows} emptyMessage={EMPTY_MESSAGES.routed} />;
               case 'pending':
                 return (
                   <ManifestTable
-                    rows={visibleRows}
+                    rows={pagedRows}
                     selectedIds={selectedIds}
                     onToggle={toggle}
                     labelsEnabled={labelsEnabled}
@@ -238,7 +261,7 @@ export function PickupDesktopView({
               case 'in_transit':
                 return (
                   <ManifestTable
-                    rows={visibleRows}
+                    rows={pagedRows}
                     labelsEnabled={labelsEnabled}
                     onPrintLabels={onPrintLabels}
                     onOpen={onOpen}
@@ -248,7 +271,7 @@ export function PickupDesktopView({
               case 'completed':
                 return (
                   <ManifestTable
-                    rows={visibleRows}
+                    rows={pagedRows}
                     labelsEnabled={labelsEnabled}
                     onPrintLabels={onPrintLabels}
                     onOpen={onOpen}
@@ -257,6 +280,23 @@ export function PickupDesktopView({
                 );
             }
           })()}
+
+          {totalForTab > 0 && (
+            <div className="flex flex-none items-center gap-2.5 border-t border-border bg-background px-4 py-2.5">
+              <span className="text-[11px] text-text-secondary">
+                Mostrando {shownCount} de {totalForTab}
+              </span>
+              {shownCount < totalForTab && (
+                <button
+                  type="button"
+                  onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+                  className="ml-auto rounded-md border border-border bg-surface px-2.5 py-1.5 text-[11px] font-medium text-text hover:bg-surface-raised"
+                >
+                  Cargar más
+                </button>
+              )}
+            </div>
+          )}
         </section>
       </div>
 
