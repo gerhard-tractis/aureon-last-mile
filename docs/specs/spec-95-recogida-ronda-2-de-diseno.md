@@ -210,11 +210,11 @@ campo ya viaja en `RouteManifestRow` — y que lo caro era la semántica, no el
 > una lista plana» y que agrupar era «la reconstrucción que esta fase no es» —
 > `RouteManifestList` ya agrupa por cliente desde `a89cada`.
 
-### Fase 2 — `5c` cabecera de ruta y pie de dos filas `[pending]`
+### Fase 2 — `5c` cabecera de ruta y pie de dos filas `[in_progress]`
 
 **Depende de:** spec-95 fase 1
 
-**Archivos:** `apps/frontend/src/app/app/pickup/route/active/page.tsx`, `apps/frontend/src/components/pickup/RouteProgressHeader.tsx`, `apps/frontend/src/components/pickup/CancelRouteButton.tsx`, `apps/frontend/src/components/pickup/CloseRouteButton.tsx`, y sus tests
+**Archivos:** `apps/frontend/src/app/app/pickup/route/active/page.tsx`, `apps/frontend/src/components/pickup/RouteProgressHeader.tsx`, `apps/frontend/src/components/pickup/CancelRouteButton.tsx`, `apps/frontend/src/components/pickup/CloseRouteButton.tsx`, `apps/frontend/src/components/pickup/RouteManifestPanel.tsx`, `apps/frontend/src/components/pickup/RouteFooterTopRow.tsx`, `apps/frontend/src/lib/pickup/routeManifestSearch.ts`, y sus tests
 
 La cabecera que ya existe **se conserva**: `spec-82` fase 1 la declaró «más rica
 que la pastilla compacta del mock», y la ronda 2 le da la razón — el mock nuevo
@@ -225,6 +225,38 @@ dibuja exactamente eso (código de ruta, `12/28`, barra y las tres cifras
 - [ ] Pie de **dos filas**: arriba `Buscar`, `Ver manifiesto`, `Digitalizar`, `+`; abajo `Cerrar ruta` (primario) y `Cancelar ruta`.
 - [ ] `Digitalizar manifiesto` pasa del inline a la fila fija — el punto que `spec-82` fase 1 dejó **abierto** por minimizar el diff, y que esta fase cierra por tocar la barra igualmente.
 - [ ] `Cancelar ruta` conserva su comportamiento de `spec-61` Task 5 intacto; sólo cambia de sitio.
+
+> **`Buscar` es una decisión de producto que este spec no cubría.** El mock
+> sólo dibuja el ícono en la fila; qué hace no lo define ni el mock ni ningún
+> spec anterior. Se cableó como **filtro inline**, reutilizando el patrón que
+> ya existe en `PickupMobileActiveRoute` y `PickupMobileStartRoute` — mismo
+> `matchesQuery`, mismo `aria-label`, mismo gate. La alternativa era dejar un
+> botón muerto, que es justo el defecto que el review de la fase 4 encontró en
+> el chevron. Dos sub-decisiones: abrir la búsqueda **expande** la lista;
+> cerrarla **no** la colapsa pero sí limpia la query.
+>
+> **Divergencias con `5c`, declaradas:** (1) el mock (`Recogida.dc.html:568-571`)
+> dibuja `Cerrar ruta` y `Cancelar ruta` **en la misma fila**; aquí van
+> apilados, para que un mis-tap no caiga en el destructivo. (2) el mock pone
+> `Ver manifiesto` estático y se conservó el label dinámico
+> (`Ver los N manifiestos`), porque el mock no dibuja estado colapsado y perder
+> el contador sería peor.
+>
+> **Lo que el review encontró, y que no era estilo:** bajo búsqueda,
+> `groupManifestStatus` corría sobre el **subconjunto filtrado**, así que un
+> grupo con una carga cerrada y otra sin tocar se pintaba `COMPLETADA` en
+> cuanto buscabas la cerrada. El precedente que se copió **ya había pagado ese
+> mismo bug en su propia ronda de review**. Ahora el estado y los contadores se
+> calculan siempre sobre el grupo completo y el filtro sólo decide qué filas se
+> pintan.
+>
+> **Y el mismo fallo de reserva que la fase 5:** el pie creció a tres filas
+> (~184-200px) mientras `pb-40` seguía reservando 160px, dejando la última fila
+> de manifiesto bajo la barra fija. Es la tercera vez esta noche que una fase
+> crece un pie fijo sin subir su `pb-*`. Ahora `pb-56`, con test sobre la clase.
+>
+> **Deuda:** `page.tsx` en 367 líneas, sobre el límite de 300 — ya estaba en 366
+> antes de que este spec la tocara.
 
 ### Fase 3 — `5c` panel de mapa `[pending]`
 

@@ -6,6 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CameraIntake } from './CameraIntake';
+import { cn } from '@/lib/utils';
 
 /**
  * spec-82 phase 1 (mock 5c) — "Digitalizar manifiesto" on the mobile
@@ -28,8 +29,23 @@ import { CameraIntake } from './CameraIntake';
  * regression test in app/app/pickup/page.test.tsx pinning it) and nothing
  * in spec-82's text revisits that call. Mock 5c is the active-ROUTE screen,
  * not the pre-route manifest list, so the two decisions do not conflict.
+ *
+ * spec-95 fase 2 — el mock mueve este botón del bloque inline que tenía
+ * `page.tsx` a la fila fija del pie, junto a "Buscar", el toggle de
+ * manifiestos y "+". Ahí necesita `flex-1`, no `w-full`. `className` sólo
+ * reemplaza la parte de ANCHO del default (`w-full` ↔ `flex-1`, vía `??`,
+ * nunca concatenados — dos utilidades de ancho distintas conviviendo
+ * producirían un resultado indefinido). `min-h-[44px] gap-2` va por fuera,
+ * con `cn`/twMerge, y se conserva SIEMPRE — L2, review: un `className` que
+ * reemplazara el string entero (como antes) dejaba el botón sin su objetivo
+ * táctil mínimo de 44px en cuanto alguien pasara un override sin pensar en
+ * incluirlo.
  */
-export function DigitalizeManifestTrigger() {
+export interface DigitalizeManifestTriggerProps {
+  className?: string;
+}
+
+export function DigitalizeManifestTrigger({ className }: DigitalizeManifestTriggerProps = {}) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
 
@@ -50,7 +66,7 @@ export function DigitalizeManifestTrigger() {
       <Button
         type="button"
         variant="outline"
-        className="w-full min-h-[44px] gap-2"
+        className={cn('min-h-[44px] gap-2', className ?? 'w-full')}
         onClick={() => setOpen(true)}
       >
         <Camera className="h-4 w-4" aria-hidden="true" />
