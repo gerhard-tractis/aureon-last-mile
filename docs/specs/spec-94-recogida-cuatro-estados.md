@@ -490,7 +490,7 @@ compartido entre worktrees.
   significa que un grep de las etiquetas nuevas encuentra un fichero que
   miente. Se borran los dos.
 
-## Fase 3 — «Quitar de la ruta» desde la pestaña `[pending]`
+## Fase 3 — «Quitar de la ruta» desde la pestaña `[in_progress]`
 
 **Depende de:** spec-94 fase 2
 
