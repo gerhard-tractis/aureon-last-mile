@@ -41,7 +41,7 @@
  * Returns an array of error strings (empty when the shape is fine).
  */
 
-import { resolveGateEnv, checkOutputStepBinding } from './check-deploy-gating-autoapprove.mjs';
+import { resolveGateEnv, checkOutputStepBinding } from './check-deploy-gating-output-binding.mjs';
 
 export function checkPgNetShape(jobs) {
   const errors = [];
@@ -68,15 +68,16 @@ export function checkPgNetShape(jobs) {
     const pgNetOutput = changesJob.outputs && typeof changesJob.outputs === 'object'
       ? changesJob.outputs.pg_net
       : undefined;
-    if (!pgNetOutput || !/pg_net/.test(String(pgNetOutput))) {
+    if (!pgNetOutput) {
       errors.push(
-        'changes.outputs.pg_net is missing or does not reference a pg_net step output — ' +
-        'needs.changes.outputs.pg_net then reads as empty, which silently removes the ' +
-        'pg_net class from the combined auto-approve condition'
+        'changes.outputs.pg_net is missing — needs.changes.outputs.pg_net then reads as empty, ' +
+        'which silently removes the pg_net class from the combined auto-approve condition'
       );
     } else {
-      // ── item 3 (2026-09-10 review): the referenced step id must exist
-      // AND compute pg_net= — see checkOutputStepBinding's own comment.
+      // ── item 3, hardened G1/G2 (round 3): checkOutputStepBinding now owns
+      // the full check — an unanchored field name (pg_net_v2) or a step
+      // that only MENTIONS pg_net= without writing it to $GITHUB_OUTPUT
+      // both used to pass silently. See its own comment.
       errors.push(...checkOutputStepBinding(changesJob, pgNetOutput, 'pg_net'));
     }
 

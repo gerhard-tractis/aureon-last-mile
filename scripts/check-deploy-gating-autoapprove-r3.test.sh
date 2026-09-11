@@ -74,13 +74,16 @@ FRESH_STEP='    steps:
             exit 1
           fi'
 
-# full_wf <changes-steps-block> <approve-production-needs-line>
+DEFAULT_OUTPUTS='    outputs:
+      auth_hook: ${{ steps.filter.outputs.auth_hook }}
+      pg_net: ${{ steps.filter.outputs.pg_net }}'
+
+# full_wf <changes-steps-block> <approve-production-needs-line> [outputs-block]
 full_wf() {
-  local changes_steps="$1" gate_needs="$2"
+  local changes_steps="$1" gate_needs="$2" outputs_block="${3:-$DEFAULT_OUTPUTS}"
   printf 'jobs:\n'
   printf '  changes:\n    runs-on: ubuntu-latest\n'
-  printf '    outputs:\n      auth_hook: ${{ steps.filter.outputs.auth_hook }}\n'
-  printf '      pg_net: ${{ steps.filter.outputs.pg_net }}\n'
+  printf '%s\n' "$outputs_block"
   printf '%s\n' "$changes_steps"
   printf '  deploy-qa:\n    needs: [changes]\n    concurrency:\n      group: qa-deploy\n'
   printf '  e2e-qa:\n'
@@ -121,6 +124,40 @@ RENAMED_ID_WF="$(full_wf "$RENAMED_ID_STEPS" "[changes, deploy-qa, e2e-qa]")"
 assert_exit 1 "renaming id: filter to id: filterX (run: untouched) fails" "$RENAMED_ID_WF"
 assert_contains "references steps.filter, but no step in changes declares id: filter" \
   "names the unbound auth_hook output" "$RENAMED_ID_WF"
+
+# ── G1 (2026-09-10, round 3): output field name suffixed, unanchored match ──
+# would have let `outputs.auth_hook_v2`/`outputs.pg_net_v2` satisfy a check
+# for `auth_hook`/`pg_net` — a substring match, not an exact field match.
+# The filter step never writes auth_hook_v2=/pg_net_v2= at all.
+SUFFIXED_OUTPUTS='    outputs:
+      auth_hook: ${{ steps.filter.outputs.auth_hook_v2 }}
+      pg_net: ${{ steps.filter.outputs.pg_net_v2 }}'
+SUFFIXED_WF="$(full_wf "$CHANGES_STEPS" "[changes, deploy-qa, e2e-qa]" "$SUFFIXED_OUTPUTS")"
+assert_exit 1 "output field suffixed with _v2 (unanchored match) fails" "$SUFFIXED_WF"
+assert_contains "does not reference steps.<id>.outputs.auth_hook exactly" \
+  "names the unanchored auth_hook match" "$SUFFIXED_WF"
+assert_contains "does not reference steps.<id>.outputs.pg_net exactly" \
+  "names the unanchored pg_net match" "$SUFFIXED_WF"
+
+# ── G2 (2026-09-10, round 3): outputs: point at a SECOND step that only
+# mentions auth_hook=/pg_net= in a diagnostic echo, never writes either to
+# $GITHUB_OUTPUT. The real "filter" step still computes and writes both
+# correctly — id: resolves, the field name matches exactly, and the old
+# "mentions <field>=" check was satisfied by the diagnostic text alone.
+DIAGNOSTIC_STEP_STEPS="$CHANGES_STEPS"'
+      - name: Log
+        id: log
+        run: |
+          echo "diagnostics: auth_hook=unused pg_net=unused"'
+DIAGNOSTIC_OUTPUTS='    outputs:
+      auth_hook: ${{ steps.log.outputs.auth_hook }}
+      pg_net: ${{ steps.log.outputs.pg_net }}'
+DIAGNOSTIC_WF="$(full_wf "$DIAGNOSTIC_STEP_STEPS" "[changes, deploy-qa, e2e-qa]" "$DIAGNOSTIC_OUTPUTS")"
+assert_exit 1 "outputs: bound to a step that only mentions the field in a diagnostic echo fails" "$DIAGNOSTIC_WF"
+assert_contains "never writes auth_hook= to \$GITHUB_OUTPUT" \
+  "names the unwritten auth_hook output" "$DIAGNOSTIC_WF"
+assert_contains "never writes pg_net= to \$GITHUB_OUTPUT" \
+  "names the unwritten pg_net output" "$DIAGNOSTIC_WF"
 
 echo
 echo "  $pass passed, $fail failed"

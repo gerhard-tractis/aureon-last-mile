@@ -71,47 +71,15 @@ function findFreshnessStep(steps) {
   });
 }
 
-// `environment:` is legal as a bare string or an object with `name:`.
-// Exported so check-deploy-gating-pgnet.mjs doesn't reimplement this same
-// two-line resolution (review round 2026-09-10, item 5 — it had drifted
-// into an identical copy).
-export function resolveGateEnv(gate) {
-  if (!gate) return undefined;
-  return typeof gate.environment === 'object' && gate.environment !== null
-    ? gate.environment.name
-    : gate.environment;
-}
-
-// review round 2026-09-10, item 3 — `changes.outputs.<outputKey>` (e.g.
-// `${{ steps.filter.outputs.auth_hook }}`) names a step by `id:`, but
-// nothing verified that id actually resolves to a real step, let alone one
-// that computes that field. Renaming `id: filter` to `id: filterX` (the
-// step's `run:` untouched) left every presence check green while
-// `steps.filter.outputs.auth_hook` — and pg_net alongside it — silently
-// went dead. Exported so both check-deploy-gating-autoapprove.mjs and
-// check-deploy-gating-pgnet.mjs share one implementation instead of two
-// copies that can drift (same reasoning as resolveGateEnv above).
-export function checkOutputStepBinding(changesJob, outputValue, outputKey) {
-  const errors = [];
-  if (!changesJob || !Array.isArray(changesJob.steps)) return errors;
-  const idMatch = new RegExp(`steps\\.([A-Za-z0-9_-]+)\\.outputs\\.${outputKey}`)
-    .exec(String(outputValue ?? ''));
-  if (!idMatch) return errors; // nothing to bind-check — presence checks cover the rest
-  const stepId = idMatch[1];
-  const boundStep = changesJob.steps.find((s) => s.id === stepId);
-  if (!boundStep) {
-    errors.push(
-      `changes.outputs.${outputKey} references steps.${stepId}, but no step in changes declares ` +
-      `id: ${stepId} — the output can never resolve and always reads as empty`
-    );
-  } else if (!new RegExp(`${outputKey}\\s*=`).test(String(boundStep.run ?? ''))) {
-    errors.push(
-      `changes.outputs.${outputKey} references steps.${stepId}, but that step's run: never computes ` +
-      `${outputKey}= — the output is bound to a step that doesn't produce it`
-    );
-  }
-  return errors;
-}
+// `resolveGateEnv`/`checkOutputStepBinding` live in
+// check-deploy-gating-output-binding.mjs, shared with
+// check-deploy-gating-pgnet.mjs — split out to stay under the repo's
+// 300-line guideline (review round 2026-09-10, item 5 / size). Re-exported
+// here too: check-deploy-gating.mjs and existing tests already import
+// VALID_CONDITIONAL_ENV etc. from this file, and other code may still
+// expect resolveGateEnv to live here.
+import { resolveGateEnv, checkOutputStepBinding } from './check-deploy-gating-output-binding.mjs';
+export { resolveGateEnv, checkOutputStepBinding };
 
 export function checkAutoApproveShape(jobs) {
   const errors = [];
@@ -249,14 +217,17 @@ export function checkAutoApproveShape(jobs) {
     const authHookOutput = changesJob.outputs && typeof changesJob.outputs === 'object'
       ? changesJob.outputs.auth_hook
       : undefined;
-    if (!authHookOutput || !/auth_hook/.test(String(authHookOutput))) {
+    if (!authHookOutput) {
       errors.push(
-        'changes.outputs.auth_hook is missing or does not reference an auth_hook step output — ' +
-        'needs.changes.outputs.auth_hook then reads as empty, which always resolves ' +
-        "approve-production's environment to 'production-auto', silently removing the human pause"
+        'changes.outputs.auth_hook is missing — needs.changes.outputs.auth_hook then reads as ' +
+        "empty, which always resolves approve-production's environment to 'production-auto', " +
+        'silently removing the human pause'
       );
     } else {
-      // ── item 3: the referenced step id must exist AND compute auth_hook= ─
+      // ── item 3, hardened G1/G2 (round 3): checkOutputStepBinding now owns
+      // the full check — an unanchored field name (auth_hook_v2) or a
+      // step that only MENTIONS auth_hook= without writing it to
+      // $GITHUB_OUTPUT both used to pass silently. See its own comment.
       errors.push(...checkOutputStepBinding(changesJob, authHookOutput, 'auth_hook'));
     }
 
