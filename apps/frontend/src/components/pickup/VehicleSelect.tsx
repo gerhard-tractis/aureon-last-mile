@@ -82,8 +82,12 @@ export function VehicleSelect({ operatorId, value, onChange }: VehicleSelectProp
 
       {/* spec-95 fase 4 (`5b`) — ícono de camión a la izquierda del
           disparador y chevron a la derecha, además de los que ya llevaban
-          las filas de la lista. Ambos `aria-hidden` + `pointer-events-none`:
-          son decorativos, el propio Input sigue siendo el control real. */}
+          las filas de la lista. El camión es puramente decorativo
+          (`aria-hidden` + `pointer-events-none`); el chevron NO lo es —
+          Review round 1: dibujado sin cablear dejaba la lista sin forma de
+          cerrarse (el Input reabre en `onFocus` antes de que un click en un
+          hijo `pointer-events-none` pudiera hacer nada). Es un <button> real
+          que alterna `open`, con su propio target de 44px. */}
       <div className="relative">
         <Truck
           data-testid="vehicle-select-truck-icon"
@@ -105,6 +109,9 @@ export function VehicleSelect({ operatorId, value, onChange }: VehicleSelectProp
             setOpen(true);
             if (value) onChange(null);
           }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setOpen(false);
+          }}
           // Review fix (spec-54 3j): this field is now a mobile screen's
           // mandatory FIRST interaction — ui/input's default h-10 (40px) is
           // below the 44px touch-target floor. Every other control this
@@ -112,11 +119,20 @@ export function VehicleSelect({ operatorId, value, onChange }: VehicleSelectProp
           // was the one gap.
           className="min-h-[44px] pl-10 pr-10"
         />
-        <ChevronDown
-          data-testid="vehicle-select-chevron-icon"
-          aria-hidden="true"
-          className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted"
-        />
+        <button
+          type="button"
+          aria-label={open ? 'Cerrar lista de patentes' : 'Abrir lista de patentes'}
+          aria-expanded={open}
+          aria-controls="vehicle-select-list"
+          onClick={() => setOpen((o) => !o)}
+          className="absolute right-0 top-1/2 grid h-[44px] w-[44px] -translate-y-1/2 place-items-center"
+        >
+          <ChevronDown
+            data-testid="vehicle-select-chevron-icon"
+            aria-hidden="true"
+            className="h-4 w-4 text-text-muted"
+          />
+        </button>
       </div>
 
       {open && (

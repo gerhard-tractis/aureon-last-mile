@@ -133,4 +133,51 @@ describe('VehicleSelect', () => {
     render(<VehicleSelect operatorId="op-1" value={null} onChange={() => {}} />);
     expect(screen.getByLabelText(/Vehículo/i)).toHaveValue('');
   });
+
+  // Review round 1 (spec-95 fase 4) — "presencia" no bastaba: un icono
+  // presente pero sin `pointer-events-none` se come el tap, y sin
+  // `pl-10 pr-10` el placeholder "Patente" se dibuja debajo del camión en
+  // 390px. jsdom no calcula geometría, pero className y aria-hidden sí son
+  // asertables por atributo, y CrewSelect.test.tsx:142 ya sentó el
+  // precedente de asertar className por esta misma razón.
+  it('keeps the decorative truck icon out of hit-testing and the a11y tree', () => {
+    render(<VehicleSelect operatorId="op-1" value={null} onChange={() => {}} />);
+    const truck = screen.getByTestId('vehicle-select-truck-icon');
+    expect(truck.getAttribute('aria-hidden')).toBe('true');
+    expect(truck.getAttribute('class')).toContain('pointer-events-none');
+  });
+
+  it('pads the input so the truck and chevron never overlap the typed plate', () => {
+    render(<VehicleSelect operatorId="op-1" value={null} onChange={() => {}} />);
+    expect(screen.getByLabelText(/Vehículo/i).className).toContain('pl-10');
+    expect(screen.getByLabelText(/Vehículo/i).className).toContain('pr-10');
+  });
+
+  // The chevron itself IS interactive (it toggles the list, see below), so
+  // only the truck is checked for pointer-events-none above; asserting it
+  // here too would just restate the same fact for a different element.
+  it('opens the list on focus and closes it on a chevron click, not a dead affordance', () => {
+    render(<VehicleSelect operatorId="op-1" value={null} onChange={() => {}} />);
+    const input = screen.getByLabelText(/Vehículo/i);
+
+    fireEvent.focus(input);
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /patentes/i }));
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /patentes/i }));
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+  });
+
+  it('closes the list on Escape without requiring a selection', () => {
+    render(<VehicleSelect operatorId="op-1" value={null} onChange={() => {}} />);
+    const input = screen.getByLabelText(/Vehículo/i);
+
+    fireEvent.focus(input);
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
 });
