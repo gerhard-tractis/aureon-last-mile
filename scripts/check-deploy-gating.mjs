@@ -26,6 +26,7 @@ import {
   VALID_CONDITIONAL_ENV,
 } from './check-deploy-gating-autoapprove.mjs';
 import { checkPgNetShape } from './check-deploy-gating-pgnet.mjs';
+import { checkChangesOutputFieldRefs } from './check-deploy-gating-field-refs.mjs';
 
 const GATE = 'approve-production';
 
@@ -188,40 +189,11 @@ for (const job of PROD_JOBS) {
   }
 }
 
-// ── G2 (2026-09-10 review round 4): every needs.changes.outputs.<field> a
-// production job's if: reads must exist in changes.outputs ─────────────────
-// This guard already checks that PROD_JOBS depend on the gate and that
-// always() doesn't bypass it, but never that the path-filter FIELDS those
-// jobs' if: conditions read are real. `needs.changes.outputs.workerz ==
-// 'true'` (a typo, or a field renamed on one side and not the other) reads
-// as '' forever — deploy-worker never runs, on EVERY push, with this guard
-// green. Same failure shape as the auto-approve-environment checks in
-// check-deploy-gating-autoapprove.mjs (item 2's needs: check, and the
-// id:/field-name binding checks in check-deploy-gating-output-binding.mjs)
-// but on the OTHER side of the file: those protect the human-pause
-// decision, this protects whether a production job runs AT ALL. Only
-// enforced when `changes` declares `outputs:` as an object (minimal
-// fixtures across this test family often don't — same convention as
-// elsewhere in this file).
-if (jobs['changes'] && jobs['changes'].outputs && typeof jobs['changes'].outputs === 'object') {
-  const changesOutputKeys = new Set(Object.keys(jobs['changes'].outputs));
-  for (const job of PROD_JOBS) {
-    if (!jobs[job]) continue;
-    const cond = ifOf(job);
-    const referenced = new Set(
-      [...cond.matchAll(/needs\.changes\.outputs\.([A-Za-z0-9_-]+)/g)].map((m) => m[1])
-    );
-    for (const field of referenced) {
-      if (!changesOutputKeys.has(field)) {
-        errors.push(
-          `${job}'s if: reads needs.changes.outputs.${field}, but changes.outputs has no ` +
-          `${field} key — it always evaluates as empty (never 'true'), so ${job} never runs, ` +
-          `on every push, with this guard green`
-        );
-      }
-    }
-  }
-}
+// ── G2/round-5 (2026-09-10 review) — every needs.changes.outputs.<field> a
+// production job's if: or env: (job- or step-level) reads must exist in
+// changes.outputs. Split out to check-deploy-gating-field-refs.mjs for the
+// 300-line guideline — see that file's header for the full rationale.
+errors.push(...checkChangesOutputFieldRefs(jobs, PROD_JOBS, ifOf));
 
 // ── deploy-supabase must not be path-filtered ────────────────────────────────
 // Whether production needs migrations is a fact about PRODUCTION, not about the

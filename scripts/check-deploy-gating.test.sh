@@ -208,45 +208,9 @@ OBJECT_ENV='jobs:
 
 assert_exit 0 "accepts the object form of environment:" "$OBJECT_ENV"
 
-# ── G2 (2026-09-10 review round 4): a production job's if: reads a
-# needs.changes.outputs.<field> that changes.outputs doesn't actually have —
-# a typo or a field renamed on one side only. It reads as '' forever, so the
-# job never runs, on every push, with every OTHER check here green (it does
-# depend on approve-production, the gate is real, everything else is fine).
-TYPO_FIELD='jobs:
-  changes:
-    runs-on: ubuntu-latest
-    outputs:
-      worker: ${{ steps.filter.outputs.worker }}
-  deploy-qa:
-    needs: [changes]
-    concurrency: qa-deploy
-  approve-production:
-    needs: [changes, deploy-qa]
-    environment: production
-  deploy-supabase:
-    needs: [changes, approve-production]
-    concurrency: production-deploy-supabase
-  deploy-edge-functions:
-    needs: [changes, approve-production]
-    concurrency: production-deploy-edge-functions
-  deploy-vercel:
-    needs: [changes, approve-production]
-    concurrency: production-deploy-vercel
-  deploy-worker:
-    needs: [changes, approve-production]
-    concurrency: production-deploy-worker
-    if: needs.changes.outputs.workerz == '"'"'true'"'"'
-  deploy-agents:
-    needs: [changes, approve-production]
-    concurrency: production-deploy-agents
-  deploy-solver:
-    needs: [changes, approve-production]
-    concurrency: production-deploy-solver'
-
-assert_exit 1 "fails when a prod job's if: reads a changes.outputs field that doesn't exist" "$TYPO_FIELD"
-assert_contains "deploy-worker's if: reads needs.changes.outputs.workerz, but changes.outputs has no workerz key" \
-  "names the job and the typo'd field" "$TYPO_FIELD"
+# ── G2/round-5 (typo'd changes.outputs field refs in if:/env:) live in
+# check-deploy-gating-field-refs.test.sh — split out to stay under the
+# repo's 300-line guideline.
 
 # ── Bad input ────────────────────────────────────────────────────────────────
 if bash "$SCRIPT" "$TMP/does-not-exist.yml" >/dev/null 2>&1; then

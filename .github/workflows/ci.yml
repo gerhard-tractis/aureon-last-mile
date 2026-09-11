@@ -96,6 +96,14 @@ jobs:
       - name: Test the deploy-gating guard
         run: bash ./scripts/check-deploy-gating.test.sh
 
+      # spec-92/spec-93 review round 2026-09-10, G2 + round 5: a typo'd
+      # needs.changes.outputs.<field> reference in a production job's if:
+      # or in a step-level env: reads as '' forever — the job never runs
+      # (if:) or QA silently syncs a stale artifact (env:), both with CI
+      # green otherwise.
+      - name: Test the deploy-gating guard — changes.outputs field references
+        run: bash ./scripts/check-deploy-gating-field-refs.test.sh
+
       - name: Test the deploy-gating guard — concurrency groups
         run: bash ./scripts/check-deploy-gating-concurrency.test.sh
 
