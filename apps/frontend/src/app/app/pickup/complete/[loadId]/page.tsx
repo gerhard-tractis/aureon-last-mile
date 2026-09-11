@@ -23,18 +23,8 @@ import { useSyncQueue } from '@/hooks/useSyncQueue';
 import { retryBlockedManifest } from '@/hooks/useOfflineQueue';
 import { CheckCircle, XCircle, Target, Shield } from 'lucide-react';
 import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
+import { CustodyConfirmationSheet } from '@/components/pickup/CustodyConfirmationSheet';
 import { toast } from 'sonner';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
 
 // B2, ronda 2 de review de spec-95 fase 6 — el mismo esqueleto servía dos
 // veces (manifiesto sin cargar, o `scans`/`missingPackages` pausados);
@@ -79,6 +69,10 @@ export default function CompletionPage() {
   const [showClientSig, setShowClientSig] = useState(false);
   const [clientName, setClientName] = useState('');
   const [clientSignature, setClientSignature] = useState<string | null>(null);
+  // spec-95 fase 7 (5f2) — la hoja inferior de confirmación irreversible se
+  // abre/cierra con este estado; antes lo llevaba `AlertDialog` (Radix) por
+  // dentro, sin que esta página necesitara saberlo.
+  const [showCustodyConfirm, setShowCustodyConfirm] = useState(false);
   // 5i — set once close_manifest succeeds (online, idempotent-recovered, or
   // queued offline); replaces the signing form with the closed summary.
   // `null` means "still signing".
@@ -346,35 +340,32 @@ export default function CompletionPage() {
         onOperatorSignatureChange={setOperatorSignature}
       />
 
-      {/* Complete Button with Confirmation Dialog */}
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button
-            disabled={!canComplete || isSubmitting}
-            className="w-full disabled:opacity-50"
-            size="lg"
-          >
-            {isSubmitting ? 'Completando...' : 'Confirmar y cerrar carga'}
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              ¿Confirmar transferencia de custodia?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta acción es irreversible. Al confirmar, se registrará la
-              transferencia legal de los paquetes al operador.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleComplete}>
-              Confirmar y completar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* spec-95 fase 7, mock `5f2` — este botón sólo ABRE la hoja de
+          confirmación irreversible; ya no lleva el diálogo dentro. */}
+      <Button
+        disabled={!canComplete || isSubmitting}
+        className="w-full disabled:opacity-50"
+        size="lg"
+        onClick={() => setShowCustodyConfirm(true)}
+      >
+        {isSubmitting ? 'Completando...' : 'Confirmar y cerrar carga'}
+      </Button>
+
+      <CustodyConfirmationSheet
+        open={showCustodyConfirm}
+        onOpenChange={setShowCustodyConfirm}
+        verifiedCount={verifiedCount}
+        missingCount={missingPackages.length}
+        operatorName={operatorName}
+        // 5f2 — "Firmas" sólo lleva al cliente cuando de verdad firmó; el
+        // checkbox opcional puede estar marcado con `clientName` escrito y
+        // sin trazo todavía (`clientSignature` null), y eso no es una firma.
+        clientName={clientSignature ? clientName : null}
+        serverPhotosCount={serverPhotosCount}
+        queuedPhotosCount={queuedPhotoCount}
+        onConfirm={handleComplete}
+        isSubmitting={isSubmitting}
+      />
     </div>
   );
 }

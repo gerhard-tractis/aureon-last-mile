@@ -498,6 +498,82 @@ describe('CompletionPage', () => {
     });
   });
 
+  // spec-95 fase 7, mock `5f2` — el diálogo irreversible pasa de
+  // `AlertDialog` centrado a una hoja inferior (`CustodyConfirmationSheet`).
+  // Este grupo cubre el cableado desde la página: qué props le llegan y que
+  // "Volver a revisar" cierra sin tocar `handleComplete`.
+  describe('5f2 — custody confirmation sheet', () => {
+    it('opens the sheet with the mock\'s title on tapping "Confirmar y cerrar carga"', async () => {
+      render(<CompletionPage />);
+      const sigPad = await screen.findByTestId('signature-pad-Firma del operador (obligatoria)');
+      fireEvent.click(sigPad);
+      fireEvent.click(await screen.findByRole('button', { name: /confirmar y cerrar carga/i }));
+
+      expect(
+        await screen.findByText('¿Confirmar transferencia de custodia?')
+      ).toBeInTheDocument();
+    });
+
+    // scans por defecto (beforeEach): 2 verificados; missingPackages: 1.
+    it('shows the 5f2 copy with the real verified/missing counts, not the 5f wording', async () => {
+      render(<CompletionPage />);
+      const sigPad = await screen.findByTestId('signature-pad-Firma del operador (obligatoria)');
+      fireEvent.click(sigPad);
+      fireEvent.click(await screen.findByRole('button', { name: /confirmar y cerrar carga/i }));
+
+      expect(
+        await screen.findByText(
+          '2 paquetes pasan a custodia de Aureon y 1 queda registrado como faltante. Esta acción es irreversible.'
+        )
+      ).toBeInTheDocument();
+    });
+
+    it('"Volver a revisar" closes the sheet WITHOUT calling close_manifest', async () => {
+      render(<CompletionPage />);
+      const sigPad = await screen.findByTestId('signature-pad-Firma del operador (obligatoria)');
+      fireEvent.click(sigPad);
+      fireEvent.click(await screen.findByRole('button', { name: /confirmar y cerrar carga/i }));
+
+      const backOut = await screen.findByRole('button', { name: 'Volver a revisar' });
+      fireEvent.click(backOut);
+
+      await waitFor(() => {
+        expect(
+          screen.queryByText('¿Confirmar transferencia de custodia?')
+        ).not.toBeInTheDocument();
+      });
+      expect(mockRpc).not.toHaveBeenCalledWith('close_manifest', expect.anything());
+    });
+
+    it('shows only the operator under "Firmas" when the client has not signed', async () => {
+      render(<CompletionPage />);
+      const sigPad = await screen.findByTestId('signature-pad-Firma del operador (obligatoria)');
+      fireEvent.click(sigPad);
+      fireEvent.click(await screen.findByRole('button', { name: /confirmar y cerrar carga/i }));
+
+      const row = await screen.findByTestId('custody-sheet-signers');
+      expect(within(row).getByText('Test User')).toBeInTheDocument();
+    });
+
+    it('shows both names under "Firmas" once the client also signed', async () => {
+      render(<CompletionPage />);
+      const sigPad = await screen.findByTestId('signature-pad-Firma del operador (obligatoria)');
+      fireEvent.click(sigPad);
+
+      fireEvent.click(screen.getByLabelText('Agregar firma del cliente'));
+      fireEvent.change(screen.getByPlaceholderText('Nombre del cliente'), {
+        target: { value: 'Marcela Rojas' },
+      });
+      const clientSig = await screen.findByTestId('signature-pad-Firma del cliente (opcional)');
+      fireEvent.click(clientSig);
+
+      fireEvent.click(await screen.findByRole('button', { name: /confirmar y cerrar carga/i }));
+
+      const row = await screen.findByTestId('custody-sheet-signers');
+      expect(within(row).getByText('Test User · Marcela Rojas')).toBeInTheDocument();
+    });
+  });
+
   // spec-80 fase 3 — "bloque de fotos arriba" (5f): el respaldo fotográfico
   // se monta antes de la línea de seguridad offline y de ambas firmas.
   it('renders the manifest photo strip before the offline-safety line (5f: fotos arriba)', async () => {
@@ -550,7 +626,7 @@ describe('CompletionPage', () => {
     fireEvent.click(submitButton);
 
     const confirmButton = await screen.findByRole('button', {
-      name: /confirmar y completar/i,
+      name: 'Sí, cerrar la carga',
     });
     fireEvent.click(confirmButton);
 
@@ -584,7 +660,7 @@ describe('CompletionPage', () => {
     fireEvent.click(submitButton);
 
     const confirmButton = await screen.findByRole('button', {
-      name: /confirmar y completar/i,
+      name: 'Sí, cerrar la carga',
     });
     fireEvent.click(confirmButton);
   };
@@ -662,7 +738,7 @@ describe('CompletionPage', () => {
     fireEvent.click(clientSig);
 
     fireEvent.click(screen.getByRole('button', { name: /confirmar y cerrar carga/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /confirmar y completar/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Sí, cerrar la carga' }));
 
     await screen.findByText('Carga cerrada');
     expect(within(screen.getByTestId('summary-row-unexpected')).getByText('1')).toBeInTheDocument();
