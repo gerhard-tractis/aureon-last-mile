@@ -572,6 +572,28 @@ describe('CompletionPage', () => {
       const row = await screen.findByTestId('custody-sheet-signers');
       expect(within(row).getByText('Test User · Marcela Rojas')).toBeInTheDocument();
     });
+
+    // Mata la mutación de leer `clientName` sin el guard de
+    // `clientSignature`: un nombre escrito en el campo sin trazo dibujado
+    // NO es una firma, y "Firmas" no puede afirmar que el local firmó
+    // cuando sólo tecleó su nombre.
+    it('does NOT show a typed-but-unsigned client name under "Firmas"', async () => {
+      render(<CompletionPage />);
+      const sigPad = await screen.findByTestId('signature-pad-Firma del operador (obligatoria)');
+      fireEvent.click(sigPad);
+
+      fireEvent.click(screen.getByLabelText('Agregar firma del cliente'));
+      fireEvent.change(screen.getByPlaceholderText('Nombre del cliente'), {
+        target: { value: 'Marcela Rojas' },
+      });
+      // Sin clic en el pad de firma del cliente — sólo el nombre, sin trazo.
+
+      fireEvent.click(await screen.findByRole('button', { name: /confirmar y cerrar carga/i }));
+
+      const row = await screen.findByTestId('custody-sheet-signers');
+      expect(within(row).getByText('Test User')).toBeInTheDocument();
+      expect(within(row).queryByText(/Marcela Rojas/)).not.toBeInTheDocument();
+    });
   });
 
   // spec-80 fase 3 — "bloque de fotos arriba" (5f): el respaldo fotográfico

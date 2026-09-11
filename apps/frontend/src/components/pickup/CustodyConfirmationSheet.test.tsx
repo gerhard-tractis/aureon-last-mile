@@ -118,4 +118,9 @@ describe('CustodyConfirmationSheet', () => {
     expect(onConfirm).not.toHaveBeenCalled();
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  it('disables "Sí, cerrar la carga" while a previous confirm is still in flight', () => {
+    render(<CustodyConfirmationSheet {...baseProps({ isSubmitting: true })} />);
+    expect(screen.getByRole('button', { name: 'Sí, cerrar la carga' })).toBeDisabled();
+  });
 });
