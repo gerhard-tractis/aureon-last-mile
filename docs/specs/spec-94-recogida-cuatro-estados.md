@@ -494,7 +494,9 @@ compartido entre worktrees.
 
 **Depende de:** spec-94 fase 2
 
-**Archivos:** `apps/frontend/src/components/pickup/RoutedManifestTable.tsx`, `apps/frontend/src/components/pickup/RoutedManifestTable.test.tsx`
+**Archivos:** `apps/frontend/src/components/pickup/RoutedManifestTable.tsx`, `apps/frontend/src/components/pickup/RoutedManifestTable.test.tsx`, `apps/frontend/src/hooks/pickup/useRoutedManifests.ts`, `apps/frontend/src/hooks/pickup/pickupRemoveFromRoute.invalidation.test.tsx`, `apps/frontend/src/app/app/pickup/page.test.tsx`, migración nueva en `packages/database/supabase/migrations/`, `packages/database/supabase/tests/spec94_fase1_pickup_four_cubes.test.sql`
+
+**Esta fase sí toca SQL, contra lo que decía este listado.** La fase 1 devolvía `route_code` —la etiqueta— pero **no el UUID de la ruta**, y `remove_manifest_from_route(p_route_id, p_manifest_id)` lo necesita: el botón no tenía a qué llamar. Se descubrió construyendo la fase 3, no en ninguna de las tres rondas de review de la fase 1 — cada ronda revisó una fase contra el spec y ninguna revisó la costura entre dos. La migración `20261009000001` añade `pickup_route_id` al `RETURNS TABLE`, con `DROP FUNCTION` (Postgres no deja cambiar un `RETURNS TABLE` en caliente) y reemisión de los `GRANT`/`REVOKE` que el `DROP` se lleva.
 
 Cada fila ofrece «Ver ruta» y «Quitar de la ruta». La segunda **reutiliza
 `useRemoveManifestFromRoute`**, que ya existe con su test y ya lo usa
@@ -516,7 +518,27 @@ como un toast:
 | `status = 'completed'` | ninguna | la carga ya está cerrada y firmada: quitarla borraría la firma |
 | `route_status IS NULL` o `<> 'in_progress'` | 2 y 3 | la ruta ya no admite cambios |
 
-El segundo no lo cubre ninguna guarda del RPC, y es el que más duele: una carga
+**La guarda 4 (autorización) se deja deliberadamente al toast**, y es la única.
+Un `pickup_leader` ajeno a la ruta ve el botón habilitado y descubre por
+mensaje que no puede. Anticiparlo en la fila exigiría saber si ese usuario es
+tripulación de **esa** ruta — información que el RPC tiene y la fila no
+(`get_routed_manifests` devuelve `driver_name`, no `driver_id` ni la
+tripulación), así que costaría otra migración y otro JOIN. El criterio para
+anticipar una guarda es que deje al usuario sin explicación o que le borre
+algo; ésta no hace ninguna de las dos: su mensaje ya está en español y ya es
+accionable («Solo la tripulación de esta ruta puede quitarle cargas»).
+
+**Las guardas 3 y 7 sí hay que traducirlas en el `onError` de la tabla.** Bajo
+el `staleTime` de 30 s la fila puede ir un minuto por detrás de la base, así
+que las dos son alcanzables desde esta pantalla aunque el botón esté bien
+deshabilitado en el momento de pintar. Sus mensajes son inglés crudo con UUID
+(`pickup route … is not in_progress`, `manifest … has verified scans`) — la
+migración de spec-64 tradujo a propósito las guardas 4 y 6 «porque el hook
+rethrows RPC messages unchanged» y se saltó éstas sólo porque desde móvil no
+se alcanzaban.
+
+El segundo caso de la tabla no lo cubre ninguna guarda del RPC, y es el que más
+duele: una carga
 cerrada por la vía de todo-discrepancias tiene **cero** escaneos `verified`, así
 que la guarda 7 la deja pasar y el `UPDATE` borra la firma del cliente. El
 `UPDATE` limpia esas columnas a propósito (`20260824000004`, nota del final:
@@ -532,6 +554,16 @@ pestaña la mostrará indefinidamente como «abierta hace N h». Es una decisió
 política con riesgo real —una cuadrilla tarda horas de forma legítima— y no una
 consecuencia de este hallazgo. Se nombra aquí para que no se lea como olvido;
 si se construye, será en un spec propio.
+
+**Una pantalla de detalle de ruta para supervisor.** «Ver ruta» apunta hoy a
+`/app/pickup/route/[id]/qr`, que es una pantalla de tripulación —«Entrega en
+bodega, muestra este QR al receptor»— y **no lista las cargas de la ruta**, que
+es justo lo que busca quien pulsa ahí desde la pestaña. Por eso el rótulo dice
+«QR de entrega» y no «Ver ruta»: nombra lo que hace. La alternativa existente
+(`reception/route/[id]/preview`) sí resuelve cualquier ruta por id y muestra
+código, chofer y estado, pero lleva `ReceiveWithoutQRButton`, que estampa una
+llegada falsa — no se le pone delante a un supervisor. Falta la pantalla; no se
+construye aquí.
 
 **`useUnassignedManifests` (`useRouteManifests.ts:205-227`).** Es una quinta
 vista sobre el mismo espacio — el picker de «Agregar carga a la ruta» — con
