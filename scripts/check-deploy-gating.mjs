@@ -25,6 +25,7 @@ import {
   computeProdJobs,
   VALID_CONDITIONAL_ENV,
 } from './check-deploy-gating-autoapprove.mjs';
+import { checkPgNetShape } from './check-deploy-gating-pgnet.mjs';
 
 const GATE = 'approve-production';
 
@@ -145,6 +146,10 @@ errors.push(...checkQuarantineStep(jobs, doc));
 // environment:. Split out for the same reason as the quarantine checks —
 // keeps both files under the repo's 300-line guideline.
 errors.push(...checkAutoApproveShape(jobs));
+
+// ── pg_net shape (spec-92 fase 1b / spec-93) — the second auto-approve-
+// exempt class, alongside auth_hook. Split out for the same 300-line reason.
+errors.push(...checkPgNetShape(jobs));
 
 // ── needs: is not enough once if: opts into always() ─────────────────────────
 // Normally a skipped dependency skips the dependent job, which is what makes

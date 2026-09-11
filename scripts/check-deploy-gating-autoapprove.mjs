@@ -34,8 +34,17 @@ export function computeProdJobs(jobs) {
 
 // Exported so check-deploy-gating.mjs's own (looser) environment check can
 // accept this shape too, without duplicating the regex.
+//
+// spec-92 fase 1b / spec-93: widened from a single auth_hook check to an OR
+// of both auto-approve-exempt classes — auth_hook (spec-92) and pg_net
+// (spec-93, check-deploy-gating-pgnet.mjs). Either one being 'true' must
+// route to 'production'; only when BOTH are false does it auto-approve to
+// 'production-auto'. The parenthesised OR is required (not just written for
+// style) — without it `&&` binds tighter than the bare `||`, so
+// `a == 'true' || b == 'true' && 'production' || 'production-auto'` would
+// auto-approve on `a` alone and require a human click to route it back.
 export const VALID_CONDITIONAL_ENV =
-  /\$\{\{\s*needs\.changes\.outputs\.auth_hook\s*==\s*'true'\s*&&\s*'production'\s*\|\|\s*'production-auto'\s*\}\}/;
+  /\$\{\{\s*\(\s*needs\.changes\.outputs\.auth_hook\s*==\s*'true'\s*\|\|\s*needs\.changes\.outputs\.pg_net\s*==\s*'true'\s*\)\s*&&\s*'production'\s*\|\|\s*'production-auto'\s*\}\}/;
 
 /**
  * Round-1 version matched three substrings ANYWHERE in the step's `run:` —
@@ -75,9 +84,9 @@ export function checkAutoApproveShape(jobs) {
     if (!VALID_CONDITIONAL_ENV.test(env)) {
       errors.push(
         `approve-production.environment is a conditional expression but not the expected shape ` +
-        `(needs.changes.outputs.auth_hook == 'true' ? 'production' : 'production-auto') — found: ` +
-        `${env}. An inverted or malformed expression can auto-approve exactly the class of change ` +
-        `(auth hook config) that spec-92 says must not auto-approve.`
+        `((auth_hook == 'true' || pg_net == 'true') ? 'production' : 'production-auto') — found: ` +
+        `${env}. An inverted or malformed expression can auto-approve exactly the classes of change ` +
+        `(auth hook config, or a migration using pg_net) that spec-92/spec-93 say must not auto-approve.`
       );
     }
   } else if (typeof env === 'string' && env !== 'production') {
