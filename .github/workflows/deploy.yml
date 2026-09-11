@@ -266,6 +266,26 @@ jobs:
             fi
           fi
 
+          # review round 2026-09-10, item 4 — the RANGE_BASE detector rests
+          # on "a successful run at sha X implies production has every
+          # migration up to X applied". force_db exists BECAUSE that
+          # invariant already broke once (2026-08-23, 13 migrations applied
+          # at once via `db push --include-all` after a backlog built up —
+          # see the workflow_dispatch comment above). Whenever force_db is
+          # used, the same distrust that justifies overriding DB must also
+          # apply to AUTH_HOOK/PG_NET: a hook or pg_net migration merged
+          # before the last successful run, but never actually applied to
+          # production, would sit outside RANGE_BASE..DEPLOY_SHA and read as
+          # both false — auto-approving exactly the migration this fail-
+          # closed detector exists to catch, applied unconditionally by
+          # deploy-supabase right after. Cost of pausing here is one click on
+          # an already-manual dispatch; that is the right trade.
+          if [ "${FORCE_DB}" = "true" ]; then
+            echo "force_db: also forcing auth_hook/pg_net true (was auth_hook=${AUTH_HOOK} pg_net=${PG_NET}) — the range this detector trusts is exactly what force_db says not to trust"
+            AUTH_HOOK=true
+            PG_NET=true
+          fi
+
           {
             echo "database=${DB}"
             echo "edge_functions=$(matches '^packages/database/supabase/functions/')"
