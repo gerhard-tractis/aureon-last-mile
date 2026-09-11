@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CustodyConfirmationSheet } from './CustodyConfirmationSheet';
 
@@ -55,10 +55,53 @@ describe('CustodyConfirmationSheet', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders a decorative drag handle (tirador), not a dialog close X — the mock draws a bottom sheet', () => {
+  it('renders a decorative drag handle (tirador)', () => {
     render(<CustodyConfirmationSheet {...baseProps()} />);
     const handle = screen.getByTestId('custody-sheet-grip');
     expect(handle).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  // Ronda 2 de review (hallazgo 1c) — el nombre del test de arriba afirmaba
+  // "not a dialog close X" sin comprobarlo: `SheetContent` monta ese botón
+  // SIEMPRE por defecto (`ui/sheet.tsx`), y el mock no dibuja ninguna X. Esta
+  // es la aserción que faltaba.
+  it('does NOT render a "Close" control — the mock draws no X, and the sheet already has two explicit buttons', () => {
+    render(<CustodyConfirmationSheet {...baseProps()} />);
+    expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
+  });
+
+  // Ronda 2 de review (hallazgo 1b) — `role="alertdialog"` es el rol ARIA
+  // para confirmaciones destructivas: hace que el lector interrumpa y lea
+  // título+descripción. Se perdió al migrar de `AlertDialog` a `Sheet`
+  // (`Dialog` pelado, `role="dialog"` por defecto).
+  it('exposes role="alertdialog" — the ARIA role for an irreversible confirmation, not a plain dialog', () => {
+    render(<CustodyConfirmationSheet {...baseProps()} />);
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+  });
+
+  // Ronda 2 de review (hallazgo 1a, mayor) — verificado montando el
+  // componente: sin este manejo, el foco inicial aterrizaba en el botón que
+  // TRANSFIERE CUSTODIA (primer tabulable del DOM). Con teclado externo o
+  // lector de pantalla, un Enter reflejo tras abrir la hoja la confirmaba
+  // en vez de cancelarla. `AlertDialog` de Radix ya resolvía esto por
+  // defecto (enfoca el cancel); `Sheet` no, y hay que restaurarlo a mano.
+  it('moves initial focus to "Volver a revisar", NOT to the button that transfers custody', async () => {
+    render(<CustodyConfirmationSheet {...baseProps()} />);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Volver a revisar' })
+      );
+    });
+  });
+
+  // Ronda 2 de review (hallazgo 2, mayor) — mutación real que sobrevivió:
+  // `side="bottom"` → `side="right"` pasaba 56/56 en verde. El primer
+  // checkbox de esta fase es "hoja inferior con tirador, no diálogo
+  // centrado" — mismo patrón que `DrillSheet.test.tsx:74-80`.
+  it('renders as a BOTTOM sheet, not a side drawer — the mock draws a bottom sheet, not a right-side panel', () => {
+    render(<CustodyConfirmationSheet {...baseProps()} />);
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog.className).toMatch(/inset-x-0 bottom-0|slide-out-to-bottom/);
   });
 
   it('shows only the operator under "Firmas" when there is no client signature', () => {

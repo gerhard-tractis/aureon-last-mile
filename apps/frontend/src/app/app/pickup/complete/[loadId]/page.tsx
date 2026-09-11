@@ -228,7 +228,13 @@ export default function CompletionPage() {
         unexpectedCount={unexpectedCount}
         serverPhotosCount={serverPhotosCount}
         queuedPhotosCount={queuedPhotoCount}
-        signaturesCount={clientSignature ? 2 : 1}
+        // Review de spec-95 fase 7 (hallazgo 5a) — mismo criterio que
+        // `CustodyConfirmationSheet`: un trazo sin nombre no cuenta como
+        // firmante en NINGUNA pantalla. Antes, un cliente que firmaba sin
+        // teclear su nombre hacía que `5f2` mostrara un solo firmante y `5i`
+        // (esta pantalla), acto seguido, dijera "2 firmas" — dos pantallas
+        // consecutivas del mismo cierre contradiciéndose sobre el mismo dato.
+        signaturesCount={clientSignature && clientName ? 2 : 1}
         routeExternalId={routeExternalId}
         pendingRouteCount={routeSummary?.pendingCount ?? 0}
         nextManifestLabel={routeSummary?.nextManifestLabel ?? null}
