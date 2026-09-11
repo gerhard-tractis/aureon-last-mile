@@ -191,7 +191,7 @@ Medido el 2026-09-10.
 | 10b | **PostgREST — `extra_search_path`** | `public` | **`public, extensions`** | **No** — ⚠️ divergencia |
 | 11 | Rutas de Kong | `/auth/v1/`, `/rest/v1/`, `/storage/v1/`, `/functions/v1/`, `/graphql/v1`, `/realtime/v1/`, `/analytics/v1` | **No comparable** — prod es el gateway gestionado, no Kong | Sólo `/auth/v1/` y `/rest/v1/` |
 | 12 | Publicación `supabase_realtime` | **2 tablas**: `orders`, `dock_verifications` | **Las mismas 2** — converge exactamente | **No** — y la convergencia cambia el hallazgo 2 de divergencia a **bug de producto**, ver abajo |
-| 13 | Buckets de storage | `files` (privado), `manifests` (privado, 10 MiB, imágenes) | **Idénticos** — converge | **No** — ningún e2e sube un fichero |
+| 13 | Buckets de storage | **2**: `files`, `manifests` (privado, 10 MiB, imágenes) | **3** — los dos de QA **más `raw-files`** (privado, sin límite) | **No** — ningún e2e sube un fichero. ⚠️ divergencia que este inventario declaró «idéntica» por error; la encontró el guardarraíl de la fase 4 |
 | 14 | Políticas de storage | 8 sobre `storage.objects` | **Las mismas 8** — converge | No |
 | 15 | Edge functions desplegadas | `beetrack-webhook`, `dispatchtrack-route-poll`, `main` | `beetrack-webhook` (ACTIVE, `verify_jwt=false`, v30), `dispatchtrack-route-poll` (ACTIVE, `verify_jwt=true`, v12) | **No** — ningún e2e invoca `/functions/v1/`. `main` es el router del runtime autohospedado: **converge** |
 | 16 | Variables del runtime de edge | `BEETRACK_WEBHOOK_SECRET`, `JWT_SECRET`, `SUPABASE_*`, `VERIFY_JWT` | **No comparable** — la Management API no expone los secretos de una function | No |
@@ -392,11 +392,29 @@ se arregla en spec-93** — no es paridad.
 #### Lo que converge, dicho también
 
 Media docena de superficies salieron **idénticas**, y decirlo importa tanto
-como decir las que no: buckets de storage y sus ocho políticas, la publicación
-de realtime, `pg_graphql` (ausente en los dos), los esquemas expuestos y el
-`max_rows` de PostgREST, y los roles en todo lo que no sea el extra que cada
-entorno se explica solo (`supabase_functions_admin` en QA por el runtime
-autohospedado; `cli_login_postgres` en producción).
+como decir las que no: las ocho políticas de storage, la publicación de
+realtime, `pg_graphql` (ausente en los dos), los esquemas expuestos y el
+`max_rows` de PostgREST, los GUCs por rol (ver la retractación de arriba), y los
+roles en todo lo que no sea el extra que cada entorno se explica solo
+(`supabase_functions_admin` en QA por el runtime autohospedado;
+`cli_login_postgres` en producción).
+
+#### Y una segunda corrección, del mismo tipo: el bucket `raw-files`
+
+Este inventario dijo que los buckets de storage eran «idénticos». **No lo son**:
+producción tiene un tercero, `raw-files`, que QA no tiene. Lo encontró el
+guardarraíl de la fase 4 en su primera comparación real, no yo.
+
+La causa es otra vez mía y de la misma familia que el hallazgo 4: al leer el log
+de la corrida usé `grep -E "^(files|manifests|...)"`, un patrón que **excluye
+literalmente** cualquier bucket que no se llamara ya como los que esperaba
+encontrar. Filtré la salida con la respuesta que daba por buena y leí el
+resultado filtrado como si fuera completo.
+
+Dos errores de medición en la misma fase, los dos por mirar una salida recortada
+sin darse cuenta de que estaba recortada. **Es el mejor argumento que ha dado
+este spec a favor de la fase 4**: un comparador determinista no tiene la
+tentación de grepear sólo lo que espera ver.
 
 El spec preguntaba «qué superficies de producción no existen en QA». La
 respuesta honesta, después de corregir el error de medición de la fila 8, es
