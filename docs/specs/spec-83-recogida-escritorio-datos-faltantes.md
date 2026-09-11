@@ -503,6 +503,15 @@ Tests nuevos para cada uno de los cuatro, TDD confirmando rojo por la razón cor
 - **`ManifestTable` — falta el pie de paginación del mock** (`5a`, líneas 202-208: "7 de 12 · página 1 de 2" + Anterior/Siguiente). No existe paginación en ningún componente de Recogida escritorio hoy. Es comportamiento, no un ajuste visual, así que no se implementa aquí — pero queda declarado para que el siguiente que toque esta pantalla no asuma que ya está.
 - **Nit adjunto:** el badge de merma del mock (`5a:265`) es el glifo `!` en mono 700; el código usa el ícono `TriangleAlert` de `lucide-react`. Cosmético, no tocado.
 - **`5a` la pintan 8 componentes; esta fase diffeó 4.** También la pintan `PickupDesktopView.tsx`, `PickupDesktopHeader.tsx`, `PickupManifestTabs.tsx` y `ClientFilter.tsx` (el mock pone el buscador en la cabecera, `5a:58-64`; el código lo pone bajo los `StatTile`). Es una limitación de los `**Archivos:**` que este spec declaró para la fase, no una omisión de quien la ejecutó — pero **`5a` no está completamente revisado** por esta fase, sólo la porción de esos 4 archivos.
+
+  > **Cerrado por spec-95 fase 8 (PR #796, 2026-09-11).** Esa fase cubrió los
+  > cuatro componentes que faltaban (`PickupDesktopView`, `PickupDesktopHeader`,
+  > `ClientFilter`, `ManifestTable`) más `PickupRouteDraftPanel` y
+  > `StartRouteButton`. También cierra las divergencias 2 y 3 que esta fase
+  > declaró sin tocar: el panel de vehículo **adopta** el modelo de spec-61 (se
+  > elige al confirmar, sin conductor) y el CTA queda como `Iniciar ruta de
+  > retiro`. La barra de ocupación **sigue** `[parked]` en la fase 3 de este
+  > spec — spec-95 no la implementó, a propósito.
 - **Referencias muertas a `1l` corregidas donde se tocó el archivo** (`TodayClosuresPanel.tsx`, `PickupRouteDraftPanel.tsx`, `ManifestTable.tsx` — los tres docstrings y comentarios que decían "mock 1l" ahora dicen `5a`). **Quedan sin tocar** en archivos fuera del alcance de esta fase: `PickupDesktopView.tsx` (docstring y dos comentarios), `PickupDesktopHeader.tsx` (docstring), `PickupMobileView.tsx` (comentario) y `PickupRouteDraftPanel.test.tsx` (comentario de test). El hallazgo de esta fase es que `1l` no existe como artboard independiente — el mock vivo es `5a`.
 
 `ManifestTable.tsx` y `StatTile.tsx` ya coincidían con lo que `5a` pide sin datos nuevos — tipografías, tamaños, paletas de estado y la séptima columna de impresión ya son fieles. **`StatTile.tsx` no se modificó** — se comprobó `git grep StatTile` y lo usan además `distribution/page.tsx`, `reception/page.tsx`, `DistributionMobileView.tsx`, `PickupMobileActiveRoute.tsx`, `ReceptionCounts.tsx` y un componente local homónimo en `DispatchTabletSidePanel.tsx` que no importa el compartido; al no tocarlo, ninguna de esas pantallas ni sus specs quedan afectadas.

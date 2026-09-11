@@ -1,6 +1,6 @@
 # spec-95 — Recogida: la ronda 2 del mock, y el chip que por fin tiene regla
 
-**Status:** in progress
+**Status:** completed
 **Verify:** unit, e2e-qa
 **Downstream:** spec-94-recogida-cuatro-estados.md, spec-82-recogida-movil-asignacion-y-ruta.md, spec-83-recogida-escritorio-datos-faltantes.md
 
@@ -528,7 +528,7 @@ irreversible»). `5f2` lo rediseña como **hoja inferior** y le añade datos.
 > (fase 2, la cola offline) — **sin cambios**, verificado sobre el diff con
 > `--numstat`: ninguna rama de `handleComplete` ni de la cola se tocó.
 
-### Fase 8 — `5a` escritorio `[in_progress]`
+### Fase 8 — `5a` escritorio `[done]`
 
 **Depende de:** spec-94 fase 1
 
@@ -597,6 +597,27 @@ irreversible»). `5f2` lo rediseña como **hoja inferior** y le añade datos.
 > implementa** — sigue `[parked]` en `spec-83` fase 3.
 >
 > **Deuda:** `page.tsx` queda en 309 líneas, sobre el límite de 300.
+
+> Implementado por: implementer — rama `feat/spec-95-fase-8-escritorio`,
+> SHAs `b3ac0bf`, `7bc64f7`, `c2019e8`, `1f1650d`, `0e15b07` y `390766a`
+> (correcciones del review).
+> Review: reviewer (opus), una ronda, **veredicto NO mergeable**. Tres
+> bloqueantes: los chips contaban la **unión** de los cuatro cubos mientras la
+> tabla muestra uno (`Todos · 23` junto a `Pendientes · 12`, y `Falabella · 10`
+> abriendo una lista de 4); la cabecera `ETIQUETAS` se pintaba **sin** el gate
+> de módulo que su propia acción sí respeta; y «Ver QR de la ruta» creaba una
+> ruta desde el panel BORRADOR. Además **cuatro mutaciones sobrevivían**,
+> incluida la misma máscara `Math.min` ya cerrada para `tab` y `searchTerm`
+> pero no para `selectedClient`. Todo cerrado; el orquestador reverificó a mano
+> que reintroducir el conteo por unión mata 4 tests.
+> QA: PR #796 merged 2026-09-11, `gh pr checks 796` con 0 checks en rojo.
+> 97 ficheros / 1156 tests; `tsc` y `eslint` limpios. **`e2e-qa` no se leyó por
+> separado** — hueco declarado, como en las otras ocho fases.
+> Downstream: **spec-83 queda desactualizado y se corrige en este mismo PR** —
+> su fase 4 declaraba que «`5a` no está completamente revisado … sólo la porción
+> de esos 4 archivos», y esta fase cubre los cuatro que faltaban. Revisado
+> spec-94 (`completed`) — **sin cambios**: esta fase consume sus RPC sin
+> alterarlas, verificado contra la migración `20261008000001`.
 
 ### Fase 9 — `5g` el botón de flash `[done]`
 
