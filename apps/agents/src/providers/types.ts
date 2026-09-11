@@ -32,8 +32,14 @@ export interface LLMResponse {
   finishReason: 'stop' | 'tool_calls' | 'max_tokens' | 'error';
 }
 
+// Shared with non-LLM providers (spec-58's geocoding adapter). Extracted out
+// of LLMError so a geocoding failure is not typed as an LLM error just for
+// wanting to reuse this vocabulary — see providers/geocoding/maptiler.ts,
+// which extends this union with 'credential' rather than importing LLMError.
+export type ProviderErrorType = 'rate_limit' | 'timeout' | 'api_error' | 'network';
+
 export interface LLMError {
-  type: 'rate_limit' | 'timeout' | 'api_error' | 'network';
+  type: ProviderErrorType;
   message: string;
   retryable: boolean;
   fallback_hint?: string;

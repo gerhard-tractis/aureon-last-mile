@@ -137,4 +137,52 @@ describe('CircuitBreaker', () => {
     expect(cb.getFailureCount()).toBe(0);
     expect(cb.getState()).toBe('closed');
   });
+
+  describe('explicit trip', () => {
+    it('opens immediately on trip(), without needing failureThreshold failures', () => {
+      const fn = vi.fn().mockResolvedValue('ok');
+      const cb = new CircuitBreaker(fn, { failureThreshold: 5, recoveryTimeout: 1000 });
+
+      expect(cb.getState()).toBe('closed');
+      cb.trip(60 * 60 * 1000);
+      expect(cb.getState()).toBe('open');
+    });
+
+    it('blocks calls while the trip latch has not elapsed', async () => {
+      const fn = vi.fn().mockResolvedValue('ok');
+      const cb = new CircuitBreaker(fn, { failureThreshold: 5, recoveryTimeout: 1000 });
+
+      cb.trip(60 * 60 * 1000);
+      await expect(cb.execute()).rejects.toThrow('Circuit breaker is open');
+      expect(fn).not.toHaveBeenCalled();
+    });
+
+    it('re-arms to half-open after the trip latch elapses, not after recoveryTimeout', () => {
+      const fn = vi.fn().mockResolvedValue('ok');
+      // recoveryTimeout is deliberately much shorter than the trip latch, so a
+      // test that reads the wrong duration would go green for the wrong reason.
+      const cb = new CircuitBreaker(fn, { failureThreshold: 5, recoveryTimeout: 1000 });
+
+      cb.trip(60 * 60 * 1000); // one hour
+
+      vi.advanceTimersByTime(1000); // past recoveryTimeout
+      expect(cb.getState()).toBe('open'); // must NOT have re-armed yet
+
+      vi.advanceTimersByTime(60 * 60 * 1000 - 1000); // now past the full latch
+      expect(cb.getState()).toBe('half-open');
+    });
+
+    it('a successful call after the latch elapses closes the breaker', async () => {
+      const fn = vi.fn().mockResolvedValue('ok');
+      const cb = new CircuitBreaker(fn, { failureThreshold: 5, recoveryTimeout: 1000 });
+
+      cb.trip(60 * 60 * 1000);
+      vi.advanceTimersByTime(60 * 60 * 1000);
+      expect(cb.getState()).toBe('half-open');
+
+      const result = await cb.execute();
+      expect(result).toBe('ok');
+      expect(cb.getState()).toBe('closed');
+    });
+  });
 });
