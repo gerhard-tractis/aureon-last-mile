@@ -2,7 +2,7 @@
 // circuit breaker behaviour and the module-scoped singleton. Request
 // construction and match classification live in maptiler.test.ts.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MaptilerProvider, getMaptilerProvider, GeocodingProviderError } from './maptiler';
+import { MaptilerProvider, getMaptilerProvider } from './maptiler';
 import { textResponse } from './test-helpers';
 
 describe('MaptilerProvider error classification', () => {
@@ -69,13 +69,26 @@ describe('MaptilerProvider error classification', () => {
     ).rejects.toMatchObject({ type: 'credential' });
   });
 
-  it('classifies HTTP 403 with a non-key-related body as rate_limit (plan/quota)', async () => {
+  it('classifies HTTP 403 with a body that positively names a quota/plan limit as rate_limit', async () => {
     fetchMock.mockResolvedValue(textResponse(403, 'Monthly request limit exceeded'));
     const provider = new MaptilerProvider('test-key', fetchMock as unknown as typeof fetch);
 
     await expect(
       provider.geocode({ address: 'Bandera 140', comuna: 'Santiago' }),
     ).rejects.toMatchObject({ type: 'rate_limit' });
+  });
+
+  it('classifies an unrecognised 403 body as credential, not rate_limit', async () => {
+    // The default must favour `credential`: a quota-403 misread as credential
+    // latches an hour and logs loudly (bounded, ~24 calls/day lost); a
+    // key-refusal-403 misread as rate_limit re-arms every 30 minutes forever
+    // with no error log — exactly the failure `credential` exists to catch.
+    fetchMock.mockResolvedValue(textResponse(403, 'Forbidden'));
+    const provider = new MaptilerProvider('test-key', fetchMock as unknown as typeof fetch);
+
+    await expect(
+      provider.geocode({ address: 'Bandera 140', comuna: 'Santiago' }),
+    ).rejects.toMatchObject({ type: 'credential' });
   });
 
   it('classifies an HTTP 404 (e.g. an unescaped path) as a transport failure, not "no match"', async () => {
@@ -102,18 +115,23 @@ describe('MaptilerProvider circuit breaker', () => {
       recoveryTimeout: 30000,
     });
 
+    // Both of these fail via the network path (fetchMock rejects with a
+    // plain Error) — genuinely a transport failure, before the breaker opens.
     await expect(
       provider.geocode({ address: 'Bandera 140', comuna: 'Santiago' }),
-    ).rejects.toBeTruthy();
+    ).rejects.toMatchObject({ type: 'network' });
     await expect(
       provider.geocode({ address: 'Bandera 140', comuna: 'Santiago' }),
-    ).rejects.toBeTruthy();
+    ).rejects.toMatchObject({ type: 'network' });
 
     const callsSoFar = fetchMock.mock.calls.length;
+    // The breaker is now open (failureThreshold: 2). This call never reaches
+    // rawGeocode — it fails on the breaker's own "Circuit breaker is open",
+    // which geocode() must still surface as a transport failure (network),
+    // not silently as "no match".
     await expect(
       provider.geocode({ address: 'Bandera 140', comuna: 'Santiago' }),
-    ).rejects.toBeTruthy();
-    // The breaker is open: the third call must not have reached fetch again.
+    ).rejects.toMatchObject({ type: 'network' });
     expect(fetchMock.mock.calls.length).toBe(callsSoFar);
   });
 
@@ -128,15 +146,40 @@ describe('MaptilerProvider circuit breaker', () => {
       provider.geocode({ address: 'Bandera 140', comuna: 'Santiago' }),
     ).rejects.toMatchObject({ type: 'credential' });
 
+    // The breaker is now open via trip(), not the failure threshold. This
+    // call never reaches fetch — it fails on "Circuit breaker is open",
+    // which geocode() wraps as network (a real, if generic, transport
+    // failure), never as "no match".
     fetchMock.mockClear();
     await expect(
       provider.geocode({ address: 'Bandera 140', comuna: 'Santiago' }),
-    ).rejects.toBeTruthy();
+    ).rejects.toMatchObject({ type: 'network' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('MaptilerProvider with no API key', () => {
+  // MAPTILER_API_KEY is optional (config.ts) — the worker must still boot,
+  // and Fase 5 resolves everything to a comuna centroid, retrying at the
+  // start of next month, not every 30 minutes forever. Constructing with an
+  // empty key must never reach the network: an empty key still gets a real
+  // HTTP response from MapTiler (a 403), which would misclassify this case
+  // as a one-hour credential latch instead of Fase 5's dedicated ladder row.
+  it('reports isConfigured === false and geocode() never calls fetch', async () => {
+    const fetchMock = vi.fn();
+    const provider = new MaptilerProvider('', fetchMock as unknown as typeof fetch);
+
+    expect(provider.isConfigured).toBe(false);
+
+    await expect(
+      provider.geocode({ address: 'Bandera 140', comuna: 'Santiago' }),
+    ).rejects.toMatchObject({ type: 'credential' });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('re-throws a non-GeocodingProviderError as-is', () => {
-    expect(new GeocodingProviderError('network', 'x').type).toBe('network');
+  it('reports isConfigured === true when constructed with a key', () => {
+    const provider = new MaptilerProvider('a-real-key', vi.fn() as unknown as typeof fetch);
+    expect(provider.isConfigured).toBe(true);
   });
 });
 
@@ -156,6 +199,27 @@ describe('getMaptilerProvider', () => {
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('MAPTILER_API_KEY'));
     } finally {
       errorSpy.mockRestore();
+    }
+  });
+
+  it('builds a configured provider when MAPTILER_API_KEY is present', async () => {
+    // Under Vitest, config.ts's own singleton is always null (it checks
+    // process.env.VITEST), so this branch cannot be reached by setting env
+    // vars — it has to mock the config module directly.
+    vi.resetModules();
+    vi.doMock('../../config', () => ({
+      config: { MAPTILER_API_KEY: 'a-real-key' },
+    }));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const mod = await import('./maptiler');
+      const provider = mod.getMaptilerProvider();
+      expect(provider.isConfigured).toBe(true);
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+      vi.doUnmock('../../config');
+      vi.resetModules();
     }
   });
 });

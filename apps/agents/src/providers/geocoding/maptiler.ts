@@ -7,10 +7,10 @@
 // Fase 0 measured all three as unusable for this decision.
 
 import { CircuitBreaker, type CircuitBreakerOptions } from '../circuit-breaker';
-import type { ProviderErrorType } from '../types';
 import { config } from '../../config';
 import {
   precisionOf,
+  GeocodingProviderError,
   type GeocodeMatchClass,
   type GeocodeQuery,
   type GeocodeResult,
@@ -20,24 +20,6 @@ import {
 const MAPTILER_BASE_URL = 'https://api.maptiler.com/geocoding';
 const USER_AGENT = 'aureon-geo';
 const REQUEST_TIMEOUT_MS = 10_000;
-
-// Fase 5's retry ladder needs a third bucket beyond ProviderErrorType: a
-// refused credential is not a transient outage (see maptiler.ts's error
-// classification below), so it must not share a bucket with 'api_error' or
-// 'network'. Extending here — rather than adding 'credential' to the shared
-// ProviderErrorType — keeps that value out of LLMError's vocabulary, where it
-// would never be constructed.
-export type MaptilerErrorType = ProviderErrorType | 'credential';
-
-export class GeocodingProviderError extends Error {
-  constructor(
-    public readonly type: MaptilerErrorType,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'GeocodingProviderError';
-  }
-}
 
 interface MaptilerContextEntry {
   id?: string;
@@ -97,21 +79,38 @@ function classify(feature: MaptilerFeature, requestedComuna: string | undefined)
   return 'coarse';
 }
 
-function buildUrl(q: GeocodeQuery, apiKey: string): string {
-  const encodedAddress = encodeURIComponent(q.address);
-  const params = new URLSearchParams({ key: apiKey, country: 'cl', limit: '1' });
-  return `${MAPTILER_BASE_URL}/${encodedAddress}.json?${params.toString()}`;
+// Fase 0's 20 probes all put the comuna IN the query text ("Colon 1000,
+// Concepcion"), never sent it separately, and the entire measured rule — the
+// forms table, the 4-of-4 false positives, the >=80% gate threshold —
+// describes that exact query shape. Composing it any other way (or leaving
+// this to the caller to pre-compose) changes what MapTiler returns at the
+// margin: "Colon 1000" alone is NO MATCH; "Colon 1000, Concepcion" returns a
+// wrong-comuna feature. That reclassifies the case from fallback/null to
+// fallback/wrong_comuna, which is precisely the Fase 6 metric this adapter
+// exists to report honestly.
+function buildQueryText(q: GeocodeQuery): string {
+  return q.comuna ? `${q.address}, ${q.comuna}` : q.address;
 }
 
-// Fase 0 measured the exact refusal body for a User-Agent-restricted key:
-// "Key usage restricted". A plan/quota 403 is expected to read differently —
-// no mention of the key or token — but that has not been observed live: no
-// MapTiler key is available to this phase (see the spec's Fase 4 section,
-// "But 403 is ambiguous..."). This is the discriminator this phase commits
-// to on the evidence available; escalate before relying on it against a real
-// quota rejection.
-function isCredentialRefusal(body: string): boolean {
-  return /\bkey\b/i.test(body) || /\btoken\b/i.test(body) || /credential/i.test(body);
+function buildUrl(q: GeocodeQuery, apiKey: string): string {
+  const encodedQuery = encodeURIComponent(buildQueryText(q));
+  const params = new URLSearchParams({ key: apiKey, country: 'cl', limit: '1' });
+  return `${MAPTILER_BASE_URL}/${encodedQuery}.json?${params.toString()}`;
+}
+
+// A 403 is ambiguous between a refused credential and a plan/quota limit.
+// The default has to favour `credential`, because the two misclassifications
+// are not symmetric against Fase 5's retry ladder: a quota-403 misread as
+// `credential` latches an hour and logs loudly at error level — bounded,
+// noisy, ~24 lost calls/day. A credential-403 misread as `rate_limit`
+// re-arms every 30 minutes forever with NO error log — which is exactly the
+// silent-forever failure the `credential` type was created to prevent. So
+// only a body that *positively* names a quota/plan limit is read as
+// rate_limit; everything else on a 403 is treated as a refused credential.
+// Fase 0's one measured body, "Key usage restricted", matches neither
+// pattern below and correctly falls through to credential by default.
+function isQuotaOrPlanLimit(body: string): boolean {
+  return /quota|limit exceeded|rate limit/i.test(body);
 }
 
 function classifyHttpError(status: number, body: string): GeocodingProviderError {
@@ -119,10 +118,10 @@ function classifyHttpError(status: number, body: string): GeocodingProviderError
     return new GeocodingProviderError('credential', `MapTiler credential refused (401): ${body}`);
   }
   if (status === 403) {
-    if (isCredentialRefusal(body)) {
-      return new GeocodingProviderError('credential', `MapTiler credential refused (403): ${body}`);
+    if (isQuotaOrPlanLimit(body)) {
+      return new GeocodingProviderError('rate_limit', `MapTiler plan/rate limit (403): ${body}`);
     }
-    return new GeocodingProviderError('rate_limit', `MapTiler plan/rate limit (403): ${body}`);
+    return new GeocodingProviderError('credential', `MapTiler credential refused (403): ${body}`);
   }
   if (status === 429) {
     return new GeocodingProviderError('rate_limit', `MapTiler rate limited (429): ${body}`);
@@ -160,7 +159,21 @@ export class MaptilerProvider implements GeocodingProvider {
     );
   }
 
+  // Fase 5 checks this instead of reading MAPTILER_API_KEY from config
+  // itself — the provider is the one thing that knows whether it can make a
+  // real call. An empty key must never reach the network: MapTiler still
+  // answers with a real 403 for it, which — if left to flow through the
+  // normal error path — would misclassify a permanently-absent key as a
+  // one-hour credential latch instead of Fase 5's dedicated "key absent"
+  // ladder row (retry at the start of next month).
+  get isConfigured(): boolean {
+    return this.apiKey.length > 0;
+  }
+
   async geocode(q: GeocodeQuery): Promise<GeocodeResult | null> {
+    if (!this.isConfigured) {
+      throw new GeocodingProviderError('credential', 'MAPTILER_API_KEY is not configured');
+    }
     try {
       return await this.breaker.execute(q);
     } catch (err) {

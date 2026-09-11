@@ -59,6 +59,35 @@ describe('MaptilerProvider', () => {
       const [url] = fetchMock.mock.calls[0];
       expect(new URL(url as string).searchParams.get('country')).toBe('cl');
     });
+
+    it('appends the comuna to the query text when supplied — Fase 0 measured all 20 probes this way', async () => {
+      // Colon 1000 alone has no match; "Colon 1000, Concepcion" returns a
+      // (wrong-comuna) feature. Sending address alone would silently change
+      // which forms Fase 0's measured rule (and the Fase 6 gate) describe.
+      fetchMock.mockResolvedValue(jsonResponse(featureCollection([])));
+      const provider = new MaptilerProvider('test-key', fetchMock as unknown as typeof fetch);
+
+      await provider.geocode({ address: 'Colon 1000', comuna: 'Concepcion' });
+
+      const [url] = fetchMock.mock.calls[0];
+      const pathOnly = decodeURIComponent(
+        (url as string).split('/geocoding/')[1].split('.json')[0],
+      );
+      expect(pathOnly).toBe('Colon 1000, Concepcion');
+    });
+
+    it('sends the address alone when no comuna is supplied', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(featureCollection([])));
+      const provider = new MaptilerProvider('test-key', fetchMock as unknown as typeof fetch);
+
+      await provider.geocode({ address: 'Colon 1000' });
+
+      const [url] = fetchMock.mock.calls[0];
+      const pathOnly = decodeURIComponent(
+        (url as string).split('/geocoding/')[1].split('.json')[0],
+      );
+      expect(pathOnly).toBe('Colon 1000');
+    });
   });
 
   describe('match classification', () => {

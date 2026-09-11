@@ -3,6 +3,33 @@
 // response shape against real Chilean addresses before this interface was
 // written. The doc comments below record what was rejected and why — do not
 // simplify them away in a later pass.
+//
+// GeocodingProviderError / MaptilerErrorType live HERE, not in maptiler.ts,
+// on purpose: Fase 5's retry ladder needs to read a provider's error type to
+// pick a row, and if that type only existed in the concrete adapter, Fase 5
+// would import `from '.../geocoding/maptiler'` to get it — coupling
+// orchestration to one vendor and contradicting Decision 1's "swapping
+// provider is a single adapter file". Any future provider constructs the
+// same GeocodingProviderError; only the *values* it produces differ.
+
+import type { ProviderErrorType } from '../types';
+
+// A refused credential is not a transient outage (see maptiler.ts's error
+// classification), so it must not share a bucket with 'api_error' or
+// 'network'. Extending the shared ProviderErrorType here — rather than
+// adding 'credential' to ProviderErrorType itself — keeps that value out of
+// LLMError's vocabulary, where it would never be constructed.
+export type MaptilerErrorType = ProviderErrorType | 'credential';
+
+export class GeocodingProviderError extends Error {
+  constructor(
+    public readonly type: MaptilerErrorType,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'GeocodingProviderError';
+  }
+}
 
 export interface GeocodeQuery {
   address: string;
