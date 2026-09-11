@@ -107,11 +107,15 @@ export async function insertExactGeocodeCache(
   if (error) throw new Error(error.message);
 }
 
-// Literal unions matching orders' own CHECK constraints
-// (orders_geocode_source / orders_geocode_precision_check /
-// orders_geocode_status_check, 20261010000001) -- `string` would let
-// `'resolvd'` compile and die at runtime, the same rigour `matchClass`
-// already gets above.
+// Literal unions, not bare `string` -- `'resolvd'` compiling and dying at
+// runtime is the same rigour `matchClass` already gets above.
+// geocode_precision and geocode_status are backed by real CHECK
+// constraints (orders_geocode_precision_check / orders_geocode_status_check,
+// 20261010000001). geocode_source is NOT -- fase 1 left it as a column
+// comment only ('maptiler' | 'comuna_centroid', 20261010000001:17), no
+// CHECK -- so this union is a TS-only guard with no DB-side backup; a
+// direct SQL write (or a future migration adding a constraint with
+// different values) would not be caught here.
 export interface OrderGeocodeUpdate {
   latitude: number | null;
   longitude: number | null;

@@ -10,7 +10,7 @@
 -- migration lands, and pass once it does.
 
 BEGIN;
-SELECT plan(7);
+SELECT plan(8);
 
 -- ── TEST 1 -- accepts a valid exact cache row ───────────────────────────────
 INSERT INTO public.geocode_cache (
@@ -128,6 +128,27 @@ SELECT is(
      WHERE id = '00000000-0000-4000-8000-0000000058c0'),
   '1999-01-01T00:00:00Z'::timestamptz,
   'created_at is unchanged by the set_updated_at trigger firing on a real data update'
+);
+
+-- ── TEST 8 -- updated_at is bumped when address_hash is re-keyed ───────────
+-- (review finding N1: the UPDATE OF list had normalisation_version but not
+-- address_hash, even though they are the two halves of the same UNIQUE.
+-- Re-keying address_hash is the most substantive rewrite possible for this
+-- row -- the coordinate now belongs to a different address -- so it must
+-- bump updated_at exactly like a coordinate/source/precision change does.)
+UPDATE public.geocode_cache
+   SET updated_at = '2000-01-01T00:00:00Z'
+ WHERE id = '00000000-0000-4000-8000-0000000058c0';
+
+UPDATE public.geocode_cache
+   SET address_hash = 'hash-valid-1-rekeyed'
+ WHERE id = '00000000-0000-4000-8000-0000000058c0';
+
+SELECT isnt(
+  (SELECT updated_at FROM public.geocode_cache
+     WHERE id = '00000000-0000-4000-8000-0000000058c0'),
+  '2000-01-01T00:00:00Z'::timestamptz,
+  'updated_at is bumped by a trigger when address_hash is re-keyed'
 );
 
 SELECT * FROM finish();

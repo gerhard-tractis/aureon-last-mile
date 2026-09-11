@@ -67,9 +67,20 @@ END $$;
 -- (fase 3), these columns are never touched again after their initial
 -- insert -- this trigger only matters for a hypothetical future
 -- correction path.
+--
+-- `address_hash` belongs in this list, not just `normalisation_version`:
+-- the two are the halves of the same UNIQUE, and re-keying address_hash is
+-- the most substantive rewrite possible for this row -- it means the
+-- stored coordinate now belongs to a DIFFERENT address. Leaving it out
+-- would freeze updated_at at the original write for exactly the rows a
+-- future "clean up everything written before normalisation version/date X"
+-- sweep most needs to see as freshly touched: rows re-keyed under a
+-- corrected normaliser (e.g. fase 3's own UNIT_RE fix) rather than
+-- reached via a normalisation_version bump.
 DROP TRIGGER IF EXISTS geocode_cache_set_updated_at ON public.geocode_cache;
 CREATE TRIGGER geocode_cache_set_updated_at
-  BEFORE UPDATE OF latitude, longitude, geocode_source, geocode_precision, normalisation_version
+  BEFORE UPDATE OF latitude, longitude, geocode_source, geocode_precision,
+    normalisation_version, address_hash
   ON public.geocode_cache
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 

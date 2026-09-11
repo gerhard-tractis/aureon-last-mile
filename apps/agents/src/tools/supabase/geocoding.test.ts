@@ -83,8 +83,32 @@ describe('lookupGeocodeCache', () => {
   });
 });
 
-function makeUpsertDb(error: unknown = null) {
-  const chain = { upsert: vi.fn().mockResolvedValue({ data: null, error }) };
+function makeUpsertDb(
+  opts: { genuineError?: unknown; simulateConflictWithoutIgnoreDuplicates?: boolean } = {},
+) {
+  // `simulateConflictWithoutIgnoreDuplicates` models the real Postgres
+  // behaviour this fix depends on: a real (address_hash,
+  // normalisation_version) collision reports 23505 UNLESS the call's
+  // options carry `ignoreDuplicates`. Reacting to the actual call args
+  // (rather than always resolving) is what makes the collision test below
+  // fail if someone reverts to a plain `insert`, or drops the option --
+  // a mock that resolves unconditionally would stay green either way.
+  const chain = {
+    upsert: vi.fn().mockImplementation((_row: unknown, upsertOpts?: { ignoreDuplicates?: boolean }) => {
+      if (opts.genuineError) return Promise.resolve({ data: null, error: opts.genuineError });
+      if (opts.simulateConflictWithoutIgnoreDuplicates && !upsertOpts?.ignoreDuplicates) {
+        return Promise.resolve({
+          data: null,
+          error: {
+            code: '23505',
+            message:
+              'duplicate key value violates unique constraint "geocode_cache_address_hash_normalisation_version_key"',
+          },
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    }),
+  };
   return { from: vi.fn().mockReturnValue(chain), chain };
 }
 
@@ -118,8 +142,17 @@ describe('insertExactGeocodeCache', () => {
   // it no-op instead, so fase 5 cannot mistake "already cached by a
   // sibling in this batch" for a real failure and re-spend an attempt on
   // an address that is already resolved.
+  //
+  // This is not a tautology (round-2 review, N2): the mock actually
+  // simulates the 23505 a real (address_hash, normalisation_version)
+  // collision produces, and only suppresses it when the call carries
+  // `ignoreDuplicates`. Reverting insertExactGeocodeCache to a plain
+  // `insert`, or dropping `ignoreDuplicates` from the upsert options,
+  // makes this test fail -- the options-object assertion in the test
+  // above is what pins the exact call shape, and this test pins its
+  // effect.
   it('does not throw when the same (address_hash, normalisation_version) already exists', async () => {
-    const db = makeUpsertDb(null);
+    const db = makeUpsertDb({ simulateConflictWithoutIgnoreDuplicates: true });
     await expect(
       insertExactGeocodeCache(db as never, {
         addressHash: 'hash-shared-building',
@@ -179,7 +212,7 @@ describe('insertExactGeocodeCache', () => {
   });
 
   it('throws on a genuine Supabase upsert error', async () => {
-    const db = makeUpsertDb({ message: 'connection reset' });
+    const db = makeUpsertDb({ genuineError: { message: 'connection reset' } });
     await expect(
       insertExactGeocodeCache(db as never, {
         addressHash: 'hash-1',

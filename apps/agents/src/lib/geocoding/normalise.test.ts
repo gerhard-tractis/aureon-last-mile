@@ -105,27 +105,27 @@ describe('hashAddress', () => {
   // every row cached under the current NORMALISATION_VERSION -- not a
   // unique-constraint conflict, just a key nobody queries again, in a
   // table with no purge procedure.
+  //
+  // Round-2 review (N4) removed two tests that sat here and could not
+  // fail: `expect(hashAddress.length).toBe(2)` would catch an added
+  // *required* parameter but not a version with a default (`version = 1`,
+  // which is how one would actually get added -- a default does not count
+  // toward Function.length), and an `f(x) === f(x)` self-equality check is
+  // trivially true regardless of what hashAddress does. Real coverage for
+  // both claims already exists and doesn't need simulating here:
+  //   - "the hash has no version parameter" is exactly what the pinned
+  //     digest below tests: it calls hashAddress with only (street, comuna)
+  //     and checks a literal output, which is only meaningful because
+  //     there is no third argument to also pin.
+  //   - "two normalisation_version rows coexist for one address_hash" is
+  //     spec-58 fase 1's pgTAP TEST 13/14
+  //     (packages/database/supabase/tests/spec58_geocoding.sql) -- the
+  //     UNIQUE (address_hash, normalisation_version) constraint and its
+  //     coexistence behaviour are a DB-level guarantee, not something a
+  //     pure-function unit test can assert about the schema.
   it('pins the v1 digest for a known address -- if this fails, bump NORMALISATION_VERSION', () => {
     const digest = hashAddress('Av. Providencia 1234', 'Santiago');
     expect(digest).toBe('d3b59ddd585bddeb2f6878254d71d4199c73af00a747b3608e21a039964e5f9f');
-  });
-
-  it('does not depend on NORMALISATION_VERSION -- the hash has no version parameter', () => {
-    // Structural proof of fase 1's decision: hashAddress cannot vary by
-    // version because it never receives one. The version pairs with the
-    // hash only as a separate column at write time (see NORMALISATION_VERSION
-    // below), which is what lets two versions of one address coexist.
-    expect(hashAddress.length).toBe(2);
-  });
-
-  it('lets two normalisation_version rows coexist for the same address_hash', () => {
-    // The hash is identical across versions (same address, same digest);
-    // NORMALISATION_VERSION is what fase 1's UNIQUE (address_hash,
-    // normalisation_version) uses to keep both rows queryable instead of
-    // colliding -- see geocoding.test.ts for the cache-write side of this.
-    const hashV1 = hashAddress('Av. Providencia 1234', 'Santiago');
-    const hashUnderCurrentVersion = hashAddress('Av. Providencia 1234', 'Santiago');
-    expect(hashV1).toBe(hashUnderCurrentVersion);
     expect(NORMALISATION_VERSION).toBe(1);
   });
 });
