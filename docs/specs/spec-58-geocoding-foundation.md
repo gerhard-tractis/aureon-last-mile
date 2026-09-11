@@ -88,11 +88,11 @@ The two are near-identical in practice, but the poll is suspect: the Show Route 
 | 0 | Precision mapping: which MapTiler response field carries match granularity | `[done]` |
 | 1 | `orders` geocode columns, queue index, reset trigger, `geocode_cache` | `[done]` |
 | 2 | `chile_comunas` centroids, 347 rows with provenance | `[pending]` |
-| 3 | Address normalisation v1 + cache read/write. No network. | `[pending]` |
-| 4 | MapTiler adapter behind the interface, circuit breaker, env | `[pending]` |
-| 5 | `geocode.enrich` queue, cron, batch claim, retry ladder, quota | `[blocked]` |
+| 3 | Address normalisation v1 + cache read/write. No network. | `[done]` |
+| 4 | MapTiler adapter behind the interface, circuit breaker, env | `[done]` |
+| 5 | `geocode.enrich` queue, cron, batch claim, retry ladder, quota | `[pending]` |
 | 6 | Accuracy gate on 200 sampled production addresses | `[blocked]` |
-| 7 | Backfill of the existing order history | `[blocked]` |
+| 7 | The Las Condes seed slice, authorised | `[blocked]` |
 
 Two ordering constraints that are not obvious from the table, and that `scripts/check-phase-overlap.mjs` would otherwise get wrong:
 
@@ -425,11 +425,18 @@ Seeded from **one** named source, committed as data in the migration exactly as 
 
 ---
 
-### Fase 3 — Address normalisation and the cache layer `[pending]`
+### Fase 3 — Address normalisation and the cache layer `[done]`
 
 **Depende de:** spec-58 fase 1
 
 **Archivos:** `apps/agents/src/lib/geocoding/normalise.ts` (nuevo), `apps/agents/src/lib/geocoding/normalise.test.ts` (nuevo), `apps/agents/src/tools/supabase/geocoding.ts` (nuevo), `apps/agents/src/tools/supabase/geocoding.test.ts` (nuevo), `packages/database/supabase/migrations/20261011000002_spec58_fase3_geocode_cache_constraints.sql` (nueva), `packages/database/supabase/tests/spec58_geocode_cache_constraints.sql` (nuevo)
+
+> Implementado por: `implementer` — rama `feat/spec-58-fase-3-normalizacion`, SHAs 4b08b4f + e77c132 + e8cf55e (implementación), 28b11c3 + 79cc398 (correcciones de review)
+> Review: `reviewer` (Opus), dos rondas. Ronda 1: 4 hallazgos, 2 bloqueantes — el grave era `UNIT_RE` sin `` de cierre, que convertía `Av. Ofelia Ruiz 500` en `avenida ruiz 500`; como el texto normalizado es el que viaja al proveedor, habría consultado otra calle, podido volver `exact`, y congelado el punto en una tabla sin purga. Ronda 2: cerrados los cuatro (el reviewer los verificó **ejecutando** el regex y recomputando el digest fijado de forma independiente), más `address_hash` ausente del `UPDATE OF` del trigger. Sin ronda 3 por decisión del reviewer.
+> QA: PR #811 merged 2026-09-11T18:16:33Z. `e2e-qa` n/a — esta fase no despliega pantalla. 308/308 vitest con `npm ci` real; pgTAP 8/8 + los 20 de la Fase 1 intactos, vía `scripts/pgtap-local.sh`.
+> Downstream: revisado spec-59 y spec-60 — sin cambios. Ninguno consume la normalización ni la caché; leen `orders.latitude/longitude` y `geocode_precision`.
+
+> **El hallazgo que no salió del review.** Al reescribir una aserción pgTAP débil, el implementer mutation-testeó **su propio arreglo** y descubrió que también estaba roto: la suite corre dentro de una transacción y Postgres congela `NOW()`, así que un trigger mutado escribiendo `created_at = NOW()` habría devuelto el mismo timestamp y el test habría pasado igual. Lo detectó plantando la mutación y viendo que el test **no** se ponía rojo. Cambiado a centinela explícito.
 
 > **Desviación declarada (2026-09-11):** las dos últimas entradas no estaban en la lista original. La Fase 1 dejó `geocode_cache` sin ninguno de los CHECK que sí tiene `orders` y con `updated_at` sin trigger que lo mantuviera, y se anotó allí como deuda para esta fase. Cerrarlo aquí es correcto —esta fase es la primera que escribe en la tabla— pero significa que la Fase 3 tiene superficie SQL que el `**Verify:** unit` de cabecera no describe: se valida con `scripts/pgtap-local.sh`, no en CI.
 
@@ -469,11 +476,18 @@ Run locally with `--pool=forks`.
 
 ---
 
-### Fase 4 — The MapTiler adapter `[pending]`
+### Fase 4 — The MapTiler adapter `[done]`
 
 **Depende de:** spec-58 fase 0
 
 **Archivos:** `apps/agents/src/providers/geocoding/types.ts` (nuevo), `apps/agents/src/providers/geocoding/maptiler.ts` (nuevo), `apps/agents/src/providers/geocoding/maptiler.test.ts` (nuevo), `apps/agents/src/providers/types.ts`, `apps/agents/src/providers/circuit-breaker.ts`, `apps/agents/src/providers/circuit-breaker.test.ts`, `apps/agents/src/config.ts`, `apps/agents/src/config.test.ts`, `apps/agents/.env.example`
+
+> Implementado por: `implementer` — rama `feat/spec-58-fase-4-adaptador`, SHAs f778d78 (implementación), 7ce0bac + 117a0b2 (correcciones de review)
+> Review: `reviewer` (Opus), tres rondas, y cada arreglo destapó el siguiente. Ronda 1: **la comuna no llegaba al proveedor** — `buildUrl` usaba sólo `q.address`, cuando las 20 sondas de la Fase 0 la llevaban dentro del texto; medido contra la API viva, `Colon 1000` solo devuelve `NO MATCH` donde `Colon 1000, Concepcion` devuelve feature. Ronda 2: el seam de «key ausente» **no compilaba** (`isConfigured` no estaba en la interfaz) y lanzaba `credential`, mandando una key ausente a la fila de latch de 1 h en vez de la mensual. Ronda 3: limpio, mergeable.
+> QA: PR #812 merged 2026-09-11T18:23:52Z. `e2e-qa` n/a — sin pantalla. 320/320 vitest, `turbo type-check build` 2/2. El pin de `isConfigured` sobre la interfaz lo cubre `tsc --noEmit`, que CI sí corre.
+> Downstream: revisado spec-59 y spec-60 — sin cambios. spec-59 ya declaraba su propia key de navegador restringida por referrer (`spec-59:52-54`); lo que se retiró fue una afirmación de ESTE spec sobre él.
+
+> **Los «2 fallos que no reproducían».** No se aceptaron como ambientales. ~110 intentos barajados: cero reproducciones, reportado como hueco de capacidad y no como «confirmado». El aislamiento se arregló igual porque el peligro estático era real. El review cerró el porqué: la aserción en negativo sobre un espía global de `console.error` sólo se dispara si **otro** test emite uno, así que **barajar tests verdes no puede fabricar el disparador**. Primera hipótesis si vuelve a pasar.
 
 The agents app already has everything this needs; no new infrastructure is stood up. New files mirror the existing `providers/` shape (`providers/openrouter.ts`, `providers/types.ts`, `providers/circuit-breaker.ts`).
 
@@ -582,30 +596,35 @@ Against a mocked `fetch`: a Chilean address fixture resolving `exact`; a localit
 
 ---
 
-### Fase 5 — The `geocode.enrich` worker and its state machine `[blocked]`
+### Fase 5 — The `geocode.enrich` worker and its state machine `[pending]`
 
 **Depende de:** spec-58 fase 4
 
 **Archivos:** `apps/agents/src/orchestration/queues.ts`, `apps/agents/src/orchestration/queues.test.ts`, `apps/agents/src/orchestration/workers.ts`, `apps/agents/src/orchestration/workers.test.ts`, `apps/agents/src/orchestration/schedulers.ts`, `apps/agents/src/orchestration/schedulers.test.ts`, `apps/agents/src/agents/geocode/enrich.ts` (nuevo), `apps/agents/src/agents/geocode/enrich.test.ts` (nuevo)
 
-> Bloqueo: se intentó dar la fase por despachable tras el merge de la fase 1 y no se puede — `geocode_status` nace `DEFAULT 'pending'`, así que las órdenes históricas quedan dentro del índice parcial y del `WHERE` de claim de esta fase, y además con `geocode_next_attempt_at` NULL ordenan **primero** por el `NULLS FIRST`; verificado contra `20261010000001_spec58_geocoding_schema.sql:17` (el DEFAULT) y contra el `WHERE` de claim de esta misma sección, y el tamaño real del corpus (~112k despachos) está medido en producción — 2026-09-11 — desbloquea: usuario (elegir entre backfillear el histórico a un estado no encolable en una migración, o un corte por `created_at` en la consulta de claim; ver abajo)
+#### La decisión que desbloqueó esta fase (usuario, 2026-09-11)
 
-#### La decisión que bloquea esta fase
+Esta fase estuvo `[blocked]` porque `geocode_status` nace `DEFAULT 'pending'`: las ~112k órdenes históricas quedan dentro del índice parcial y del `WHERE` de claim, y con `geocode_next_attempt_at` NULL ordenan **primero** por el `NULLS FIRST`. Sin decisión, el backfill que la Fase 7 vigilaba habría ocurrido solo.
 
-El gate de la Fase 7 existe para que un backfill de decenas de miles de órdenes no ocurra sin que alguien lo autorice. Tal como está el esquema, **ocurriría solo**: en cuanto esta fase mergee, el cron empieza a drenar el histórico a 200 filas por corrida, pagadas al proveedor, empezando por las más viejas. El gate sería un comentario en un documento mientras lo que vigila corre por su cuenta.
+**La decisión fue no poner compuerta, y acotar el alcance en su lugar:**
 
-No es riesgo de la Fase 1 —sin worker no hay drenaje ni gasto— pero es un hueco de **spec**, no de implementación: la Fase 1 construyó exactamente lo que este spec decía.
+1. **El backfill queda autorizado**, sin una segunda aprobación más adelante. No hay migración que marque el histórico, ni corte por `created_at` en la consulta de claim. Las dos opciones se evaluaron y se descartaron.
+2. **El alcance es Las Condes, las más recientes primero**, no el corpus entero. El propósito declarado es sembrar datos de QA.
+3. **La condición de parada es el proveedor, no un contador nuestro**: se drena hasta que la API deje de responder.
 
-| Opción | Qué hace | Coste |
-|---|---|---|
-| **A — backfill a un estado no encolable, en migración** | Las filas existentes reciben un estado que la consulta de claim ignora; la Fase 7 las enciende deliberadamente | Un UPDATE sobre ~112k filas en la migración |
-| **B — corte por `created_at` en la consulta de claim** | El worker sólo toma órdenes posteriores a la migración; la Fase 7 retira el corte | Una fecha mágica viviendo en el worker |
+**Consecuencia que hay que tener escrita, porque hoy es inocua y mañana puede no serlo.** Con el proveedor como freno, el contador de cuota en Redis deja de ser el límite efectivo. En tier gratuito eso es seguro — MapTiler **rechaza**, no factura. Si algún día se pasa a un plan de pago, esa red desaparece y el contador vuelve a ser lo único entre un bucle y una factura. **Antes de cambiar de plan, `MAPTILER_MONTHLY_QUOTA` tiene que volver a ser un tope real.**
 
-Recomendación: **A**. Deja la decisión en los datos y no en una constante que alguien borra más adelante sin saber por qué, y convierte el trabajo de la Fase 7 en «encender estas filas», que es la forma que debería tener una fase con gate.
+`MAPTILER_MONTHLY_QUOTA` pasa por tanto a ser **opcional**: sin valor, no hay tope local y manda el proveedor; con valor, se respeta como tope duro. El dashboard de la cuenta mostraba «usage 100» el 2026-09-11, cifra ambigua (¿consumo, porcentaje, o tope?) que nadie pudo resolver, y este spec **no inventa el número**.
 
-Y un dato para el presupuesto de la Fase 7, medido al revisar esta fase: cada escritura de geocode dispara `audit_orders_changes`, que guarda un `before`/`after` completo de la orden en `audit_logs`. Un backfill de 112k órdenes escribe 112k filas de auditoría además de las propias. También mueve `updated_at` en las 112k, así que cualquier consulta de «modificado recientemente» se desplaza.
+**Aviso de coste ya incurrido, para que no aparezca como sorpresa:** las mediciones de las fases 0 y 4 consumieron ~35 llamadas contra esa key el 2026-09-11 (20 del mapeo de precisión, ~15 de verificación de hallazgos de review). Si el tope real fuera 100, eso es un tercio.
 
----
+**Y una ganancia:** drenar hasta que el proveedor rechace es lo que por fin **mide** el discriminador del 403. Hoy la Fase 4 clasifica un 403 no reconocido como `credential` por inferencia sobre un solo body observado. Cuando llegue el rechazo real de cuota, **capturar su body y escribirlo aquí** cierra ese hueco con dato. Es una tarea explícita de esta fase, no un efecto lateral.
+
+#### Lo que Las Condes no es
+
+Las Condes es la comuna **mejor caso** para este geocodificador: urbana densa, con numeración bien mapeada en OSM — la Fase 0 midió `Los Militares 5620` resolviendo a portal exacto. Una tasa de `exact` medida ahí sale muy por encima de la del corpus completo.
+
+Sirve como semilla de QA. **No es la muestra de precisión de la Fase 6**, y ningún resultado de Las Condes cuenta como evidencia de que el gate del 80 % pasa. La Fase 6 sigue exigiendo su muestreo entre comunas.
 
 Add `'geocode.enrich'` to the exported `QueueName` union at `orchestration/queues.ts:5` **and** to `QUEUE_CONFIGS` at `:20` (`Record<QueueName, QueueConfig>` will not compile otherwise), `attempts: 3, backoffDelay: 60_000`. Worker in `orchestration/workers.ts`, scheduler in `orchestration/schedulers.ts`:
 
@@ -653,7 +672,8 @@ FOR UPDATE SKIP LOCKED
 | Provider answered `null` — no match for this address → centroid | `fallback` | **+1** | `now() + 7 days` |
 | Provider **unavailable** — circuit-breaker open, 429, timeout, network, `api_error` → centroid | `fallback` | **unchanged** | `now() + 30 min` |
 | **Monthly quota exhausted**, or `MAPTILER_API_KEY` absent → centroid | `fallback` | **unchanged** | start of next month |
-| **Credential refused** — 401, or 403 identified as a key refusal → centroid | `fallback` | **unchanged** | **1 hour**, circuit latched. Log at error |
+| **Credential refused** — 401, or 403 identified as a key refusal (`credential`) → centroid | `fallback` | **unchanged** | **1 hour**, circuit latched. Log at error |
+| **No key configured at all** (`not_configured`) → centroid | `fallback` | **unchanged** | **start of next month.** Check `provider.isConfigured` once per batch, before calling `geocode()` |
 | 2 attempts exhausted | `unresolvable` | 2 | never |
 | No `comuna_id` and no provider answer | `unresolvable` | — | never |
 
@@ -662,6 +682,8 @@ Five rules do the work here, and they are stated in the order they bite.
 **A plausible pin in the wrong region is worse than an obviously vague one.** When the provider returns a house number but `context[].municipality` is not the comuna we asked for, the answer is the **centroid of the comuna we asked for** — never the provider's point. The error of a centroid is bounded by the size of a comuna; the error of a confidently wrong match is not, and Fase 0 measured exactly that: `La Union` came back as Valdivia, about 100 km away, and `Lote 5 Parcela 12, Curacavi` came back as Puente Alto. Decision 4 permits an honestly approximate pin because it is actionable; a sharp pin in the wrong region is not approximate, it is false.
 
 Note this is the **opposite** disposition from the row directly below it, and the two are deliberately adjacent in the table because they are only comprehensible as a pair. That asymmetry is deliberate and worth stating so nobody "harmonises" the two: when the check could not run, the provider's point is the best information anyone has; when the check ran and failed, the provider's point is known-wrong for this order.
+
+**A missing key is not a refused key, and Fase 4 gives you the type to tell them apart.** `not_configured` is a distinct member of `GeocodingErrorType`, and `isConfigured` is on the `GeocodingProvider` interface so Fase 5 can check it **once per batch** rather than discovering it 200 times per run. Routing a missing key into the credential row instead would latch an hour and re-claim 200 rows every hour: with a `*/10` cron over ~112k orders that churns the whole order book for a month, rewriting `geocode_next_attempt_at` and writing ~112k `audit_logs` rows per pass — while spending nothing, which is exactly why nobody would notice. Belt and braces: check `isConfigured` before the batch, and handle the type if a call slips through.
 
 **A refused credential is not an outage, and must not be retried like one.** Fase 0 measured a 403 from a User-Agent-restricted key — indistinguishable from an `api_error` to any classifier that only asks "did the call fail". Left in the transport bucket it re-arms every thirty minutes forever: a worker that looks busy, spends nothing and geocodes nothing, while every order sits on a comuna centroid. So a refused credential trips a latched circuit for an hour and logs at error level. A wrong key must be loud within one cron tick, not inferred a week later from the `fallback` count. The latch is **one hour and not "until restart"**, because 403 is ambiguous: MapTiler also uses it for plan limits, and a permanent latch would turn a transient rate-limit into a month with every order on a centroid and `geocode_attempts` never incrementing — no signal in the counts at all, which is the very failure Decision 4 exists to prevent. Fase 4 owns measuring the discriminator between the two kinds of 403.
 
@@ -753,15 +775,22 @@ The sampling and grading script lives under `scripts/`. The resulting numbers ar
 
 ---
 
-### Fase 7 — Backfill of the existing order history `[blocked]`
+### Fase 7 — The Las Condes seed slice `[blocked]`
 
 **Depende de:** spec-58 fase 6
 
-A one-off script under `scripts/` handles the orders that already exist, **importing the same resolver** the worker uses — not a second implementation of it. Production is roughly 112k dispatches and 61k packages, so this is the phase where a naive loop times out: batch it, and make it resumable.
+**Scope changed 2026-09-11 by the user, and shrank considerably.** This phase was "backfill the existing order history" — tens of thousands of orders, gated behind an explicit approval because a badly-measured bulk write is expensive and hard to undo. It is now:
 
-Then let the cron drain whatever the script leaves and watch, for a day: cache hit rate, provider call count, and the `fallback` / `unresolvable` counts. Only then does spec-59 start.
+**Geocode orders in Las Condes, most recent first, until the provider stops answering.** The purpose is seeding QA data, not completing the corpus.
 
-> Bloqueo: se intentó adelantar el backfill a las fases tomables por un agente y no procede — la Decisión 5 lo condiciona a que el gate de la fase 6 pase, y esa fase está bloqueada en el usuario; verificado contra la Decisión 5 de este mismo spec y contra el tamaño real del corpus de producción (~112k despachos), que es lo que vuelve irreversible un backfill mal medido — 2026-09-11 — desbloquea: dependencia (spec-58 fase 6), y después el usuario para la corrida en producción
+- The general backfill of all ~112k historical orders is **deliberately not scheduled**. It is not deferred or pending — nobody is planning to run it, and if that changes it needs its own decision.
+- No separate script re-implements the resolver. This runs through the Fase 5 worker, which already claims `pending` rows oldest-first; the slice is a comuna filter on top.
+- **Stopping condition is the provider's refusal**, not a local counter. See Fase 5's decision block for why that is safe today and what has to change before it isn't.
+- **Capture the body of the rejection when it arrives** and write it into Fase 4's 403 discriminator. That is the measurement that turns an inference into a fact, and this is the only phase positioned to collect it.
+
+What remains blocked is the run itself: it spends real quota and touches production data.
+
+> Bloqueo: se intentó dar la corrida por tomable tras la autorización del usuario y sigue sin serlo — gasta cuota real del proveedor y lee datos de producción; verificado contra `CLAUDE.md`, que prohíbe tocar el VPS salvo que el usuario lo pida, y contra la Decisión 5 de este spec, que condiciona cualquier escritura masiva a que el gate de la fase 6 se haya leído — 2026-09-11 — desbloquea: usuario (el alcance ya está autorizado; falta la corrida, y que la fase 5 esté desplegada en QA con la key colocada). El backfill general del histórico **no** forma parte de esta fase y no está planificado.
 
 
 ---
