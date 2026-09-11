@@ -70,10 +70,14 @@ RUN_TEXT="${RAW_RUN//\$\{\{ github.repository \}\}/x/y}"
 #   6. git diff --name-only "$RANGE_BASE" "$DEPLOY_SHA"              → CUM_CHANGED
 #   7. git diff "$RANGE_BASE" "$DEPLOY_SHA" -- packages/.../migrations/ → MIGRATIONS_DIFF
 # The stub below always resolves the range successfully (RANGE_OK=true,
-# RANGE_BASE=lastsha) and answers (2) and (6) with nothing — this harness is
-# about the migrations-diff content signal, not the path-based one. (7) is
-# the one call whose output is under the test's control, via
-# STUB_MIGRATIONS_DIFF.
+# RANGE_BASE=lastsha). (2) is always answered with nothing — CHANGED (the
+# single-commit path filter for database/edge_functions/etc.) isn't this
+# harness's concern. (6) CUM_CHANGED and (7) MIGRATIONS_DIFF are both under
+# the test's control, via STUB_CUM_CHANGED and STUB_MIGRATIONS_DIFF — (6) is
+# a path LIST (custom_access_token_hook path/file-name signal), (7) is
+# migration CONTENT (pg_net / auth_hook function signal); review round
+# 2026-09-10 found the SIGPIPE class (B2) also alive on (6)'s check, not
+# just (7)'s, so both need independent coverage.
 write_stubs() {
   local dir="$1"
   mkdir -p "$dir/bin"
@@ -87,9 +91,9 @@ case "$1" in
     shift
     args="$*"
     case "$args" in
-      *basesha*) echo "" ;;                         # (2) CHANGED — irrelevant here
-      *--name-only*) echo "" ;;                      # (6) CUM_CHANGED — no path signal
-      *) printf '%s' "$STUB_MIGRATIONS_DIFF" ;;       # (7) MIGRATIONS_DIFF
+      *basesha*) echo "" ;;                                # (2) CHANGED — irrelevant here
+      *--name-only*) printf '%s' "$STUB_CUM_CHANGED" ;;     # (6) CUM_CHANGED
+      *) printf '%s' "$STUB_MIGRATIONS_DIFF" ;;              # (7) MIGRATIONS_DIFF
     esac
     exit 0
     ;;
@@ -116,12 +120,12 @@ GHEOF
   chmod +x "$dir/bin/gh"
 }
 
-# Runs the real extracted script under real bash with the stubs on PATH and
-# STUB_MIGRATIONS_DIFF as the (7) response. $2, if "true", forces the
-# fail-closed branch (see write_stubs) instead of a resolved range. Returns
+# Runs the real extracted script under real bash with the stubs on PATH.
+# $1 = STUB_MIGRATIONS_DIFF (7), $2 = range_fail ("true" forces the
+# fail-closed branch, see write_stubs), $3 = STUB_CUM_CHANGED (6). Returns
 # "pg_net=<v> auth_hook=<v>".
 run_filter() {
-  local migrations_diff="$1" range_fail="${2:-false}" dir out_file
+  local migrations_diff="$1" range_fail="${2:-false}" cum_changed="${3:-}" dir out_file
   dir="$TMP/run-$RANDOM"
   mkdir -p "$dir"
   write_stubs "$dir"
@@ -137,6 +141,7 @@ run_filter() {
        GITHUB_OUTPUT="$out_file" \
        STUB_MIGRATIONS_DIFF="$migrations_diff" \
        STUB_RANGE_FAIL="$range_fail" \
+       STUB_CUM_CHANGED="$cum_changed" \
        bash --noprofile --norc filter.sh
   ) > "$dir/stdout" 2> "$dir/stderr"
   local rc=$?
@@ -147,8 +152,8 @@ run_filter() {
 }
 
 assert_pg_net() {
-  local name="$1" migrations_diff="$2" expected="$3" range_fail="${4:-false}" result actual
-  result="$(run_filter "$migrations_diff" "$range_fail")"
+  local name="$1" migrations_diff="$2" expected="$3" range_fail="${4:-false}" cum_changed="${5:-}" result actual
+  result="$(run_filter "$migrations_diff" "$range_fail" "$cum_changed")"
   actual="$(echo "$result" | grep -oE 'pg_net=[a-z]*' | cut -d= -f2)"
   if [ "$actual" = "$expected" ]; then
     pass=$((pass + 1)); echo "  ok   $name"
@@ -158,8 +163,8 @@ assert_pg_net() {
 }
 
 assert_auth_hook() {
-  local name="$1" migrations_diff="$2" expected="$3" range_fail="${4:-false}" result actual
-  result="$(run_filter "$migrations_diff" "$range_fail")"
+  local name="$1" migrations_diff="$2" expected="$3" range_fail="${4:-false}" cum_changed="${5:-}" result actual
+  result="$(run_filter "$migrations_diff" "$range_fail" "$cum_changed")"
   actual="$(echo "$result" | grep -oE 'auth_hook=[a-z]*' | cut -d= -f2)"
   if [ "$actual" = "$expected" ]; then
     pass=$((pass + 1)); echo "  ok   $name"
@@ -196,6 +201,20 @@ assert_pg_net "200 KB diff with the signal on line ONE still -> pg_net=true (B2)
 BIG_AUTH_DIFF="$(build_big_diff '+ grant supabase_auth_admin to postgres; -- custom_access_token_hook')"
 assert_auth_hook "200 KB diff with the auth-hook signal on line ONE still -> auth_hook=true (same B2 class, base branch line)" \
   "$BIG_AUTH_DIFF" "true"
+
+# ── B2 (round 2, 2026-09-10 review): the SAME SIGPIPE class, alive TWO lines
+# above the one already fixed — CUM_CHANGED, a PATH LIST, not migration
+# content. `matches()` and the CUM_CHANGED check both piped `echo "$VAR" |
+# grep -qE ...` instead of a herestring, identical bug to the one already
+# fixed for MIGRATIONS_DIFF. Reachable here too: a path averages ~60 bytes,
+# so ~1,100 changed paths cross the 64 KB pipe buffer — and this repo has a
+# documented 1,599-file incident. CUM_CHANGED is the CUMULATIVE range since
+# the last successful deploy (not one commit's diff), which is exactly the
+# case that gets large. Synthetic 200 KB path list with the signal on line
+# ONE — before the herestring fix this reported auth_hook=false.
+BIG_CUM_CHANGED="$(build_big_diff 'infra/supabase-qa/custom_access_token_hook.sql')"
+assert_auth_hook "200 KB CUM_CHANGED (path list) with the signal on line ONE still -> auth_hook=true (B2, CUM_CHANGED)" \
+  "+ create table foo (id uuid primary key);" "true" "false" "$BIG_CUM_CHANGED"
 
 # ── G1: signal width — case, call forms, schema mentions ────────────────────
 assert_pg_net "NET.HTTP_POST uppercase -> pg_net=true (case-insensitive)" \

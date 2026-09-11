@@ -173,7 +173,14 @@ jobs:
           CHANGED=$(git diff --name-only "${BASE}" "${DEPLOY_SHA}")
           echo "$CHANGED"
 
-          matches() { echo "$CHANGED" | grep -qE "$1" && echo true || echo false; }
+          # review round 2026-09-10 — same SIGPIPE class as the migrations-
+          # diff content check below (B2): `echo "$VAR" | grep -qE ...` pipes
+          # into a `grep -q` that exits at the first match and closes its
+          # stdin, and under `pipefail` a big-enough $CHANGED with the match
+          # near the start can SIGPIPE the `echo`, making the whole pipeline
+          # report 141 — which reads as "no match" even though there was
+          # one. Herestring instead: no pipe, no writer to SIGPIPE.
+          matches() { grep -qE "$1" <<< "$CHANGED" && echo true || echo false; }
 
           # force_db overrides the database path filter only. It exists so a
           # migration backlog can be applied without an unrelated commit that
@@ -231,7 +238,13 @@ jobs:
             PG_NET=true
           else
             CUM_CHANGED="$(git diff --name-only "${RANGE_BASE}" "${DEPLOY_SHA}")"
-            if echo "${CUM_CHANGED}" | grep -qE 'custom_access_token_hook|infra/supabase-qa/docker-compose\.yml|volumes/db/roles\.sql'; then
+            # Same SIGPIPE class as MIGRATIONS_DIFF below (B2) — herestring,
+            # not a pipe into `grep -q`. CUM_CHANGED is a path LIST, not
+            # migration content, but it is still the cumulative range (every
+            # merge since the last successful deploy, not just this commit's
+            # diff) and this repo has a documented 1,599-file incident — well
+            # past the ~64 KB pipe-buffer threshold at ~60 bytes/path.
+            if grep -qE 'custom_access_token_hook|infra/supabase-qa/docker-compose\.yml|volumes/db/roles\.sql' <<< "${CUM_CHANGED}"; then
               AUTH_HOOK=true
             fi
             MIGRATIONS_DIFF="$(git diff "${RANGE_BASE}" "${DEPLOY_SHA}" -- packages/database/supabase/migrations/)"
