@@ -103,7 +103,7 @@ export const ScannerInput = forwardRef<ScannerInputHandle, ScannerInputProps>(fu
         disabled={disabled}
         className="min-h-[48px] text-base font-medium text-center bg-accent text-accent-foreground placeholder:text-accent-foreground/70 sm:min-h-0 sm:text-lg sm:font-mono sm:text-left sm:bg-input sm:text-foreground sm:placeholder:text-muted-foreground"
         autoComplete="off"
-        aria-label="Barcode scanner input"
+        aria-label="Campo de escaneo"
       />
     </div>
   );

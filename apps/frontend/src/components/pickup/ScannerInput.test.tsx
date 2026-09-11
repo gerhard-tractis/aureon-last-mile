@@ -41,9 +41,11 @@ describe('ScannerInput', () => {
     expect(screen.getByRole('textbox')).toBeDisabled();
   });
 
+  // Review de fase 5, L4 — quedaba en inglés en el mismo fichero que se
+  // tradujo (placeholder ya en español, aria-label todavía no).
   it('has aria-label for accessibility', () => {
     render(<ScannerInput onScan={vi.fn()} />);
-    expect(screen.getByLabelText('Barcode scanner input')).toBeInTheDocument();
+    expect(screen.getByLabelText('Campo de escaneo')).toBeInTheDocument();
   });
 
   // fase 5 — "Ingresar código a mano" en el pie de scan/[loadId]/page.tsx no

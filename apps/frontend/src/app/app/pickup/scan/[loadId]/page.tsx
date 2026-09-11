@@ -82,7 +82,12 @@ export default function ScanningPage() {
     // `openPendingManifest` es idempotente por status ('pending' → escribe
     // una vez; 'in_progress' → no vuelve a tocar `started_at`), así que
     // reabrir esta pantalla no reinicia el reloj.
-    void openPendingManifest(supabase, operatorId, loadId);
+    // L1, review de fase 5 — `.catch`, no dejar el rechazo sin manejar: sin
+    // esto, un fallo de red aquí salía como *unhandled rejection* en vez de
+    // un error visible/registrado.
+    openPendingManifest(supabase, operatorId, loadId).catch((error) => {
+      console.error('No se pudo marcar el inicio del escaneo (started_at)', error);
+    });
     supabase
       .from('manifests')
       .select('id, total_packages, pickup_route_id, retailer_name, pickup_location')
@@ -312,7 +317,15 @@ export default function ScanningPage() {
           simplemente no existía para el operario. Con `w-full` el ancho
           vuelve a ser el del contenedor y `max-w-2xl` es sólo un techo en
           escritorio. */}
-      <div className="w-full space-y-4 p-4 sm:p-6 pb-28 max-w-2xl mx-auto">
+      {/* pb-44 (176px), no pb-28 (112px) — Review de fase 5, B1. El pie fijo
+          de dos filas mide pt-4(16) + primario h-[60px](60) +
+          space-y-2.5(10) + secundario py-[15px]+lh+2 bordes(52) +
+          pb-[26px](26) = 164px; pb-28 dejaba 112px, 52px cortos. Sin holgura
+          del tabbar (`/app/pickup/scan` está en MOBILE_IMMERSIVE_PREFIXES,
+          así que AppLayout no añade su propio padding), esos 52px de
+          "Historial de escaneos" quedaban bajo el pie fijo — que no ocupa
+          flujo — sin forma de hacer scroll hasta ellos. */}
+      <div className="w-full space-y-4 p-4 sm:p-6 pb-44 max-w-2xl mx-auto">
         <ScanResultPopup
           visible={showNotFoundPopup}
           onDismiss={() => setShowNotFoundPopup(false)}
@@ -424,7 +437,7 @@ export default function ScanningPage() {
 
         <div className="bg-surface border border-border rounded-lg">
           <div className="px-3 pt-3 pb-1">
-            <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">Escaneos recientes</p>
+            <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">Historial de escaneos</p>
           </div>
           <div className="p-3">
             <ScanHistoryList scans={scans} scansUnknown={scansUnknown} />
@@ -435,6 +448,11 @@ export default function ScanningPage() {
       <ScanScreenFooter
         onContinue={() => router.push(`/app/pickup/review/${encodeURIComponent(loadId)}`)}
         onManualEntryRequested={() => scannerRef.current?.focus()}
+        // Review de fase 5, M3 — misma condición que deshabilita
+        // `ScannerInput` (línea de arriba): `focus()` sobre un
+        // `<input disabled>` no hace nada, así que el control no puede
+        // quedar habilitado cuando el campo al que apunta no lo está.
+        manualEntryDisabled={scanMutation.isPending || sync.status === 'offline'}
       />
     </>
   );

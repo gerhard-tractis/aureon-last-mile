@@ -56,6 +56,21 @@ describe('PackageRow', () => {
     expect(screen.getByRole('button', { name: /marcar verificado/i })).toBeInTheDocument();
   });
 
+  // Review de fase 5, M1 — el mock (`5d`) escribe "Marcar", no "Marcar
+  // verificado": esa fila ya venía justa de #772 (etiqueta + nº + SKUs +
+  // peso + dos botones `whitespace-nowrap` en ~293px a 375px), y el texto
+  // largo consume el margen que `flex-wrap` ganó. El `aria-label` se queda
+  // más descriptivo ("Marcar verificado") — es el nombre accesible real
+  // porque un `aria-label` explícito reemplaza el texto visible del
+  // control para lectores de pantalla, así que ampliarlo no cuesta nada de
+  // ancho en pantalla.
+  it('el texto VISIBLE del botón es "Marcar", no "Marcar verificado"', () => {
+    render(<PackageRow {...defaultProps} />);
+    const button = screen.getByRole('button', { name: /marcar verificado/i });
+    expect(button).toHaveTextContent('Marcar');
+    expect(button).not.toHaveTextContent('Marcar verificado');
+  });
+
   // Hotfix móvil 2026-09-10 — esta fila apila etiqueta, nº de bulto,
   // conteo de SKUs, peso y dos botones (`whitespace-nowrap` por el
   // `buttonVariants` base) en una sola línea que no podía encoger:

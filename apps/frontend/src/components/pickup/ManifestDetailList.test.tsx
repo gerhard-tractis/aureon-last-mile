@@ -67,14 +67,14 @@ describe('ManifestDetailList', () => {
   it('shows error state with retry button', () => {
     const onRetry = vi.fn();
     render(<ManifestDetailList {...defaultProps} isError={true} orders={[]} onRetry={onRetry} />);
-    expect(screen.getByText(/Failed to load/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    expect(screen.getByText(/No se pudieron cargar/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /reintentar/i }));
     expect(onRetry).toHaveBeenCalled();
   });
 
   it('shows empty state when no orders', () => {
     render(<ManifestDetailList {...defaultProps} orders={[]} />);
-    expect(screen.getByText(/No orders found/)).toBeInTheDocument();
+    expect(screen.getByText(/No se encontraron órdenes/i)).toBeInTheDocument();
   });
 
   // spec-82 fase 2, revisión B2 (ronda 3) — sin red, `scans` llega vacío

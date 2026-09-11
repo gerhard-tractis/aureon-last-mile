@@ -29,4 +29,40 @@ describe('ScanScreenFooter', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ingresar código a mano' }));
     expect(onManualEntryRequested).toHaveBeenCalled();
   });
+
+  // Review de fase 5, M3 — `scannerRef.current?.focus()` sobre un
+  // `<input disabled>` no hace nada (verificado por el reviewer con una
+  // sonda). El artboard `5d` se titula "escaneo de recogida SIN CONEXIÓN":
+  // exactamente en ese estado, este control tiene que reflejar que no hay
+  // nada que hacer, no quedarse como un no-op silencioso.
+  describe('manualEntryDisabled (M3)', () => {
+    it('deshabilita el control cuando el campo de escaneo también lo está', () => {
+      render(
+        <ScanScreenFooter
+          onContinue={vi.fn()}
+          onManualEntryRequested={vi.fn()}
+          manualEntryDisabled
+        />
+      );
+      expect(screen.getByRole('button', { name: 'Ingresar código a mano' })).toBeDisabled();
+    });
+
+    it('no llama a onManualEntryRequested si se pulsa estando deshabilitado', () => {
+      const onManualEntryRequested = vi.fn();
+      render(
+        <ScanScreenFooter
+          onContinue={vi.fn()}
+          onManualEntryRequested={onManualEntryRequested}
+          manualEntryDisabled
+        />
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Ingresar código a mano' }));
+      expect(onManualEntryRequested).not.toHaveBeenCalled();
+    });
+
+    it('sigue habilitado por defecto (manualEntryDisabled es opcional)', () => {
+      render(<ScanScreenFooter onContinue={vi.fn()} onManualEntryRequested={vi.fn()} />);
+      expect(screen.getByRole('button', { name: 'Ingresar código a mano' })).not.toBeDisabled();
+    });
+  });
 });

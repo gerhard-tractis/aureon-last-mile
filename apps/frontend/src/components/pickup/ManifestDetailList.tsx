@@ -70,15 +70,15 @@ export function ManifestDetailList({
 
         {isError && (
           <div className="text-center py-4">
-            <p className="text-sm text-status-error mb-2">Failed to load manifest details</p>
-            <Button size="sm" variant="outline" onClick={onRetry} aria-label="Retry">
-              Retry
+            <p className="text-sm text-status-error mb-2">No se pudieron cargar los datos del manifiesto</p>
+            <Button size="sm" variant="outline" onClick={onRetry} aria-label="Reintentar">
+              Reintentar
             </Button>
           </div>
         )}
 
         {!isLoading && !isError && orders.length === 0 && (
-          <p className="text-sm text-text-muted text-center py-4">No orders found for this load</p>
+          <p className="text-sm text-text-muted text-center py-4">No se encontraron órdenes para esta carga</p>
         )}
 
         {!isLoading && !isError && orders.map(order => (
