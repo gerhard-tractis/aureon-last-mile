@@ -245,7 +245,7 @@ ETA. **Sólo se implementan dirección y navegación.**
 > un spec de routing futuro; una distancia en línea recta tampoco sirve, porque
 > no es lo que conduce el operario y el mock no dice cuál de las dos dibuja.
 
-### Fase 4 — `5b` cuadrilla y selector de vehículo `[in_progress]`
+### Fase 4 — `5b` cuadrilla y selector de vehículo `[done]`
 
 **Depende de:** ninguna
 
@@ -279,6 +279,27 @@ dibujaba. La ronda 2 lo incorpora y le añade dos cosas que hoy no tiene.
 > exhaustivo. Verificado: añadir `'warehouse_staff'` a la lista **rompe la
 > compilación** (`TS2741`) hasta que alguien decida su palabra — en vez de
 > rotularlo «conductor» en silencio, que es lo que hacía el `else` atrapa-todo.
+
+> Implementado por: implementer — rama `feat/spec-95-fase-4-cuadrilla-y-vehiculo`,
+> SHAs `29ca22e` (contador y rol), `34751b1` (ícono y chevron), `8c417f8` +
+> `2df42e9` (los ocho hallazgos del review).
+> Review: reviewer (opus) — una ronda. **Tres mutaciones sobrevivían** en
+> `VehicleSelect` porque los tests comprobaban sólo *presencia* del icono
+> (borrar `pl-10 pr-10`, `pointer-events-none` o `aria-hidden` dejaba 10/10 en
+> verde), el **chevron dibujaba una affordance no cableada** —la lista no se
+> podía cerrar sin elegir patente— y el **rol no llegaba al lector de pantalla**
+> porque `aria-label` sustituye el nombre accesible. Los ocho cerrados; el
+> orquestador reverificó dos a mano (quitar `pointer-events-none` del
+> `className` mata un test; añadir un rol a `CREW_ROLES` da `TS2741`).
+> QA: PR #780 merged 2026-09-11, `gh pr checks 780` verde. Suite dirigida 84
+> ficheros / 753 tests; `tsc` y `eslint` limpios. **`e2e-qa` no se leyó por
+> separado** — hueco declarado, no maquillado.
+> Downstream: revisado spec-52, spec-66 y spec-83 — **sin cambios** (spec-66
+> sólo fija que `ops_leader` esté en `ROUTE_LEADER_ROLES` y en el gate del RPC,
+> y eso no se tocó; spec-52 y spec-83 citan `VehicleSelect` por el flujo de
+> patente, que sigue igual). **spec-61 sí queda desactualizado y se corrige en
+> este mismo PR**: su decisión del 2026-08-21 fija el formato `ACOMPAÑANTES · N`
+> y ahora la cabecera es `ACOMPAÑANTES` + `N de M`.
 
 ### Fase 5 — `5d` escaneo, y los cuatro textos en inglés `[pending]`
 

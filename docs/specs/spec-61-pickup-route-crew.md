@@ -2415,6 +2415,13 @@ point is that the message is *actionable*: it must say a route is not open and w
       read `ACOMPAÑANTES · 2` (or `SELECCIONADOS · 2`), leaving `EQUIPO · N` to mean
       "everyone on the trip" in exactly one place. Full reasoning in Task 6, Step 3.
 
+      > **Superseded in FORM by spec-95 fase 4 (PR #780, 2026-09-11).** The header
+      > now reads `ACOMPAÑANTES` with `N de M` beside it — M being the candidates
+      > offered, from mock `5b` («2 de 3»). **The decision below still holds in
+      > substance**: still leader-exclusive, N still counts exactly the checked
+      > rows, and `EQUIPO · N` on `3h` still stays leader-inclusive. Only the
+      > rendering of the count changed, and each row now also carries its role.
+
       **DECIDED 2026-08-21 — `ACOMPAÑANTES · N`.** Take the recommendation. This header
       reads `ACOMPAÑANTES · N`, leader-exclusive, counting exactly the checked rows beneath
       it. `EQUIPO · N` stays on `3h` and stays leader-inclusive. Neither count changes; only
