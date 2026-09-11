@@ -415,11 +415,11 @@ irreversible»). `5f2` lo rediseña como **hoja inferior** y le añade datos.
 - [ ] «Mostrando 7 de 12 · Cargar más» en vez de paginación con Anterior/Siguiente.
 - [ ] **No** se implementa la barra de ocupación: sigue `[parked]` en `spec-83` fase 3.
 
-### Fase 9 — `5g` el botón de flash `[pending]`
+### Fase 9 — `5g` el botón de flash `[in_progress]`
 
 **Depende de:** ninguna
 
-**Archivos:** `apps/frontend/src/components/pickup/ManifestCameraSheet.tsx`, y sus tests
+**Archivos:** `apps/frontend/src/components/pickup/ManifestCameraSheet.tsx`, `apps/frontend/src/hooks/pickup/useTorch.ts`, y sus tests
 
 `5g` ya calzaba casi pixel a pixel; lo único que faltaba era el flash, y el mock
 ya lo dibujaba antes de esta ronda.
@@ -448,3 +448,31 @@ otra.
 **sin verificar**: `5h` necesita una captura de cámara real y `5i` exige confirmar
 el diálogo irreversible, que en QA consume el fixture. Cerrarlos es trabajo de una
 persona con el teléfono en la mano, no de este spec.
+
+> **`torch: false` NO es soporte — el bloqueante que encontró el review.**
+> La primera implementación usaba `'torch' in capabilities`, que es **true**
+> cuando la clave existe con valor `false` — y `torch: false` es exactamente
+> cómo Chromium declara «esta pista no tiene linterna» (cámara frontal de
+> Android, webcam de escritorio). El resultado era el **botón muerto que
+> además miente**: se pintaba, el operario lo tocaba, `applyConstraints`
+> resolvía, `aria-pressed` pasaba a `true`, y no había luz. Justo lo que esta
+> fase existía para evitar. Ahora `capabilities?.torch === true`.
+>
+> **`advanced` no es confirmación del dispositivo.** Por spec de Media Capture
+> los `ConstraintSet` avanzados son *best-effort*: el UA **salta** los que no
+> puede satisfacer y la promesa **resuelve**, así que la rama `.catch` nunca
+> corría. Se usa un `{ torch }` básico, que sí produce `OverconstrainedError`.
+>
+> **La pista puede morir con el flash encendido.** `mute` apaga el flash en la
+> UI conservando el botón (la capacidad sigue ahí); `ended` apaga **y** retira
+> el botón (la pista no vuelve). Antes, `aria-pressed` se quedaba en `true`
+> para siempre con el hardware apagado.
+>
+> **Decisión de UX fuera del mock, declarada:** el mock es estático y no dibuja
+> estado «encendido». Se añadió `aria-pressed` y relleno del ícono para que el
+> operario sepa si el flash quedó activo. El `aria-label` es fijo («Flash»), no
+> alterna — alternar nombre **y** `aria-pressed` hace que un lector diga
+> «Apagar flash, pulsado», que es redundante y contradictorio.
+>
+> La lógica vive en `hooks/pickup/useTorch.ts` (capa `components → hooks`), lo
+> que devolvió `ManifestCameraSheet.tsx` a 299 líneas, bajo el límite de 300.
