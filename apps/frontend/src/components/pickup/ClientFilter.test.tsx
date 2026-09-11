@@ -53,7 +53,12 @@ describe('ClientFilter', () => {
     expect(todosBtn.className).toContain('bg-accent');
   });
 
-  it('renders nothing extra when clients list is empty', () => {
+  // Nit from review round 1 — PickupDesktopView only mounts this component
+  // when `clients.length > 0`, so this state is unreachable through the
+  // real caller today and a regression here would not be caught anywhere
+  // else. Kept as the component's OWN contract (it must not crash or
+  // fabricate a chip on an empty list), not as a guard against a live bug.
+  it('renders nothing extra when clients list is empty (component contract, not reachable via PickupDesktopView today)', () => {
     render(<ClientFilter clients={[]} selected={null} onSelect={vi.fn()} />);
     expect(screen.queryByText('Paris · 2')).not.toBeInTheDocument();
     expect(screen.getByText('Todos · 0')).toBeInTheDocument();

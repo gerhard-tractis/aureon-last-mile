@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { StatTile } from '@/components/StatTile';
-import { ClientFilter, type ClientCount } from '@/components/pickup/ClientFilter';
+import { ClientFilter } from '@/components/pickup/ClientFilter';
+import type { ClientCount } from '@/hooks/pickup/pickupSummary';
 import { ActiveRouteBanner } from '@/components/pickup/ActiveRouteBanner';
 import { ManifestTable, type ManifestRow } from '@/components/pickup/ManifestTable';
 import { RoutedManifestTable } from '@/components/pickup/RoutedManifestTable';
@@ -95,13 +96,9 @@ interface PickupDesktopViewProps {
   onOpen: (row: ManifestRow) => void;
   operatorId: string | null;
   selectedManifests: ManifestRow[];
-  /**
-   * Desktop never sends a crew — `1l` has no crew picker, and
-   * `handleCreateRoute` defaults the argument. spec-61 Task 5. `viewQr`
-   * (spec-95 fase 8) is forwarded from `PickupRouteDraftPanel`'s
-   * `StartRouteButton` when the driver used "Ver QR de la ruta".
-   */
-  onCreateRoute: (vehicleId: string, viewQr?: boolean) => void;
+  /** Desktop never sends a crew — `1l` has no crew picker, and
+   *  `handleCreateRoute` defaults the argument. spec-61 Task 5. */
+  onCreateRoute: (vehicleId: string) => void;
   isCreatingRoute: boolean;
   /** spec-61 — false for a pickup_crew user; gates `1l`'s own start
    *  affordance the same way 3j is gated. */
@@ -182,7 +179,7 @@ export function PickupDesktopView({
           <StatTile label="Completados hoy" value={closures.length} tone="success" />
         </div>
 
-        <ManifestSearchBar value={searchTerm} onChange={setSearchTerm} />
+        <ManifestSearchBar value={searchTerm} onChange={setSearchTerm} tab={tab} />
 
         {clients.length > 0 && (
           <ClientFilter clients={clients} selected={selectedClient} onSelect={setSelectedClient} />

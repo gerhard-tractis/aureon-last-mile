@@ -1,12 +1,7 @@
 'use client';
 
 import { useTranslation } from '@/lib/i18n/useTranslation';
-
-/** One chip's worth of data — name plus how many manifests it covers. */
-export interface ClientCount {
-  name: string;
-  count: number;
-}
+import type { ClientCount } from '@/hooks/pickup/pickupSummary';
 
 interface ClientFilterProps {
   clients: ClientCount[];
@@ -17,9 +12,10 @@ interface ClientFilterProps {
 /**
  * spec-95 fase 8 (mock `5a`, `Recogida.dc.html:88-95`) — each chip carries
  * its own count, "Todos" carries the sum, and the row is labelled CLIENTE
- * ahead of the pills. The counts were already computed by
- * `clientBreakdown` (`pickupSummary.ts`) and dropped on the way in — the
- * caller mapped to `.name` before handing the list down. Nothing here
+ * ahead of the pills. The counts come from `clientCountsForTab`
+ * (`pickupPageHelpers.ts`), scoped to whichever tab is active — see its
+ * own docstring for why the union (spec-94 fase 2) decides which chips
+ * exist but never what they count (review round 1, B1). Nothing here
  * invents a number: if `clients` is empty, "Todos" reads 0, honestly.
  */
 export function ClientFilter({ clients, selected, onSelect }: ClientFilterProps) {

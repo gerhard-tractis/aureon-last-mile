@@ -191,27 +191,27 @@ vi.mock('@/components/pickup/CameraIntake', () => ({
   CameraIntake: () => <div data-testid="camera-intake" />,
 }));
 
+// spec-95 fase 8, review round 1 (B1) — renders the `clients` prop instead
+// of swallowing it, so this file can assert the per-tab count end to end,
+// not just at pickupPageHelpers.test.ts's unit level.
 vi.mock('@/components/pickup/ClientFilter', () => ({
-  ClientFilter: () => null,
+  ClientFilter: ({ clients }: { clients: { name: string; count: number }[] }) => (
+    <div data-testid="client-filter">
+      {clients.map((c) => (
+        <span key={c.name}>{c.name} · {c.count}</span>
+      ))}
+    </div>
+  ),
 }));
 
 // Now actually wired: the real button pops a vehicle dialog, which this
 // file has no business driving, but a stub that never calls `onStart` made
 // the whole create-route path unreachable from here.
-//
-// spec-95 fase 8 — a second stub button exercises the "Ver QR de la ruta"
-// path (`onStart(vehicleId, true)`), same as the real StartRouteButton's
-// secondary CTA does.
 vi.mock('@/components/pickup/StartRouteButton', () => ({
-  StartRouteButton: ({ onStart }: { onStart: (vehicleId: string, viewQr?: boolean) => void }) => (
-    <>
-      <button type="button" onClick={() => onStart('veh-1')}>
-        Crear ruta
-      </button>
-      <button type="button" onClick={() => onStart('veh-1', true)}>
-        Crear ruta y ver QR
-      </button>
-    </>
+  StartRouteButton: ({ onStart }: { onStart: (vehicleId: string) => void }) => (
+    <button type="button" onClick={() => onStart('veh-1')}>
+      Crear ruta
+    </button>
   ),
 }));
 
@@ -278,6 +278,28 @@ describe('PickupPage', () => {
       // The code shows in the banner and again in the draft panel's
       // "already have a route open" notice.
       expect(screen.getAllByText('R-2492').length).toBeGreaterThan(0);
+    });
+  });
+
+  // spec-95 fase 8, review round 1 (B1) — the chip count has to match the
+  // cube on screen. Fixture: Easy has 1 row in pending AND 1 in completed;
+  // Sodimac only in pending; Falabella only in in_transit (0 in pending).
+  // The default tab is 'pending'.
+  describe('Client chips count the active tab, not the union (B1)', () => {
+    it('counts Easy by its pending row only, not pending+completed', () => {
+      render(<PickupPage />);
+      expect(screen.getByText('Easy · 1')).toBeInTheDocument();
+    });
+
+    it('still lists Falabella (from in_transit) with a zero, not missing entirely', () => {
+      render(<PickupPage />);
+      expect(screen.getByText('Falabella · 0')).toBeInTheDocument();
+    });
+
+    it('has both chips summing to 2, the pending tab\'s own row count', () => {
+      render(<PickupPage />);
+      expect(screen.getByText('Easy · 1')).toBeInTheDocument();
+      expect(screen.getByText('Sodimac · 1')).toBeInTheDocument();
     });
   });
 
@@ -988,26 +1010,6 @@ describe('PickupPage', () => {
       expect(msg).toContain('1 de 2');
       // The route still exists — the message must not read as a total failure.
       expect(mockPush).toHaveBeenCalledWith('/app/pickup/route/active');
-    });
-
-    // spec-95 fase 8 (mock 5a:224-225) — "Ver QR de la ruta" creates the
-    // route exactly like the primary CTA, but lands on the route's own QR
-    // page instead of the active-route screen. Wired end to end here, not
-    // just at StartRouteButton's own boundary — the fase 9 review's lesson
-    // about a drawn-but-disconnected affordance.
-    it('navigates to the route QR page when created via "Ver QR de la ruta"', async () => {
-      mockStartMutate.mockImplementation(
-        (_args: unknown, opts: { onSuccess: (r: unknown) => Promise<void> }) =>
-          opts.onSuccess({ id: 'route-1' }),
-      );
-      mockDesktop();
-      render(<PickupPage />);
-      await userEvent.click(screen.getByText('Easy Vespucio'));
-      await userEvent.click(screen.getByRole('button', { name: 'Crear ruta y ver QR' }));
-      await waitFor(() =>
-        expect(mockPush).toHaveBeenCalledWith('/app/pickup/route/route-1/qr'),
-      );
-      expect(mockPush).not.toHaveBeenCalledWith('/app/pickup/route/active');
     });
 
     it('clears the selection so the next route does not inherit it', async () => {

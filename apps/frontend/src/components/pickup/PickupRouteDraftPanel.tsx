@@ -28,13 +28,8 @@ interface PickupRouteDraftPanelProps {
   operatorId: string | null;
   selected: ManifestRow[];
   onRemove: (id: string) => void;
-  /**
-   * Creates the route with the chosen vehicle, then attaches the selection.
-   * `viewQr` (spec-95 fase 8) is forwarded verbatim from
-   * `StartRouteButton.onStart` — true only when the driver used the
-   * secondary "Ver QR de la ruta" CTA.
-   */
-  onCreate: (vehicleId: string, viewQr?: boolean) => void;
+  /** Creates the route with the chosen vehicle, then attaches the selection. */
+  onCreate: (vehicleId: string) => void;
   isCreating?: boolean;
   /** Set when the driver already has a route open. */
   activeRouteCode?: string | null;
@@ -177,6 +172,21 @@ export function PickupRouteDraftPanel({
               {orders} {orders === 1 ? 'orden' : 'órdenes'} · {packages}{' '}
               {packages === 1 ? 'paquete' : 'paquetes'}
             </span>
+            {/* spec-95 fase 8, decisión del usuario 2026-09-11 (B2) — el
+                mock dibuja un secundario "Ver QR de la ruta" aquí
+                (`5a:225`), y deliberadamente NO se implementa: en estado
+                BORRADOR la ruta todavía no existe, así que "ver su QR" no
+                es una operación posible — lo único que podía hacer un
+                botón con ese nombre era CREAR la ruta primero, y con
+                `start_pickup_route` imponiendo una ruta activa por
+                conductor, alguien que sólo quería mostrar el QR se queda
+                con una ruta abierta cuya única salida es Cancelar ruta.
+                La afordancia real ya existe en `ActiveRouteBanner.tsx`,
+                sobre la ruta ya en curso — que es también donde el mock la
+                dibuja para R-2492 (`5a`, banner superior). No se duplica
+                aquí. Regla de desempate del propio spec: el mock manda en
+                diseño, el spec manda en comportamiento — esta es una
+                divergencia de comportamiento. */}
             <StartRouteButton
               operatorId={operatorId}
               isSubmitting={isCreating}
