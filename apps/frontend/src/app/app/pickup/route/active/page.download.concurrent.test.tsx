@@ -80,6 +80,12 @@ vi.mock('@/hooks/pickup/useRouteManifests', () => ({
   useUnassignedManifests: () => ({ data: [], isLoading: false }),
 }));
 
+// spec-95 fase 3 — igual que en page.download.test.tsx: este archivo prueba
+// concurrencia de descargas, no el panel de mapa.
+vi.mock('@/hooks/pickup/useNextManifestPickupAddress', () => ({
+  useNextManifestPickupAddress: () => ({ data: null, isLoading: false }),
+}));
+
 vi.mock('@/hooks/pickup/useAddManifestToRoute', () => ({
   useAddManifestToRoute: () => ({ mutate: vi.fn(), isPending: false }),
 }));
