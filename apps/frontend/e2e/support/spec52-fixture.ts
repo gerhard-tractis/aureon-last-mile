@@ -63,15 +63,19 @@ export const RECEPTIONIST = {
 export const PLATE = 'E2E52AA';
 
 /**
- * Accessible names of the two scanner inputs. spec52's own spec still keeps
- * local copies of both (its `PICKUP_SCANNER`/`RECEPTION_SCANNER` consts) —
- * left as-is rather than switched over to these, to avoid touching a passing
- * suite for this task. `PICKUP_SCANNER_LABEL` is used by
- * `reception-mobile-fixture.ts`'s `openRouteForReception`; nothing imports
- * `RECEPTION_SCANNER_LABEL` yet — exported ahead of Task 25's reception spec,
- * which will need it for its own scanning steps.
+ * Accessible names of the two scanner inputs. These are THE definition — the
+ * spec files import them instead of keeping their own literals.
+ *
+ * That changed on 2026-09-11, and this is why: spec-95 fase 5 (#784) tradujo
+ * el aria-label de `ScannerInput.tsx` al español, y las dos copias del literal
+ * inglés viejo (aquí, y en `spec52-pickup-reception-end-to-end.spec.ts`) se
+ * quedaron atrás. spec52 y reception-mobile quedaron en rojo contra QA en
+ * cada merge posterior y, como el gate de E2E frena los jobs de despliegue a
+ * producción, también quedó frenado cada deploy. Un literal duplicado es
+ * cómo un renombrado pasa el review: el grep del string viejo encuentra el
+ * componente, se arregla, y las copias del test son invisibles para él.
  */
-export const PICKUP_SCANNER_LABEL = 'Barcode scanner input';
+export const PICKUP_SCANNER_LABEL = 'Campo de escaneo';
 export const RECEPTION_SCANNER_LABEL = 'Escáner de recepción';
 
 /** Two clients, three cargas. */

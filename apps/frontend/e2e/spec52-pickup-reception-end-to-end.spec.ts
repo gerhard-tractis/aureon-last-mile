@@ -15,10 +15,9 @@ import {
   activeRoute, packageStatus, packageId, routeReception, manifestStates,
   DRIVER, RECEPTIONIST, PLATE, LOADS, COLLECTED, UNEXPECTED, LEFT_BEHIND,
   OPERATOR_ID, suppressCookieBanner, getAccessTokenClaims,
+  PICKUP_SCANNER_LABEL as PICKUP_SCANNER,
+  RECEPTION_SCANNER_LABEL as RECEPTION_SCANNER,
 } from './support/spec52-fixture';
-
-const PICKUP_SCANNER = 'Barcode scanner input';
-const RECEPTION_SCANNER = 'Escáner de recepción';
 
 /** Deliberately flat and out of carga order — the receptionist never picks one. */
 const RECEPTION_ORDER = [
