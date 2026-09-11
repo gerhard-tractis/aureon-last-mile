@@ -10,7 +10,7 @@
 -- migration lands, and pass once it does.
 
 BEGIN;
-SELECT plan(6);
+SELECT plan(7);
 
 -- ── TEST 1 -- accepts a valid exact cache row ───────────────────────────────
 INSERT INTO public.geocode_cache (
@@ -67,29 +67,67 @@ SELECT throws_like(
   'rejects (0,0) null-island'
 );
 
--- ── TEST 5 -- updated_at is maintained on UPDATE ────────────────────────────
+-- ── TEST 5 -- updated_at is bumped when the cached coordinate DATA changes ──
+-- (review decision: updated_at tracks "when this row's data was last
+-- written", scoped to the substantive columns -- not a blanket
+-- BEFORE UPDATE, so it stays a distinct signal from last_used_at below)
 UPDATE public.geocode_cache
    SET updated_at = '2000-01-01T00:00:00Z'
  WHERE id = '00000000-0000-4000-8000-0000000058c0';
 
 UPDATE public.geocode_cache
-   SET hit_count = hit_count + 1
+   SET latitude = -33.4400000
  WHERE id = '00000000-0000-4000-8000-0000000058c0';
 
 SELECT isnt(
   (SELECT updated_at FROM public.geocode_cache
      WHERE id = '00000000-0000-4000-8000-0000000058c0'),
   '2000-01-01T00:00:00Z'::timestamptz,
-  'updated_at is bumped by a trigger on UPDATE, not left stale'
+  'updated_at is bumped by a trigger when latitude changes, not left stale'
 );
 
--- ── TEST 6 -- an unrelated column read leaves created_at untouched ──────────
--- (sanity check that the trigger only rewrites updated_at, not created_at)
-SELECT isnt(
+-- ── TEST 6 -- updated_at is NOT bumped by a hit_count/last_used_at-only
+--    write (review decision: a cache HIT must not look like a data WRITE) ──
+UPDATE public.geocode_cache
+   SET updated_at = '2000-01-01T00:00:00Z'
+ WHERE id = '00000000-0000-4000-8000-0000000058c0';
+
+UPDATE public.geocode_cache
+   SET hit_count = hit_count + 1, last_used_at = now()
+ WHERE id = '00000000-0000-4000-8000-0000000058c0';
+
+SELECT is(
+  (SELECT updated_at FROM public.geocode_cache
+     WHERE id = '00000000-0000-4000-8000-0000000058c0'),
+  '2000-01-01T00:00:00Z'::timestamptz,
+  'updated_at is untouched by a hit_count/last_used_at-only update -- distinct signal from last_used_at'
+);
+
+-- ── TEST 7 -- created_at survives a real data UPDATE unchanged ─────────────
+-- (captures the value before, not just "is it non-null" -- a trigger
+-- mutated to also rewrite created_at would pass a bare NOT-NULL check.
+--
+-- A sentinel value, not a captured-then-compared NOW(): the whole file
+-- runs inside one BEGIN...ROLLBACK transaction, and Postgres freezes
+-- NOW()/CURRENT_TIMESTAMP to the transaction's start for its entire
+-- duration -- so a mutated trigger that sets `created_at = NOW()` would
+-- write back the EXACT same timestamp the row already had, and a
+-- before/after NOW()-based comparison would never catch it. This mirrors
+-- how tests 5/6 already detect updated_at changes: set a value that could
+-- never arise naturally, then assert it does or doesn't survive.)
+UPDATE public.geocode_cache
+   SET created_at = '1999-01-01T00:00:00Z'
+ WHERE id = '00000000-0000-4000-8000-0000000058c0';
+
+UPDATE public.geocode_cache
+   SET latitude = -33.4500000
+ WHERE id = '00000000-0000-4000-8000-0000000058c0';
+
+SELECT is(
   (SELECT created_at FROM public.geocode_cache
      WHERE id = '00000000-0000-4000-8000-0000000058c0'),
-  NULL,
-  'created_at is still populated after the update above'
+  '1999-01-01T00:00:00Z'::timestamptz,
+  'created_at is unchanged by the set_updated_at trigger firing on a real data update'
 );
 
 SELECT * FROM finish();

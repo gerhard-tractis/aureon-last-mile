@@ -13,6 +13,11 @@ export interface GeocodeCacheRow {
   latitude: number;
   longitude: number;
   geocode_source: string;
+  // geocode_precision on this table is really always 'exact' (only exact
+  // results are ever cached, and insertExactGeocodeCache/the migration's
+  // CHECK both enforce it) -- kept as `string` rather than the narrower
+  // literal union `orders.geocode_precision` uses, since a row read back
+  // from the DB should not be typed more strictly than the column itself.
   geocode_precision: string;
   hit_count: number;
   last_used_at: string | null;
@@ -70,6 +75,14 @@ export interface ExactGeocodeCacheEntry {
  * centroid result must never be cached (spec-58 fase 3 / "Resolution
  * order"), because caching it would short-circuit the retry the state
  * machine promises.
+ *
+ * Uses upsert with `ignoreDuplicates` rather than a plain insert: fase 5
+ * can process two orders sharing an address_hash (Decision 3's own
+ * example — depto 42 and depto 7 in the same building) in one batch, both
+ * missing the cache and both geocoding before either write lands. A plain
+ * insert would throw an opaque 23505 on the second write, which fase 5
+ * cannot tell apart from a real failure; ignoreDuplicates makes "already
+ * cached by a sibling in this batch" a silent no-op instead.
  */
 export async function insertExactGeocodeCache(
   db: SupabaseClient,
@@ -79,25 +92,33 @@ export async function insertExactGeocodeCache(
     throw new Error('geocode_cache only accepts exact matches; refusing to cache a non-exact result');
   }
 
-  const { error } = await db.from('geocode_cache').insert({
-    address_hash: entry.addressHash,
-    normalisation_version: entry.normalisationVersion,
-    latitude: entry.latitude,
-    longitude: entry.longitude,
-    geocode_source: entry.geocodeSource,
-    geocode_precision: 'exact',
-  });
+  const { error } = await db.from('geocode_cache').upsert(
+    {
+      address_hash: entry.addressHash,
+      normalisation_version: entry.normalisationVersion,
+      latitude: entry.latitude,
+      longitude: entry.longitude,
+      geocode_source: entry.geocodeSource,
+      geocode_precision: 'exact',
+    },
+    { onConflict: 'address_hash,normalisation_version', ignoreDuplicates: true },
+  );
 
   if (error) throw new Error(error.message);
 }
 
+// Literal unions matching orders' own CHECK constraints
+// (orders_geocode_source / orders_geocode_precision_check /
+// orders_geocode_status_check, 20261010000001) -- `string` would let
+// `'resolvd'` compile and die at runtime, the same rigour `matchClass`
+// already gets above.
 export interface OrderGeocodeUpdate {
   latitude: number | null;
   longitude: number | null;
   geocoded_at: string | null;
-  geocode_source: string | null;
-  geocode_precision: string | null;
-  geocode_status: string;
+  geocode_source: 'maptiler' | 'comuna_centroid' | null;
+  geocode_precision: 'exact' | 'approximate' | null;
+  geocode_status: 'pending' | 'resolved' | 'fallback' | 'unresolvable';
   geocode_attempts: number;
   geocode_last_attempt_at: string | null;
   geocode_next_attempt_at: string | null;
@@ -106,6 +127,14 @@ export interface OrderGeocodeUpdate {
 /**
  * Writes the geocode result columns back onto `orders`, scoped by both id
  * and operator_id (non-negotiable: operator_id on every query).
+ *
+ * `.select().single()` is load-bearing, not decoration: a PostgREST UPDATE
+ * matching zero rows returns `error: null` by default. Without forcing a
+ * row back, a mismatched operator_id or a soft-deleted order would leave
+ * the worker believing the write succeeded while the row stays
+ * `pending`/`attempts=0` forever — silently re-claimed by
+ * idx_orders_geocode_queue on every run. Same fix orders.ts already uses
+ * for updateOrderStatus.
  */
 export async function updateOrderGeocode(
   db: SupabaseClient,
@@ -117,7 +146,9 @@ export async function updateOrderGeocode(
     .from('orders')
     .update(update)
     .eq('id', orderId)
-    .eq('operator_id', operatorId);
+    .eq('operator_id', operatorId)
+    .select()
+    .single();
 
   if (error) throw new Error(error.message);
 }

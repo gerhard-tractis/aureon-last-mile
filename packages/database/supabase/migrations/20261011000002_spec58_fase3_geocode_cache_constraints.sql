@@ -46,11 +46,31 @@ BEGIN
 END $$;
 
 -- `updated_at` had no trigger maintaining it since fase 1. Reuse the
--- repo's existing `public.set_updated_at()` (20260223000001) rather than
--- inventing a second one, and write it explicitly on every UPDATE.
+-- repo's existing `public.set_updated_at()` -- most recently defined at
+-- 20260318000005:22 (identical body to its original 20260223000001
+-- definition; citing the latest per this repo's own CREATE OR REPLACE
+-- convention) -- rather than inventing a second one.
+--
+-- DECISION (review finding, "lower severity but cheap"): `updated_at` and
+-- `last_used_at` must stay two different signals, not one column wearing
+-- two names. `last_used_at` means "last time this row satisfied a cache
+-- lookup" (a popularity/heat signal, bumped by lookupGeocodeCache on every
+-- hit). `updated_at` means "last time this row's cached coordinate data
+-- was itself written" -- the signal fase 1 says would let a future cleanup
+-- target rows by when their DATA went stale, independent of how often
+-- they get read. A blanket `BEFORE UPDATE` would make every cache hit
+-- also bump `updated_at`, destroying that distinction (a row read a
+-- thousand times would look "just written" even though its coordinate was
+-- computed once, years ago). Scoping to `UPDATE OF` the substantive
+-- columns keeps the hit_count/last_used_at bump from touching it. In
+-- practice, given insertExactGeocodeCache's upsert+ignoreDuplicates
+-- (fase 3), these columns are never touched again after their initial
+-- insert -- this trigger only matters for a hypothetical future
+-- correction path.
 DROP TRIGGER IF EXISTS geocode_cache_set_updated_at ON public.geocode_cache;
 CREATE TRIGGER geocode_cache_set_updated_at
-  BEFORE UPDATE ON public.geocode_cache
+  BEFORE UPDATE OF latitude, longitude, geocode_source, geocode_precision, normalisation_version
+  ON public.geocode_cache
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 COMMIT;
