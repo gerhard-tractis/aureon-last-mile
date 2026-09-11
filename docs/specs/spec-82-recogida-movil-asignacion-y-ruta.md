@@ -237,7 +237,19 @@ línea contra el HTML real de cada artboard.
 **Aplazado, con la razón:**
 - **Chip `EN RUTA` (grupo de cliente).** En el mock aparece en la cabecera del
   grupo "Falabella" (2 puntos, 2 cargas), un estado **agregado** — no de una
-  carga individual. `route/active/page.tsx` no agrupa manifiestos por
+  carga individual.
+
+  > **Resuelto por spec-95 fase 1 (PR #779, `a89cada`, 2026-09-11).** Todo lo
+  > que sigue en esta viñeta describe el estado del código **hasta** esa fecha y
+  > ya no es cierto: `RouteManifestList` agrupa por `retailer_name` y pinta el
+  > chip de grupo. Lo que desbloqueó no fue el `groupBy` —que este spec ya había
+  > diagnosticado como barato— sino **la regla**: la ronda 2 del mock la fijó en
+  > `PENDIENTE`/`EN RUTA`/`COMPLETADA` para los cuatro grupos por igual, y el
+  > diseñador confirmó que el mock viejo era el inconsistente. El análisis de
+  > abajo, que concluyó que la semántica era indeterminable, **era correcto con
+  > el mock que tenía delante**.
+
+  `route/active/page.tsx` no agrupa manifiestos por
   cliente hoy: `NextManifestCard`/`UpcomingManifestList`/`RouteManifestList`
   trabajan sobre una lista plana de manifiestos. Construir esa agrupación
   (cliente → puntos → cargas, con estado agregado) es la "jerarquía" del
