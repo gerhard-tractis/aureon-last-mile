@@ -328,4 +328,35 @@ describe('DiscrepancyReviewPage (5e)', () => {
     expect(screen.queryByRole('button', { name: /seguir escaneando/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /cerrar con/i })).not.toBeInTheDocument();
   });
+
+  // Hotfix móvil 2026-09-11 — mismo bug que #772. Los tres wrappers de esta
+  // página (carga, error, y contenido principal) son hijos directos de
+  // `<main class="flex min-h-0 flex-1 flex-col">` (AppLayout); sin
+  // `w-full`, `mx-auto` deja de estirarse y `max-w-2xl` fija el ancho
+  // intrínseco.
+  describe('hotfix móvil 2026-09-11 — la envoltura ocupa el ancho disponible', () => {
+    it('el wrapper del contenido principal lleva w-full', async () => {
+      const { container } = render(<DiscrepancyReviewPage />);
+      await screen.findByText('Falabella · Mall Plaza Vespucio');
+      const wrapper = container.firstElementChild as HTMLElement;
+      expect(wrapper.className).toContain('max-w-2xl');
+      expect(wrapper.className).toContain('w-full');
+    });
+
+    it('el estado de carga lleva w-full', async () => {
+      mockUseMissingPackages.mockReturnValue({ data: undefined, isError: false });
+      render(<DiscrepancyReviewPage />);
+      const wrapper = await screen.findByTestId('review-loading');
+      expect(wrapper.className).toContain('max-w-2xl');
+      expect(wrapper.className).toContain('w-full');
+    });
+
+    it('el estado de error lleva w-full', async () => {
+      mockUseMissingPackages.mockReturnValue({ data: undefined, isLoading: false, isError: true });
+      render(<DiscrepancyReviewPage />);
+      const wrapper = await screen.findByTestId('review-error');
+      expect(wrapper.className).toContain('max-w-2xl');
+      expect(wrapper.className).toContain('w-full');
+    });
+  });
 });

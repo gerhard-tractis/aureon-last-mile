@@ -1084,4 +1084,27 @@ describe('CompletionPage', () => {
       expect(toast.error).toHaveBeenCalledWith('No se pudo completar el manifiesto');
     });
   });
+
+  // Hotfix móvil 2026-09-11 — mismo bug que #772. Ambos wrappers de esta
+  // página (contenido principal y `CompletionSkeleton`) son hijos directos
+  // de `<main class="flex min-h-0 flex-1 flex-col">` (AppLayout); sin
+  // `w-full`, `mx-auto` deja de estirarse y `max-w-2xl` fija el ancho
+  // intrínseco.
+  describe('hotfix móvil 2026-09-11 — la envoltura ocupa el ancho disponible', () => {
+    it('el wrapper del contenido principal lleva w-full', async () => {
+      const { container } = render(<CompletionPage />);
+      await screen.findByText('Firma y finalización');
+      const wrapper = container.firstElementChild as HTMLElement;
+      expect(wrapper.className).toContain('max-w-2xl');
+      expect(wrapper.className).toContain('w-full');
+    });
+
+    it('el esqueleto de carga lleva w-full', () => {
+      mockUsePickupScans.mockReturnValue({ data: undefined });
+      const { container } = render(<CompletionPage />);
+      const wrapper = container.firstElementChild as HTMLElement;
+      expect(wrapper.className).toContain('max-w-2xl');
+      expect(wrapper.className).toContain('w-full');
+    });
+  });
 });

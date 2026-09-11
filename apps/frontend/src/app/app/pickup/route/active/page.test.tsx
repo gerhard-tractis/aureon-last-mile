@@ -700,4 +700,60 @@ describe('ActiveRoutePage', () => {
       expect(children[2]).toHaveAttribute('data-testid', 'cancel-route-button');
     });
   });
+
+  // Hotfix móvil 2026-09-11 — el mismo bug que #772 arregló en
+  // scan/[loadId]/page.tsx. Este wrapper es hijo directo de
+  // `<main className="flex min-h-0 flex-1 flex-col">` (AppLayout). En un
+  // contenedor flex, un item con márgenes AUTO en el eje transversal
+  // (`mx-auto`) deja de estirarse y pasa a medir su tamaño intrínseco, que
+  // `max-w-2xl` fija en 672px — a 320px con la lista de manifiestos
+  // desplegada eso desbordaba 46 elementos (medido en QA). `w-full` devuelve
+  // el ancho al 100% del contenedor y `max-w-2xl` vuelve a ser sólo un techo
+  // en escritorio.
+  //
+  // Se comprueba la clase, no la geometría: jsdom no calcula layout, así
+  // que la única forma honesta de fijar este contrato en un test unitario
+  // es sobre la clase que lo produce. La medición real se hizo en QA (320px
+  // → 46 elementos desbordados antes, 0 después).
+  describe('hotfix móvil 2026-09-11 — la envoltura ocupa el ancho disponible', () => {
+    it('el wrapper principal de la ruta activa lleva w-full', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      const wrapper = screen.getByTestId('active-route-page');
+      expect(wrapper.className).toContain('max-w-2xl');
+      expect(wrapper.className).toContain('w-full');
+    });
+
+    it('el estado de error de la ruta lleva w-full', async () => {
+      activeRouteMock.mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        isError: true,
+        refetch: refetchRoute,
+      });
+      const { container } = wrap(<Page />);
+      await waitFor(() =>
+        expect(screen.getByText(/no pudimos cargar tu ruta/i)).toBeInTheDocument(),
+      );
+      const wrapper = container.firstElementChild as HTMLElement;
+      expect(wrapper.className).toContain('max-w-2xl');
+      expect(wrapper.className).toContain('w-full');
+    });
+
+    it('el estado "sin ruta activa" lleva w-full', async () => {
+      activeRouteMock.mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        isError: false,
+        refetch: refetchRoute,
+      });
+      const { container } = wrap(<Page />);
+      await waitFor(() =>
+        expect(screen.getByText(/no tienes una ruta activa/i)).toBeInTheDocument(),
+      );
+      const wrapper = container.firstElementChild as HTMLElement;
+      expect(wrapper.className).toContain('max-w-2xl');
+      expect(wrapper.className).toContain('w-full');
+    });
+  });
 });

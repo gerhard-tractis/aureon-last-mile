@@ -77,7 +77,7 @@ export function ManifestClosedSummary({
   const showRouteBlock = routeExternalId != null && pendingRouteCount > 0;
 
   return (
-    <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto" data-testid="manifest-closed-summary">
+    <div className="w-full space-y-4 p-4 sm:p-6 max-w-2xl mx-auto" data-testid="manifest-closed-summary">
       <div className="flex flex-col items-center gap-4 pt-6 pb-2">
         <span className="grid h-[76px] w-[76px] place-items-center rounded-full border-2 border-status-success-border bg-status-success-bg">
           <CheckCircle2 className="h-9 w-9 text-status-success-text" aria-hidden="true" />
