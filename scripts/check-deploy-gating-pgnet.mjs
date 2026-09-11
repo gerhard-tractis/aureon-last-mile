@@ -41,6 +41,8 @@
  * Returns an array of error strings (empty when the shape is fine).
  */
 
+import { resolveGateEnv, checkOutputStepBinding } from './check-deploy-gating-autoapprove.mjs';
+
 export function checkPgNetShape(jobs) {
   const errors = [];
   const changesJob = jobs['changes'];
@@ -60,9 +62,7 @@ export function checkPgNetShape(jobs) {
   // check-deploy-gating-autoapprove.mjs): if the auto-approve feature is in
   // play at all, its outputs must genuinely exist, missing entirely or not.
   const gate = jobs['approve-production'];
-  const gateEnv = gate && typeof gate.environment === 'object' && gate.environment !== null
-    ? gate.environment.name
-    : gate && gate.environment;
+  const gateEnv = resolveGateEnv(gate);
   const usesConditionalEnv = typeof gateEnv === 'string' && gateEnv.includes('${{');
   if (usesConditionalEnv) {
     const pgNetOutput = changesJob.outputs && typeof changesJob.outputs === 'object'
@@ -74,6 +74,10 @@ export function checkPgNetShape(jobs) {
         'needs.changes.outputs.pg_net then reads as empty, which silently removes the ' +
         'pg_net class from the combined auto-approve condition'
       );
+    } else {
+      // ── item 3 (2026-09-10 review): the referenced step id must exist
+      // AND compute pg_net= — see checkOutputStepBinding's own comment.
+      errors.push(...checkOutputStepBinding(changesJob, pgNetOutput, 'pg_net'));
     }
 
     // ── the detection signal itself must still be present ──────────────────

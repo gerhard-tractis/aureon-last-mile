@@ -71,15 +71,55 @@ function findFreshnessStep(steps) {
   });
 }
 
+// `environment:` is legal as a bare string or an object with `name:`.
+// Exported so check-deploy-gating-pgnet.mjs doesn't reimplement this same
+// two-line resolution (review round 2026-09-10, item 5 — it had drifted
+// into an identical copy).
+export function resolveGateEnv(gate) {
+  if (!gate) return undefined;
+  return typeof gate.environment === 'object' && gate.environment !== null
+    ? gate.environment.name
+    : gate.environment;
+}
+
+// review round 2026-09-10, item 3 — `changes.outputs.<outputKey>` (e.g.
+// `${{ steps.filter.outputs.auth_hook }}`) names a step by `id:`, but
+// nothing verified that id actually resolves to a real step, let alone one
+// that computes that field. Renaming `id: filter` to `id: filterX` (the
+// step's `run:` untouched) left every presence check green while
+// `steps.filter.outputs.auth_hook` — and pg_net alongside it — silently
+// went dead. Exported so both check-deploy-gating-autoapprove.mjs and
+// check-deploy-gating-pgnet.mjs share one implementation instead of two
+// copies that can drift (same reasoning as resolveGateEnv above).
+export function checkOutputStepBinding(changesJob, outputValue, outputKey) {
+  const errors = [];
+  if (!changesJob || !Array.isArray(changesJob.steps)) return errors;
+  const idMatch = new RegExp(`steps\\.([A-Za-z0-9_-]+)\\.outputs\\.${outputKey}`)
+    .exec(String(outputValue ?? ''));
+  if (!idMatch) return errors; // nothing to bind-check — presence checks cover the rest
+  const stepId = idMatch[1];
+  const boundStep = changesJob.steps.find((s) => s.id === stepId);
+  if (!boundStep) {
+    errors.push(
+      `changes.outputs.${outputKey} references steps.${stepId}, but no step in changes declares ` +
+      `id: ${stepId} — the output can never resolve and always reads as empty`
+    );
+  } else if (!new RegExp(`${outputKey}\\s*=`).test(String(boundStep.run ?? ''))) {
+    errors.push(
+      `changes.outputs.${outputKey} references steps.${stepId}, but that step's run: never computes ` +
+      `${outputKey}= — the output is bound to a step that doesn't produce it`
+    );
+  }
+  return errors;
+}
+
 export function checkAutoApproveShape(jobs) {
   const errors = [];
   const gate = jobs['approve-production'];
   if (!gate) return errors; // check-deploy-gating.mjs already reports this
 
   // ── 1. environment polarity, only when a conditional expression is used ──
-  const env = typeof gate.environment === 'object' && gate.environment !== null
-    ? gate.environment.name
-    : gate.environment;
+  const env = resolveGateEnv(gate);
   if (typeof env === 'string' && env.includes('${{')) {
     if (!VALID_CONDITIONAL_ENV.test(env)) {
       errors.push(
@@ -177,6 +217,34 @@ export function checkAutoApproveShape(jobs) {
   // check-deploy-gating-autoapprove.test.sh's base_wf.
   const changesJob = jobs['changes'];
   const usesConditionalEnv = typeof env === 'string' && env.includes('${{');
+
+  // ── 4b. every needs.<job>.outputs.* the environment reads must actually
+  // be in approve-production's own needs: ──────────────────────────────────
+  // review round 2026-09-10, item 2: removing 'changes' from
+  // approve-production.needs doesn't touch the environment EXPRESSION at
+  // all — `needs.changes.outputs.auth_hook` still parses fine, but
+  // `needs.changes` doesn't exist in the job's context without 'changes' in
+  // needs:, so it evaluates to '' and the whole condition silently and
+  // permanently resolves to 'production-auto'. Same failure as mutant 5
+  // (deleting the outputs: block) reached from the needs: end of the wire
+  // instead of the outputs: end — and just as plausible an edit, since
+  // approve-production doesn't visibly use `changes` for anything else.
+  if (usesConditionalEnv) {
+    const referencedJobs = new Set(
+      [...env.matchAll(/needs\.([A-Za-z0-9_-]+)\.outputs\./g)].map((m) => m[1])
+    );
+    const gateNeeds = Array.isArray(gate.needs) ? gate.needs : gate.needs ? [gate.needs] : [];
+    for (const job of referencedJobs) {
+      if (!gateNeeds.includes(job)) {
+        errors.push(
+          `approve-production.environment reads needs.${job}.outputs.* but '${job}' is not in ` +
+          `approve-production's own needs: — needs.${job} does not exist in that context, so the ` +
+          `expression always resolves to 'production-auto' no matter what ${job} actually computed`
+        );
+      }
+    }
+  }
+
   if (changesJob && usesConditionalEnv) {
     const authHookOutput = changesJob.outputs && typeof changesJob.outputs === 'object'
       ? changesJob.outputs.auth_hook
@@ -187,6 +255,9 @@ export function checkAutoApproveShape(jobs) {
         'needs.changes.outputs.auth_hook then reads as empty, which always resolves ' +
         "approve-production's environment to 'production-auto', silently removing the human pause"
       );
+    } else {
+      // ── item 3: the referenced step id must exist AND compute auth_hook= ─
+      errors.push(...checkOutputStepBinding(changesJob, authHookOutput, 'auth_hook'));
     }
 
     // ── 5. the detection signals themselves must still be present ─────────

@@ -70,6 +70,7 @@ FRESH_STEP='    steps:
 
 FULL_FILTER_STEPS='    steps:
       - name: Filter paths
+        id: filter
         run: |
           AUTH_HOOK=false
           if echo "$CHANGED" | grep -qE '"'"'custom_access_token_hook'"'"'; then AUTH_HOOK=true; fi
