@@ -575,6 +575,8 @@ export type Database = {
       }
       chile_comunas: {
         Row: {
+          centroid_lat: number | null
+          centroid_lng: number | null
           codigo_cut: string
           geometry: unknown
           id: string
@@ -584,6 +586,8 @@ export type Database = {
           region_num: number
         }
         Insert: {
+          centroid_lat?: number | null
+          centroid_lng?: number | null
           codigo_cut: string
           geometry?: unknown
           id?: string
@@ -593,6 +597,8 @@ export type Database = {
           region_num: number
         }
         Update: {
+          centroid_lat?: number | null
+          centroid_lng?: number | null
           codigo_cut?: string
           geometry?: unknown
           id?: string
