@@ -1,7 +1,80 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { RouteManifestList } from './RouteManifestList';
+import { RouteManifestList, groupManifestStatus, type RouteManifestRow } from './RouteManifestList';
+
+// spec-95 fase 1 (mock 5c) — la regla única de chip por grupo de cliente.
+// Un caso por rama, más el de frontera (grupo vacío), tal como pide el spec.
+// Probado como unidad, no leído del render.
+function manifest(overrides: Partial<RouteManifestRow> = {}): RouteManifestRow {
+  return {
+    id: 'm1',
+    external_load_id: 'LOAD-1',
+    retailer_name: 'A',
+    pickup_location: null,
+    total_orders: 1,
+    total_packages: 10,
+    verified_count: 0,
+    ...overrides,
+  };
+}
+
+describe('groupManifestStatus', () => {
+  it('is PENDIENTE for an empty group (frontier case)', () => {
+    expect(groupManifestStatus([], undefined)).toBe('pendiente');
+  });
+
+  it('is COMPLETADA when every manifest in the group is fully verified', () => {
+    const group = [
+      manifest({ id: 'm1', total_packages: 5, verified_count: 5 }),
+      manifest({ id: 'm2', total_packages: 3, verified_count: 3 }),
+    ];
+    expect(groupManifestStatus(group, undefined)).toBe('completada');
+  });
+
+  it('is not COMPLETADA when only some manifests in the group are fully verified', () => {
+    const group = [
+      manifest({ id: 'm1', total_packages: 5, verified_count: 5 }),
+      manifest({ id: 'm2', total_packages: 3, verified_count: 0 }),
+    ];
+    expect(groupManifestStatus(group, undefined)).not.toBe('completada');
+  });
+
+  it('is EN RUTA when a manifest has scanning started and nothing in the group is pending download', () => {
+    const group = [manifest({ id: 'm1', total_packages: 5, verified_count: 2 })];
+    const downloadedIds = new Set(['LOAD-1']);
+    expect(groupManifestStatus(group, downloadedIds)).toBe('en_ruta');
+  });
+
+  it('is PENDIENTE (not EN RUTA) when scanning started but another manifest is pending download', () => {
+    const group = [
+      manifest({ id: 'm1', external_load_id: 'LOAD-1', total_packages: 5, verified_count: 2 }),
+      manifest({ id: 'm2', external_load_id: 'LOAD-2', total_packages: 4, verified_count: 0 }),
+    ];
+    // downloadedIds resolved (not undefined) and LOAD-2 is missing from it —
+    // that manifest is pending download, so the collision with COMPLETADA's
+    // sibling rule ("gana COMPLETADA") does not apply here: this blocks
+    // EN RUTA instead.
+    const downloadedIds = new Set(['LOAD-1']);
+    expect(groupManifestStatus(group, downloadedIds)).toBe('pendiente');
+  });
+
+  it('is PENDIENTE when nothing in the group has started scanning', () => {
+    const group = [manifest({ verified_count: 0 })];
+    expect(groupManifestStatus(group, new Set(['LOAD-1']))).toBe('pendiente');
+  });
+
+  it('never reads downloadedIds as "pending download" when it is undefined ("todavía no lo sé")', () => {
+    // Same shape as the "PENDIENTE (not EN RUTA)" case above, but
+    // downloadedIds is unresolved — must not flip EN RUTA to PENDIENTE just
+    // because we do not know yet whether LOAD-2 was downloaded.
+    const group = [
+      manifest({ id: 'm1', external_load_id: 'LOAD-1', total_packages: 5, verified_count: 2 }),
+      manifest({ id: 'm2', external_load_id: 'LOAD-2', total_packages: 4, verified_count: 0 }),
+    ];
+    expect(groupManifestStatus(group, undefined)).toBe('en_ruta');
+  });
+});
 
 describe('RouteManifestList', () => {
   it('shows empty state when no manifests', () => {
@@ -49,7 +122,11 @@ describe('RouteManifestList', () => {
         onManifestClick={onClick}
       />
     );
-    fireEvent.click(screen.getByText('A').closest('button')!);
+    // spec-95 fase 1 — el nombre del retailer ahora sólo vive en la
+    // cabecera de grupo ('A'), fuera del <button> de la fila; el
+    // external_load_id sigue siendo único dentro de la fila y es lo que
+    // localiza el <button> a pulsar.
+    fireEvent.click(screen.getByText('LOAD-1').closest('button')!);
     expect(onClick).toHaveBeenCalledWith('LOAD-1');
   });
 
@@ -101,7 +178,10 @@ describe('RouteManifestList', () => {
         onManifestClick={() => {}}
       />
     );
-    expect(screen.getByText('COMPLETADA')).toBeInTheDocument();
+    // spec-95 fase 1 — un único manifiesto completo también hace COMPLETADA
+    // el chip de su grupo (mismo texto, dos niveles): el chip por manifiesto
+    // (`spec-82` fase 1) y el chip de grupo (`spec-95` fase 1) coexisten.
+    expect(screen.getAllByText('COMPLETADA')).toHaveLength(2);
   });
 
   it('does not show a COMPLETADA chip when the manifest is not fully verified', () => {
@@ -213,7 +293,9 @@ describe('RouteManifestList', () => {
         onRemove={onRemove}
       />
     );
-    fireEvent.click(screen.getByText('Retailer A').closest('button')!);
+    // spec-95 fase 1 — mismo motivo que arriba: 'Retailer A' ahora sólo vive
+    // en la cabecera de grupo, fuera del <button> de la fila.
+    fireEvent.click(screen.getByText('LOAD-1').closest('button')!);
     expect(onClick).toHaveBeenCalledWith('LOAD-1');
     expect(onRemove).not.toHaveBeenCalled();
   });
@@ -276,5 +358,100 @@ describe('RouteManifestList', () => {
     );
     expect(screen.getByText(/Sin manifiestos en la ruta/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Quitar .* de la ruta en curso$/ })).toBeNull();
+  });
+
+  // spec-95 fase 1 (mock 5c) — agrupación por cliente, con la cabecera del
+  // mock ("nombre" + "N puntos · M paquetes") y el chip de la regla única.
+  describe('agrupación por cliente', () => {
+    function groupManifest(overrides: Partial<RouteManifestRow> = {}): RouteManifestRow {
+      return {
+        id: 'm1',
+        external_load_id: 'LOAD-1',
+        retailer_name: 'Falabella',
+        pickup_location: 'Mall Plaza Vespucio',
+        total_orders: 18,
+        total_packages: 42,
+        verified_count: 0,
+        ...overrides,
+      };
+    }
+
+    it('groups manifests under one header per retailer_name, with N puntos · M paquetes', () => {
+      render(
+        <RouteManifestList
+          manifests={[
+            groupManifest({ id: 'm1', external_load_id: 'LOAD-1', total_packages: 42 }),
+            groupManifest({
+              id: 'm2',
+              external_load_id: 'LOAD-2',
+              pickup_location: 'Parque Arauco',
+              total_packages: 25,
+            }),
+            groupManifest({
+              id: 'm3',
+              external_load_id: 'LOAD-3',
+              retailer_name: 'Ripley',
+              pickup_location: 'Alto Las Condes',
+              total_packages: 25,
+            }),
+          ]}
+          onManifestClick={() => {}}
+        />
+      );
+      const groups = screen.getAllByTestId('route-manifest-group');
+      expect(groups).toHaveLength(2);
+      expect(within(groups[0]).getByText('Falabella')).toBeInTheDocument();
+      expect(within(groups[0]).getByText('2 puntos · 67 paquetes')).toBeInTheDocument();
+      expect(within(groups[1]).getByText('Ripley')).toBeInTheDocument();
+      expect(within(groups[1]).getByText('1 punto · 25 paquetes')).toBeInTheDocument();
+    });
+
+    it('shows a COMPLETADA group chip when every manifest in the group is closed', () => {
+      render(
+        <RouteManifestList
+          manifests={[groupManifest({ total_packages: 5, verified_count: 5 })]}
+          onManifestClick={() => {}}
+        />
+      );
+      // spec-95 fase 1 — con un solo manifiesto en el grupo, el chip
+      // por-manifiesto (spec-82 fase 1) y el chip de grupo coinciden en
+      // texto; se localiza el de grupo por su testid, no por texto.
+      expect(screen.getByTestId('route-manifest-group-status')).toHaveTextContent('COMPLETADA');
+    });
+
+    it('shows an EN RUTA group chip when scanning started and downloadedIds resolves nothing pending', () => {
+      render(
+        <RouteManifestList
+          manifests={[groupManifest({ total_packages: 5, verified_count: 2 })]}
+          onManifestClick={() => {}}
+          downloadedIds={new Set(['LOAD-1'])}
+        />
+      );
+      const group = screen.getByTestId('route-manifest-group');
+      expect(within(group).getByText('EN RUTA')).toBeInTheDocument();
+    });
+
+    it('shows a PENDIENTE group chip when nothing in the group has started', () => {
+      render(
+        <RouteManifestList
+          manifests={[groupManifest({ total_packages: 5, verified_count: 0 })]}
+          onManifestClick={() => {}}
+        />
+      );
+      const group = screen.getByTestId('route-manifest-group');
+      expect(within(group).getByText('PENDIENTE')).toBeInTheDocument();
+    });
+
+    // spec-95 fase 1 — el slot de cabecera de grupo nunca ofrece un botón
+    // "Ver carga": la regla única de chip lo reemplaza en los cuatro casos.
+    it('never renders a "Ver carga" affordance in the group header slot', () => {
+      render(
+        <RouteManifestList
+          manifests={[groupManifest()]}
+          onManifestClick={() => {}}
+        />
+      );
+      expect(screen.queryByText(/ver carga/i)).not.toBeInTheDocument();
+    });
   });
 });

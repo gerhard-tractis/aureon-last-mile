@@ -1,19 +1,10 @@
 'use client';
 
-import { Package, ShoppingCart, X } from 'lucide-react';
+import { Package } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/EmptyState';
-import { isManifestComplete, progressLabel } from '@/lib/pickup/manifestProgress';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
+import { isManifestComplete } from '@/lib/pickup/manifestProgress';
+import { ManifestCard } from './RouteManifestCard';
 
 /** Mirrors `manifest_status_enum` (packages/database/supabase/migrations/
  *  20260310100000_create_pickup_verification_tables.sql:33). */
@@ -63,6 +54,96 @@ export interface RouteManifestRow {
    *  uses to surface it on mobile. Reading `undefined` the same way would
    *  wrongly flag every manifest a caller never asked about. */
   signature_operator?: string | null;
+}
+
+/** spec-95 fase 1 (mock 5c) — el estado que pinta el chip de cabecera de
+ *  cada grupo de cliente. */
+export type GroupStatus = 'completada' | 'en_ruta' | 'pendiente';
+
+/**
+ * La regla única de chip por grupo. Definida en un solo sitio y testeada
+ * como unidad (ver RouteManifestList.test.tsx) — nada de esto se repite ni
+ * se decide de nuevo en el render.
+ *
+ * - `completada` — todas las cargas del grupo están cerradas
+ *   (`isManifestComplete`).
+ * - `en_ruta` — alguna carga tiene escaneo empezado (`verified_count > 0`) y
+ *   ninguna de las cargas no cerradas está pendiente de descarga.
+ * - `pendiente` — el resto, incluido el grupo vacío (caso de frontera).
+ *
+ * `downloadedIds` sigue el mismo contrato de tres estados que ya usa esta
+ * lista (ver el docstring de la prop más abajo): `undefined` es "todavía no
+ * lo sé" y NUNCA cuenta como "pendiente de descarga" — leerlo así
+ * convertiría una lectura local sin resolver en un falso PENDIENTE.
+ */
+export function groupManifestStatus(
+  manifests: RouteManifestRow[],
+  downloadedIds: Set<string> | undefined,
+): GroupStatus {
+  if (manifests.length === 0) return 'pendiente';
+  if (manifests.every((m) => isManifestComplete(m))) return 'completada';
+
+  const someStarted = manifests.some((m) => m.verified_count > 0);
+  const somePendingDownload = manifests.some(
+    (m) => !isManifestComplete(m) && !!downloadedIds && !downloadedIds.has(m.external_load_id),
+  );
+  return someStarted && !somePendingDownload ? 'en_ruta' : 'pendiente';
+}
+
+const GROUP_STATUS_LABEL: Record<GroupStatus, string> = {
+  completada: 'COMPLETADA',
+  en_ruta: 'EN RUTA',
+  pendiente: 'PENDIENTE',
+};
+
+const GROUP_STATUS_CLASSNAME: Record<GroupStatus, string> = {
+  completada: 'border-status-success-border bg-status-success-bg text-status-success-text',
+  en_ruta: 'border-accent bg-accent-muted text-accent-emphasis',
+  pendiente: 'border-border-strong bg-surface text-text-secondary',
+};
+
+interface ManifestGroup {
+  retailerName: string;
+  pointCount: number;
+  packageCount: number;
+  manifests: RouteManifestRow[];
+}
+
+/**
+ * Agrupa por `retailer_name` (mock 5c), en el orden de PRIMERA aparición de
+ * cada retailer — y sin reordenar los manifiestos dentro de cada grupo.
+ * `useRouteManifests` ya ordena por `created_at` ascendente (cola
+ * append-only), y `page.tsx` calcula "la próxima carga" sobre exactamente
+ * ese orden; agrupar aquí no puede alterarlo.
+ *
+ * `pointCount` cuenta valores distintos de `pickup_location` dentro del
+ * grupo (un `null` — dirección no capturada al ingreso — cuenta como un
+ * único punto "desconocido", nunca se descarta). `packageCount` suma
+ * `total_packages`; es un AGREGADO DE PANTALLA, no una escritura a la base
+ * de datos, así que coalescer un total desconocido a 0 aquí es una lectura
+ * "no sabemos nada de este bulto" razonable — no la misma trampa que
+ * `openPendingManifest.ts` documenta contra escribir `?? 0` de vuelta a
+ * `manifests.total_packages`.
+ */
+function groupManifestsByRetailer(manifests: RouteManifestRow[]): ManifestGroup[] {
+  const groups: ManifestGroup[] = [];
+  const byName = new Map<string, ManifestGroup>();
+  for (const m of manifests) {
+    const retailerName = m.retailer_name ?? 'Retailer desconocido';
+    let group = byName.get(retailerName);
+    if (!group) {
+      group = { retailerName, pointCount: 0, packageCount: 0, manifests: [] };
+      byName.set(retailerName, group);
+      groups.push(group);
+    }
+    group.manifests.push(m);
+  }
+  for (const group of groups) {
+    const points = new Set(group.manifests.map((m) => m.pickup_location ?? '__unknown__'));
+    group.pointCount = points.size;
+    group.packageCount = group.manifests.reduce((sum, m) => sum + (m.total_packages ?? 0), 0);
+  }
+  return groups;
 }
 
 interface RouteManifestListProps {
@@ -145,123 +226,52 @@ export function RouteManifestList({
 
   return (
     <div className="space-y-3" data-testid="route-manifest-list">
-      {manifests.map((m) => {
-        const complete = isManifestComplete(m);
-        const canRemove = !!onRemove && m.verified_count === 0;
-        // spec-82 fase 2 — colisión con COMPLETADA (anotada en fase 1):
-        // gana COMPLETADA. `downloadedIds === undefined` es "todavía no lo
-        // sé" y nunca pinta DESCARGAR — ver el docstring de la prop.
-        const showDownload =
-          !complete && !!onDownload && !!downloadedIds && !downloadedIds.has(m.external_load_id);
-        // Menor, revisión de fase 2 — `downloadedIds` puede seguir siendo
-        // `undefined` ("todavía no lo sé"); `!!downloadedIds` primero
-        // asegura que esto nunca sea `true` en ese caso.
-        const isDownloaded = !!downloadedIds && downloadedIds.has(m.external_load_id);
+      {groupManifestsByRetailer(manifests).map((group) => {
+        const status = groupManifestStatus(group.manifests, downloadedIds);
         return (
           <div
-            key={m.id}
-            // hover:border-accent-light, not hover:border-accent/50: this
-            // file's colour tokens are bare `var(--color-…)` values with no
-            // <alpha-value> channel, so a Tailwind opacity modifier here
-            // emits no CSS at all (same root cause as the map placeholder's
-            // border fix). accent-light is a real, already-defined token.
-            className="relative rounded-lg border border-border bg-surface transition-colors hover:border-accent-light"
+            key={group.retailerName}
+            className="space-y-3"
+            data-testid="route-manifest-group"
           >
-            <button
-              type="button"
-              onClick={() => onManifestClick(m.external_load_id)}
-              className="w-full text-left p-4 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              <div className="flex items-center justify-between gap-3 pr-11">
-                <div className="min-w-0">
-                  <h3 className="font-semibold text-text truncate">
-                    {m.retailer_name ?? 'Retailer desconocido'}
-                  </h3>
-                  <p className="font-mono text-xs text-text-secondary mt-0.5">
-                    {m.external_load_id}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3 text-sm text-text-secondary shrink-0">
-                  <div className="flex items-center gap-1">
-                    <ShoppingCart className="h-4 w-4" />
-                    <span className="font-mono">{m.total_orders ?? 0}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Package className="h-4 w-4" />
-                    <span className="font-mono">{progressLabel(m)}</span>
-                  </div>
-                  {/* spec-82 fase 1 (mock 5c) — same chip PickupMobileCompactRow
-                      already shows for its `completed` variant on the 3h
-                      screen, reused verbatim for visual consistency. */}
-                  {complete && (
-                    <span className="flex-none rounded border border-status-success-border bg-status-success-bg px-1.5 py-1 font-mono text-[10.5px] font-semibold text-status-success-text">
-                      COMPLETADA
-                    </span>
-                  )}
-                  {/* Menor, revisión de fase 2 — antes, la ausencia del
-                      chip significaba a la vez "descargada", "completada" y
-                      "todavía no lo sé": tres estados reales colapsados en
-                      un mismo vacío visual. Este estado afirmativo saca
-                      "descargada" de esa ambigüedad; COMPLETADA sigue
-                      ganando la colisión (mismo orden que showDownload). */}
-                  {!complete && isDownloaded && (
-                    <span className="flex-none rounded border border-border bg-surface-raised px-1.5 py-1 font-mono text-[10.5px] font-semibold text-text-secondary">
-                      DESCARGADA
-                    </span>
-                  )}
-                </div>
+            {/* spec-95 fase 1 (mock 5c) — cabecera de grupo: nombre, "N
+                puntos · M paquetes" y el chip de la regla única. No hay
+                slot de botón aquí: la ronda 2 del mock quita "Ver carga" y
+                deja el chip como único contenido de esa esquina en los
+                cuatro casos. */}
+            <div className="flex items-center gap-3 rounded-[13px] border border-border bg-surface-raised px-3.5 py-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[15px] font-semibold text-text">
+                  {group.retailerName}
+                </p>
+                <p className="truncate text-[13.5px] text-text-secondary">
+                  {group.pointCount} {group.pointCount === 1 ? 'punto' : 'puntos'} ·{' '}
+                  {group.packageCount} {group.packageCount === 1 ? 'paquete' : 'paquetes'}
+                </p>
               </div>
-            </button>
-            {showDownload && (
-              // Sibling del <button> principal, no anidado dentro — un
-              // <button> dentro de otro <button> es HTML inválido, y el
-              // chip necesita su propio manejador de click que NO dispare
-              // onManifestClick. Bajo el contenido en vez de superpuesto
-              // arriba a la derecha (donde vive el control de "quitar")
-              // porque ambos pueden estar visibles a la vez en la misma
-              // fila (una carga recién agregada, sin escanear y sin
-              // descargar) y no deben competir por el mismo espacio.
-              <div className="px-4 pb-3 flex justify-end">
-                <button
-                  type="button"
-                  aria-label={`Descargar ${m.external_load_id}`}
-                  disabled={downloadingIds?.has(m.id) ?? false}
-                  onClick={() => onDownload!(m.id, m.external_load_id)}
-                  className="flex-none rounded-md border border-status-warning-border bg-status-warning-bg px-2.5 py-2 font-mono text-[11px] font-semibold text-status-warning-text disabled:opacity-50 disabled:pointer-events-none"
-                >
-                  DESCARGAR
-                </button>
-              </div>
-            )}
-            {canRemove && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label={`Quitar ${m.external_load_id} de la ruta en curso`}
-                    disabled={isRemoving}
-                    className="absolute right-1 top-1 grid h-11 w-11 place-items-center rounded text-text-secondary hover:bg-status-error-bg hover:text-status-error-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 disabled:pointer-events-none"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>¿Quitar esta carga de la ruta?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      {m.external_load_id} vuelve a la lista de cargas pendientes y puede
-                      agregarse de nuevo a esta u otra ruta.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => onRemove(m.id)}>
-                      Quitar
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            )}
+              <span
+                data-testid="route-manifest-group-status"
+                className={cn(
+                  'flex-none rounded-md border px-2 py-1.5 font-mono text-[12px] font-semibold',
+                  GROUP_STATUS_CLASSNAME[status],
+                )}
+              >
+                {GROUP_STATUS_LABEL[status]}
+              </span>
+            </div>
+
+            {group.manifests.map((m) => (
+              <ManifestCard
+                key={m.id}
+                manifest={m}
+                onManifestClick={onManifestClick}
+                onRemove={onRemove}
+                isRemoving={isRemoving}
+                downloadedIds={downloadedIds}
+                onDownload={onDownload}
+                downloadingIds={downloadingIds}
+              />
+            ))}
           </div>
         );
       })}
