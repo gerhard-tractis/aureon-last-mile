@@ -74,7 +74,14 @@ vi.mock('@/lib/supabase/client', () => ({
           };
         }
         return {
-          select: () => makeEq({ id: 'm1', started_at: new Date().toISOString() }),
+          // spec-95 fase 6 — `retailer_name` añadido al doble para poder
+          // anclar la cabecera del mock (`CARGA-… · <cliente>`); antes
+          // faltaba y `retailerName` quedaba siempre `null` en esta suite.
+          select: () => makeEq({
+            id: 'm1',
+            started_at: new Date().toISOString(),
+            retailer_name: 'Falabella',
+          }),
         };
       },
       rpc: mockRpc,
@@ -176,12 +183,35 @@ describe('CompletionPage', () => {
     expect(await screen.findByText('Firma y finalización')).toBeInTheDocument();
   });
 
+  // spec-95 fase 6, mock `5f` — el título grande va ARRIBA del subtítulo
+  // mono `CARGA-… · <cliente>`, al revés de como estaba antes de esta fase
+  // (loadId arriba, título abajo).
+  it('places the "Firma y finalización" title above the "CARGA-… · cliente" subtitle, per the 5f mock', async () => {
+    render(<CompletionPage />);
+    const title = await screen.findByText('Firma y finalización');
+    const subtitle = await screen.findByText('CARGA-001 · Falabella');
+    expect(title.compareDocumentPosition(subtitle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('renders MetricCards with Spanish labels', async () => {
     render(<CompletionPage />);
     expect(await screen.findByText('Verificados')).toBeInTheDocument();
     expect(screen.getByText('Faltantes (con nota)')).toBeInTheDocument();
     expect(screen.getByText('Precisión')).toBeInTheDocument();
     expect(screen.getByText('Duración')).toBeInTheDocument();
+  });
+
+  // spec-95 fase 6, mock `5f` — "FALTANTES (CON NOTA)" se dibuja en DOS
+  // líneas porque en una se cortaba (defecto real que encontró el
+  // recorrido de QA del 2026-09-10). `getByText` normaliza el whitespace
+  // (un `\n` interno pasa a ser un espacio), así que el texto accesible
+  // sigue siendo "Faltantes (con nota)" — lo que ancla el arreglo es que
+  // el nodo YA NO recorta con elipsis (`truncate`).
+  it('renders the missing-count label across two lines, without truncating it (the bug the mock fixed)', async () => {
+    render(<CompletionPage />);
+    const label = await screen.findByText('Faltantes (con nota)');
+    expect(label.textContent).toBe('Faltantes\n(con nota)');
+    expect(label.className).not.toContain('truncate');
   });
 
   it('renders MetricCards with data-value attributes', async () => {
@@ -235,10 +265,21 @@ describe('CompletionPage', () => {
     expect(valueEls[0].textContent).toBe('1');
   });
 
-  it('renders Spanish legal notice', async () => {
+  // spec-95 fase 6, mock `5f` — el copy cambia de fondo, no sólo de forma:
+  // el mock cuenta las DOS mitades (verificados que pasan a custodia de
+  // Aureon, faltantes que quedan a nombre del local) con las cifras reales
+  // del acta — el copy anterior no distinguía las dos y hablaba de
+  // "el operador", no de Aureon. Ver la discrepancia declarada en el reporte
+  // de esta fase.
+  it('renders the mock\'s custody-transfer copy, with the real verified/missing counts', async () => {
     render(<CompletionPage />);
     expect(await screen.findByText('Aviso de transferencia de custodia')).toBeInTheDocument();
-    expect(screen.getByText(/Al firmar, el operador confirma/)).toBeInTheDocument();
+    // scans por defecto (beforeEach): 2 verificados; missingPackages: 1.
+    expect(
+      screen.getByText(
+        'Al firmar, los 2 paquetes verificados pasan a custodia de Aureon. Los 1 faltantes quedan a nombre del local hasta que se resuelvan.'
+      )
+    ).toBeInTheDocument();
   });
 
   it('renders Spanish signature labels', async () => {
@@ -344,6 +385,14 @@ describe('CompletionPage', () => {
   it('renders Spanish checkbox label', async () => {
     render(<CompletionPage />);
     expect(await screen.findByText('Agregar firma del cliente')).toBeInTheDocument();
+  });
+
+  // spec-95 fase 6, mock `5f` — la casilla lleva la etiqueta "opcional" a
+  // la derecha (mismo texto que ya usa `SignaturePad label="Firma del
+  // cliente (opcional)"`, ahora también en la fila de la casilla).
+  it('renders "opcional" next to the client-signature checkbox label', async () => {
+    render(<CompletionPage />);
+    expect(await screen.findByText('opcional')).toBeInTheDocument();
   });
 
   it('renders Spanish button text (5f CTA: "Confirmar y cerrar carga")', async () => {

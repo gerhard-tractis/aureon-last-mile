@@ -52,6 +52,21 @@ describe('ClientSignatureSection', () => {
     expect(screen.getByPlaceholderText('Nombre del cliente')).toBeInTheDocument();
   });
 
+  // spec-95 fase 6, mock `5f` — "opcional" a la derecha de la fila de la
+  // casilla, mismo texto que ya lleva el label del SignaturePad.
+  it('renders "opcional" to the right of the checkbox row', () => {
+    render(
+      <ClientSignatureSection
+        showClientSig={false}
+        onToggleShowClientSig={vi.fn()}
+        clientName=""
+        onClientNameChange={vi.fn()}
+        onClientSignatureChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('opcional')).toBeInTheDocument();
+  });
+
   it('fires onToggleShowClientSig when the checkbox is toggled', () => {
     const onToggle = vi.fn();
     render(

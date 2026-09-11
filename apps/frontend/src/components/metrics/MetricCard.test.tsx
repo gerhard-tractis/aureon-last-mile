@@ -54,4 +54,15 @@ describe('MetricCard', () => {
     const valueEl = container.querySelector('[data-value]');
     expect(valueEl?.className).toContain('font-mono');
   });
+
+  // spec-95 fase 6 — el mock de `5f` dibuja "FALTANTES (CON NOTA)" en dos
+  // líneas porque en una se cortaba con elipsis (`truncate`). Un `\n`
+  // dentro del label rompe la línea donde el llamador decida, en vez de
+  // dejar que el ancho de la tarjeta decida por elipsis.
+  it('breaks a multi-line label at an embedded newline instead of truncating it', () => {
+    render(<MetricCard label={'Faltantes\n(con nota)'} value="3" />);
+    const label = screen.getByText('Faltantes (con nota)');
+    expect(label.textContent).toBe('Faltantes\n(con nota)');
+    expect(label.className).not.toContain('truncate');
+  });
 });

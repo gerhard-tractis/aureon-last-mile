@@ -221,29 +221,34 @@ export default function CompletionPage() {
     <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
       <PickupStepBreadcrumb current="complete" />
 
-      {/* Gold header */}
+      {/* Gold header — spec-95 fase 6, mock `5f`: título arriba, subtítulo
+          `CARGA-… · <cliente>` debajo (antes iba al revés). */}
       <div className="bg-accent text-accent-foreground dark:bg-accent-muted dark:text-accent p-4 -mx-4 rounded-none">
-        <p className="text-xs opacity-80">{loadId}</p>
-        <p className="font-semibold text-base mt-0.5">Firma y finalización</p>
+        <p className="font-semibold text-base">Firma y finalización</p>
+        <p className="text-xs opacity-80 mt-0.5">
+          {retailerName ? `${loadId} · ${retailerName}` : loadId}
+        </p>
       </div>
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 gap-3">
         <MetricCard icon={CheckCircle} label="Verificados" value={verifiedCount} />
-        <MetricCard icon={XCircle} label="Faltantes (con nota)" value={missingPackages.length} />
+        {/* spec-95 fase 6, mock `5f` — dos líneas: en una se cortaba con
+            elipsis (defecto que encontró el recorrido de QA). */}
+        <MetricCard icon={XCircle} label={'Faltantes\n(con nota)'} value={missingPackages.length} />
         <MetricCard icon={Target} label="Precisión" value={`${precision}%`} />
         <MetricCard icon={Shield} label="Duración" value={elapsed} />
       </div>
 
-      {/* Legal Notice */}
+      {/* Legal Notice — spec-95 fase 6, mock `5f`: copy del mock, cuenta
+          las dos mitades (verificados a custodia de Aureon, faltantes a
+          nombre del local) con las cifras reales del acta. */}
       <div className="bg-status-warning-bg border border-status-warning-border rounded-lg p-3">
         <p className="text-sm text-text font-medium">
           Aviso de transferencia de custodia
         </p>
         <p className="text-xs text-text-secondary mt-1">
-          Al firmar, el operador confirma la recepción de los paquetes verificados.
-          A partir de este momento, el operador asume la responsabilidad legal
-          sobre la mercancía.
+          {`Al firmar, los ${verifiedCount} paquetes verificados pasan a custodia de Aureon. Los ${missingPackages.length} faltantes quedan a nombre del local hasta que se resuelvan.`}
         </p>
       </div>
 
@@ -286,6 +291,13 @@ export default function CompletionPage() {
         `enqueueManifestPhoto` (`lib/offline/photos.ts`, spec-81 fase 5) y
         drena junto con la firma. Verificado antes de dejar esta línea tal
         cual — ver el spec.
+
+        spec-95 fase 6 — reconsiderado, sigue SIN condicionarse a
+        `sync.status`: es la promesa de qué pasa SI se pierde señal, no una
+        afirmación de que ahora mismo no hay señal. `SIN RED` en la
+        cabecera del mock es el escenario dibujado, no una condición de
+        visibilidad — el mock no dibuja ningún estado "con señal" de esta
+        pantalla para comparar.
       */}
       <div className="flex items-center gap-3 p-3 rounded-lg bg-status-warning-bg border border-status-warning-border">
         <p className="text-sm text-status-warning-text">

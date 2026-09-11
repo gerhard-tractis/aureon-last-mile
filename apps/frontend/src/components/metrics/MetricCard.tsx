@@ -53,7 +53,11 @@ export function MetricCard({ label, value, trend, sparklineData, icon: Icon, cla
               value is the only thing meant to be read at a glance. */}
           <div className="flex items-center gap-1.5 mb-1.5">
             {Icon && <Icon className="h-3.5 w-3.5 text-text-muted" />}
-            <span className="font-mono text-[9.5px] font-medium uppercase tracking-[.1em] text-text-muted truncate">
+            {/* spec-95 fase 6 — `whitespace-pre-line` en vez de `truncate`:
+                un label corto normal no lleva `\n` y se ve igual que antes;
+                uno con `\n` (mock `5f`, "FALTANTES\n(CON NOTA)") rompe línea
+                donde el llamador decide, en vez de cortarse con elipsis. */}
+            <span className="font-mono text-[9.5px] font-medium uppercase tracking-[.1em] text-text-muted whitespace-pre-line leading-tight">
               {label}
             </span>
           </div>

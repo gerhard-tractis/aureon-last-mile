@@ -34,14 +34,22 @@ export function ClientSignatureSection({
       <span className="text-xs font-semibold tracking-wide text-text-secondary uppercase">
         FIRMA DEL LOCAL
       </span>
-      <label htmlFor="client-sig" className="flex items-center gap-2">
-        <Checkbox
-          id="client-sig"
-          checked={showClientSig}
-          onCheckedChange={(checked) => onToggleShowClientSig(checked === true)}
-        />
-        <span className="text-sm text-text">Agregar firma del cliente</span>
-      </label>
+      {/* spec-95 fase 6, mock `5f` — "opcional" a la derecha de la fila.
+          Fuera del <label>: si entrara dentro, el nombre accesible de la
+          casilla pasaría a ser "Agregar firma del cliente opcional" y
+          rompería `getByLabelText('Agregar firma del cliente')` (match
+          exacto) más abajo en `page.test.tsx`. */}
+      <div className="flex items-center gap-2">
+        <label htmlFor="client-sig" className="flex items-center gap-2">
+          <Checkbox
+            id="client-sig"
+            checked={showClientSig}
+            onCheckedChange={(checked) => onToggleShowClientSig(checked === true)}
+          />
+          <span className="text-sm text-text">Agregar firma del cliente</span>
+        </label>
+        <span className="ml-auto text-xs text-text-muted">opcional</span>
+      </div>
       {showClientSig && (
         <div className="space-y-2 ml-6">
           <Input
