@@ -19,7 +19,12 @@
 -- 2026-08-22 12:00:00 (TIMESTAMP, no timezone), matching NOW_ISO in
 -- sla-cases.ts. All tests run inside a transaction rolled back at the end,
 -- using SAVEPOINT / ROLLBACK TO so one failing assertion (RAISE EXCEPTION)
--- does not abort the tests that follow it.
+-- does not abort the tests that follow it when run WITHOUT ON_ERROR_STOP —
+-- the manual/ad-hoc invocation documented above. deploy-qa.sh's
+-- sql_tests_check (spec-92) runs this file with `-v ON_ERROR_STOP=1`,
+-- where a RAISE EXCEPTION still stops the WHOLE file (that is the intended
+-- pass/fail signal for the deploy gate) — SAVEPOINT/ROLLBACK TO only
+-- protects manual runs, not the automated one.
 -- =============================================================================
 
 BEGIN;

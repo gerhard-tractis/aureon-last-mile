@@ -53,7 +53,14 @@ check_ports() {
     [ -n "$("${COMPOSE[@]}" ps -q 2>/dev/null)" ] && stack_up=1
   fi
   for port in 8100 8101 5433 3200 3210 3211; do
-    printf '%s\n' "$busy" | grep -Eq "[:.]${port}\$" || continue
+    # spec-92 round 5 (same signature as B2/widen()): was
+    # `printf '%s\n' "$busy" | grep -Eq ...` — under `pipefail` (:23), a
+    # `grep -q` piped from a writer can SIGPIPE that writer if it quits
+    # before `printf` finishes, and 141 reads as "no match", silently
+    # skipping a real port conflict. `ss -ltn` output is small in
+    # practice, but the fix costs nothing: a herestring (no subprocess to
+    # SIGPIPE) and dropping `-q` (plain grep reads to EOF regardless).
+    grep -E "[:.]${port}\$" >/dev/null <<< "$busy" || continue
     case "$port" in
       8100|8101|5433)
         [ -n "$stack_up" ] && { log "port $port busy but supabase-qa stack is already up — ok (re-run)"; continue; } ;;

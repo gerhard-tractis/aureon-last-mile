@@ -62,11 +62,22 @@ export QA_PGTAP_DEGRADED_MAX=3
 extract() { sed -n "/^$1() {/,/^}/p" "$HERE/deploy-qa.sh"; }
 build_harness() {
   {
-    echo "set -uo pipefail"
+    # B3 (spec-92 review round 3): the real script runs under
+    # `set -Eeuo pipefail` (deploy-qa.sh:57). This harness used to run the
+    # extracted function under only `set -uo pipefail` — missing -e AND -E —
+    # so an `exit`-on-error-mid-pipeline bug in the real function (the exact
+    # shape B2 took) could never be observed here: `-e` is what makes a
+    # failing command actually abort, and without it every assertion below
+    # only ever sees "did the harness process return 0", which it always
+    # does when -e isn't set. Matching the script's real flags is what makes
+    # this suite able to catch that class of bug at all.
+    echo "set -Eeuo pipefail"
     echo "QA_ENV_FILE=\"$QA_ENV_FILE\""
     echo "QA_PGTAP_DEGRADED_FILE=\"$QA_PGTAP_DEGRADED_FILE\""
     echo "QA_PGTAP_DEGRADED_MAX=\"$QA_PGTAP_DEGRADED_MAX\""
     echo "QA_EXIT_PGTAP_STREAK=79"
+    echo "QA_SQL_STATEMENT_TIMEOUT_MS=\"\${QA_SQL_STATEMENT_TIMEOUT_MS:-30000}\""
+    echo "QA_SQL_CONNECT_TIMEOUT_SEC=\"\${QA_SQL_CONNECT_TIMEOUT_SEC:-10}\""
     echo "CHECKS=()"
     echo "RESULT=0"
     extract log
@@ -109,7 +120,7 @@ output2="$(set -e; PSQL_FAIL=1 bash -c '. "'"$STUB_DIR"'/harness.sh"; ensure_pgt
 rc=$?
 check_true "a single hard psql failure does not propagate under set -e" $rc
 check "records FAIL rather than pretending success" \
-  "true" "$(printf '%s\n' "$output2" | grep -q '^pgtap extension|FAIL|' && echo true)"
+  "true" "$(printf '%s\n' "$output2" | grep -q '^pgtap extension|FAIL|' && echo true)"  # pipefail-safe: output2 is ensure_pgtap's own CHECKS-row output for a single-call test run, well under 1KB
 check "RESULT still stays 0 on the first failure (advisory, same as sql_tests_check)" \
   "RESULT=0" "$(printf '%s\n' "$output2" | grep '^RESULT=')"
 check "records the failure streak so it can escalate" \

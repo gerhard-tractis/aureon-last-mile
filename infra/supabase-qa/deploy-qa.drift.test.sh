@@ -122,6 +122,39 @@ QA_PREV_SHA="$GITHUB_SHA" DEPLOY_SHA="$WORKER_SHA" \
   eval 'widen_changed_flags >/dev/null 2>&1; echo "$CHANGED_WORKER $CHANGED_FRONTEND"' > "$TMP/out"
 check_eq "maps apps/worker to the worker flag only" "true false" "$(cat "$TMP/out")"
 
+# ── B2's twin (spec-92 review round 5): widen()'s match used to be
+#    `printf '%s\n' "$changed" | grep -qE "$2"`. `grep -q` exits on its
+#    FIRST match and closes its read end of the pipe; with a large enough
+#    `git diff --name-only` list, `printf` can still be writing when grep
+#    quits — SIGPIPE, the pipeline exits 141 under pipefail, 141 != 0 makes
+#    the `elif` read FALSE, and widen_changed_flags silently reports
+#    "false" for an app that DID change. Reproduced here with a real git
+#    repo and a real diff: one apps/frontend file (sorts first
+#    alphabetically, so grep would match almost immediately) plus ~5000
+#    filler files after it (so the list is large enough that printf is
+#    still writing when a first-match-then-quit reader gives up) ─────────
+BIGDIFF_BASE="$(git -C "$REPO" rev-parse HEAD)"
+# Built via plumbing (read-tree/update-index/write-tree/commit-tree), not
+# 5000 real filesystem writes + `git add` — same diff --name-only size,
+# without paying for 5000 mkdir/echo forks.
+git -C "$REPO" read-tree "$BIGDIFF_BASE" >/dev/null
+BLOB_SHA="$(git -C "$REPO" hash-object -w --stdin <<< 'trigger')"
+{
+  echo "100644 blob $BLOB_SHA	apps/frontend/src/big_diff_trigger.tsx"
+  i=0
+  while [ "$i" -lt 5000 ]; do
+    printf '100644 blob %s\tzzz_filler/file_%s.txt\n' "$BLOB_SHA" "$i"
+    i=$((i + 1))
+  done
+} | git -C "$REPO" update-index --index-info
+BIGDIFF_TREE="$(git -C "$REPO" write-tree)"
+BIGDIFF_SHA="$(git -C "$REPO" commit-tree "$BIGDIFF_TREE" -p "$BIGDIFF_BASE" -m 'big diff')"
+QA_PREV_SHA="$BIGDIFF_BASE" DEPLOY_SHA="$BIGDIFF_SHA" \
+  CHANGED_FRONTEND=false CHANGED_WORKER=false CHANGED_AGENTS=false CHANGED_EDGE_FUNCTIONS=false \
+  eval 'widen_changed_flags >/dev/null 2>&1; echo "$CHANGED_FRONTEND"' > "$TMP/out"
+check_eq "B2 twin: a large diff with an early frontend match still widens CHANGED_FRONTEND" \
+  "true" "$(cat "$TMP/out")"
+
 echo
 echo "read_qa_prev_sha() (spec-88 fase 3, ronda 6)"
 

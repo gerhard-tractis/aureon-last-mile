@@ -84,9 +84,11 @@ check "fails when only some QA units are permitted" 1 $?
 ALLOWED_UNITS=""
 export ALLOWED_UNITS
 output="$(guard_sudo aureon-frontend-qa 2>&1)"
-if printf '%s' "$output" | grep -q "visudo" &&
-   printf '%s' "$output" | grep -q "aureon-frontend-qa" &&
-   printf '%s' "$output" | grep -q "qa-environment.md"; then
+# $output is guard_sudo()'s own short, hardcoded error message (a few
+# lines) — never external/unbounded input. pipefail-safe on all three below.
+if printf '%s' "$output" | grep -q "visudo" &&  # pipefail-safe: checks guard_sudo()'s fixed error text for the word "visudo"
+   printf '%s' "$output" | grep -q "aureon-frontend-qa" &&  # pipefail-safe: checks the same fixed error text for the unit name it must name
+   printf '%s' "$output" | grep -q "qa-environment.md"; then  # pipefail-safe: checks the same fixed error text for the doc it must point to
   pass=$((pass + 1)); echo "  ok   error names the unit and the fix"
 else
   fail=$((fail + 1)); echo "  FAIL error should name the unit, visudo, and the runbook"
