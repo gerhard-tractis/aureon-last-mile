@@ -62,6 +62,21 @@ QA_DEGRADED_FILE="${QA_DEGRADED_FILE:-${QA_STATE_FILE}.degraded}"
 QA_DEGRADED_MAX="${QA_DEGRADED_MAX:-3}"
 QA_PGTAP_DEGRADED_FILE="${QA_PGTAP_DEGRADED_FILE:-${QA_STATE_FILE}.pgtap-degraded}"
 QA_PGTAP_DEGRADED_MAX="${QA_PGTAP_DEGRADED_MAX:-3}"
+# spec-92 review round 2 (m1): none of ensure_pgtap's/sql_tests_check's psql
+# invocations had a timeout. The 91 test files (and the pgtap probe, and
+# CREATE EXTENSION) run against QA's LIVE Postgres while people are using
+# it — a LOCK/ALTER blocked on a row another session holds waits forever.
+# There is a ceiling (deploy-qa's job has timeout-minutes: 15), but that
+# ceiling is shared with migrations/seed/builds, and hitting it produces a
+# generic runner timeout indistinguishable from any other failure. An
+# explicit statement_timeout turns that into
+# "ERROR: canceling statement due to statement timeout" — a FAIL the
+# existing "ERROR:" grep already catches, with a cause a human can read.
+# 30s per statement is generous for both a metadata query and a
+# BEGIN/ROLLBACK test file; PGCONNECT_TIMEOUT covers the (much less likely)
+# case of the connection itself hanging before a statement ever starts.
+QA_SQL_STATEMENT_TIMEOUT_MS="${QA_SQL_STATEMENT_TIMEOUT_MS:-30000}"
+QA_SQL_CONNECT_TIMEOUT_SEC="${QA_SQL_CONNECT_TIMEOUT_SEC:-10}"
 # Exit code for "the deploy worked, the marker did not, and it has been that
 # way too long". deploy.yml keys its failure message off this — see the
 # escalation in record_deploy_marker().
@@ -689,8 +704,14 @@ RESULT=0
 record() { CHECKS+=("$1|$2|$3"); [ "$2" = "ok" ] || RESULT=1; }
 
 # A deliberate fork of record(): same CHECKS array and table row shape, but
-# never touches RESULT. Used only by sql_tests_check — see its comment for why
-# a SQL test failure must never be able to fail this deploy.
+# never touches RESULT. Used by ensure_pgtap() (a single CREATE-EXTENSION
+# failure — see its comment for the streak that DOES eventually escalate to
+# a real failure) and by sql_tests_check() for its four "a prerequisite to
+# running the tests was absent" SKIP paths (see that function's comment).
+# spec-92: as of that fase, a REAL SQL test failure in sql_tests_check is
+# BLOCKING — it goes through record(), not this function. Do not read this
+# comment as "a SQL test failure can never fail this deploy"; that was true
+# before spec-92 and no longer is.
 record_advisory() { CHECKS+=("$1|$2|$3"); }
 
 http_check() { # $1 name, $2 url, $3 mode: any (any HTTP response) | success (2xx/3xx)
@@ -796,7 +817,9 @@ ensure_pgtap() {
 
   log "ensuring pgtap extension exists (localhost:5433)"
   local out
-  if out="$(PGPASSWORD="$pw" psql -h localhost -p 5433 -U postgres -d postgres \
+  if out="$(PGPASSWORD="$pw" PGCONNECT_TIMEOUT="$QA_SQL_CONNECT_TIMEOUT_SEC" \
+       PGOPTIONS="-c statement_timeout=${QA_SQL_STATEMENT_TIMEOUT_MS}" \
+       psql -h localhost -p 5433 -U postgres -d postgres \
        -v ON_ERROR_STOP=1 -q -c 'CREATE EXTENSION IF NOT EXISTS pgtap;' 2>&1)"; then
     record_advisory "pgtap extension" ok "installed"
     rm -f "$QA_PGTAP_DEGRADED_FILE" 2>/dev/null || true
@@ -930,9 +953,29 @@ sql_tests_check() {
   fi
 
   local psql_qa=(psql -h localhost -p 5433 -U postgres -d postgres)
-  local pgtap_ok
-  pgtap_ok="$(PGPASSWORD="$pw" "${psql_qa[@]}" -tAc \
-    "SELECT 1 FROM pg_extension WHERE extname = 'pgtap'" 2>/dev/null || true)"
+
+  # spec-92 review round 2 (M2): "2>/dev/null || true" used to turn ANY probe
+  # failure (a connection hiccup, a saturated pooler, the db container
+  # restarting between ensure_pgtap() and here) into the SAME empty string
+  # as "pgtap is genuinely not installed" — every plan()-based file would
+  # then be silently written SKIPPED-NO-PGTAP and scored advisory: a green
+  # deploy with 20 of 91 files never executed. ensure_pgtap()'s own
+  # degraded-streak escalation does NOT cover this case: it already ran,
+  # succeeded, and cleared its own streak file two lines before this call —
+  # its escalation is for CREATE EXTENSION failing, not for this SELECT
+  # failing. A failed probe is now its own blocking FAIL, distinct from
+  # "pgtap not installed" (probe succeeds, returns zero rows).
+  local pgtap_probe probe_rc
+  pgtap_probe="$(PGPASSWORD="$pw" PGCONNECT_TIMEOUT="$QA_SQL_CONNECT_TIMEOUT_SEC" \
+       PGOPTIONS="-c statement_timeout=${QA_SQL_STATEMENT_TIMEOUT_MS}" \
+       "${psql_qa[@]}" -tAc \
+    "SELECT 1 FROM pg_extension WHERE extname = 'pgtap'" 2>&1)" && probe_rc=0 || probe_rc=$?
+  if [ "$probe_rc" -ne 0 ]; then
+    log "--- could not query pg_extension for pgtap (exit ${probe_rc}): $pgtap_probe"
+    record "sql tests" FAIL "could not determine whether pgtap is installed — see deploy log"
+    return 0
+  fi
+  local pgtap_ok="$pgtap_probe"
 
   local begin_tag="__SQLTEST_BEGIN__" end_tag="__SQLTEST_END__"
   local runner; runner="$(mktemp)"
@@ -956,7 +999,9 @@ sql_tests_check() {
   # its own, since a partial run (some files' markers present, some not)
   # needs the per-file marker check regardless of the overall exit code.
   local output rc
-  output="$(PGPASSWORD="$pw" "${psql_qa[@]}" -v ON_ERROR_STOP=0 -q -f "$runner" 2>&1)" && rc=0 || rc=$?
+  output="$(PGPASSWORD="$pw" PGCONNECT_TIMEOUT="$QA_SQL_CONNECT_TIMEOUT_SEC" \
+       PGOPTIONS="-c statement_timeout=${QA_SQL_STATEMENT_TIMEOUT_MS}" \
+       "${psql_qa[@]}" -v ON_ERROR_STOP=0 -q -f "$runner" 2>&1)" && rc=0 || rc=$?
   rm -f "$runner"
 
   local pass=0 fail=0 skip=0 section
@@ -988,6 +1033,25 @@ sql_tests_check() {
     fi
     section="$(printf '%s\n' "$output" | awk -v b="$begin_tag $base" -v e="$end_tag $base" \
       '$0==b{on=1;next} $0==e{on=0} on')"
+
+    # spec-92 review round 2 (B1): the section above attributes output to a
+    # file BY POSITION between its BEGIN/END markers. Markers go to stdout
+    # (\echo); a RAISE EXCEPTION's "ERROR:" goes to stderr. `2>&1` merges
+    # both into one pipe, but psql's stdout is block-buffered (4KB) on a
+    # pipe while stderr is unbuffered — under that buffering, a file's
+    # ERROR: line can be FLUSHED BEFORE the BEGIN/END markers still sitting
+    # in the stdout buffer, landing outside every section. All markers are
+    # still present (the marker-pair guard above passes), the section for
+    # the file that actually failed comes back empty, and it fell through
+    # to "ok" — reproduced against this exact function. Fixed by NOT relying
+    # on position at all for stderr-attributed errors: psql prefixes every
+    # error from an \i'd script with "psql:<path>:<line>: ERROR: ...", where
+    # <path> is exactly the argument \i was given ($f, below) — grep the
+    # WHOLE unsectioned $output for that literal prefix, which is correct
+    # regardless of where stdout/stderr interleaving put the line.
+    local file_err_lines
+    file_err_lines="$(printf '%s\n' "$output" | grep -F "psql:${f}:" | grep 'ERROR:' || true)"
+
     if printf '%s' "$section" | grep -q "SKIPPED-NO-PGTAP"; then
       skip=$((skip + 1))
       # Advisory: an absent prerequisite (pgtap not installed), not a test
@@ -995,16 +1059,19 @@ sql_tests_check() {
       # forever and ensure_pgtap() is what escalates a persistent version
       # of this into a real deploy failure, not this line.
       record_advisory "sql: $base" SKIP "pgtap extension not installed on QA"
-    elif printf '%s' "$section" | grep -qE "ERROR:|not ok [0-9]"; then
+    elif printf '%s' "$section" | grep -qE "ERROR:|not ok [0-9]" || [ -n "$file_err_lines" ]; then
       fail=$((fail + 1))
       # Echo the failing lines. Without this the summary row says "see the
       # deploy log" and the log does not contain it — the section lives only
       # in $output, which is never printed. A check that reports a failure
       # you cannot diagnose is barely better than no check, and now that
       # this row blocks the deploy, the log IS what tells someone why.
+      # file_err_lines first: it is the only reliable source when buffering
+      # pushed the ERROR: line out of $section entirely.
       log "--- $base failed, first 20 offending lines:"
-      printf '%s
-' "$section" | grep -E "ERROR:|not ok [0-9]|EXCEPTION" | head -20 | sed 's/^/    /'
+      { printf '%s\n' "$file_err_lines"
+        printf '%s\n' "$section" | grep -E "ERROR:|not ok [0-9]|EXCEPTION"
+      } | awk 'NF' | awk '!seen[$0]++' | head -20 | sed 's/^/    /'
       # Blocking: record(), not record_advisory() — a real SQL test failure
       # must flip RESULT and fail this deploy. See the function-level
       # comment for why this is safe now (91/91 passing against QA today)

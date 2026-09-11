@@ -44,16 +44,22 @@ check_true() { # $1 name, $2 condition result (0/1)
 }
 
 # A `psql` stub that fakes both invocations sql_tests_check makes:
-#   1. `-tAc "SELECT 1 FROM pg_extension ..."`  -> prints PGTAP_INSTALLED
+#   1. `-tAc "SELECT 1 FROM pg_extension ..."`  -> prints PGTAP_INSTALLED, or
+#      simulates the probe itself failing via PSQL_PROBE_FAIL (M2 — a query
+#      that could not run at all, distinct from "ran, found 0 rows").
 #   2. `-f <runner>`                            -> replays the generated
 #      runner script line by line, faking what each \i'd test file would
 #      have printed, keyed off the fixture's basename (never actually reads
 #      or executes the .sql files — this is a control-flow test, not a SQL
 #      test). Also logs every invocation and can be forced to fail via
-#      PSQL_F_EXIT, or to simulate a connection failure via PSQL_CONN_FAIL:
-#      the real failure mode found in review — psql can't reach the server,
-#      prints lowercase "error:" (not "ERROR:"), NEVER processes the runner
-#      file, so it emits zero \echo BEGIN/END markers, and exits nonzero.
+#      PSQL_F_EXIT, to simulate a connection failure via PSQL_CONN_FAIL (psql
+#      can't reach the server, prints lowercase "error:", NEVER processes the
+#      runner, zero \echo markers, nonzero exit), to die partway through via
+#      DIE_AFTER_LINE=<exact \echo'd line> (everything up to and including
+#      that line prints, then psql exits — simulating a mid-run kill: later
+#      files get no markers at all, and the file whose BEGIN was just
+#      printed never gets its END), or to simulate B1's stdout/stderr
+#      interleaving race via PSQL_INTERLEAVE_ERROR=1 — see the block below.
 cat > "$STUB_DIR/psql" <<'STUB'
 #!/usr/bin/env bash
 echo "CALLED" >> "$PSQL_CALLS"
@@ -68,6 +74,10 @@ for ((i = 0; i < ${#args[@]}; i++)); do
 done
 
 if [ "$tac" -eq 1 ]; then
+  if [ "${PSQL_PROBE_FAIL:-}" = "1" ]; then
+    echo "psql: error: connection to server at \"localhost\", port 5433 failed: Connection refused" >&2
+    exit 2
+  fi
   printf '%s' "${PGTAP_INSTALLED:-}"
   exit 0
 fi
@@ -77,9 +87,50 @@ if [ -n "$runner" ]; then
     echo "psql: error: connection to server at \"localhost\", port 5433 failed: Connection refused" >&2
     exit 2
   fi
+
+  if [ "${PSQL_INTERLEAVE_ERROR:-}" = "1" ]; then
+    # B1: a real error goes to stderr, unbuffered, and can be FLUSHED BEFORE
+    # the \echo BEGIN/END markers still sitting in psql's block-buffered
+    # stdout pipe. Simulated here by printing the psql-style
+    # "psql:<path>:<line>: ERROR:" line for the *error* fixture FIRST, at
+    # the very top of the captured stream — nowhere near its own
+    # BEGIN/END — and then suppressing that file's normal in-section
+    # output entirely, matching what a real RAISE EXCEPTION leaves behind
+    # positionally: nothing between its own markers.
+    interleave_path="$(grep "^\\\\i '" "$runner" | grep error | sed "s/^\\\\i '//; s/'\$//")"
+    if [ -n "$interleave_path" ]; then
+      echo "psql:${interleave_path}:3: ERROR:  bbb assertion failed"
+    fi
+    while IFS= read -r line; do
+      case "$line" in
+        '\echo '*) echo "${line#\\echo }" ;;
+        '\i '*)
+          path="${line#\\i \'}"
+          path="${path%\'}"
+          if [ "$path" = "$interleave_path" ]; then
+            : # its output already "left" earlier — section stays empty
+          else
+            base="$(basename "$path")"
+            case "$base" in
+              *tapfail*) echo "not ok 1 - fixture says fail" ;;
+              *)         echo "(pretend passing output)" ;;
+            esac
+          fi
+          ;;
+      esac
+    done < "$runner"
+    exit "${PSQL_F_EXIT:-0}"
+  fi
+
   while IFS= read -r line; do
     case "$line" in
-      '\echo '*) echo "${line#\\echo }" ;;
+      '\echo '*)
+        content="${line#\\echo }"
+        echo "$content"
+        if [ -n "${DIE_AFTER_LINE:-}" ] && [ "$content" = "$DIE_AFTER_LINE" ]; then
+          exit 5
+        fi
+        ;;
       '\i '*)
         path="${line#\\i \'}"
         path="${path%\'}"
@@ -135,6 +186,8 @@ build_harness() {
     echo "set -uo pipefail"
     echo "QA_CHECKOUT_DIR=\"$QA_CHECKOUT_DIR\""
     echo "QA_ENV_FILE=\"$QA_ENV_FILE\""
+    echo "QA_SQL_STATEMENT_TIMEOUT_MS=\"\${QA_SQL_STATEMENT_TIMEOUT_MS:-30000}\""
+    echo "QA_SQL_CONNECT_TIMEOUT_SEC=\"\${QA_SQL_CONNECT_TIMEOUT_SEC:-10}\""
     echo "CHECKS=()"
     echo "RESULT=0"
     extract log
@@ -286,6 +339,77 @@ check "records a SKIP naming the empty dir" \
   "true" "$(printf '%s\n' "$output6" | grep -q '^sql tests|SKIP|no \*\.sql files' && echo true)"
 check "RESULT stays 0 when there are no *.sql files to run" \
   "RESULT=0" "$(printf '%s\n' "$output6" | grep '^RESULT=')"
+
+# ── B1 (spec-92 review round 2): a real ERROR: for one file can be flushed
+#    to the merged stdout+stderr stream BEFORE that file's own BEGIN/END
+#    markers, when psql's stdout is block-buffered on a pipe and stderr is
+#    not. All markers are still present (the marker-pair guard tested above
+#    does not catch this), but the file's own section comes back EMPTY —
+#    reproduced against the real function before this fix, scoring the
+#    failed file "ok". Attribution must not depend on position ───────────
+PSQL_CALLS="$STUB_DIR/calls_b1"; export PSQL_CALLS; : > "$PSQL_CALLS"
+outputB1="$(PGTAP_INSTALLED="" PSQL_INTERLEAVE_ERROR=1 bash -c \
+  '. "'"$STUB_DIR"'/harness.sh"; sql_tests_check; printf "%s\n" "${CHECKS[@]}"; echo "RESULT=$RESULT"' 2>&1)"
+rc=$?
+check_true "runs to completion (exit 0) under an interleaved ERROR" $rc
+check "RESULT flips to 1 even though the ERROR line landed outside every section" \
+  "RESULT=1" "$(printf '%s\n' "$outputB1" | grep '^RESULT=')"
+check "the interleaved-error file is reported FAIL, not ok" \
+  "sql: bbb_error_test.sql|FAIL|see the block above this table" \
+  "$(printf '%s\n' "$outputB1" | grep '^sql: bbb_error_test.sql')"
+check "the unrelated clean file is unaffected" \
+  "sql: aaa_pass_test.sql|ok|" \
+  "$(printf '%s\n' "$outputB1" | grep '^sql: aaa_pass_test.sql')"
+
+# ── M1: the END half of the marker guard, exercised on its own. One file
+#    gets BEGIN with no END (psql killed mid-file); a later file gets
+#    NEITHER marker (never reached). A stub that only ever produces
+#    all-or-nothing output (like PSQL_CONN_FAIL) cannot tell these two
+#    `||` branches apart — this fixture can ────────────────────────────────
+PSQL_CALLS="$STUB_DIR/calls_m1"; export PSQL_CALLS; : > "$PSQL_CALLS"
+outputM1="$(PGTAP_INSTALLED="" DIE_AFTER_LINE="__SQLTEST_BEGIN__ bbb_error_test.sql" bash -c \
+  '. "'"$STUB_DIR"'/harness.sh"; sql_tests_check; printf "%s\n" "${CHECKS[@]}"; echo "RESULT=$RESULT"' 2>&1)"
+rc=$?
+check_true "runs to completion (exit 0) on a mid-run death" $rc
+check "RESULT flips to 1 on a mid-run death" \
+  "RESULT=1" "$(printf '%s\n' "$outputM1" | grep '^RESULT=')"
+check "the file before the death is unaffected" \
+  "sql: aaa_pass_test.sql|ok|" \
+  "$(printf '%s\n' "$outputM1" | grep '^sql: aaa_pass_test.sql')"
+check "the file with BEGIN but no END is reported FAIL, not ok" \
+  "sql: bbb_error_test.sql|FAIL|psql did not run this file — see deploy log" \
+  "$(printf '%s\n' "$outputM1" | grep '^sql: bbb_error_test.sql')"
+check "the file reached after the death (no markers at all) is also FAIL" \
+  "sql: ccc_tapfail_test.sql|FAIL|psql did not run this file — see deploy log" \
+  "$(printf '%s\n' "$outputM1" | grep '^sql: ccc_tapfail_test.sql')"
+
+# ── M2: the pgtap probe itself failing (couldn't even ask, vs. "asked and
+#    got 0 rows") must FAIL the whole check, not silently route every
+#    plan() file to SKIPPED-NO-PGTAP as if pgtap just wasn't installed ────
+PSQL_CALLS="$STUB_DIR/calls_m2"; export PSQL_CALLS; : > "$PSQL_CALLS"
+outputM2="$(PSQL_PROBE_FAIL=1 bash -c \
+  '. "'"$STUB_DIR"'/harness.sh"; sql_tests_check; printf "%s\n" "${CHECKS[@]}"; echo "RESULT=$RESULT"' 2>&1)"
+rc=$?
+check_true "runs to completion (exit 0) when the pgtap probe itself fails" $rc
+check "RESULT flips to 1 when the pgtap probe could not run" \
+  "RESULT=1" "$(printf '%s\n' "$outputM2" | grep '^RESULT=')"
+check "records a blocking FAIL naming the probe failure" \
+  "true" "$(printf '%s\n' "$outputM2" | grep -q '^sql tests|FAIL|could not determine whether pgtap is installed' && echo true)"
+check "no per-file row is recorded — the probe failure aborts before the runner" \
+  "true" "$(printf '%s\n' "$outputM2" | grep -q '^sql: ' && echo false || echo true)"
+
+# ── M3: a nonzero psql exit ALONE — no ERROR:/not ok anywhere in the
+#    output, no missing markers — must NOT flip RESULT. Distinguishes "the
+#    exit code decided" from "real content in the output decided": this
+#    fixture set has no failing file, so if something wrongly keyed off
+#    $rc instead of $output/$section, this is the assertion that catches it ─
+PSQL_CALLS="$STUB_DIR/calls_m3"; export PSQL_CALLS; : > "$PSQL_CALLS"
+outputM3="$(QA_CHECKOUT_DIR="$SKIP_ONLY_QA" PGTAP_INSTALLED="" PSQL_F_EXIT=2 bash -c \
+  '. "'"$STUB_DIR"'/harness.sh"; QA_CHECKOUT_DIR="'"$SKIP_ONLY_QA"'"; sql_tests_check; printf "%s\n" "${CHECKS[@]}"; echo "RESULT=$RESULT"' 2>&1)"
+rc=$?
+check_true "runs to completion (exit 0) when psql exits nonzero with no real failures" $rc
+check "RESULT stays 0 — a nonzero psql exit alone is not a test failure" \
+  "RESULT=0" "$(printf '%s\n' "$outputM3" | grep '^RESULT=')"
 
 echo ""
 echo "  $pass passed, $fail failed"
