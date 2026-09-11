@@ -183,6 +183,40 @@ assert_exit 1 "output field followed by a dash (-v2) fails" "$DASH_SUFFIX_WF"
 assert_contains "does not reference steps.<id>.outputs.pg_net exactly" \
   "names the dashed pg_net match" "$DASH_SUFFIX_WF"
 
+# ── round 5 (2026-09-10): round 4 anchored the token's TERMINATOR, but the
+# WHOLE VALUE was still unanchored — text before/after the `${{ }}` itself,
+# or a comparison baked INSIDE it, both still satisfied the terminator
+# check. A migration using net.http_post() would compute PG_NET=true
+# correctly, but changes.outputs.pg_net would read as a literal string
+# other than 'true' ("true-x", the boolean result of `== 'false'`, ...),
+# the comparison against 'true' in approve-production's environment fails,
+# and the migration auto-approves into production.
+TRAILING_TEXT_OUTPUTS='    outputs:
+      auth_hook: ${{ steps.filter.outputs.auth_hook }}
+      pg_net: ${{ steps.filter.outputs.pg_net }}-x'
+TRAILING_TEXT_WF="$(full_wf "$CHANGES_STEPS" "[changes, deploy-qa, e2e-qa]" "$TRAILING_TEXT_OUTPUTS")"
+assert_exit 1 "extra text after the closing }} (}}-x) fails" "$TRAILING_TEXT_WF"
+assert_contains "does not reference steps.<id>.outputs.pg_net exactly" \
+  "names the trailing-text pg_net match" "$TRAILING_TEXT_WF"
+
+EQ_FALSE_OUTPUTS='    outputs:
+      auth_hook: ${{ steps.filter.outputs.auth_hook }}
+      pg_net: ${{ steps.filter.outputs.pg_net == '"'"'false'"'"' }}'
+EQ_FALSE_WF="$(full_wf "$CHANGES_STEPS" "[changes, deploy-qa, e2e-qa]" "$EQ_FALSE_OUTPUTS")"
+assert_exit 1 "a comparison baked into the value (== 'false') fails" "$EQ_FALSE_WF"
+assert_contains "does not reference steps.<id>.outputs.pg_net exactly" \
+  "names the == comparison pg_net match" "$EQ_FALSE_WF"
+
+AND_FALSE_OUTPUTS='    outputs:
+      auth_hook: ${{ steps.filter.outputs.auth_hook == '"'"'false'"'"' }}
+      pg_net: ${{ steps.filter.outputs.pg_net && '"'"'false'"'"' }}'
+AND_FALSE_WF="$(full_wf "$CHANGES_STEPS" "[changes, deploy-qa, e2e-qa]" "$AND_FALSE_OUTPUTS")"
+assert_exit 1 "a boolean AND baked into both values (&&/== 'false') fails" "$AND_FALSE_WF"
+assert_contains "does not reference steps.<id>.outputs.auth_hook exactly" \
+  "names the auth_hook == comparison" "$AND_FALSE_WF"
+assert_contains "does not reference steps.<id>.outputs.pg_net exactly" \
+  "names the pg_net && comparison" "$AND_FALSE_WF"
+
 echo
 echo "  $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

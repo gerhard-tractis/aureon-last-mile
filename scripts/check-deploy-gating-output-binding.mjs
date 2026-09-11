@@ -16,17 +16,23 @@ export function resolveGateEnv(gate) {
     : gate.environment;
 }
 
-// round 4 (2026-09-10) review diagnosis: rounds 3 and 4 each enumerated by
-// NEGATION the set of bad characters ((?![A-Za-z0-9_]), then discovering
-// `.` and `-` weren't excluded either) instead of requiring the good shape
-// POSITIVELY. That loop doesn't end on its own — round 5 finds the next
-// character. Fixed here by requiring a positive terminator: whatever comes
-// right after `outputs.<field>` must be one of the tokens that legally
-// follow it inside a GitHub Actions `${{ }}` expression (closing braces, a
-// comparison/boolean operator, a closing paren, or end of string) — not
-// "not a word character", which `.` and `-` both satisfy without being
-// valid there.
-const TERMINATOR = String.raw`(?:\s*\}\}|\s*==|\s*\|\||\s*&&|\s*\)|$)`;
+// round 5 (2026-09-10) review diagnosis, one level out from round 4's own:
+// round 5 applied positive form to the token's TERMINATOR, but the WHOLE
+// VALUE was still defined by negation — `.exec(value)` had no start/end
+// anchor at all, so `${{ steps.filter.outputs.pg_net }}-x`,
+// `${{ steps.filter.outputs.pg_net == 'false' }}`, and
+// `${{ steps.filter.outputs.pg_net && 'false' }}` all still matched
+// (the TERMINATOR only constrained what comes right after the field name,
+// not what surrounds the whole expression). Fixed by requiring the ENTIRE
+// value to be exactly the one shape this repo's real deploy.yml uses for
+// every one of its 8 `outputs:` lines today —
+// `${{ steps.<id>.outputs.<field> }}`, nothing before, nothing after. This
+// makes the old TERMINATOR moot (removed) and, as a side effect, stops
+// rejecting `!=`, `contains(x, y)`, or a `format()` comma as false
+// positives, since those never even reach the terminator question now —
+// the value either IS this one shape or it errors.
+const OUTPUT_VALUE_RE = (outputKey) =>
+  new RegExp(String.raw`^\s*\$\{\{\s*steps\.([A-Za-z0-9_-]+)\.outputs\.${outputKey}\s*\}\}\s*$`);
 
 // review round 2026-09-10, item 3 — `changes.outputs.<outputKey>` (e.g.
 // `${{ steps.filter.outputs.auth_hook }}`) names a step by `id:`, but
@@ -38,12 +44,16 @@ const TERMINATOR = String.raw`(?:\s*\}\}|\s*==|\s*\|\||\s*&&|\s*\)|$)`;
 //
 // round 3 hardened the id-match with a negative-character-class end anchor
 // (rejected an unanchored substring match like `auth_hook_v2`); round 4
-// found the class was incomplete (`.x`, `-v2` both survived) and replaced
-// it with the positive TERMINATOR above instead of patching the class
-// again. It now ERRORS on a non-match instead of silently returning [] —
-// the caller only invokes this once it already knows outputValue is
-// non-empty, so a failed match means the value doesn't name a real
-// steps.<id>.outputs.<field> reference for THIS field.
+// found the class was incomplete (`.x`, `-v2` both survived) and replaced it
+// with a positive terminator instead of patching the class again; round 5
+// found THAT was still only anchoring what comes right after the field
+// name, not the whole value — `${{ steps.filter.outputs.pg_net }}-x`,
+// `... pg_net == 'false' }}`, and `... pg_net && 'false' }}` all still
+// matched. OUTPUT_VALUE_RE above anchors the entire string instead. It now
+// ERRORS on a non-match instead of silently returning [] — the caller only
+// invokes this once it already knows outputValue is non-empty, so a failed
+// match means the value doesn't name a real steps.<id>.outputs.<field>
+// reference for THIS field.
 //
 // round 4 ALSO found `githubOutputSinks`' original block regex
 // (`/\{([\s\S]*?)\}\s*>>.../`) treated the FIRST `{` anywhere in the run —
@@ -58,13 +68,15 @@ const TERMINATOR = String.raw`(?:\s*\}\}|\s*==|\s*\|\||\s*&&|\s*\)|$)`;
 export function checkOutputStepBinding(changesJob, outputValue, outputKey) {
   const errors = [];
   const value = String(outputValue ?? '');
-  const idMatch = new RegExp(`steps\\.([A-Za-z0-9_-]+)\\.outputs\\.${outputKey}${TERMINATOR}`)
-    .exec(value);
+  const idMatch = OUTPUT_VALUE_RE(outputKey).exec(value);
   if (!idMatch) {
     errors.push(
       `changes.outputs.${outputKey} ("${value}") does not reference steps.<id>.outputs.${outputKey} ` +
-      `exactly — a longer/different field name (e.g. ${outputKey}_v2, ${outputKey}.x) reads as empty ` +
-      `just the same, silently resolving approve-production's environment to 'production-auto'`
+      `exactly — the value must be EXACTLY \${{ steps.<id>.outputs.${outputKey} }}, nothing more. A ` +
+      `longer/different field name (${outputKey}_v2, ${outputKey}.x), extra text around it ` +
+      `(${outputKey} }}-x), or a comparison baked into the value itself (${outputKey} == 'false' }}, ` +
+      `${outputKey} && 'false' }}) all read as something other than the true/false steps.${outputKey} ` +
+      `output, silently resolving approve-production's environment to 'production-auto'`
     );
     return errors;
   }
