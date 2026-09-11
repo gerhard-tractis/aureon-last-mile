@@ -332,6 +332,39 @@ describe('runGeocodeEnrichBatch — comuna_id present but centroid data missing 
       geocode_status: 'fallback',
     });
   });
+
+  // Round-2 review: a wrong_comuna point during a centroid data fault is
+  // NOT the same "keep what you paid for" case as coarse. The spec's whole
+  // point about wrong_comuna is that the point isn't imprecise, it's FALSE
+  // -- a sharp pin ~100km outside the requested comuna (Fase 0's own
+  // measured false positive: "Arturo Prat 100, La Union" -> a Valdivia
+  // doorway). Keeping it here would be Blocker 1's flattening reintroduced
+  // one branch over. Coordinates must stay untouched and wait for the next
+  // tick, which costs nothing -- the row retries in 30 minutes either way.
+  it('a wrong_comuna point during a centroid data fault leaves coordinates untouched, never writes the false pin', async () => {
+    const order = makeOrder({ comuna_id: 'comuna-la-union', comuna: 'La Union', latitude: null, longitude: null });
+    const result: GeocodeResult = {
+      latitude: -39.8142,
+      longitude: -73.2459,
+      matchClass: 'wrong_comuna',
+      precision: 'approximate',
+      source: 'maptiler',
+    };
+    const { db, updateOrderCalls } = makeDb({ claimed: [order], cacheRow: null, centroid: null });
+    const provider = makeProvider({ geocode: vi.fn().mockResolvedValue(result) });
+
+    await runGeocodeEnrichBatch({ db, provider, redis: null, now: () => NOW });
+
+    expect(updateOrderCalls[0]).toMatchObject({
+      latitude: null,
+      longitude: null,
+      geocode_status: 'fallback',
+    });
+    expect(updateOrderCalls[0]).not.toMatchObject({
+      latitude: result.latitude,
+      longitude: result.longitude,
+    });
+  });
 });
 
 describe('runGeocodeEnrichBatch — no match at all', () => {

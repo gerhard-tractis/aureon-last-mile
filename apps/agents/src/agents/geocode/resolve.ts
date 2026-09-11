@@ -237,15 +237,23 @@ export async function resolveOrder(order: ClaimedOrder, deps: ResolveDeps): Prom
   // coarse | wrong_comuna -- the adapter's classify() only reaches either of
   // these when a requested comuna was passed in, which fase 5 only ever
   // does when comuna_id is set -- so a centroid SHOULD exist. When it does
-  // not, that is the same data fault as the no-match case above: the
-  // provider's own (coarse, or wrong-comuna) point is kept rather than
-  // discarded for a centroid that does not exist (BLOCKER 2) -- discarding
-  // paid information for nothing is worse than an approximate pin during a
-  // temporary, self-healing fault.
+  // not, that is the same data fault as the no-match case above -- but the
+  // two match classes are NOT interchangeable here (round-2 review): a
+  // coarse point is a genuine, if imprecise, street-level position in the
+  // CORRECT comuna, worth keeping rather than discarding for a centroid
+  // that does not exist (BLOCKER 2). A wrong_comuna point is not imprecise,
+  // it is FALSE -- a sharp, plausible pin outside the requested comuna
+  // (Fase 0 measured "Arturo Prat 100, La Union" returning a Valdivia
+  // doorway, ~100km off). Keeping it here would be Blocker 1's flattening
+  // reintroduced one branch over. So only a coarse point is passed through;
+  // a wrong_comuna point is discarded exactly as it would be if a centroid
+  // HAD been available, leaving the existing coordinates untouched to wait
+  // for the next tick -- which costs nothing, since the row retries in 30
+  // minutes either way.
   if (!centroid) {
     log('error', 'geocode_centroid_missing', { orderId: order.id, comunaId: order.comuna_id });
     return {
-      update: centroidDataFaultUpdate(order, result, now),
+      update: centroidDataFaultUpdate(order, result.matchClass === 'wrong_comuna' ? null : result, now),
       usedProviderCall: true,
       cacheHit: false,
       reason: 'centroid_data_fault',
