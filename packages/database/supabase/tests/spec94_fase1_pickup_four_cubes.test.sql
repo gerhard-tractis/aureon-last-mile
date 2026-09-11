@@ -24,11 +24,15 @@
 -- mirara reception_status en vez de la ruta, las tres caerían en el mismo
 -- cubo. Que caigan en cubos distintos es lo que prueba que manda la ruta.
 --
--- CARGA-94-DRAFT hace falsificable el NOT IN del cubo 2: una ruta en
--- 'draft' no es 'in_transit' ni 'received', así que cae en el cubo 2. Una
--- lista positiva ('draft','in_progress') pasaría el mismo test -- por eso
--- la mutación de la sección de mutation-testing cambia justamente esa
--- lista y se apoya en esta fixture para notar la diferencia.
+-- CARGA-94-DRAFT y CARGA-94-ROUTECANCELLED hacen falsificable el NOT IN del
+-- cubo 2. pickup_route_status_enum tiene CINCO valores
+-- (draft/in_progress/in_transit/received/cancelled, 20260625000001:20), no
+-- cuatro -- el complemento real de {in_transit, received} es {draft,
+-- in_progress, cancelled}. CARGA-94-DRAFT SOLA no alcanza: coincide con la
+-- lista positiva ('draft','in_progress') en todo lo que toca, y la mutación
+-- queda invisible (confirmado empíricamente). CARGA-94-ROUTECANCELLED (ruta
+-- VIVA con status='cancelled') es la que realmente distingue las dos
+-- fórmulas.
 --
 -- CARGA-94-DELETEDROUTE ya NO se queda en el cubo 2 (ronda 2 lo dejaba ahí
 -- vía el LEFT JOIN): con el modelo de ronda 3, "ruta viva" es falso, así
@@ -36,7 +40,7 @@
 -- status<>completed) en el cubo 1.
 
 BEGIN;
-SELECT plan(24);
+SELECT plan(25);
 
 -- ── Fixtures: operador A (el caller) ─────────────────────────────────────────
 INSERT INTO public.operators (id, name, slug)
@@ -81,8 +85,18 @@ ON CONFLICT (id) DO NOTHING;
 -- uniq_pickup_routes_one_active_per_driver sólo restringe (operator_id,
 -- driver_id) con status IN ('draft','in_progress') AND deleted_at IS NULL.
 -- DOCK/INROUTE/DRAFT están los tres en ese conjunto -> tres drivers
--- distintos. DELETEDROUTE (soft-deleted) y TRANSIT/RXRECEIVED (fuera de
--- draft/in_progress) pueden compartir driver 9401 libremente.
+-- distintos. DELETEDROUTE (soft-deleted) y TRANSIT/RXRECEIVED/ROUTECANCELLED
+-- (fuera de draft/in_progress) pueden compartir driver 9401 libremente.
+--
+-- PR-94-ROUTECANCELLED nace 'cancelled' DIRECTAMENTE en el INSERT, no vía
+-- UPDATE: un UPDATE ... SET status='cancelled' dispara
+-- trg_pickup_routes_set_manifest_reception_status (20260625000001:203-208),
+-- que desengancha (pickup_route_id = NULL) todo manifiesto atado a la ruta
+-- en la MISMA transacción -- la fixture que se quiere (un manifiesto TODAVÍA
+-- enganchado a una ruta viva y cancelada) sería imposible de construir así.
+-- Naciendo cancelada, el trigger (que sólo dispara AFTER UPDATE OF status)
+-- nunca corre, y el UPDATE posterior sobre manifests (más abajo) puede
+-- engancharla sin que nada la desenganche.
 INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, vehicle_id, status, deleted_at)
 VALUES
   ('00000000-0000-4000-8000-000000009410','00000000-0000-4000-8000-000000009400','PR-94-DOCK','00000000-0000-4000-8000-000000009401','00000000-0000-4000-8000-000000009402','in_progress', NULL),
@@ -90,7 +104,8 @@ VALUES
   ('00000000-0000-4000-8000-000000009412','00000000-0000-4000-8000-000000009400','PR-94-DELETEDROUTE','00000000-0000-4000-8000-000000009401','00000000-0000-4000-8000-000000009402','in_progress', NOW()),
   ('00000000-0000-4000-8000-000000009416','00000000-0000-4000-8000-000000009400','PR-94-DRAFT','00000000-0000-4000-8000-000000009407','00000000-0000-4000-8000-000000009402','draft', NULL),
   ('00000000-0000-4000-8000-000000009417','00000000-0000-4000-8000-000000009400','PR-94-TRANSIT','00000000-0000-4000-8000-000000009401','00000000-0000-4000-8000-000000009402','in_transit', NULL),
-  ('00000000-0000-4000-8000-000000009418','00000000-0000-4000-8000-000000009400','PR-94-RXRECEIVED','00000000-0000-4000-8000-000000009401','00000000-0000-4000-8000-000000009402','received', NULL);
+  ('00000000-0000-4000-8000-000000009418','00000000-0000-4000-8000-000000009400','PR-94-RXRECEIVED','00000000-0000-4000-8000-000000009401','00000000-0000-4000-8000-000000009402','received', NULL),
+  ('00000000-0000-4000-8000-000000009419','00000000-0000-4000-8000-000000009400','PR-94-ROUTECANCELLED','00000000-0000-4000-8000-000000009401','00000000-0000-4000-8000-000000009402','cancelled', NULL);
 
 -- ── Órdenes (una por carga; trg_ensure_manifest_for_order crea la fila de
 --    manifests automáticamente al insertar) ───────────────────────────────────
@@ -114,7 +129,8 @@ INSERT INTO public.orders (
   ('00000000-0000-4000-8000-0000000094ac','00000000-0000-4000-8000-000000009400','ORD-94-C','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-DRAFT','Retailer 94','{}'::jsonb,'MANUAL',NOW()),
   ('00000000-0000-4000-8000-0000000094ad','00000000-0000-4000-8000-000000009400','ORD-94-D','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-TRANSIT','Retailer 94','{}'::jsonb,'MANUAL',NOW()),
   ('00000000-0000-4000-8000-0000000094ae','00000000-0000-4000-8000-000000009400','ORD-94-E','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-RXRECEIVED','Retailer 94','{}'::jsonb,'MANUAL',NOW()),
-  ('00000000-0000-4000-8000-0000000094af','00000000-0000-4000-8000-000000009400','ORD-94-F','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-DEADROUTE-DONE','Retailer 94','{}'::jsonb,'MANUAL',NOW());
+  ('00000000-0000-4000-8000-0000000094af','00000000-0000-4000-8000-000000009400','ORD-94-F','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-DEADROUTE-DONE','Retailer 94','{}'::jsonb,'MANUAL',NOW()),
+  ('00000000-0000-4000-8000-0000000094d0','00000000-0000-4000-8000-000000009400','ORD-94-G','Cliente 94','+56900000940','Calle 94','Santiago',CURRENT_DATE,'CARGA-94-ROUTECANCELLED','Retailer 94','{}'::jsonb,'MANUAL',NOW());
 
 -- ── Bultos (uno por carga; dos para CARGA-94-DOCK: uno se declara faltante) ──
 INSERT INTO public.packages (id, operator_id, order_id, label, sku_items, raw_data)
@@ -135,7 +151,8 @@ VALUES
   ('00000000-0000-4000-8000-0000000094bc','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094ac','CTN94-C','[]'::jsonb,'{}'::jsonb),
   ('00000000-0000-4000-8000-0000000094bd','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094ad','CTN94-D','[]'::jsonb,'{}'::jsonb),
   ('00000000-0000-4000-8000-0000000094be','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094ae','CTN94-E','[]'::jsonb,'{}'::jsonb),
-  ('00000000-0000-4000-8000-0000000094bf','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094af','CTN94-F','[]'::jsonb,'{}'::jsonb);
+  ('00000000-0000-4000-8000-0000000094bf','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094af','CTN94-F','[]'::jsonb,'{}'::jsonb),
+  ('00000000-0000-4000-8000-0000000094d1','00000000-0000-4000-8000-000000009400','00000000-0000-4000-8000-0000000094d0','CTN94-G','[]'::jsonb,'{}'::jsonb);
 
 -- ── Ajustar cada manifests row al estado que su carga representa ─────────────
 -- (trg_ensure_manifest_for_order ya creó la fila con status='pending' al
@@ -182,6 +199,22 @@ UPDATE public.manifests SET
   pickup_route_id = '00000000-0000-4000-8000-000000009412', -- MISMA ruta SOFT-DELETED
   total_orders = 1, total_packages = 1
 WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-DEADROUTE-DONE';
+
+-- CARGA-94-ROUTECANCELLED: ruta VIVA (deleted_at IS NULL) con
+-- status='cancelled' -- ni in_transit ni received, así que el NOT IN del
+-- cubo 2 la incluye. Es la fixture que hace falsificable NOT IN frente a
+-- una lista positiva IN ('draft','in_progress'): pickup_route_status_enum
+-- tiene CINCO valores (20260625000001:20), no cuatro -- el complemento real
+-- de {in_transit, received} es {draft, in_progress, cancelled}, tres
+-- valores, y CARGA-94-DRAFT por sí sola sólo cubre uno de ellos. Sin esta
+-- fixture, IN ('draft','in_progress') y NOT IN ('in_transit','received')
+-- coinciden en todo lo que el fixture toca y la mutación queda invisible
+-- (confirmado empíricamente antes de añadir esta fila).
+UPDATE public.manifests SET
+  status = 'in_progress',
+  pickup_route_id = '00000000-0000-4000-8000-000000009419', -- ruta VIVA, status='cancelled'
+  total_orders = 1, total_packages = 1
+WHERE operator_id = '00000000-0000-4000-8000-000000009400' AND external_load_id = 'CARGA-94-ROUTECANCELLED';
 
 -- CARGA-94-DRAFT: la ruta está en 'draft' -- ni in_transit ni received, así
 -- que el NOT IN del cubo 2 la incluye. Es la fixture que hace falsificable
@@ -433,6 +466,17 @@ SELECT is(
   ],
   ARRAY[false, false, true, false],
   'CARGA-94-DEADROUTE-DONE (MISMA ruta soft-deleted que CARGA-94-DELETEDROUTE, pero completed con reception_status=awaiting_reception vía el trigger): sólo en get_in_transit_manifests, NUNCA en get_pending_manifests -- la fixture que hace falsificable un AND incondicional de ruta-muerta en la subconsulta NOT IN'
+);
+
+SELECT is(
+  ARRAY[
+    'CARGA-94-ROUTECANCELLED' IN (SELECT external_load_id FROM t_pending),
+    'CARGA-94-ROUTECANCELLED' IN (SELECT external_load_id FROM t_routed),
+    'CARGA-94-ROUTECANCELLED' IN (SELECT external_load_id FROM t_transit),
+    'CARGA-94-ROUTECANCELLED' IN (SELECT external_load_id FROM t_completed)
+  ],
+  ARRAY[false, true, false, false],
+  'CARGA-94-ROUTECANCELLED (ruta VIVA con status=cancelled -- no in_transit, no received): sólo en get_routed_manifests -- la fixture que hace falsificable NOT IN frente a una lista positiva (el enum tiene 5 valores, no 4)'
 );
 
 SELECT is(
