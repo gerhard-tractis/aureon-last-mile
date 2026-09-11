@@ -1,0 +1,134 @@
+name: Deploy Approval Watchdog
+
+# spec-92 fase 3. Auto-approving the green path removed most of the "four
+# runs sat unapproved for hours" incident, but not all of it: a run can
+# still fail to reach production without anyone noticing — e2e-qa red, a
+# run superseded by a newer one, or (narrower now) a run waiting on the one
+# class of change that still needs a human click (the auth hook,
+# scripts/check-deploy-gating-autoapprove.mjs / deploy.yml's
+# `changes.outputs.auth_hook`).
+#
+# Unlike qa-drift-watchdog.yml, this needs no self-hosted runner — every
+# input is the GitHub API (main's tip, deploy.yml's recent runs), not a
+# checkout on the VPS. The decision itself lives in
+# scripts/deploy-approval-watchdog.mjs (pure, unit-tested); this file only
+# gathers state and carries out the verdict, same split as
+# qa-drift-watchdog.yml.
+#
+# One issue, self-healing, same pattern as qa-drift-watchdog.yml
+# (`--label qa-drift`) and reconcile-stale-phases.mjs
+# (`--label stale-phase-reconciliation`): a dedicated label identifies it
+# reliably, comment-and-reopen while the problem persists, close when it
+# clears.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-approval-watchdog
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    name: Check for parked deploy runs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Gather state
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          MAIN="$(gh api repos/${{ github.repository }}/commits/main)"
+          RUNS="$(gh api "repos/${{ github.repository }}/actions/workflows/deploy.yml/runs?per_page=20" \
+                    --jq '[.workflow_runs[] | {databaseId: .id, headSha: .head_sha, status: .status, conclusion: .conclusion, createdAt: .created_at}]')"
+
+          # M3 (review 2026-09-09, PR #716) — the `production` environment's
+          # required-reviewer rule is live GitHub config, invisible to any
+          # YAML guard in this repo. If it is missing OR the query itself
+          # fails, that fails closed as "not protected" — a query failure is
+          # not the same as a confirmed-fine environment.
+          PROD_ENV_PROTECTED=false
+          if PROTECTION_RULES="$(gh api "repos/${{ github.repository }}/environments/production" \
+                                    --jq '[.protection_rules[]? | select(.type == "required_reviewers")] | length' 2>/dev/null)"; then
+            if [ "${PROTECTION_RULES:-0}" -gt 0 ]; then
+              PROD_ENV_PROTECTED=true
+            fi
+          fi
+
+          jq -n \
+            --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg mainSha "$(printf '%s' "$MAIN" | jq -r .sha)" \
+            --arg mainCommittedAt "$(printf '%s' "$MAIN" | jq -r .commit.committer.date)" \
+            --argjson runs "$RUNS" \
+            --argjson productionGateProtected "$PROD_ENV_PROTECTED" \
+            '{now: $now, mainSha: $mainSha, mainCommittedAt: $mainCommittedAt, graceMinutes: 60, runs: $runs, productionGateProtected: $productionGateProtected}' \
+            > deploy-state.json
+
+      - name: Decide
+        id: decide
+        run: node scripts/deploy-approval-watchdog.mjs deploy-state.json >> "$GITHUB_OUTPUT"
+
+      - name: Report
+        env:
+          ACTION: ${{ steps.decide.outputs.action }}
+          REASON: ${{ steps.decide.outputs.reason }}
+        run: echo "::notice::${ACTION} — ${REASON}"
+
+      # One open issue, updated — not a new one every 15 minutes.
+      - name: Raise the alarm
+        if: steps.decide.outputs.action == 'alert'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REASON: ${{ steps.decide.outputs.reason }}
+          RUN_ID: ${{ steps.decide.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          EXISTING="$(gh issue list --repo ${{ github.repository }} \
+                        --state open --label deploy-approval-stale --json number --jq '.[0].number' || true)"
+
+          RUN_URL=""
+          if [ -n "${RUN_ID}" ]; then
+            RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${RUN_ID}"
+          fi
+
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo ${{ github.repository }} \
+              --body "Still parked at $(date -u +%Y-%m-%dT%H:%M:%SZ): ${REASON}${RUN_URL:+ — $RUN_URL}"
+          else
+            gh label create deploy-approval-stale --repo ${{ github.repository }} \
+              --color B60205 --description 'A production deploy run is parked and unresolved' 2>/dev/null || true
+            gh issue create --repo ${{ github.repository }} --title 'A production deploy run is parked' \
+              --label deploy-approval-stale \
+              --body "$(printf '%s\n\n%s\n\n%s\n%s\n' \
+                  "${REASON}" \
+                  'main has a commit that has not reached production and nothing is currently deploying it.' \
+                  "${RUN_URL:+Run: $RUN_URL}" \
+                  'Runbook: docs/runbooks/approve-production-deploy.md. See docs/specs/spec-92-gate-produccion-diferenciado.md.')"
+          fi
+          echo "::error::A production deploy run is parked and could not self-heal — ${REASON}"
+          exit 1
+
+      # Resolved on its own — close the issue so an open one always means
+      # "something is parked right now".
+      - name: Stand down
+        if: steps.decide.outputs.action == 'ok'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          EXISTING="$(gh issue list --repo ${{ github.repository }} \
+                        --state open --label deploy-approval-stale --json number --jq '.[0].number' || true)"
+          if [ -n "$EXISTING" ]; then
+            gh issue close "$EXISTING" --repo ${{ github.repository }} \
+              --comment "Resolved (${{ steps.decide.outputs.reason }})."
+          fi

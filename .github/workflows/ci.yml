@@ -99,6 +99,14 @@ jobs:
       - name: Test the deploy-gating guard
         run: bash ./scripts/check-deploy-gating.test.sh
 
+      # spec-92/spec-93 review round 2026-09-10, G2 + round 5: a typo'd
+      # needs.changes.outputs.<field> reference in a production job's if:
+      # or in a step-level env: reads as '' forever — the job never runs
+      # (if:) or QA silently syncs a stale artifact (env:), both with CI
+      # green otherwise.
+      - name: Test the deploy-gating guard — changes.outputs field references
+        run: bash ./scripts/check-deploy-gating-field-refs.test.sh
+
       - name: Test the deploy-gating guard — concurrency groups
         run: bash ./scripts/check-deploy-gating-concurrency.test.sh
 
@@ -123,6 +131,44 @@ jobs:
       - name: Test the deploy-gating guard — quarantine veto step (differential harness)
         run: bash ./scripts/check-deploy-gating-quarantine-differential.test.sh
 
+      # spec-92: environment polarity, the freshness step, and no prod job
+      # bypassing approve-production with its own environment:.
+      - name: Test the deploy-gating guard — auto-approve shape (spec-92)
+        run: bash ./scripts/check-deploy-gating-autoapprove.test.sh
+
+      # spec-92 review round 2 (2026-09-09, PR #716): six mutants survived
+      # the round-1 guard against the REAL deploy.yml — neutralised freshness
+      # comparison, if: false on it, continue-on-error on the gate job
+      # itself, a brand-new ungated prod job, and deleting the auth_hook
+      # output/detection signals from `changes`.
+      - name: Test the deploy-gating guard — auto-approve shape (round 2)
+        run: bash ./scripts/check-deploy-gating-autoapprove-r2.test.sh
+
+      # spec-92/spec-93 review round 2026-09-10, items 2 and 3: removing
+      # 'changes' from approve-production.needs (the expression still
+      # PARSES, needs.changes just doesn't exist in that context), and
+      # renaming id: filter without updating the outputs: that reference it
+      # by that id.
+      - name: Test the deploy-gating guard — auto-approve shape (round 3)
+        run: bash ./scripts/check-deploy-gating-autoapprove-r3.test.sh
+
+      # spec-92 fase 1b / spec-93: the second auto-approve-exempt class
+      # (a migration using pg_net) — output wiring and detection-signal
+      # presence in the "Filter paths" step.
+      - name: Test the deploy-gating guard — pg_net shape (spec-92 fase 1b / spec-93)
+        run: bash ./scripts/check-deploy-gating-pgnet.test.sh
+
+      # Same run-real-bash idea as the quarantine differential harness
+      # (round 7), but stronger: round 7 runs a SYNTHETIC candidate `run:`
+      # snippet and never reads deploy.yml itself. This one extracts the
+      # REAL "Filter paths" run: text from the REAL deploy.yml (via js-yaml)
+      # and runs THAT under real bash, with git/gh stubbed, asserting on the
+      # GITHUB_OUTPUT it actually produces. Presence-only checks on the YAML
+      # source cannot tell whether the detection signal is wired to PG_NET,
+      # has the right polarity, or survives a large diff without SIGPIPE —
+      # this does, against the file that actually ships.
+      - name: Test the deploy-gating guard — pg_net differential harness (real bash, real deploy.yml)
+        run: bash ./scripts/check-deploy-gating-pgnet-differential.test.sh
       # check-deploy-gating.sh only asserts the SHAPE of the gating
       # (needs/if/concurrency); it is blind to what the frontend= path
       # filter's regex actually matches. This pins its content against the
@@ -161,6 +207,11 @@ jobs:
       # decision logic is unit-tested like any other guard.
       - name: Test the QA drift watchdog
         run: bash ./scripts/qa-drift-check.test.sh
+
+      # deploy-approval-watchdog.yml (spec-92 fase 3) — same split: this is
+      # its pure decision logic, unit-tested without GitHub.
+      - name: Test the deploy approval watchdog
+        run: bash ./scripts/deploy-approval-watchdog.test.sh
 
       # deploy-qa.sh runs on the VPS, so nothing here executes it — but its
       # guards are unit-tested the same way. These lived under infra/ and were

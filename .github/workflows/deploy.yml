@@ -45,17 +45,22 @@ on:
 # migration never reaches app deploys. Jobs are gated on path filters so a
 # CSS-only or docs-only push doesn't trigger DB or VPS work.
 #
-# EXECUTION ORDER (spec-57) — note this is NOT the order the jobs appear below;
-# the blocks kept their original positions so the diff stayed reviewable:
+# EXECUTION ORDER (spec-57, gate scope narrowed by spec-92) — note this is NOT
+# the order the jobs appear below; the blocks kept their original positions so
+# the diff stayed reviewable:
 #
-#   changes  →  deploy-qa  →  approve-production ⏸  →  deploy-supabase
-#                                (human)               →  deploy-edge-functions
-#                                                      →  deploy-vercel
-#                                                      →  deploy-worker/agents/solver
+#   changes  →  deploy-qa  →  e2e-qa  →  approve-production  →  deploy-supabase
+#                                         (⏸ human only if              → deploy-edge-functions
+#                                          auth_hook or pg_net           → deploy-vercel
+#                                          touched)                     → deploy-worker/agents/solver
 #
-# Nothing touches production before a human approves `approve-production`
-# (defined at the bottom of this file). scripts/check-deploy-gating.sh fails CI
-# if any production job stops depending on it.
+# Nothing touches production before `approve-production` (defined at the
+# bottom of this file) passes — e2e-qa green, and this exact commit not
+# superseded by a later merge. It pauses for a human ONLY when the diff
+# touches the auth hook, or uses pg_net in a migration — the two classes of
+# change deploy-qa + e2e-qa cannot vouch for (spec-92, spec-93).
+# scripts/check-deploy-gating.mjs fails CI if any production job stops
+# depending on it, or if either exemption inverts.
 #
 # CONCURRENCY LIVES ON THE JOBS, NOT HERE — do not "tidy" it back up to workflow
 # level. A workflow-level group covers every job in the run, deploy-qa included,
@@ -99,6 +104,19 @@ jobs:
       agents: ${{ steps.filter.outputs.agents }}
       solver: ${{ steps.filter.outputs.solver }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      # spec-92: the one class of change QA cannot exercise (see
+      # approve-production below). Kept separate from `database` — most
+      # migrations ARE covered by deploy-qa + e2e-qa; this is narrower.
+      auth_hook: ${{ steps.filter.outputs.auth_hook }}
+      # spec-92 fase 1b / spec-93: the second class QA cannot vouch for, and
+      # in the dangerous direction — `pg_net` is installed in QA and NOT in
+      # production (measured against run 34539233402 and QA live). A
+      # migration calling net.http_post()/net.http_get() applies green
+      # against QA and then fails in production with `schema "net" does not
+      # exist`. Kept as its own output rather than folded into auth_hook: the
+      # reason the gate paused is different and the runbook needs to say
+      # which one it was (see "Record what is being approved" below).
+      pg_net: ${{ steps.filter.outputs.pg_net }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -110,10 +128,47 @@ jobs:
           # migrations.
           fetch-depth: 0
 
+      # spec-92 review (2026-09-09), B1 — auth_hook must NOT be scoped to this
+      # single commit's diff. deploy-supabase (below) is unconditional and
+      # runs `db push --include-all`, applying EVERY pending migration on
+      # EVERY approved run — not just this commit's. A single-commit diff let
+      # a hook migration slip through unpaused: PR A adds the migration and
+      # correctly pauses; before anyone clicks, PR B (docs) merges with
+      # auth_hook=false (B's own diff never touched the hook), auto-approves,
+      # and B's `db push --include-all` applies A's still-pending migration —
+      # nobody clicked anything. Identical via workflow_dispatch + force_db
+      # (the 2026-08-23 incident: 13 migrations applied at once).
+      #
+      # Fix: scope the auth-hook check to the CUMULATIVE diff since the last
+      # successfully completed Deploy Production run — because deploy-supabase
+      # is unconditional, that run is guaranteed to have applied everything up
+      # to its own commit, so anything since is exactly what THIS run's
+      # `db push --include-all` would newly apply. Fails closed (pauses) if
+      # the range cannot be established (see the step below).
+      #
+      # M1 — path names are an incidental signal (they only caught the hook
+      # historically because OTHER co-modified files happened to name it).
+      # The real signal is CONTENT: does the migration diff actually touch
+      # the hook function, by any means — not only a fresh GRANT to
+      # supabase_auth_admin (which has never once appeared in the repo's
+      # migration history) but also a function hotfix (CREATE OR REPLACE),
+      # whose GRANTs survive unchanged and so would never mention
+      # supabase_auth_admin at all.
+      #
+      # M2 — the content check below captures into a variable BEFORE
+      # grepping it, not piped straight into `grep -q`. `grep -q` exits at
+      # the first match and closes its stdin; piped directly to a `git diff`
+      # under `pipefail`, that SIGPIPEs git diff (rc 141) on any diff bigger
+      # than one pipe buffer, and `set -e` then treats the whole pipeline as
+      # failed — silently leaving the flag false even though the content
+      # matched. Capturing via `$(...)` first means nothing reads git diff's
+      # output until it has finished writing all of it, so there is no
+      # reader to SIGPIPE it.
       - name: Filter paths
         id: filter
         env:
           FORCE_DB: ${{ inputs.force_db }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FORCE_FRONTEND: ${{ inputs.force_frontend }}
         run: |
           set -euo pipefail
@@ -144,6 +199,99 @@ jobs:
           if [ "${FORCE_DB}" = "true" ]; then
             echo "force_db: overriding database filter (was ${DB})"
             DB=true
+          fi
+
+          # B1 (see the step's YAML comment above): scope to the cumulative
+          # diff since the last successful deploy, not this single commit.
+          # Fails closed (pause) if that range cannot be established.
+          RANGE_OK=false
+          RANGE_BASE="${BASE}"
+          LAST_SUCCESS_SHA="$(gh api "repos/${{ github.repository }}/actions/workflows/deploy.yml/runs?status=success&per_page=1" --jq '.workflow_runs[0].head_sha // empty' 2>/dev/null || true)"
+          if [ -n "${LAST_SUCCESS_SHA}" ] \
+             && git cat-file -e "${LAST_SUCCESS_SHA}^{commit}" 2>/dev/null \
+             && git merge-base --is-ancestor "${LAST_SUCCESS_SHA}" "${DEPLOY_SHA}" 2>/dev/null; then
+            RANGE_BASE="${LAST_SUCCESS_SHA}"
+            RANGE_OK=true
+            echo "auth_hook range: last successful deploy ${RANGE_BASE} .. ${DEPLOY_SHA}"
+          else
+            echo "auth_hook range: could not establish the last successful deploy — failing closed"
+          fi
+
+          # M1/M2 (see the step's YAML comment above): content signal,
+          # captured into a variable before grepping. Capturing alone is NOT
+          # enough to avoid SIGPIPE, though — see the review finding below —
+          # the check against that variable must also avoid re-piping it.
+          #
+          # spec-92 fase 1b / spec-93 review (2026-09-10), B2 — `printf '%s'
+          # "$VAR" | grep -qE ...` reintroduces the exact SIGPIPE this
+          # comment claims to avoid: `grep -q` exits at the first match and
+          # closes its stdin; under `pipefail`, if the match sits near the
+          # START of a diff bigger than one pipe buffer (~64 KB) and printf
+          # is still writing the rest, printf gets SIGPIPE, its exit code is
+          # 141, and `pipefail` makes the WHOLE pipeline report 141 — which
+          # the `if` reads as "did not match", silently producing false=false
+          # even though the pattern was present. Reproduced on Ubuntu 22.04
+          # (the runner's own OS): a 200 KB diff with the match on line one
+          # gave pipeline rc=141 and PG_NET=false. This is the realistic
+          # shape too — `git diff` orders by path, paths are migration
+          # timestamps, so a pg_net migration merged first but left pending
+          # behind later merges sorts EARLY in the cumulative diff, not
+          # late. The fix is a herestring, not a pipe: `grep -qE ... <<<
+          # "$VAR"` hands grep the data as a file descriptor with no writer
+          # process on the other end of a pipe to SIGPIPE.
+          AUTH_HOOK=false
+          PG_NET=false
+          if [ "${RANGE_OK}" != "true" ]; then
+            AUTH_HOOK=true
+            PG_NET=true
+          else
+            CUM_CHANGED="$(git diff --name-only "${RANGE_BASE}" "${DEPLOY_SHA}")"
+            # Same SIGPIPE class as MIGRATIONS_DIFF below (B2) — herestring,
+            # not a pipe into `grep -q`. CUM_CHANGED is a path LIST, not
+            # migration content, but it is still the cumulative range (every
+            # merge since the last successful deploy, not just this commit's
+            # diff) and this repo has a documented 1,599-file incident — well
+            # past the ~64 KB pipe-buffer threshold at ~60 bytes/path.
+            if grep -qE 'custom_access_token_hook|infra/supabase-qa/docker-compose\.yml|volumes/db/roles\.sql' <<< "${CUM_CHANGED}"; then
+              AUTH_HOOK=true
+            fi
+            MIGRATIONS_DIFF="$(git diff "${RANGE_BASE}" "${DEPLOY_SHA}" -- packages/database/supabase/migrations/)"
+            if grep -qE 'custom_access_token_hook|supabase_auth_admin' <<< "${MIGRATIONS_DIFF}"; then
+              AUTH_HOOK=true
+            fi
+            # Case-insensitive (SQL identifiers are) and widened past the
+            # two call forms — G1 (2026-09-10 review): net.http_post/get are
+            # not the only surface. net.http_delete exists since pg_net
+            # 0.7, a schema-qualified call (extensions.net.http_post) or a
+            # bare `PERFORM net.http_get` both still match this, and so does
+            # whitespace around the dot (`net . http_post`, legal SQL) via
+            # \s*. A bare `pg_net` or `SCHEMA net` mention (an install/grant,
+            # not just a call) also counts — a false negative here ships a
+            # migration production cannot apply at all; the cost of a false
+            # positive is one click.
+            if grep -qiE 'net\s*\.\s*http|pg_net\b|schema\s+net\b' <<< "${MIGRATIONS_DIFF}"; then
+              PG_NET=true
+            fi
+          fi
+
+          # review round 2026-09-10, item 4 — the RANGE_BASE detector rests
+          # on "a successful run at sha X implies production has every
+          # migration up to X applied". force_db exists BECAUSE that
+          # invariant already broke once (2026-08-23, 13 migrations applied
+          # at once via `db push --include-all` after a backlog built up —
+          # see the workflow_dispatch comment above). Whenever force_db is
+          # used, the same distrust that justifies overriding DB must also
+          # apply to AUTH_HOOK/PG_NET: a hook or pg_net migration merged
+          # before the last successful run, but never actually applied to
+          # production, would sit outside RANGE_BASE..DEPLOY_SHA and read as
+          # both false — auto-approving exactly the migration this fail-
+          # closed detector exists to catch, applied unconditionally by
+          # deploy-supabase right after. Cost of pausing here is one click on
+          # an already-manual dispatch; that is the right trade.
+          if [ "${FORCE_DB}" = "true" ]; then
+            echo "force_db: also forcing auth_hook/pg_net true (was auth_hook=${AUTH_HOOK} pg_net=${PG_NET}) — the range this detector trusts is exactly what force_db says not to trust"
+            AUTH_HOOK=true
+            PG_NET=true
           fi
 
           # Deliberately generous, not minimal: a false negative here means
@@ -189,6 +337,8 @@ jobs:
             echo "agents=$(matches '^apps/agents/')"
             echo "solver=$(matches '^sidecar/or-tools/')"
             echo "frontend=${FRONTEND}"
+            echo "auth_hook=${AUTH_HOOK}"
+            echo "pg_net=${PG_NET}"
           } >> "$GITHUB_OUTPUT"
 
   # ─── 1. Database Migrations ──────────────────────────────────────────────────
@@ -825,27 +975,74 @@ jobs:
           echo "Download the 'e2e-qa-report-*' artifact for traces and video."
 
   # ─── 8. Production approval gate ─────────────────────────────────────────────
-  # The single human checkpoint between a green merge and production (spec-57).
+  # The single checkpoint between a green merge and production.
   #
   # Despite sitting last in this file, it runs SECOND — right after deploy-qa.
   # Every job that mutates production depends on it, and it depends on
-  # deploy-qa, so production is reachable only after QA has been synced to this
-  # commit and its post-checks passed.
+  # deploy-qa and e2e-qa, so production is reachable only after QA has been
+  # synced to this commit AND the E2E suite against QA passed.
   #
-  # `environment: production` is what makes it pause: the Production environment
-  # carries a required-reviewer rule, so GitHub holds this job until a human
-  # approves it under Actions → this run → "Review deployments".
+  # CHANGED IN spec-92: this pauses for a human click ONLY when the diff
+  # touches the auth hook (`needs.changes.outputs.auth_hook`) OR a migration
+  # uses pg_net (`needs.changes.outputs.pg_net`, spec-92 fase 1b / spec-93).
+  # Every other merge auto-approves. It used to pause unconditionally,
+  # carrying `environment: production` with a required-reviewer rule for
+  # every merge (spec-57). That rule protected against exactly what
+  # needs.e2e-qa.result == 'success' below already protects against — the
+  # human approving was reading the same signal this `if:` reads, because
+  # e2e-qa did not exist when spec-57 wrote the click, and by the time it
+  # did, nothing was left for a human to add for most changes: deploy-qa
+  # already applies every migration to QA, and e2e-qa already runs against
+  # that applied migration, before this job is even reachable. Four runs sat
+  # unapproved for hours in one session because the click had nothing left
+  # to verify that the pipeline didn't already verify — see
+  # docs/specs/spec-92-gate-produccion-diferenciado.md.
   #
-  # Approving deploys the SHA echoed below, NOT main's tip. The run holds the
-  # `production-deploy` concurrency slot while it waits, so later merges queue
-  # as separate runs, each pinned to its own DEPLOY_SHA.
+  # The first class of change exempt from that argument: the auth hook.
+  # QA's GoTrue never invokes custom_access_token_hook at all (no
+  # GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_* in infra/supabase-qa/docker-compose.yml),
+  # and even where the hook fails gracefully by design (`EXCEPTION WHEN
+  # OTHERS THEN RAISE WARNING …; RETURN event;`), e2e-qa's signIn() never
+  # reads the JWT — a degraded hook still produces a green login. deploy-qa +
+  # e2e-qa passing proves NOTHING about this class of change, so it must not
+  # auto-approve. `changes.outputs.auth_hook` (spec-92) is the detector.
   #
-  # ONE job carries the environment on purpose. Spreading `environment:` across
-  # all six production jobs would leave it to GitHub whether that means one
-  # approval or six; this way it is unambiguously one.
+  # The second class, added by spec-93's full QA↔production inventory: a
+  # migration calling net.http_post()/net.http_get(). `pg_net` is installed
+  # in QA and NOT in production (measured — production's extension list has
+  # no pg_net; QA's does, 0.20.3). Unlike the auth hook, this is not "QA
+  # can't exercise the behaviour" but "QA applies the migration successfully
+  # and production CANNOT apply it at all" (`schema "net" does not exist`) —
+  # deploy-qa + e2e-qa passing is not just uninformative here, it is
+  # actively misleading. `changes.outputs.pg_net` is the detector. See
+  # docs/specs/spec-93-paridad-qa-produccion.md for the rest of the
+  # inventory and for closing this class of gap at the root instead of one
+  # exception at a time.
   #
-  # scripts/check-deploy-gating.sh fails CI if any production job stops
-  # depending on this one. Do not remove that check.
+  # `environment:` resolves via expression (needs context is supported there)
+  # to `production` (the required-reviewer environment from spec-57,
+  # unchanged) when EITHER auth_hook or pg_net is true, or to
+  # `production-auto` (no protection rules — GitHub creates it automatically
+  # on first reference) only when both are false.
+  # `changes` failing degrades the chain to a skip before this job is even
+  # reached (deploy-qa's own `if:` requires needs.changes.result == 'success',
+  # and this job requires needs.deploy-qa.result == 'success'), so a failure
+  # to determine auth_hook can never fall through to the unprotected side.
+  #
+  # What ALSO replaces the unconditional click is the "Verify this run is
+  # current" step below: a run superseded by a newer merge must not deploy
+  # stale code on top of it (the risk spec-57 flagged and never closed). It
+  # runs on both paths, including AFTER a human approval on the auth_hook
+  # path — so an approval granted late, after a newer merge landed, still
+  # does not ship stale code. scripts/check-deploy-gating.mjs asserts the
+  # step exists, is not swallowed by continue-on-error or `|| true`, that
+  # needs.e2e-qa.result == 'success' is still required, and that the
+  # environment expression cannot invert (auth_hook mapping to the
+  # unprotected side). Do not remove any of those checks.
+  #
+  # ONE job gates production on purpose — every prod job depends on this one,
+  # not on e2e-qa/deploy-qa directly, so there is exactly one place this logic
+  # lives.
   approve-production:
     name: Approve Production Deploy
     needs: [changes, deploy-qa, e2e-qa]
@@ -853,13 +1050,32 @@ jobs:
       always() && !failure() && !cancelled()
       && needs.deploy-qa.result == 'success'
       && needs.e2e-qa.result == 'success'
-    environment: production
+    environment: ${{ (needs.changes.outputs.auth_hook == 'true' || needs.changes.outputs.pg_net == 'true') && 'production' || 'production-auto' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # Fails closed on purpose: no `|| true`, no continue-on-error. A run
+      # whose commit is no longer main's tip lost the race against a later
+      # merge and must not deploy — and if this can't even be determined (the
+      # API call itself fails), that is also not a green light.
+      - name: Verify this run is current
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          MAIN_SHA="$(gh api repos/${{ github.repository }}/commits/main --jq .sha)"
+          echo "main is at: ${MAIN_SHA}"
+          echo "this run:   ${DEPLOY_SHA}"
+          if [ "${MAIN_SHA}" != "${DEPLOY_SHA}" ]; then
+            echo "::error::This run (${DEPLOY_SHA}) is no longer main's tip (${MAIN_SHA}) — a later merge already superseded it. Not deploying stale code."
+            exit 1
+          fi
+
       - name: Record what is being approved
         run: |
-          echo "Commit approved for production: ${DEPLOY_SHA}"
+          echo "Deploying to production: ${DEPLOY_SHA}"
           echo "QA sync result: ${{ needs.deploy-qa.result }}"
-          echo "Verify at https://qa.aureon.tractis.ai before approving."
+          echo "E2E against QA: ${{ needs.e2e-qa.result }}"
+          echo "Auth hook touched: ${{ needs.changes.outputs.auth_hook }}"
+          echo "pg_net used in a migration: ${{ needs.changes.outputs.pg_net }}"
           echo "Runbook: docs/runbooks/approve-production-deploy.md"

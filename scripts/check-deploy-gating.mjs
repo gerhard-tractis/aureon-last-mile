@@ -20,22 +20,15 @@ import { fileURLToPath } from 'node:url';
 // `load` directly rather than reaching for createRequire.
 import { load } from 'js-yaml';
 import { checkQuarantineStep } from './check-deploy-gating-quarantine.mjs';
+import {
+  checkAutoApproveShape,
+  computeProdJobs,
+  VALID_CONDITIONAL_ENV,
+} from './check-deploy-gating-autoapprove.mjs';
+import { checkPgNetShape } from './check-deploy-gating-pgnet.mjs';
+import { checkChangesOutputFieldRefs } from './check-deploy-gating-field-refs.mjs';
 
 const GATE = 'approve-production';
-
-// Every job that mutates production. Deliberately excluded:
-//   deploy-qa               — runs BEFORE the gate; it is the precondition.
-//   verify-prod-migrations  — read-only; its output is what you read before
-//                             deciding whether to approve.
-//   changes                 — pure path detection, touches nothing.
-const PROD_JOBS = [
-  'deploy-supabase',
-  'deploy-edge-functions',
-  'deploy-vercel',
-  'deploy-worker',
-  'deploy-agents',
-  'deploy-solver',
-];
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const workflow = process.argv[2] ?? path.join(here, '..', '.github', 'workflows', 'deploy.yml');
@@ -56,6 +49,13 @@ try {
 const jobs = (doc && doc.jobs) || {};
 const errors = [];
 
+// Round-1 mutant (review 2026-09-09): a NEW production job that forgets to
+// add itself to a static PROD_JOBS array is invisible to every check below.
+// computeProdJobs derives the list from the workflow itself — every job
+// except the small, explicit non-production set — so a new job is gated by
+// default instead of silently ungated. See check-deploy-gating-autoapprove.mjs.
+const PROD_JOBS = computeProdJobs(jobs);
+
 /** `needs:` is legal as a bare string or a list; normalise both. */
 const needsOf = (name) => {
   const n = (jobs[name] || {}).needs;
@@ -72,10 +72,15 @@ if (!gate) {
   const env = typeof gate.environment === 'object' && gate.environment !== null
     ? gate.environment.name
     : gate.environment;
-  if (env !== 'production') {
+  // spec-92: an unconditional 'production' (spec-57's original, still safe —
+  // it just always pauses) OR the correct-polarity auto-approve expression
+  // are both valid here. check-deploy-gating-autoapprove.mjs is the one that
+  // rejects a malformed/inverted conditional; this check only rejects
+  // "no environment at all", which still means the job never pauses.
+  if (env !== 'production' && !(typeof env === 'string' && VALID_CONDITIONAL_ENV.test(env))) {
     errors.push(
-      `${GATE} must declare "environment: production" — without it the job never ` +
-      `pauses and the gate is decorative (found: ${JSON.stringify(gate.environment)})`
+      `${GATE} must declare "environment: production" (or spec-92's conditional form) — ` +
+      `without it the job never pauses and the gate is decorative (found: ${JSON.stringify(gate.environment)})`
     );
   }
   if (!needsOf(GATE).includes('deploy-qa')) {
@@ -137,6 +142,16 @@ for (const job of PROD_JOBS) {
 // guideline.
 errors.push(...checkQuarantineStep(jobs, doc));
 
+// ── Auto-approve shape (spec-92) — environment polarity, the freshness
+// step, and no PROD_JOBS job bypassing approve-production with its own
+// environment:. Split out for the same reason as the quarantine checks —
+// keeps both files under the repo's 300-line guideline.
+errors.push(...checkAutoApproveShape(jobs));
+
+// ── pg_net shape (spec-92 fase 1b / spec-93) — the second auto-approve-
+// exempt class, alongside auth_hook. Split out for the same 300-line reason.
+errors.push(...checkPgNetShape(jobs));
+
 // ── needs: is not enough once if: opts into always() ─────────────────────────
 // Normally a skipped dependency skips the dependent job, which is what makes
 // `needs: [approve-production]` a gate at all. `always()` throws that away: it
@@ -173,6 +188,12 @@ for (const job of PROD_JOBS) {
     );
   }
 }
+
+// ── G2/round-5 (2026-09-10 review) — every needs.changes.outputs.<field> a
+// production job's if: or env: (job- or step-level) reads must exist in
+// changes.outputs. Split out to check-deploy-gating-field-refs.mjs for the
+// 300-line guideline — see that file's header for the full rationale.
+errors.push(...checkChangesOutputFieldRefs(jobs, PROD_JOBS, ifOf));
 
 // ── deploy-supabase must not be path-filtered ────────────────────────────────
 // Whether production needs migrations is a fact about PRODUCTION, not about the

@@ -1,21 +1,33 @@
 # GitHub Actions Workflows
 
-Two workflows, chained: **CI must pass before anything deploys, QA must be green
-before production is offered, and a human must approve it.**
+Two workflows, chained: **CI must pass before anything deploys, QA must be green,
+and the E2E suite against QA must pass.** From there, `approve-production`
+(spec-92) resolves one of two ways:
 
 ```
 push / PR ──▶ ci.yml ──(success, push to main only)──▶ deploy.yml
                                                           │
-                                                          ├─▶ changes
-                                                          ├─▶ deploy-qa           (QA VPS)
-                                                          ├─▶ e2e-qa              (Playwright, advisory)
-                                                          ├─▶ approve-production  ⏸ HUMAN
+                                                          ├─▶ changes            (incl. auth_hook, pg_net)
+                                                          ├─▶ deploy-qa          (QA VPS)
+                                                          ├─▶ e2e-qa             (Playwright, BLOCKING)
+                                                          ├─▶ approve-production
+                                                          │     auth_hook OR pg_net == 'true' ?
+                                                          │       ⏸ HUMAN  (environment: production)
+                                                          │       : auto        (environment: production-auto)
                                                           └─▶ production fan-out
                                                                  DB → edge → vercel / VPS
 ```
 
-Nothing reaches production until `approve-production` is approved in the Actions
-UI. See `docs/runbooks/approve-production-deploy.md`.
+Most merges reach production automatically once `e2e-qa` is green and the run
+is still main's tip (a "run is current" freshness check inside
+`approve-production` re-verifies this even on the paused path). A merge only
+pauses for a human click when its diff touches the auth hook — the one class
+of change QA cannot currently exercise (see spec-92, and spec-93 for closing
+that gap at the root). See `docs/runbooks/approve-production-deploy.md`.
+
+`deploy-approval-watchdog.yml` (spec-92) watches for a `main` commit that has
+not reached production and has nothing currently deploying it — cron every 15
+minutes, opens/updates a single issue labelled `deploy-approval-stale`.
 
 ---
 
@@ -59,8 +71,8 @@ the blocks kept their original positions so the spec-57 diff stayed reviewable.
 |---|---|---|
 | `changes` | always (after green CI) | computes the diff vs the previous main commit |
 | `deploy-qa` | **every** green push | syncs the spec-48 QA stack on the VPS; migrations always replayed, app rebuilds path-filtered (`docs/qa-environment.md`) |
-| `e2e-qa` | after `deploy-qa` succeeds | Playwright drives the real QA screens on that commit. **Advisory** — `continue-on-error`, does not gate |
-| `approve-production` | after `deploy-qa` succeeds | ⏸ **pauses for human approval** — `environment: production` |
+| `e2e-qa` | after `deploy-qa` succeeds | Playwright drives the real QA screens on that commit. **BLOCKING** since 2026-09-03 — `approve-production` requires `needs.e2e-qa.result == 'success'` |
+| `approve-production` | after `e2e-qa` succeeds | `environment:` resolves to `production` (⏸ human) when `auth_hook` **or** `pg_net` is `'true'` — the two classes QA does not exercise (spec-92 fase 1b; `pg_net` is installed in QA and not in production, so a migration using `net.http_post()` passes QA and fails on apply) — else `production-auto` (no pause). `force_db=true` forces both on. Either way, a "run is current" step re-checks `DEPLOY_SHA` against `main`'s tip before anything downstream runs (spec-92) |
 | `deploy-supabase` | approved **and** migrations / `seed.sql` / `config.toml` changed | `supabase db push --include-all` |
 | `verify-prod-migrations` | after `deploy-supabase` resolves, always | read-only; fails if prod's migration ledger diverges from the repo |
 | `deploy-edge-functions` | approved **and** `packages/database/supabase/functions/**` changed | `supabase functions deploy` |
@@ -85,7 +97,20 @@ merge's schema actually applies before production attempts the same thing.
 **A QA VPS outage therefore blocks production deploys.** That is deliberate. The
 escape hatch is `docs/runbooks/manual-deployment.md` — not editing the
 dependency out. `scripts/check-deploy-gating.sh` runs on every build and fails
-if any production job stops depending on `approve-production`.
+if any production job stops depending on `approve-production`, or if the
+auth-hook exemption (spec-92, below) inverts.
+
+### Auto-approve, except the auth hook (spec-92)
+
+`approve-production` pauses for a human only when the diff touches the auth
+hook (`custom_access_token_hook`, or a migration granting to
+`supabase_auth_admin`) — QA's GoTrue never invokes that hook, and even where
+it does not, `e2e-qa`'s sign-in never reads the JWT, so a green `deploy-qa` +
+`e2e-qa` proves nothing about that class of change. Everything else
+auto-approves once `e2e-qa` is green. `scripts/check-deploy-gating-autoapprove.mjs`
+asserts the `environment:` expression cannot invert, that the freshness step
+exists and cannot be swallowed (`continue-on-error`, a trailing `|| true`), and
+that no production job can declare its own `environment:` to bypass the gate.
 
 Change detection is a plain `git diff` against `HEAD^` (main is squash-merge
 only) over a full-depth checkout. It replaced a `dorny/paths-filter` +
