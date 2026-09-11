@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Loader2, Plus, Truck } from 'lucide-react';
+import { ChevronDown, Loader2, Plus, Truck } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -80,28 +80,44 @@ export function VehicleSelect({ operatorId, value, onChange }: VehicleSelectProp
         Vehículo
       </label>
 
-      <Input
-        id="vehicle-select"
-        role="combobox"
-        aria-expanded={open}
-        aria-controls="vehicle-select-list"
-        autoComplete="off"
-        placeholder="Patente"
-        value={display}
-        onFocus={() => setOpen(true)}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setError(null);
-          setOpen(true);
-          if (value) onChange(null);
-        }}
-        // Review fix (spec-54 3j): this field is now a mobile screen's
-        // mandatory FIRST interaction — ui/input's default h-10 (40px) is
-        // below the 44px touch-target floor. Every other control this
-        // screen introduced is ≥44px; this pre-existing shared component
-        // was the one gap.
-        className="min-h-[44px]"
-      />
+      {/* spec-95 fase 4 (`5b`) — ícono de camión a la izquierda del
+          disparador y chevron a la derecha, además de los que ya llevaban
+          las filas de la lista. Ambos `aria-hidden` + `pointer-events-none`:
+          son decorativos, el propio Input sigue siendo el control real. */}
+      <div className="relative">
+        <Truck
+          data-testid="vehicle-select-truck-icon"
+          aria-hidden="true"
+          className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-text-muted"
+        />
+        <Input
+          id="vehicle-select"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls="vehicle-select-list"
+          autoComplete="off"
+          placeholder="Patente"
+          value={display}
+          onFocus={() => setOpen(true)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setError(null);
+            setOpen(true);
+            if (value) onChange(null);
+          }}
+          // Review fix (spec-54 3j): this field is now a mobile screen's
+          // mandatory FIRST interaction — ui/input's default h-10 (40px) is
+          // below the 44px touch-target floor. Every other control this
+          // screen introduced is ≥44px; this pre-existing shared component
+          // was the one gap.
+          className="min-h-[44px] pl-10 pr-10"
+        />
+        <ChevronDown
+          data-testid="vehicle-select-chevron-icon"
+          aria-hidden="true"
+          className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted"
+        />
+      </div>
 
       {open && (
         <div

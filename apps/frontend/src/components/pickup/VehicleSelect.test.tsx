@@ -116,4 +116,21 @@ describe('VehicleSelect', () => {
     render(<VehicleSelect operatorId="op-1" value="v-2" onChange={() => {}} />);
     expect(screen.getByLabelText(/Vehículo/i)).toHaveValue('BBB-222');
   });
+
+  // spec-95 fase 4 — el selector de `5b` dibuja un ícono de camión y un
+  // chevron dentro del propio disparador (no sólo en las filas de la lista).
+  it('shows a truck icon and a chevron on the trigger itself', () => {
+    render(<VehicleSelect operatorId="op-1" value={null} onChange={() => {}} />);
+    expect(screen.getByTestId('vehicle-select-truck-icon')).toBeInTheDocument();
+    expect(screen.getByTestId('vehicle-select-chevron-icon')).toBeInTheDocument();
+  });
+
+  // spec-95 fase 4 — "sin preselección": el mock ya no muestra una patente
+  // elegida de entrada. `value` null es la única entrada honesta de este
+  // componente para ese estado — cubierto aquí para que un futuro default
+  // (p.ej. "la primera de la lista") falle en este mismo test.
+  it('renders no plate selected when value is null, never a default', () => {
+    render(<VehicleSelect operatorId="op-1" value={null} onChange={() => {}} />);
+    expect(screen.getByLabelText(/Vehículo/i)).toHaveValue('');
+  });
 });
