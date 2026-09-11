@@ -511,7 +511,7 @@ Lo que tiene que quedar cierto, venga de donde venga:
 
 **Depende de:** ninguna — los dos hallazgos que esta fase cierra se midieron enteros contra QA y no esperan la columna de producción.
 
-**Archivos:** `infra/supabase-qa/deploy-qa.sh`, `infra/supabase-qa/setup-qa.sh`, `scripts/` (los tests de bash de los dos guards), `docs/specs/spec-93-paridad-qa-produccion.md`, `docs/qa-environment.md`
+**Archivos:** `infra/supabase-qa/deploy-qa.sh`, `infra/supabase-qa/docker-compose.yml`, `infra/supabase-qa/env.qa.example`, `scripts/` (los guards de bash y `lib/qa-surface-aliases.sh`), `packages/database/supabase/migrations/` (bucket `raw-files`, neutralización de `archive_old_audit_logs`), `docs/qa-prod-parity-baseline.yml`, `docs/specs/spec-93-paridad-qa-produccion.md`, `docs/qa-environment.md`
 
 Cerrar las divergencias que la fase 1 encuentre, **o declararlas
 explícitamente como aceptadas**, cada una con su motivo y con qué clase de
@@ -529,6 +529,91 @@ que hacer».
 
 Los dos hallazgos van en **un solo implementer, no dos en paralelo**: ambos
 tocan `deploy-qa.sh` y el guard de solapamiento los rechazaría con razón.
+
+#### Segunda tanda — las 13 filas que reportó el guardarraíl
+
+La primera comparación real de `qa-prod-parity.yml` (corrida `34545563792`)
+dio `matched: 44`, 5 aceptadas y **13 no declaradas**. Ésta es la decisión sobre
+cada una, que es lo que la fase 3 existe para tomar. **El criterio está aquí, no
+en el fichero de línea base** — una excepción cuyo criterio sólo vive en un
+comentario YAML es como se vacía este mecanismo en dos semanas.
+
+**Una no era una divergencia, era un bug del comparador.**
+
+`auth/hook_custom_access_token_hook_enabled` — el alias de QA doblaba el `hook_`.
+La clave real de producción es `hook_custom_access_token_enabled`, y los dos
+entornos **coinciden** ahí (fila 1 del inventario). Declararla como divergencia
+aceptada habría tapado un bug del comparador con el fichero de excepciones, que
+es precisamente lo que este spec no puede permitirse. Se arregló el alias y se
+auditaron las 15 claves restantes contra el volcado real de producción: ninguna
+más tenía el defecto.
+
+**Cerradas en código (3).**
+
+| Fila | Cómo se cerró |
+|---|---|
+| `postgrest/db_extra_search_path` | `PGRST_DB_EXTRA_SEARCH_PATH: "public, extensions"` literal en el servicio `rest` del compose. Un default `${VAR:-public}` no bastaba: `.env.qa` ya fija la variable a `public` |
+| `storage_bucket/raw-files` | Migración que crea el bucket en QA. **Lo usan de verdad**: tres workflows de n8n suben ahí con service role. Nunca hubo migración — mismo hueco que se cerró para `manifests` |
+| El alias de arriba | `scripts/lib/qa-surface-aliases.sh`, extraído y con test |
+
+**Aceptadas y declaradas (9).** Cada una con su motivo y su clase de cambio sin
+cobertura en `docs/qa-prod-parity-baseline.yml`: `extensions/pgtap` (deliberada
+— una extensión de testing no pinta en producción), `extensions/pg_net` (existe
+sólo en QA y ninguna migración la usa; **la dirección es la peligrosa**: una
+migración que empiece a usar `net.http_post` aplicaría verde en QA y fallaría en
+producción), `edge_function/main` (router del runtime autohospedado),
+`roles/postgres` (la diferencia de `memberof` es exactamente
+`supabase_functions_admin` y `supabase_realtime_admin`, los dos del runtime
+autohospedado — producción es subconjunto estricto),
+`roles/supabase_functions_admin`, `roles/cli_login_postgres`,
+`gucs/app.settings.jwt_secret`, y `postgrest/db_use_legacy_gucs` +
+`postgrest/db_anon_role` (**no son mapeo**: se comprobó contra la respuesta real
+de `/v1/projects/{ref}/postgrest`, que no las expone bajo ningún nombre).
+
+**La decimotercera fue una decisión de producto, y la tomó el usuario.**
+
+`cron_job/archive_old_audit_logs` — producción agenda un job que hace
+`DELETE FROM public.audit_logs WHERE timestamp < CURRENT_DATE - INTERVAL '7 years'`
+justo bajo el comentario `-- TODO: Export to S3 before deletion`. La exportación
+**nunca se implementó**, y el requisito de retención declarado es de 7 años.
+
+Cómo llegó ahí: la migración `20260217000001` dejó el `cron.schedule`
+**comentado a propósito** (`:333-335`), y `apps/frontend/setup-cron-job.js` —un
+script manual, fuera del repo como mecanismo de despliegue— lo agendó contra
+producción igualmente. `REMEDIATION.md` H3 ya pedía *«neutralizar
+`archive_old_audit_logs()` … y confirmar que no está agendada en pg_cron»*.
+**Esta fase hizo esa comprobación, y la respuesta es que sí lo está**
+(`1 | archive_old_audit_logs | postgres | 0 2 * * * | active=true`).
+
+**Severidad exacta: armada, no realizada.** El predicado borra filas de más de 7
+años y los datos de auditoría empiezan hacia 2026-02, así que hoy no califica
+ninguna y el job borra cero. No hay pérdida que recuperar. Decirlo de otro modo
+sería tan malo como haberlo ignorado.
+
+**Decisión del usuario (2026-09-11): neutralizar.** La función pasa a
+`RAISE EXCEPTION` hasta que exista exportación-antes-de-borrado, y el cron se
+desagenda; `setup-cron-job.js` se desarma para que nadie lo vuelva a armar sin
+querer. Se descartaron las otras dos opciones: agendarlo también en QA cerraría
+la paridad extendiendo un riesgo de cumplimiento a un segundo entorno, y
+aceptarlo dejaría vivo en producción un job destructivo que el propio repo
+documenta como incompleto. La divergencia se cierra **por retirada**, no por
+copia.
+
+> **Nota de método, porque es la tercera vez en este spec.**
+> `20260913000006_spec88_fase1_revoke_anon.sql:28-30` afirma sobre esta misma
+> función que *«su cron está comentado … nadie llama esto por PostgREST hoy»*.
+> La primera mitad es **falsa en producción**, y la afirmación se heredó sin
+> verificar. La conclusión de esa migración (revocar) no cambia y no se toca.
+> Pero es el mismo patrón que el hallazgo 4 y que el bucket `raw-files`: una
+> afirmación cómoda que nadie midió, propagándose por herencia.
+
+**Lo que queda sin cubrir, dicho:** producción expone `db_pool` y
+`db_pool_acquisition_timeout` y el comparador no los rastrea. Va a la fase 5.
+Y `PGRST_DB_EXTRA_SEARCH_PATH` queda como variable muerta en
+`infra/supabase-qa/env.qa.example` —borrarla rompería un `.env.qa` existente—
+con una nota diciendo que nadie la lee; un operador podría editarla creyendo que
+surte efecto.
+
 
 ### Fase 4 — Guardarraíl determinista `[done]`
 
