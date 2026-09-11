@@ -370,11 +370,23 @@ La tesis de este spec —los cubos miran el lugar— vale para las **pestañas**
 `closures` no es una pestaña: es un contador de trámites, y un trámite ocurre
 cuando se cierra la carga, esté donde esté el camión.
 
-**Decisión: `closures` se construye desde las dos fuentes** — las filas de
-`get_routed_manifests` con `closed_at` de hoy, más las del cubo 4 con
-`completed_at` de hoy. Por eso `get_routed_manifests` devuelve `closed_at` y
-`missing_count`. Se conserva el significado que «Completados hoy» tiene hoy;
-no se cambia en silencio bajo la misma etiqueta.
+**Decisión: `closures` se construye desde las TRES fuentes** que pueden
+contener un cierre de hoy — cubo 2 por `closed_at`, cubo 3 por `closed_at`,
+cubo 4 por `completed_at`. Por eso las RPC de los cubos 2 y 3 devuelven
+`closed_at` y `missing_count`.
+
+**Tres y no dos**, que fue el error de la primera versión de esta sección: con
+sólo los cubos 2 y 4, una carga cerrada a las 09:00 desaparece del panel a las
+11:00 —cuando `close_pickup_route` manda la ruta a `in_transit` y la carga pasa
+al cubo 3— y reaparece a las 13:00 al recibirse. El contador de trámites del
+día parpadea hacia abajo durante todo el viaje, que son horas, y con él se
+esconden los faltantes. Es la misma mentira que el spec cierra para las
+pestañas, un cubo más allá.
+
+**No hay duplicación:** los tres cubos son disjuntos por construcción, así que
+una carga cerrada y recibida el mismo día sale **una** vez, con su
+`completed_at` de las 09:00 preservado por el `COALESCE(completed_at, NOW())`
+de `20260812000006:188`.
 
 ### La verificación
 
@@ -419,7 +431,7 @@ compartido entre worktrees.
 
 **Depende de:** spec-94 fase 1
 
-**Archivos:** `apps/frontend/src/hooks/pickup/useRoutedManifests.ts`, `apps/frontend/src/hooks/pickup/usePickupManifestTabs.ts`, `apps/frontend/src/hooks/pickup/useManifests.ts`, `apps/frontend/src/components/pickup/RoutedManifestTable.tsx`, `apps/frontend/src/components/pickup/PickupDesktopView.tsx`, `apps/frontend/src/app/app/pickup/page.tsx`, `apps/frontend/src/lib/pickup/pickupPageHelpers.ts`, `apps/frontend/src/hooks/pickup/pickupSummary.ts`, `apps/frontend/src/components/pickup/TodayClosuresPanel.tsx`, `apps/frontend/src/components/pickup/PickupManifestTabs.tsx`, `apps/frontend/src/components/pickup/PickupManifestTabs.test.tsx`
+**Archivos:** `apps/frontend/src/hooks/pickup/useRoutedManifests.ts`, `apps/frontend/src/hooks/pickup/usePickupManifestTabs.ts`, `apps/frontend/src/hooks/pickup/useManifests.ts`, `apps/frontend/src/components/pickup/RoutedManifestTable.tsx`, `apps/frontend/src/components/pickup/PickupDesktopView.tsx`, `apps/frontend/src/app/app/pickup/page.tsx`, `apps/frontend/src/lib/pickup/pickupPageHelpers.ts`, `apps/frontend/src/hooks/pickup/pickupSummary.ts`, `apps/frontend/src/components/pickup/TodayClosuresPanel.tsx`, `apps/frontend/src/components/pickup/ManifestTable.tsx`, `apps/frontend/src/components/pickup/PickupManifestTabs.tsx`, `apps/frontend/src/components/pickup/PickupManifestTabs.test.tsx`, y el ripple del nullable: `apps/frontend/src/components/pickup/PickupMobileStartRoute.tsx`, `apps/frontend/src/components/pickup/PickupRouteDraftPanel.tsx`, `apps/frontend/src/components/pickup/PickupMobileClientGroup.tsx`, `apps/frontend/src/lib/pickup/pickupStartRouteGrouping.ts`
 
 - `useRoutedManifests.ts` — hook nuevo. `PICKUP_QUERY_OPTIONS` está declarado
   **sin `export`** (`useManifests.ts:67`), así que hay que exportarlo — por eso
@@ -447,14 +459,29 @@ compartido entre worktrees.
 - **Buscador y `ClientFilter`** se renderizan encima de las pestañas y
   `clients` sale sólo de las pendientes (`page.tsx:119`). Si todas las cargas de
   un retailer están ruteadas, su chip desaparece justo cuando hace falta. La
-  lista de clientes pasa a salir de la unión de los cuatro conjuntos, y
-  `matchesSearchTerm` (`pickupPageHelpers.ts`) gana código de ruta y nombre de
-  líder para que el buscador signifique algo en la pestaña nueva.
+  lista de clientes pasa a salir de la unión de los cuatro conjuntos, y el
+  buscador gana código de ruta y nombre de líder en la pestaña nueva. Eso vive
+  en un `matchesSearchTermRouted` aparte, **no** dentro de
+  `matchesSearchTerm`: las filas del cubo 2 son `RoutedManifest` y no
+  `ManifestRow`, así que meterlo en la misma función obligaría a ensanchar el
+  tipo de todas las demás. El placeholder del buscador tiene que nombrar los
+  campos nuevos cuando la pestaña activa es la del cubo 2 — una capacidad que
+  no se anuncia no existe para quien la necesita.
 - **«Cierres de hoy» pasa a leer dos fuentes**, como decide la fase 1:
   `completedToday` (`pickupSummary.ts:51-57`) se aplica a las filas del cubo 4
   por `completed_at` y a las de `get_routed_manifests` por `closed_at`, y
   `TodayClosuresPanel` acepta las dos. Sin esto, un cierre en el andén con
   faltantes no se pinta ningún día — el detalle está en la fase 1.
+- **El NULL llega vivo hasta quien decide escribir.** `order_count` /
+  `package_count` pueden ser NULL (brazo 2 de `get_pending_manifests`) y eso
+  significa «desconocido». Ningún mapper de filas puede coalescerlo: el `?? 0`
+  tiene que vivir en el render, nunca antes. Si `totalsToRows` lo aplasta, la
+  guarda de `handleRowOpen` no ve el NULL y `openPendingManifest` escribe un
+  `0` fabricado en `manifests.total_orders` — permanente, y justo lo que el
+  docstring de esa función prohíbe. La regla se prueba con un test que haga
+  clic en una fila con `order_count: null` y afirme que el `update` **no**
+  lleva `total_orders`; sin ese test la línea que protege esto se puede
+  revertir sin que nada se ponga rojo.
 - Móvil sin cambios: sigue con sus tres secciones. Es la pantalla de inicio de
   turno de la cuadrilla, no una superficie de supervisión.
 - **Limpieza en alcance:** `PickupManifestTabs.tsx` está muerto — sólo lo
