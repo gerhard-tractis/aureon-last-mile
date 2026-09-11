@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { formatDurationSince } from '@/lib/orders/duration';
 import { useOperatorId } from '@/hooks/useOperatorId';
@@ -50,6 +52,34 @@ function getRemoveDisabledReason(row: RoutedManifest): string | null {
   return null;
 }
 
+/**
+ * Review ronda 2 (fase 3), decisión B — `remove_manifest_from_route`
+ * (spec-64, 20260824000004) ya tradujo las guardas 4 y 6 a español porque
+ * el hook las rethrows verbatim; las guardas 3 y 7 se libraron en esa
+ * migración sólo porque nunca fueron alcanzables desde móvil (`route/
+ * active/page.tsx`, único consumidor hasta esta fase). Bajo el
+ * `staleTime` de 30s de `PICKUP_QUERY_OPTIONS`, esta pantalla SÍ puede
+ * mostrar una fila hasta un minuto desactualizada, así que ambas son
+ * alcanzables aquí — sin este mapeo, un supervisor vería inglés crudo con
+ * UUID en una pantalla en español. NO se toca el mensaje del RPC (eso
+ * reemitiría una función de otra migración); el mapeo vive sólo en el
+ * frontend, por substring, porque el RPC interpola el id de ruta/manifiesto
+ * dentro del mensaje y no hay forma de matchear exacto.
+ *
+ * Devuelve `null` (no traducido) para cualquier otro error del RPC — las
+ * guardas 4 y 6 ya llegan en español, y las demás (1, 2, 5, JWT) no son
+ * "la fila está vieja", así que no se refetchea nada por ellas.
+ */
+function translateStaleRemoveError(message: string): string | null {
+  if (message.includes('is not in_progress')) {
+    return 'La ruta ya no admite cambios (salió o cambió de estado). Esta fila estaba desactualizada.';
+  }
+  if (message.includes('has verified scans and cannot be removed')) {
+    return 'La carga ya tiene bultos verificados; debe cerrarse desde la ruta. Esta fila estaba desactualizada.';
+  }
+  return null;
+}
+
 interface RoutedManifestTableProps {
   rows: RoutedManifest[];
   emptyMessage: string;
@@ -62,13 +92,32 @@ export function RoutedManifestTable({ rows, emptyMessage, now }: RoutedManifestT
   const clock = now ?? new Date();
   const { operatorId } = useOperatorId();
   const removeMut = useRemoveManifestFromRoute(operatorId);
+  const qc = useQueryClient();
+  // Ronda 2 de review — `removeMut.isPending` es UN booleano por tabla
+  // (un solo `useMutation`), así que deshabilitaba las DOS filas apenas
+  // cualquier remoción estaba en curso. `removingId` aísla el disabled al
+  // botón que de verdad se está procesando.
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   const handleRemove = (row: RoutedManifest) => {
+    // Ronda 2 de review — mismo patrón que route/active/page.tsx:291-295
+    // documenta a propósito: useRemoveManifestFromRoute cierra sobre
+    // operatorId para sus invalidateQueries, así que llamar mutate() con
+    // null invalidaría queries que no matchean nada.
+    if (!operatorId) return;
+    setRemovingId(row.id);
     removeMut.mutate(
       { routeId: row.pickup_route_id, manifestId: row.id },
       {
         onSuccess: () => toast.success('Carga quitada de la ruta'),
-        onError: (err) => toast.error(err.message),
+        onError: (err) => {
+          const translated = translateStaleRemoveError(err.message);
+          toast.error(translated ?? err.message);
+          if (translated) {
+            qc.invalidateQueries({ queryKey: ['pickup', 'manifests'] });
+          }
+        },
+        onSettled: () => setRemovingId(null),
       },
     );
   };
@@ -152,16 +201,28 @@ export function RoutedManifestTable({ rows, emptyMessage, now }: RoutedManifestT
 
                 <div className="flex min-w-0 flex-col items-start gap-1">
                   <div className="flex items-center gap-2">
+                    {/* Review ronda 2 — rótulo corregido de "Ver ruta" a "QR
+                        de entrega": el destino (RouteQRView, título "Entrega
+                        en bodega — Muestra este QR al receptor") es una
+                        pantalla de tripulación para mostrarle el QR al
+                        receptor del hub, no un detalle de ruta. No existe
+                        hoy una pantalla de detalle de ruta para supervisor
+                        (queda anotado en el spec como trabajo futuro).
+                        `reception/route/[routeId]/preview` también resuelve
+                        una ruta arbitraria por id sin gating de driver_id,
+                        pero lleva `ReceiveWithoutQRButton` — una acción que
+                        estampa una llegada falsa, y eso no se le pone
+                        delante a un supervisor por error. */}
                     <Link
                       href={`/app/pickup/route/${row.pickup_route_id}/qr`}
                       className="rounded-md border border-border px-2 py-1 text-[10.5px] font-medium text-text-secondary hover:bg-background-muted"
                     >
-                      Ver ruta
+                      QR de entrega
                     </Link>
                     <button
                       type="button"
                       onClick={() => handleRemove(row)}
-                      disabled={!!disabledReason || removeMut.isPending}
+                      disabled={!!disabledReason || removingId === row.id}
                       title={disabledReason ?? undefined}
                       className="rounded-md border border-border px-2 py-1 text-[10.5px] font-medium text-text-secondary hover:bg-background-muted disabled:cursor-not-allowed disabled:opacity-50"
                     >

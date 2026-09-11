@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, within, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import PickupPage from './page';
 import type { RouteCrewMember } from '@/hooks/pickup/useActivePickupRoute';
 
@@ -316,6 +317,11 @@ describe('PickupPage', () => {
     // spec-94 fase 2 — the routed tab renders through RoutedManifestTable,
     // not ManifestTable, and shows its own row shape (route code, driver,
     // "abierta hace").
+    //
+    // Review ronda 2 (fase 3) — RoutedManifestTable now calls
+    // useQueryClient() directly (for the stale-error refetch, decisión B),
+    // so this render needs a real QueryClient — the only test in this file
+    // that reaches RoutedManifestTable.
     it('shows the routed table, not ManifestTable, on the routed tab', async () => {
       mockUseRoutedManifests.mockReturnValue({
         data: [
@@ -336,15 +342,29 @@ describe('PickupPage', () => {
             closed_at: null,
             missing_count: 0,
             verified_count: 1,
+            // Ronda 2 de review — hallazgo real: sin este campo, la fila
+            // renderiza href="/app/pickup/route/undefined/qr" y nada lo
+            // afirmaba. route-99 elegido para que la aserción de abajo no
+            // pueda confundirse con un accidente de otro campo del fixture.
+            pickup_route_id: 'route-99',
           },
         ],
         isLoading: false,
       });
-      render(<PickupPage />);
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={qc}>
+          <PickupPage />
+        </QueryClientProvider>,
+      );
       await userEvent.click(screen.getByRole('button', { name: 'En punto de retiro · 1' }));
       expect(screen.getByText('CARGA-ROUTED-1')).toBeInTheDocument();
       expect(screen.getByText('PR-2026-0099')).toBeInTheDocument();
       expect(screen.queryAllByTestId('manifest-row')).toHaveLength(0);
+      expect(screen.getByRole('link', { name: 'QR de entrega' })).toHaveAttribute(
+        'href',
+        '/app/pickup/route/route-99/qr',
+      );
     });
   });
 

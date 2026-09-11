@@ -31,7 +31,19 @@ export interface RoutedManifest {
    * RPC's own predicate already excludes those (they belong to cubos 3/4). */
   route_status: string;
   /** `manifests.completed_at` when `status='completed'` — the "cerrada
-   * HH:MM" chip. NULL means still being scanned. */
+   * HH:MM" chip. NULL means still being scanned.
+   *
+   * Review ronda 2 (fase 3): `RoutedManifestTable`'s `getRemoveDisabledReason`
+   * reads `closed_at !== null` as a proxy for "carga completada" — it never
+   * checks `status` directly, because the RPC does not return `status` at
+   * all. The RPC's own `CASE WHEN m.status = 'completed' THEN m.completed_at
+   * ELSE NULL END` (20261008000001, re-templated in 20261009000001) is what
+   * makes that proxy sound today: every writer that sets `status='completed'`
+   * also populates `completed_at` in the same statement, so the two are
+   * inseparable in practice. The coupling is implicit, not enforced by a
+   * constraint — if a future writer ever sets `status='completed'` without
+   * `completed_at`, this proxy silently stops working and the signature
+   * guard goes with it. */
   closed_at: string | null;
   /** Count of open/unresolved 'missing' discrepancies (spec-85). Rendered
    * only via the closed_at chip — a load still being scanned cannot have
