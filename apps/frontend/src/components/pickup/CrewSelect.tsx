@@ -27,6 +27,19 @@ import { useCrewCandidates } from '@/hooks/pickup/useCrewCandidates';
 
 const NO_NAME = 'Sin nombre';
 
+/**
+ * spec-95 fase 4 — el mock (`5b`) rotula cada fila con su rol, a la derecha.
+ * `useCrewCandidates` ya trae `role` en bruto (`pickup_crew` / `pickup_leader`
+ * / `ops_leader`, `useCrewCandidates.ts:6,31`); esto sólo lo traduce a la
+ * etiqueta del mock. `pickup_leader` y `ops_leader` comparten "conductor"
+ * porque ambos son roles que lideran/conducen una ruta (`permissions.ts` los
+ * trata como el mismo nivel de acceso a `pickup`); el mock sólo distingue dos
+ * palabras, no tres roles.
+ */
+function crewRoleLabel(role: string): string {
+  return role === 'pickup_crew' ? 'auxiliar' : 'conductor';
+}
+
 export interface CrewSelectProps {
   operatorId: string | null;
   /** The signed-in user — never offered as their own crew. */
@@ -50,12 +63,19 @@ export function CrewSelect({ operatorId, excludeUserId, value, onChange }: CrewS
           dark at 10.5px. The sibling "NO TIENES RUTA ACTIVA" eyebrow fails
           identically and is left alone -- it is pre-existing, and fixing it
           here would smuggle an unrelated change into this task. */}
-      <p
-        id="crew-select-eyebrow"
-        className="font-mono text-[10.5px] font-semibold uppercase tracking-[.08em] text-text-secondary"
-      >
-        ACOMPAÑANTES · {value.length}
-      </p>
+      <div className="flex items-center gap-2">
+        <p
+          id="crew-select-eyebrow"
+          className="font-mono text-[10.5px] font-semibold uppercase tracking-[.08em] text-text-secondary"
+        >
+          ACOMPAÑANTES
+        </p>
+        {/* "N de M": N ticados sobre M candidatos TOTALES (no filtrados por
+            búsqueda ni nada más) — el mock (`5b`) lo dibuja así, "2 de 3". */}
+        <p className="ml-auto font-mono text-[12.5px] font-semibold text-text-secondary">
+          {value.length} de {rows.length}
+        </p>
+      </div>
 
       {isLoading ? (
         <p className="text-[12.5px] text-text-secondary">Cargando compañeros…</p>
@@ -104,6 +124,9 @@ export function CrewSelect({ operatorId, excludeUserId, value, onChange }: CrewS
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[13px] text-text">
                   {person.full_name ?? NO_NAME}
+                </span>
+                <span className="flex-none text-[12px] text-text-muted">
+                  {crewRoleLabel(person.role)}
                 </span>
               </button>
             );

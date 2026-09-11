@@ -80,12 +80,21 @@ describe('CrewSelect', () => {
    */
   it('counts the ticked rows under an ACOMPAÑANTES header, never EQUIPO', () => {
     render(<CrewSelect {...baseProps()} value={['crew-1', 'crew-2']} />);
-    expect(screen.getByText('ACOMPAÑANTES · 2')).toBeInTheDocument();
+    expect(screen.getByText('ACOMPAÑANTES')).toBeInTheDocument();
+    expect(screen.getByText('2 de 2')).toBeInTheDocument();
+  });
+
+  // spec-95 fase 4 — el mock (`5b`) pide "N de M", no un conteo suelto: N
+  // ticados sobre M candidatos totales, no sobre los seleccionados.
+  it('counts as "N de M" against the full candidate roster, not a bare count', () => {
+    render(<CrewSelect {...baseProps()} value={['crew-1']} />);
+    expect(screen.getByText('1 de 2')).toBeInTheDocument();
   });
 
   it('counts zero, not the candidate list, when nothing is ticked', () => {
     render(<CrewSelect {...baseProps()} />);
-    expect(screen.getByText('ACOMPAÑANTES · 0')).toBeInTheDocument();
+    expect(screen.getByText('ACOMPAÑANTES')).toBeInTheDocument();
+    expect(screen.getByText('0 de 2')).toBeInTheDocument();
   });
 
   // `users.full_name` is nullable. A row with no name is still a real person
@@ -132,6 +141,25 @@ describe('CrewSelect', () => {
     const list = screen.getByRole('checkbox', { name: 'Persona 0' }).parentElement!;
     expect(list.className).toContain('max-h-[45vh]');
     expect(list.className).toContain('overflow-y-auto');
+  });
+
+  // spec-95 fase 4 — el mock (`5b`) muestra el rol de cada persona a la
+  // derecha de su fila: pickup_crew -> "auxiliar", pickup_leader/ops_leader
+  // -> "conductor". El campo `role` ya viaja en CrewCandidate
+  // (useCrewCandidates.ts:6, seleccionado en :31); esto sólo lo traduce.
+  it("shows each person's role, translated, at the right of their row", () => {
+    render(<CrewSelect {...baseProps()} />);
+    expect(screen.getByText('auxiliar')).toBeInTheDocument();
+    expect(screen.getByText('conductor')).toBeInTheDocument();
+  });
+
+  it('translates ops_leader to conductor as well, same as pickup_leader', () => {
+    mockUseCrewCandidates.mockReturnValue({
+      data: [{ id: 'crew-4', full_name: 'Coni Leiva', role: 'ops_leader' }],
+      isLoading: false,
+    });
+    render(<CrewSelect {...baseProps()} />);
+    expect(screen.getByText('conductor')).toBeInTheDocument();
   });
 
   it('says the roster is empty when nobody else is registered', () => {
