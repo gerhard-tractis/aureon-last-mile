@@ -144,4 +144,16 @@ describe('ManifestClosedSummary', () => {
     expect(screen.getByText('Ver resumen de la carga')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Ver resumen de la carga' })).toBeNull();
   });
+
+  // Hotfix móvil 2026-09-11 — mismo bug que #772. Este componente se
+  // devuelve directo desde complete/[loadId]/page.tsx (sin envoltura
+  // propia), así que su wrapper es hijo directo de `<main class="flex
+  // min-h-0 flex-1 flex-col">` (AppLayout). Sin `w-full`, `mx-auto` en un
+  // item flex deja de estirarse y `max-w-2xl` fija el ancho intrínseco.
+  it('el wrapper lleva w-full', () => {
+    render(<ManifestClosedSummary {...baseProps} />);
+    const wrapper = screen.getByTestId('manifest-closed-summary');
+    expect(wrapper.className).toContain('max-w-2xl');
+    expect(wrapper.className).toContain('w-full');
+  });
 });
