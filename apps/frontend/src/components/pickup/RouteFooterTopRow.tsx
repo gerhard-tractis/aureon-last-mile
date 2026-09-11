@@ -14,6 +14,14 @@ import { DigitalizeManifestTrigger } from './DigitalizeManifestTrigger';
  * inline aparte debajo de todo — spec-82 fase 1 lo dejó así a propósito
  * para minimizar el diff; esta fase cierra ese punto porque ya toca la
  * barra.
+ *
+ * QA 2026-09-11 — el mock 5c dibuja los cuatro controles en una fila sobre
+ * un artboard de ~472px, no sobre un teléfono real: a 390px la fila
+ * desbordaba (el botón "+" quedaba 108px fuera de pantalla e inalcanzable).
+ * Dos ajustes, ninguno esconde un control: "Digitalizar manifiesto" pasa a
+ * icon-only (ancho fijo 44px, igual que "Buscar" y "+", ver
+ * DigitalizeManifestTrigger), y "Ver manifiesto(s)" se trunca (`truncate
+ * min-w-0`) en vez de forzar el ancho de la fila. El orden se mantiene.
  */
 interface RouteFooterTopRowProps {
   manifestsCount: number;
@@ -60,7 +68,7 @@ export function RouteFooterTopRow({
         <Button
           type="button"
           variant="secondary"
-          className="flex-1 min-h-[44px]"
+          className="flex-1 min-w-0 truncate min-h-[44px]"
           aria-expanded={showAll}
           aria-controls={manifestListPanelId}
           onClick={onToggleShowAll}
@@ -76,8 +84,10 @@ export function RouteFooterTopRow({
           manifiesto nuevo directamente desde la ruta activa, sin volver a
           la pantalla de escritorio. Reusa el mismo flujo OCR que "Nuevo
           Manifiesto" ya usa en /app/pickup (spec-47); ver
-          DigitalizeManifestTrigger.tsx. */}
-      <DigitalizeManifestTrigger className="flex-1" />
+          DigitalizeManifestTrigger.tsx. Icon-only aquí (QA 2026-09-11): con
+          label de texto competía por ancho con "Ver manifiesto(s)" y
+          empujaba "+" fuera de la pantalla a 390px. */}
+      <DigitalizeManifestTrigger iconOnly />
       <Button
         type="button"
         variant="outline"

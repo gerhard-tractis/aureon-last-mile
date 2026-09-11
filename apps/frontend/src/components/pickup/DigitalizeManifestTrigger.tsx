@@ -40,12 +40,26 @@ import { cn } from '@/lib/utils';
  * reemplazara el string entero (como antes) dejaba el botón sin su objetivo
  * táctil mínimo de 44px en cuanto alguien pasara un override sin pensar en
  * incluirlo.
+ *
+ * QA 2026-09-11 — a 390px la fila del pie (Buscar, Ver manifiesto(s),
+ * Digitalizar, +) desbordaba: el label completo de este botón, en `flex-1`
+ * junto al de "Ver manifiesto(s)" (también `flex-1`), no dejaba espacio
+ * para "+" (quedaba 108px fuera de pantalla). `iconOnly` reduce el botón
+ * al mismo target táctil fijo 44×44 que "Buscar" y "+" — mismo
+ * comportamiento (abre el mismo diálogo OCR), sólo cambia la presentación:
+ * sin texto visible, con `aria-label` como nombre accesible.
  */
 export interface DigitalizeManifestTriggerProps {
   className?: string;
+  /** Sin label visible; usa `aria-label` como nombre accesible y el mismo
+   *  ancho fijo 44×44 que los otros botones-ícono de la fila. */
+  iconOnly?: boolean;
 }
 
-export function DigitalizeManifestTrigger({ className }: DigitalizeManifestTriggerProps = {}) {
+export function DigitalizeManifestTrigger({
+  className,
+  iconOnly = false,
+}: DigitalizeManifestTriggerProps = {}) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
 
@@ -66,11 +80,17 @@ export function DigitalizeManifestTrigger({ className }: DigitalizeManifestTrigg
       <Button
         type="button"
         variant="outline"
-        className={cn('min-h-[44px] gap-2', className ?? 'w-full')}
+        size={iconOnly ? 'icon' : undefined}
+        aria-label={iconOnly ? 'Digitalizar manifiesto' : undefined}
+        className={cn(
+          'min-h-[44px]',
+          iconOnly ? 'min-w-[44px]' : 'gap-2',
+          !iconOnly && (className ?? 'w-full'),
+        )}
         onClick={() => setOpen(true)}
       >
         <Camera className="h-4 w-4" aria-hidden="true" />
-        Digitalizar manifiesto
+        {!iconOnly && 'Digitalizar manifiesto'}
       </Button>
 
       {/* review round 2 — `onOpenChange={setOpen}` skipped `handleClose`

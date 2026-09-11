@@ -145,7 +145,32 @@ describe('RouteFooterTopRow', () => {
     expect(children).toHaveLength(4);
     expect(children[0]).toHaveAttribute('aria-label', 'Buscar carga');
     expect(children[1].textContent).toContain('Ver los 2 manifiestos');
-    expect(children[2].textContent).toMatch(/digitalizar manifiesto/i);
+    expect(children[2]).toHaveAttribute('aria-label', 'Digitalizar manifiesto');
     expect(children[3]).toHaveAttribute('data-testid', 'open-add-manifest');
+  });
+
+  // QA 2026-09-11 — a 390px los cuatro controles no cabían: "Digitalizar
+  // manifiesto" con su label completo (flex-1) competía por ancho con "Ver
+  // los N manifiestos" (flex-1) y el botón "+" quedaba 108px fuera de
+  // pantalla, inalcanzable. jsdom no maqueta geometría (ver
+  // RouteFooterTopRow.tsx / CrewSelect.test.tsx:142), así que el contrato
+  // se fija por clase: Digitalizar pasa a icon-only (mismo ancho fijo
+  // 44×44 que Buscar y +), y "Ver manifiesto(s)" se trunca en vez de
+  // forzar el ancho de la fila. Medido en navegador aparte (390px/320px).
+  it('Digitalizar manifiesto es icon-only en la fila (ancho fijo, no compite por espacio)', () => {
+    renderRow();
+    const row = screen.getByTestId('route-footer-top-row');
+    const digitalizar = row.children[2] as HTMLElement;
+    expect(digitalizar.className).toContain('min-w-[44px]');
+    expect(digitalizar.className).not.toContain('flex-1');
+    expect(screen.queryByText(/digitalizar manifiesto/i)).not.toBeInTheDocument();
+  });
+
+  it('el botón "Ver manifiesto(s)" se trunca en vez de forzar el ancho de la fila', () => {
+    renderRow();
+    const row = screen.getByTestId('route-footer-top-row');
+    const verManifiestos = row.children[1] as HTMLElement;
+    expect(verManifiestos.className).toContain('truncate');
+    expect(verManifiestos.className).toContain('min-w-0');
   });
 });

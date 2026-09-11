@@ -167,4 +167,42 @@ describe('DigitalizeManifestTrigger', () => {
     const button = screen.getByRole('button', { name: /digitalizar manifiesto/i });
     expect(button.className).toContain('min-h-[44px]');
   });
+
+  // QA 2026-09-11 — a 390px la fila superior del pie de mock 5c (Buscar,
+  // Ver manifiesto(s), Digitalizar, +) desbordaba: el label de texto
+  // completo compitiendo por ancho con "Ver los N manifiestos" empujaba
+  // el botón "+" fuera de la pantalla. `iconOnly` reduce este botón al
+  // mismo target táctil 44×44 que Buscar y +, sin texto visible, pero
+  // conservando "Digitalizar manifiesto" como nombre accesible (aria-label)
+  // — el comportamiento no cambia, sólo la presentación en la fila.
+  it('con iconOnly, no muestra el texto "Digitalizar manifiesto" pero conserva el nombre accesible', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      React.createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        React.createElement(DigitalizeManifestTrigger, { iconOnly: true }),
+      ),
+    );
+    // Nombre accesible vía aria-label, no vía texto del botón.
+    const button = screen.getByRole('button', { name: 'Digitalizar manifiesto' });
+    expect(button).toHaveAttribute('aria-label', 'Digitalizar manifiesto');
+    expect(screen.queryByText('Digitalizar manifiesto')).not.toBeInTheDocument();
+  });
+
+  it('con iconOnly, conserva el target táctil mínimo 44×44 y el flujo de apertura', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      React.createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        React.createElement(DigitalizeManifestTrigger, { iconOnly: true }),
+      ),
+    );
+    const button = screen.getByRole('button', { name: 'Digitalizar manifiesto' });
+    expect(button.className).toContain('min-h-[44px]');
+    expect(button.className).toContain('min-w-[44px]');
+    fireEvent.click(button);
+    expect(screen.getByTestId('client-select')).toBeInTheDocument();
+  });
 });
