@@ -113,7 +113,7 @@
 --   `12201` Cabo de Hornos   -> Puerto Williams    (was  75.0km away)
 --   `11303` Tortel           -> Caleta Tortel      (was  60.6km away)
 --   `12302` Torres del Paine -> Cerro Castillo     (was  44.8km away)
---   `12104` San Gregorio     -> Punta Delgada      (was  43.0km away)
+--   `12104` San Gregorio     -> Villa Punta Delgada(was  43.0km away)
 --   `11402` Río Ibáñez       -> Pto. Ing. Ibáñez   (was  34.3km away)
 --   `10403` Hualaihué        -> Hornopirén         (was  27.6km away)
 --   `08314` Alto Biobío      -> Ralco              (was  20.5km away)
@@ -121,6 +121,19 @@
 --
 -- Distances are from the review's forward-search of the town as a
 -- distinct OSM object versus the original polygon-interior point.
+--
+-- CORRECTION WITHIN THIS BATCH (round 2 review): `12104` was first
+-- committed pointing at the `natural=cape`/`ferry_terminal` cluster at the
+-- Primera Angostura crossing (-52.4546486, -69.5435253) -- the *same class
+-- of error* as the `05502`/`Calera` correction above: a short, generic
+-- name ("Punta Delgada") resolving to the wrong nearby feature, while the
+-- actual named settlement carries a longer name. The comuna's real
+-- capital is `place=village "Villa Punta Delgada"`
+-- (-52.3158634, -69.6905678), 18.3km northwest of the ferry crossing --
+-- independently re-queried (not copied from the review that first spotted
+-- it) and confirmed via `display_name`: "Villa Punta Delgada, San
+-- Gregorio, Provincia de Magallanes, Región de Magallanes y de la
+-- Antártica Chilena, Chile".
 --
 -- Two traps the spec calls out, both handled here rather than left for a
 -- later reader to rediscover:
@@ -444,7 +457,7 @@ FROM (VALUES
   ('12101', -53.1625688, -70.9078220),  -- non-relation fallback: Punta Arenas city-place node (correct place; no admin relation returned)
   ('12102', -52.4270382, -71.4141605),
   ('12103', -52.9455498, -72.6512719),
-  ('12104', -52.4546486, -69.5435253),  -- populated-place node replacing a polygon-interior point over water/cordillera; see header
+  ('12104', -52.3158634, -69.6905678),  -- Villa Punta Delgada (place=village, the comuna capital) -- corrected in round 2 review from the nearby cape/ferry-crossing node; see header
   ('12201', -54.9357749, -67.6062504),  -- populated-place node replacing a polygon-interior point over water/cordillera; see header
   ('12202', -62.2004259, -58.9653690),  -- hand-picked: Villa Las Estrellas (only inhabited settlement); see header
   ('12301', -51.7295251, -72.4738605),
