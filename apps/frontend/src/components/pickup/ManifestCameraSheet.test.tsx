@@ -7,21 +7,57 @@ import { ManifestCameraSheet } from './ManifestCameraSheet';
  * Un track "vivo" que soporta addEventListener('ended'|'mute'|'unmute', ...)
  * y las propiedades `readyState`/`muted` reales de un MediaStreamTrack —
  * necesarias para `isVideoReady` (ronda 4 de review del PR #713).
+ *
+ * `capabilities` es opcional a propósito (fase 9, spec-95): la mayoría de
+ * los tests existentes no le importa el flash, y un track sin `torch` en
+ * `getCapabilities()` es justamente el caso "no lo soporta" que el botón
+ * debe degradar en silencio.
  */
 class FakeTrack extends EventTarget {
   stop = vi.fn();
   readyState: 'live' | 'ended' = 'live';
   muted = false;
+  applyConstraints = vi.fn().mockResolvedValue(undefined);
+  #capabilities: MediaTrackCapabilities;
+
+  constructor(capabilities: MediaTrackCapabilities = {}) {
+    super();
+    this.#capabilities = capabilities;
+  }
+
+  getCapabilities(): MediaTrackCapabilities {
+    return this.#capabilities;
+  }
 }
 
-function makeFakeStream() {
-  const track = new FakeTrack();
+function makeFakeStream(capabilities?: MediaTrackCapabilities) {
+  const track = new FakeTrack(capabilities);
   return {
     stream: {
       getTracks: () => [track],
       getVideoTracks: () => [track],
     } as unknown as MediaStream,
     stop: track.stop,
+    track,
+  };
+}
+
+/**
+ * Un track real de un dispositivo/navegador que ni siquiera expone
+ * `getCapabilities` (la API es opcional en el estándar). La detección de
+ * capacidad debe leer esto con `?.()`, no asumir que siempre existe.
+ */
+function makeStreamWithBareTrack() {
+  const track = Object.assign(new EventTarget(), {
+    stop: vi.fn(),
+    readyState: 'live' as const,
+    muted: false,
+  });
+  return {
+    stream: {
+      getTracks: () => [track],
+      getVideoTracks: () => [track],
+    } as unknown as MediaStream,
     track,
   };
 }
@@ -736,5 +772,77 @@ describe('ManifestCameraSheet', () => {
     expect(onCapture).toHaveBeenCalledOnce();
     const file = onCapture.mock.calls[0][0] as File;
     expect(file.type).toBe('image/jpeg');
+  });
+
+  // Fase 9, spec-95 — `5g` dibuja el botón de flash arriba a la derecha,
+  // pero sólo donde el dispositivo real lo soporta. La capacidad se lee de
+  // `track.getCapabilities().torch`, nunca del user-agent.
+  describe('flash — degrada en silencio donde el dispositivo no lo soporta', () => {
+    it('shows the flash button when the live track reports torch capability', async () => {
+      const { stream } = makeFakeStream({ torch: true });
+      getUserMedia.mockResolvedValue(stream);
+      render(<ManifestCameraSheet {...baseProps} />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+      expect(await screen.findByRole('button', { name: /flash/i })).toBeInTheDocument();
+    });
+
+    it('does not render the flash button when the track capabilities do not include torch', async () => {
+      const { stream } = makeFakeStream({});
+      getUserMedia.mockResolvedValue(stream);
+      render(<ManifestCameraSheet {...baseProps} />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+      // dar tiempo a que, si el botón fuera a aparecer, ya lo hubiera hecho
+      await waitFor(() => expect(screen.getByTestId('manifest-camera-video')).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: /flash/i })).not.toBeInTheDocument();
+    });
+
+    it('does not render the flash button, and does not throw, when the track has no getCapabilities method at all', async () => {
+      const { stream } = makeStreamWithBareTrack();
+      getUserMedia.mockResolvedValue(stream);
+      render(<ManifestCameraSheet {...baseProps} />);
+      await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+      await waitFor(() => expect(screen.getByTestId('manifest-camera-video')).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: /flash/i })).not.toBeInTheDocument();
+    });
+
+    it('never shows the flash button while showing the native-file fallback', async () => {
+      // @ts-expect-error - simulate a browser/PWA without camera stream support
+      delete global.navigator.mediaDevices;
+      render(<ManifestCameraSheet {...baseProps} />);
+      await screen.findByTestId('manifest-camera-fallback-input');
+      expect(screen.queryByRole('button', { name: /flash/i })).not.toBeInTheDocument();
+    });
+
+    it('toggles the torch via applyConstraints, and its pressed state, on each click', async () => {
+      const { stream, track } = makeFakeStream({ torch: true });
+      getUserMedia.mockResolvedValue(stream);
+      render(<ManifestCameraSheet {...baseProps} />);
+      const button = await screen.findByRole('button', { name: /flash/i });
+      expect(button).toHaveAttribute('aria-pressed', 'false');
+
+      fireEvent.click(button);
+      await waitFor(() =>
+        expect(track.applyConstraints).toHaveBeenCalledWith({ advanced: [{ torch: true }] })
+      );
+      await waitFor(() => expect(button).toHaveAttribute('aria-pressed', 'true'));
+
+      fireEvent.click(button);
+      await waitFor(() =>
+        expect(track.applyConstraints).toHaveBeenCalledWith({ advanced: [{ torch: false }] })
+      );
+      await waitFor(() => expect(button).toHaveAttribute('aria-pressed', 'false'));
+    });
+
+    it('does not flip aria-pressed if the real device rejects applyConstraints', async () => {
+      const { stream, track } = makeFakeStream({ torch: true });
+      track.applyConstraints = vi.fn().mockRejectedValue(new Error('torch busy'));
+      getUserMedia.mockResolvedValue(stream);
+      render(<ManifestCameraSheet {...baseProps} />);
+      const button = await screen.findByRole('button', { name: /flash/i });
+
+      fireEvent.click(button);
+      await waitFor(() => expect(track.applyConstraints).toHaveBeenCalledOnce());
+      expect(button).toHaveAttribute('aria-pressed', 'false');
+    });
   });
 });

@@ -1,9 +1,19 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { X, Camera as CameraIcon } from 'lucide-react';
+import { X, Camera as CameraIcon, Zap } from 'lucide-react';
 import { validateManifestPhotoFile } from '@/lib/pickup/manifestPhotoValidation';
 import { isVideoReady } from '@/lib/pickup/cameraReadiness';
+
+// `torch` es una extensión no estándar de Media Capture and Streams — TS
+// lib.dom no la tipa. Se declara aquí, local, en vez de mentir con un
+// `as unknown as` en cada uso.
+interface TorchCapabilities extends MediaTrackCapabilities {
+  torch?: boolean;
+}
+interface TorchConstraintSet extends MediaTrackConstraintSet {
+  torch?: boolean;
+}
 
 interface ManifestCameraSheetProps {
   /** "CARGA-99814" — used in the header and (via fallback input) the file name. */
@@ -66,6 +76,13 @@ export function ManifestCameraSheet({
   // "válida" como evidencia de custodia sin información real).
   const [videoReady, setVideoReady] = useState(false);
   const [fallbackError, setFallbackError] = useState<string | null>(null);
+  // Fase 9, spec-95 — el botón de flash de `5g`. `torchSupported` se deriva
+  // de `track.getCapabilities().torch` del stream REAL, nunca del
+  // user-agent: un control visible que no hace nada es peor que su
+  // ausencia (el operario lo toca en una bodega oscura, no pasa nada, y
+  // concluye que la app está rota).
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
 
   useEffect(() => {
     // Ronda 3 — un bloque `if (!open) { stop tracks...; return; }` aquí era
@@ -126,6 +143,12 @@ export function ManifestCameraSheet({
             track.removeEventListener('mute', handleTrackDown);
             track.removeEventListener('unmute', handleTrackUp);
           });
+
+          // `getCapabilities` es opcional en el estándar (no todos los
+          // navegadores/pistas la exponen) — de ahí el `?.()`. La capacidad
+          // real, no una suposición por user-agent.
+          const capabilities: TorchCapabilities | undefined = track.getCapabilities?.();
+          setTorchSupported(Boolean(capabilities && 'torch' in capabilities));
         });
       })
       .catch(() => {
@@ -143,8 +166,29 @@ export function ManifestCameraSheet({
       streamRef.current = null;
       trackRef.current = null;
       setVideoReady(false);
+      setTorchSupported(false);
+      setTorchOn(false);
     };
   }, [open]);
+
+  // Toggle del flash — usa el track REAL guardado en `trackRef`, no el
+  // último stream que vio el render. Si `applyConstraints` rechaza (cámara
+  // se soltó, torch ocupado por otro proceso), no fingimos que cambió: el
+  // estado sólo avanza cuando el dispositivo lo confirma.
+  const handleToggleTorch = useCallback(() => {
+    const track = trackRef.current;
+    if (!track?.applyConstraints) return;
+    const next = !torchOn;
+    const constraints: MediaTrackConstraints & { advanced?: TorchConstraintSet[] } = {
+      advanced: [{ torch: next }],
+    };
+    track
+      .applyConstraints(constraints)
+      .then(() => setTorchOn(next))
+      .catch(() => {
+        // No se apaga/enciende en la UI algo que el hardware no confirmó.
+      });
+  }, [torchOn]);
 
   const handleShutter = useCallback(() => {
     const video = videoRef.current;
@@ -221,6 +265,20 @@ export function ManifestCameraSheet({
           </span>
           <span className="text-xs font-medium text-[#9a8e7d]">Manifiesto firmado</span>
         </div>
+        {/* `5g` lo dibuja arriba a la derecha, ámbar como los marcos del
+            visor — pero sólo si `torchSupported` es cierto. Nada que
+            oprimir sin efecto. */}
+        {torchSupported && (
+          <button
+            type="button"
+            aria-label={torchOn ? 'Apagar flash' : 'Encender flash'}
+            aria-pressed={torchOn}
+            onClick={handleToggleTorch}
+            className="ml-auto grid place-items-center w-11 h-11 rounded-xl bg-white/10"
+          >
+            <Zap className="h-[18px] w-[18px] text-[#e6c15c]" fill={torchOn ? 'currentColor' : 'none'} />
+          </button>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 relative bg-[#15130f] grid place-items-center overflow-hidden">
