@@ -31,7 +31,7 @@ import { toast } from 'sonner';
 // compartido en vez de duplicado para no volver a inflar el archivo.
 function CompletionSkeleton() {
   return (
-    <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
+    <div className="w-full space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
       <Skeleton className="h-6 w-48" />
       <Skeleton className="h-16 w-full" />
       <div className="grid grid-cols-2 gap-3">
@@ -244,7 +244,7 @@ export default function CompletionPage() {
   }
 
   return (
-    <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
+    <div className="w-full space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
       <PickupStepBreadcrumb current="complete" />
 
       {/* Gold header — spec-95 fase 6, mock `5f`: título arriba, subtítulo
