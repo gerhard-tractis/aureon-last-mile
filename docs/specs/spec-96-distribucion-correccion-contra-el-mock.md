@@ -104,10 +104,11 @@ It stays in `mock-feedback-distribucion.md`.
 1. **Dock capacity is already wired** into the `4e` send sheet
    (`SendToDockSheet.tsx:194`), the scan step-2 screen
    (`QuickSortMobileDock.tsx:120-122`) and `/andenes` (`DockListMobile.tsx:67`).
-   Nothing renders because both QA dock zones have `capacity = null`, and
-   `lib/distribution/dock-capacity.ts` deliberately draws nothing rather than a
-   bar pinned at 0 %. `4l` now draws that exact state (`A6`), so it is a
-   requirement, not a fallback.
+   It rendered nothing until 2026-09-11 because **both** QA dock zones had
+   `capacity = null`, and `lib/distribution/dock-capacity.ts` deliberately draws
+   nothing rather than a bar pinned at 0 %. `QUIL-001` has a capacity now (see
+   the prerequisite below); `CONSOL` still does not, and `4l` draws that
+   unconfigured state as `A6` — so it is a requirement, not a fallback.
 2. **`4b`'s comuna list and `ACTIVO` badge are already passed**
    (`quicksort/page.tsx:261,264`). The comuna array is empty in the QA fixture.
 3. **The tab bar already matches `4c`.** Verified in QA 2026-09-11 with
@@ -116,17 +117,38 @@ It stays in `mock-feedback-distribucion.md`.
    `buildMobileTabs` returns nothing for admin/manager. Fase 6 has no tab-bar
    work.
 
-## Prerequisite — QA cannot demonstrate capacity today
+## Prerequisite — done, with one limit left
 
-Until `capacity` is set on the QA dock zones, every capacity element in `4a`,
-`4b`, `4j` and `4l` is invisible in QA. `DockZoneForm` already edits the field;
-no migration, no seed change.
+**`QUIL-001` now has `capacity = 30` in QA** (set 2026-09-11 through
+`DockZoneForm`, the app's only write path; no migration, no seed change).
+Verified on `/app/distribution/andenes`, which was already wired: it renders
+`0 / 30` with `Quedan 30 espacios` and its bar.
 
-**This is a prerequisite of Fase 0, not part of it.** Set a capacity on both QA
-zones — one of them above 90 % of its current count, so the `warning` tone is
-exercised — and leave a third zone unconfigured if one can be created, since
-`4l` requires the unconfigured state to be correct too. Without this, Fase 0's
-`e2e-qa` evidence proves nothing.
+**`CONSOL` stays unconfigured, and that is deliberate.** The consolidation zone
+has no `Editar` action in `Configuración de Andenes` — only `Imprimir` — so the
+form cannot give it a capacity at all. That leaves QA with exactly the two
+states `4l` needs, side by side: one zone with a bar, one without. `4l`'s `A6`
+is the second one.
+
+`capacity` counts **packages, not orders** — `dock_zones.capacity`'s column
+comment says "in units of packages", the form's own label is `Capacidad
+(paquetes)`, and the numerator (`useSectorizedByZone`) counts rows in `packages`
+where `status = 'sectorizado'`, one per bulto. Do not confuse it with
+`retailer_daily_capacities.daily_capacity`, which **is** order-level and belongs
+to a different feature.
+
+**The limit that remains: the `warning` and `error` tones still cannot be seen
+in QA**, and no capacity value fixes that. Tone comes from the fill percentage,
+and QA has **zero** sectorized packages — `getDockCapacityStatus(0, anything)`
+returns `neutral` by construction. `30` was chosen so the tones become reachable
+through the normal flow rather than by inventing data: of the 50 pendientes,
+roughly 28 route to Quilicura, so sectorizing them lands near 93 % → `warning`,
+and a few more → `error`.
+
+So whoever takes **Fase 0** or **Fase 8**: to evidence the tones, sectorize the
+Quilicura pendientes through `4g`/`4h` first, then read the screen. A phase that
+skips that step has verified the bar and the `neutral` tone only, and must say so
+in its evidence line rather than implying it saw all three.
 
 ## Test commands, once, for every phase
 
@@ -596,8 +618,10 @@ screen.
 Three honest limits on the QA evidence, to be declared in the phase bodies
 rather than worked around:
 
-- **Capacity needs the prerequisite above.** Without it, Fase 0, Fase 8 and one
-  of `4c`'s subtitles cannot be seen in QA at all.
+- **Capacity is configured now, but the tones are not reachable.** `QUIL-001`
+  has a capacity and `CONSOL` deliberately does not, so the bar and the
+  unconfigured state are both demonstrable. `warning` and `error` need
+  sectorized packages first — see the prerequisite section.
 - **The QA fixture is nearly empty** — 50 pendientes, 0 clasificados, 0 in
   consolidación, two dock zones. `4b`'s grid, `4f`'s two sections, `4a`'s
   incidence rows and `4m`'s pagination have no data to render. A phase that
