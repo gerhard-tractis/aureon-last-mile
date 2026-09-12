@@ -1,25 +1,63 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { ConsolidationPanel } from './ConsolidationPanel';
+import type { ConsolidationPackage } from '@/hooks/distribution/useConsolidation';
 
-const packages = [
-  { id: 'p1', label: 'PKG-001', dock_zone_id: 'z1', order_id: 'o1', delivery_date: '2026-03-19' },
-  { id: 'p2', label: 'PKG-002', dock_zone_id: 'z1', order_id: 'o2', delivery_date: '2026-03-25' },
-];
+function pkg(overrides: Partial<ConsolidationPackage> = {}): ConsolidationPackage {
+  return {
+    id: 'p1',
+    label: 'PKG-001',
+    dock_zone_id: 'z1',
+    order_id: 'o1',
+    delivery_date: '2026-03-19',
+    comunaId: 'c1',
+    comunaName: 'La Florida',
+    orderNumber: 'ORD-48213',
+    customerName: 'Camila Fernández',
+    ...overrides,
+  };
+}
 
+// spec-96 fase 4 — `4a` draws Consolidación as a full-width table grouped
+// by order, not a card list per package. These tests replace the old
+// package-per-row assertions (each order here has its own single package,
+// so the release-target assertions still exercise the same "one action per
+// unit of work" behaviour the old tests guarded — just one order deep).
 describe('ConsolidationPanel', () => {
-  it('renders packages with their labels', () => {
-    render(<ConsolidationPanel packages={packages} onRelease={vi.fn()} />);
-    expect(screen.getByText('PKG-001')).toBeInTheDocument();
-    expect(screen.getByText('PKG-002')).toBeInTheDocument();
+  it('groups packages by order into a single row per order', () => {
+    render(
+      <ConsolidationPanel
+        packages={[
+          pkg({ id: 'p1', order_id: 'o1' }),
+          pkg({ id: 'p2', order_id: 'o1' }),
+          pkg({ id: 'p3', order_id: 'o2', orderNumber: 'ORD-48241' }),
+        ]}
+        onRelease={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByTestId('consolidation-order-row')).toHaveLength(2);
   });
 
-  it('calls onRelease with selected package id when Liberar is clicked', () => {
+  it('renders the order number and recipient/comuna per row', () => {
+    render(
+      <ConsolidationPanel packages={[pkg({ id: 'p1', order_id: 'o1' })]} onRelease={vi.fn()} />,
+    );
+    const row = screen.getByTestId('consolidation-order-row');
+    expect(within(row).getByText('ORD-48213')).toBeInTheDocument();
+    expect(within(row).getByText(/Camila Fernández/)).toBeInTheDocument();
+    expect(within(row).getByText(/La Florida/)).toBeInTheDocument();
+  });
+
+  it('calls onRelease with every package id of that order when Liberar is clicked', () => {
     const onRelease = vi.fn();
-    render(<ConsolidationPanel packages={packages} onRelease={onRelease} />);
-    const releaseButtons = screen.getAllByRole('button', { name: /liberar/i });
-    fireEvent.click(releaseButtons[0]);
-    expect(onRelease).toHaveBeenCalledWith(['p1']);
+    render(
+      <ConsolidationPanel
+        packages={[pkg({ id: 'p1', order_id: 'o1' }), pkg({ id: 'p2', order_id: 'o1' })]}
+        onRelease={onRelease}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^liberar$/i }));
+    expect(onRelease).toHaveBeenCalledWith(['p1', 'p2']);
   });
 
   it('shows empty state when no packages in consolidation', () => {
@@ -28,9 +66,53 @@ describe('ConsolidationPanel', () => {
     expect(screen.getByText(/necesiten consolidarse/i)).toBeInTheDocument();
   });
 
-  it('renders a Liberar button per package', () => {
-    render(<ConsolidationPanel packages={packages} onRelease={vi.fn()} />);
-    const buttons = screen.getAllByRole('button', { name: /liberar/i });
-    expect(buttons).toHaveLength(2);
+  it('summarises the total package and order count in the header badge', () => {
+    render(
+      <ConsolidationPanel
+        packages={[
+          pkg({ id: 'p1', order_id: 'o1' }),
+          pkg({ id: 'p2', order_id: 'o1' }),
+          pkg({ id: 'p3', order_id: 'o2', orderNumber: 'ORD-48241' }),
+        ]}
+        onRelease={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('consolidation-summary')).toHaveTextContent('3 paq.');
+    expect(screen.getByTestId('consolidation-summary')).toHaveTextContent('2 órdenes');
+  });
+
+  it('selecting orders and clicking "Liberar seleccionadas" releases the union of their package ids', () => {
+    const onRelease = vi.fn();
+    render(
+      <ConsolidationPanel
+        packages={[
+          pkg({ id: 'p1', order_id: 'o1' }),
+          pkg({ id: 'p2', order_id: 'o2', orderNumber: 'ORD-48241' }),
+        ]}
+        onRelease={onRelease}
+      />,
+    );
+    const rows = screen.getAllByTestId('consolidation-order-row');
+    fireEvent.click(within(rows[0]).getByRole('checkbox'));
+    fireEvent.click(within(rows[1]).getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: /liberar seleccionadas/i }));
+    expect(onRelease).toHaveBeenCalledWith(['p1', 'p2']);
+  });
+
+  it('does not release an order whose checkbox was never selected', () => {
+    const onRelease = vi.fn();
+    render(
+      <ConsolidationPanel
+        packages={[
+          pkg({ id: 'p1', order_id: 'o1' }),
+          pkg({ id: 'p2', order_id: 'o2', orderNumber: 'ORD-48241' }),
+        ]}
+        onRelease={onRelease}
+      />,
+    );
+    const rows = screen.getAllByTestId('consolidation-order-row');
+    fireEvent.click(within(rows[0]).getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: /liberar seleccionadas/i }));
+    expect(onRelease).toHaveBeenCalledWith(['p1']);
   });
 });
