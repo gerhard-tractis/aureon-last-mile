@@ -557,7 +557,7 @@ tests hermanos.
 
 ---
 
-### Fase 4 — Escritorio, estado inicial `[pending]`
+### Fase 4 — Escritorio, estado inicial `[in_progress]`
 
 **Benchmark:** `4a`.
 
