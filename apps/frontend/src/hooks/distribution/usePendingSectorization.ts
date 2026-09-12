@@ -6,6 +6,38 @@ import { determineDockZone } from '@/lib/distribution/sectorization-engine';
 import type { ZoneMatchResult } from '@/lib/distribution/sectorization-engine';
 import { todayISOInTimezone } from '@/lib/utils/dateFormat';
 
+/**
+ * PostgREST's row cap (`packages/database/supabase/config.toml`'s
+ * `max_rows`). A response landing on exactly this many rows must be
+ * treated as truncated, not complete. Same constant, same reasoning, as
+ * `hooks/dispatch/useEnRutaSnapshot.ts`'s `MAX_ROWS_PER_QUERY` — not
+ * imported from there (that hook doesn't export it, and it isn't this
+ * phase's file to change) but duplicated on purpose rather than silently
+ * reproducing the class of bug spec-52 and spec-75 already shipped from
+ * misreading a capped response as "that's all the data". Fase 8 review
+ * round 2 — declared as an open finding: a shared
+ * `lib/supabase/assert-not-truncated.ts` is the better long-term shape so
+ * the magic number `1000` stops living in two hooks independently.
+ */
+const MAX_ROWS_PER_QUERY = 1000;
+
+/** Throws when a response lands on the PostgREST cap — see
+ *  `MAX_ROWS_PER_QUERY`'s doc. Never returns a "probably complete" guess:
+ *  this query has no `.limit()`, feeds a screen whose entire job is to
+ *  say "these comunas have nowhere to go", and a silently-truncated
+ *  result would just as silently under-count that — the sibling of the
+ *  exact failure `dock-capacity.ts`'s `configured` floor exists to
+ *  prevent on the capacity side. */
+function assertNotTruncated(rows: unknown[], context: string): void {
+  if (rows.length >= MAX_ROWS_PER_QUERY) {
+    throw new Error(
+      `usePendingSectorization: ${context} returned ${rows.length} rows — hit ` +
+        `PostgREST's max_rows cap (packages/database/supabase/config.toml) and was ` +
+        `likely silently truncated. Narrow the query that produced this request.`,
+    );
+  }
+}
+
 export interface SkuItem {
   sku: string;
   description: string;
@@ -101,6 +133,7 @@ export function usePendingSectorization(operatorId: string | null, now: Date = n
 
       if (error) throw error;
       if (!data || !zones || zones.length === 0) return [];
+      assertNotTruncated(data, 'packages/en_bodega');
 
       // Pass 1: group packages into zone buckets
       const zoneMap = new Map<string, { zone: DockZoneRecord; matchResult: ZoneMatchResult; orderMap: Map<string, OrderGroup> }>();

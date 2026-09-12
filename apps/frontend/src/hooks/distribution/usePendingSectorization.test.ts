@@ -380,4 +380,64 @@ describe('usePendingSectorization', () => {
     expect(result.current.data![0].zone.id).toBe('consol');
     expect(result.current.data![0].matchResult.reason).toBe('future_date');
   });
+
+  // spec-96 Fase 8 review round 2 — PostgREST's `max_rows` (config.toml)
+  // caps this unbounded query at 1000. A response landing on that cap must
+  // error, not return a silently-truncated (and therefore possibly
+  // undercounted) result — the same class of bug spec-52 and spec-75
+  // already shipped once each. `/andenes`'s comunas-without-dock banner
+  // reads this hook precisely to say "these have nowhere to go"; a wrong
+  // zero there is worse than a thrown error.
+  it('throws rather than returning a silently-truncated result at the PostgREST row cap', async () => {
+    const { useDockZones } = await import('@/hooks/distribution/useDockZones');
+    vi.mocked(useDockZones).mockReturnValue({
+      data: [ZONE_ANDEN, ZONE_CONSOL],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useDockZones>);
+
+    const cappedRows = Array.from({ length: 1000 }, (_, i) => ({
+      id: `pkg-${i}`,
+      label: `PKG-${i}`,
+      order_id: `ord-${i}`,
+      sku_items: [],
+      orders: {
+        order_number: `#${i}`,
+        comuna_id: 'comuna-lc',
+        delivery_date: '2026-05-10',
+        chile_comunas: { nombre: 'Las Condes' },
+      },
+    }));
+    mockOrder.mockResolvedValue({ data: cappedRows, error: null });
+
+    const { result } = renderHook(() => usePendingSectorization('op-1'), { wrapper });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBeInstanceOf(Error);
+    expect((result.current.error as Error).message).toMatch(/1000 rows/);
+  });
+
+  it('does not throw one row under the cap', async () => {
+    const { useDockZones } = await import('@/hooks/distribution/useDockZones');
+    vi.mocked(useDockZones).mockReturnValue({
+      data: [ZONE_ANDEN, ZONE_CONSOL],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useDockZones>);
+
+    const rows = Array.from({ length: 999 }, (_, i) => ({
+      id: `pkg-${i}`,
+      label: `PKG-${i}`,
+      order_id: `ord-${i}`,
+      sku_items: [],
+      orders: {
+        order_number: `#${i}`,
+        comuna_id: 'comuna-lc',
+        delivery_date: '2026-05-10',
+        chile_comunas: { nombre: 'Las Condes' },
+      },
+    }));
+    mockOrder.mockResolvedValue({ data: rows, error: null });
+
+    const { result } = renderHook(() => usePendingSectorization('op-1'), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.isError).toBe(false);
+  });
 });
