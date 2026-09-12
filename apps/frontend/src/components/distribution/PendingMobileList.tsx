@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { PendingMobileOrderGroup } from './PendingMobileOrderGroup';
 import { determineDockZone } from '@/lib/distribution/sectorization-engine';
@@ -16,9 +17,18 @@ import type { DockZoneRecord } from '@/hooks/distribution/useDockZones';
  * when it is genuinely unmapped (unknown comuna) — see `splitByFlagged`
  * below for why that can't just be read off `group.matchResult.flagged`.
  *
- * Row expansion lives in `PendingMobileOrderGroup`: a single-bulto order is
- * one compact row, a multi-bulto order is an order line plus one row per
- * package.
+ * Row expansion lives in `PendingMobileOrderGroup`: in `'det'` mode (the
+ * default) a single-bulto order is one compact row and a multi-bulto order
+ * is an order line plus one row per package; `'cmp'` forces every order
+ * into one compact row (spec-96 Fase 2, `4d`'s DET/CMP control).
+ *
+ * `selectionMode` (spec-96 Fase 2, `4d`'s SEL control) is a controlled prop
+ * — the toggle button lives in the page's fixed footer, alongside
+ * Escanear, not in this component — but the selected-order-ids state is
+ * owned here and resets whenever selectionMode goes false. Confirming a
+ * selection calls `onRequestSend` exactly once with every selected order's
+ * package ids combined, reusing the same `SendToDockSheet` pipeline a
+ * single order's ⋯ affordance already drives.
  */
 export interface SendToDockRequest {
   packageIds: string[];
@@ -28,6 +38,13 @@ export interface SendToDockRequest {
   code: string;
   comunaName: string | null;
   suggestedZone: ZoneGroup['zone'];
+  /**
+   * spec-96 Fase 2 — set when a SEL batch spans more than one suggested
+   * zone. `SendToDockSheet.mixedComunaBatch` (spec-68 Fase 4 review,
+   * finding #2) already exists for exactly this case; this just plumbs it
+   * through for the new caller.
+   */
+  mixedComunaBatch?: boolean;
 }
 
 export interface PendingMobileListProps {
@@ -44,6 +61,10 @@ export interface PendingMobileListProps {
   onRequestSend: (request: SendToDockRequest) => void;
   /** Injectable for tests; defaults to now. */
   now?: Date;
+  /** spec-96 Fase 2 — `4d`'s DET/CMP control. Defaults to `'det'`. */
+  mode?: 'det' | 'cmp';
+  /** spec-96 Fase 2 — `4d`'s SEL control, toggled from the page's footer. */
+  selectionMode?: boolean;
 }
 
 /**
@@ -78,7 +99,50 @@ function countLabelFor(orders: OrderGroup[]): string {
   return `${String(total).padStart(2, '0')} ${total === 1 ? 'pendiente' : 'pendientes'}`;
 }
 
-export function PendingMobileList({ groups, zones, canManualAssign, onRequestSend, now }: PendingMobileListProps) {
+/** Every order across every group, paired with the zone its group suggests. */
+function flattenOrders(groups: ZoneGroup[]): Array<{ order: OrderGroup; zone: DockZoneRecord }> {
+  return groups.flatMap((group) => group.orders.map((order) => ({ order, zone: group.zone })));
+}
+
+function buildSelectionRequest(
+  groups: ZoneGroup[],
+  selectedOrderIds: Set<string>,
+): SendToDockRequest | null {
+  const selected = flattenOrders(groups).filter(({ order }) => selectedOrderIds.has(order.orderId));
+  if (selected.length === 0) return null;
+
+  const packageIds = selected.flatMap(({ order }) => order.packages.map((p) => p.id));
+  const packageLabels = selected.flatMap(({ order }) => order.packages.map((p) => p.label));
+  const distinctComunas = new Set(selected.map(({ order }) => order.comunaName));
+  const distinctZoneIds = new Set(selected.map(({ zone }) => zone.id));
+
+  return {
+    packageIds,
+    packageLabels,
+    code: selected.length === 1 ? selected[0].order.orderNumber : `${selected.length} pedidos`,
+    comunaName: distinctComunas.size === 1 ? selected[0].order.comunaName : null,
+    suggestedZone: selected[0].zone,
+    mixedComunaBatch: distinctZoneIds.size > 1,
+  };
+}
+
+export function PendingMobileList({
+  groups,
+  zones,
+  canManualAssign,
+  onRequestSend,
+  now,
+  mode = 'det',
+  selectionMode = false,
+}: PendingMobileListProps) {
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
+
+  // Leaving selection mode always clears the selection — a stale pick must
+  // not silently carry over into the next time SEL is entered.
+  useEffect(() => {
+    if (!selectionMode) setSelectedOrderIds(new Set());
+  }, [selectionMode]);
+
   if (groups.length === 0) {
     return (
       <Card>
@@ -90,6 +154,20 @@ export function PendingMobileList({ groups, zones, canManualAssign, onRequestSen
   }
 
   const today = todayISOInTimezone(now);
+
+  const toggleOrderSelection = (orderId: string) => {
+    setSelectedOrderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
+  };
+
+  const handleConfirmSelection = () => {
+    const request = buildSelectionRequest(groups, selectedOrderIds);
+    if (request) onRequestSend(request);
+  };
 
   return (
     <div className="flex flex-col gap-5">
@@ -111,6 +189,10 @@ export function PendingMobileList({ groups, zones, canManualAssign, onRequestSen
                 isFlagged
                 canManualAssign={canManualAssign}
                 onRequestSend={onRequestSend}
+                mode={mode}
+                selectionMode={selectionMode}
+                selectedOrderIds={selectedOrderIds}
+                onToggleOrderSelection={toggleOrderSelection}
               />
             )}
             {normalOrders.length > 0 && (
@@ -121,11 +203,34 @@ export function PendingMobileList({ groups, zones, canManualAssign, onRequestSen
                 isFlagged={false}
                 canManualAssign={canManualAssign}
                 onRequestSend={onRequestSend}
+                mode={mode}
+                selectionMode={selectionMode}
+                selectedOrderIds={selectedOrderIds}
+                onToggleOrderSelection={toggleOrderSelection}
               />
             )}
           </div>
         );
       })}
+
+      {selectionMode && selectedOrderIds.size > 0 && (
+        <div
+          data-testid="pending-selection-bar"
+          className="sticky bottom-0 flex items-center gap-3 rounded-lg border border-border bg-surface-raised px-3 py-2.5"
+        >
+          <span className="flex-1 font-mono text-[12.5px] text-text-secondary">
+            {selectedOrderIds.size} seleccionados
+          </span>
+          <button
+            type="button"
+            data-testid="pending-selection-confirm"
+            onClick={handleConfirmSelection}
+            className="flex h-11 items-center justify-center rounded-xl bg-accent-light px-4 text-[13.5px] font-semibold text-accent-light-foreground transition-opacity active:opacity-90"
+          >
+            Enviar seleccionados
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -137,6 +242,10 @@ function ZoneSection({
   isFlagged,
   canManualAssign,
   onRequestSend,
+  mode,
+  selectionMode,
+  selectedOrderIds,
+  onToggleOrderSelection,
 }: {
   testId: string;
   zone: DockZoneRecord;
@@ -144,6 +253,10 @@ function ZoneSection({
   isFlagged: boolean;
   canManualAssign: boolean;
   onRequestSend: (request: SendToDockRequest) => void;
+  mode: 'det' | 'cmp';
+  selectionMode: boolean;
+  selectedOrderIds: Set<string>;
+  onToggleOrderSelection: (orderId: string) => void;
 }) {
   const comunaNames = zone.comunas.map((c) => c.nombre).join(' · ');
   const headerLabel = isFlagged ? 'SIN ANDÉN' : zone.is_consolidation ? zone.name.toUpperCase() : `ANDÉN ${zone.code}`;
@@ -187,6 +300,10 @@ function ZoneSection({
             canManualAssign={canManualAssign}
             suggestedZone={zone}
             onRequestSend={onRequestSend}
+            mode={mode}
+            selectable={selectionMode}
+            selected={selectedOrderIds.has(order.orderId)}
+            onToggleSelect={() => onToggleOrderSelection(order.orderId)}
           />
         ))}
       </div>

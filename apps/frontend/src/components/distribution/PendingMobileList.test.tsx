@@ -313,6 +313,67 @@ describe('PendingMobileList (4d)', () => {
     expect(screen.getByText(/no hay paquetes pendientes/i)).toBeInTheDocument();
   });
 
+  // Fase 2 (spec-96) Task 2.1 — `4d`'s DET/CMP control. CMP always renders
+  // one row per order, even a multi-bulto one; DET keeps the existing
+  // expansion (order line + one row per package).
+  describe('DET / CMP', () => {
+    it('CMP renders one row per order regardless of bulto count', () => {
+      render(
+        <PendingMobileList
+          groups={[baseGroup]}
+          zones={allZones}
+          canManualAssign
+          onRequestSend={vi.fn()}
+          now={NOW}
+          mode="cmp"
+        />,
+      );
+      expect(screen.getByTestId('pending-order-order-2')).toBeInTheDocument();
+      expect(screen.queryByTestId('pending-package-pkg-2')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('pending-package-pkg-3')).not.toBeInTheDocument();
+    });
+
+    it('DET expands a multi-bulto order into the order line plus one row per package', () => {
+      render(
+        <PendingMobileList
+          groups={[baseGroup]}
+          zones={allZones}
+          canManualAssign
+          onRequestSend={vi.fn()}
+          now={NOW}
+          mode="det"
+        />,
+      );
+      expect(screen.getByTestId('pending-order-order-2')).toBeInTheDocument();
+      expect(screen.getByTestId('pending-package-pkg-2')).toBeInTheDocument();
+      expect(screen.getByTestId('pending-package-pkg-3')).toBeInTheDocument();
+    });
+
+    it('CMP still sends every package id when the order-level affordance is used', async () => {
+      const user = userEvent.setup();
+      const onRequestSend = vi.fn();
+      render(
+        <PendingMobileList
+          groups={[baseGroup]}
+          zones={allZones}
+          canManualAssign
+          onRequestSend={onRequestSend}
+          now={NOW}
+          mode="cmp"
+        />,
+      );
+      const row = screen.getByTestId('pending-order-order-2');
+      await user.click(within(row).getByRole('button', { name: /enviar/i }));
+      expect(onRequestSend).toHaveBeenCalledWith({
+        packageIds: ['pkg-2', 'pkg-3'],
+        packageLabels: ['BULTO-2', 'BULTO-3'],
+        code: '1002',
+        comunaName: 'Quilicura',
+        suggestedZone: zoneA,
+      });
+    });
+  });
+
   // Finding #5 (Fase 3 review) — usePendingSectorization stores matchResult
   // ONCE PER ZONE BUCKET, from whichever order landed there first. The
   // consolidation bucket mixes a genuinely-unmapped order (SIN ANDÉN) and a

@@ -22,6 +22,22 @@ export interface PendingMobileOrderGroupProps {
   canManualAssign: boolean;
   suggestedZone: DockZoneRecord;
   onRequestSend: (request: SendToDockRequest) => void;
+  /**
+   * spec-96 Fase 2 — `4d`'s DET/CMP control. `'det'` (default) is today's
+   * shape: a single-bulto order is one compact row, a multi-bulto order
+   * expands into an order line plus one row per package. `'cmp'` forces
+   * every order — regardless of bulto count — into one compact row.
+   */
+  mode?: 'det' | 'cmp';
+  /**
+   * spec-96 Fase 2 — `4d`'s SEL control. When true, the order-level ⋯
+   * affordance is replaced by a checkbox; the per-package ⋯ inside an
+   * expanded order is untouched, because SEL selects whole orders, not
+   * individual bultos.
+   */
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 /** The ⋯ affordance — 44px square, icon-only, named for the a11y tree. */
@@ -38,11 +54,76 @@ function SendAffordance({ label, onClick }: { label: string; onClick: () => void
   );
 }
 
+/**
+ * spec-96 Fase 2 — `4d`'s SEL affordance, order-level only. A real
+ * checkbox role so selection state is queryable by assistive tech and by
+ * tests, at the same 44px floor as `SendAffordance`, which it replaces
+ * while `selectable` is true.
+ */
+function SelectCheckbox({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={onChange}
+      className="grid h-11 w-11 flex-none place-items-center rounded-full text-text-secondary transition-colors active:bg-surface-raised"
+    >
+      <span
+        className={`h-5 w-5 rounded-md border-2 ${checked ? 'border-accent bg-accent' : 'border-border-strong'}`}
+      />
+    </button>
+  );
+}
+
+/**
+ * The order-level action slot: a checkbox while `selectable` (SEL mode),
+ * otherwise the ⋯ send affordance gated by `canManualAssign` as before.
+ * Mutually exclusive — SEL mode suspends manual per-order sending in
+ * favour of the batched selection action.
+ */
+function OrderActionSlot({
+  canManualAssign,
+  selectable,
+  selected,
+  onToggleSelect,
+  sendLabel,
+  onSend,
+}: {
+  canManualAssign: boolean;
+  selectable: boolean;
+  selected: boolean;
+  onToggleSelect?: () => void;
+  sendLabel: string;
+  onSend: () => void;
+}) {
+  if (selectable) {
+    return (
+      <SelectCheckbox label={sendLabel} checked={selected} onChange={() => onToggleSelect?.()} />
+    );
+  }
+  if (!canManualAssign) return null;
+  return <SendAffordance label={sendLabel} onClick={onSend} />;
+}
+
 export function PendingMobileOrderGroup({
   order,
   canManualAssign,
   suggestedZone,
   onRequestSend,
+  mode = 'det',
+  selectable = false,
+  selected = false,
+  onToggleSelect,
 }: PendingMobileOrderGroupProps) {
   // spec-68 Fase 3 review (finding #8) — was the UTC date via
   // `new Date().toISOString().split('T')[0]`, the same bug Fase 2 fixed in
@@ -52,8 +133,36 @@ export function PendingMobileOrderGroup({
   const today = todayISOInTimezone();
   const date = formatRelativeDeliveryDate(order.deliveryDate, today);
 
-  if (order.packages.length === 1) {
-    const pkg = order.packages[0];
+  // spec-96 Fase 2 — `4d`'s CMP forces every order into this same compact
+  // shape a single-bulto order already used, regardless of bulto count.
+  const isSingle = order.packages.length === 1;
+  const isCompact = mode === 'cmp' || isSingle;
+
+  if (isCompact) {
+    const pkg = isSingle ? order.packages[0] : undefined;
+    const headline = pkg ? pkg.label : `Pedido #${order.orderNumber}`;
+    const sendLabel = pkg
+      ? `Enviar ${pkg.label} a andén`
+      : `Enviar pedido ${order.orderNumber} a andén`;
+    const handleSend = () =>
+      onRequestSend(
+        pkg
+          ? {
+              packageIds: [pkg.id],
+              packageLabels: [pkg.label],
+              code: pkg.label,
+              comunaName: pkg.comunaName,
+              suggestedZone,
+            }
+          : {
+              packageIds: order.packages.map((p) => p.id),
+              packageLabels: order.packages.map((p) => p.label),
+              code: order.orderNumber,
+              comunaName: order.comunaName,
+              suggestedZone,
+            },
+      );
+
     return (
       <div
         data-testid={`pending-order-${order.orderId}`}
@@ -62,34 +171,32 @@ export function PendingMobileOrderGroup({
         <div className="min-w-0 flex-1 space-y-0.5">
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="font-mono text-[14px] font-semibold tabular-nums tracking-tight text-text">
-              {pkg.label}
+              {headline}
             </span>
             <span className={`text-[12px] tabular-nums ${TONE_CLASS[date.tone]}`}>{date.label}</span>
           </div>
           <div className="flex items-baseline gap-2 text-[12px] text-text-secondary">
-            <span>Pedido #{order.orderNumber}</span>
-            {pkg.comunaName && (
+            {pkg ? (
+              <span>Pedido #{order.orderNumber}</span>
+            ) : (
+              <span>{order.packages.length} bultos</span>
+            )}
+            {(pkg ? pkg.comunaName : order.comunaName) && (
               <>
                 <span aria-hidden="true">·</span>
-                <span>{pkg.comunaName}</span>
+                <span>{pkg ? pkg.comunaName : order.comunaName}</span>
               </>
             )}
           </div>
         </div>
-        {canManualAssign && (
-          <SendAffordance
-            label={`Enviar ${pkg.label} a andén`}
-            onClick={() =>
-              onRequestSend({
-                packageIds: [pkg.id],
-                packageLabels: [pkg.label],
-                code: pkg.label,
-                comunaName: pkg.comunaName,
-                suggestedZone,
-              })
-            }
-          />
-        )}
+        <OrderActionSlot
+          canManualAssign={canManualAssign}
+          selectable={selectable}
+          selected={selected}
+          onToggleSelect={onToggleSelect}
+          sendLabel={sendLabel}
+          onSend={handleSend}
+        />
       </div>
     );
   }
@@ -112,20 +219,22 @@ export function PendingMobileOrderGroup({
             <span className="text-[12px] text-text-secondary">{order.comunaName}</span>
           )}
         </div>
-        {canManualAssign && (
-          <SendAffordance
-            label={`Enviar pedido ${order.orderNumber} a andén`}
-            onClick={() =>
-              onRequestSend({
-                packageIds: order.packages.map((p) => p.id),
-                packageLabels: order.packages.map((p) => p.label),
-                code: order.orderNumber,
-                comunaName: order.comunaName,
-                suggestedZone,
-              })
-            }
-          />
-        )}
+        <OrderActionSlot
+          canManualAssign={canManualAssign}
+          selectable={selectable}
+          selected={selected}
+          onToggleSelect={onToggleSelect}
+          sendLabel={`Enviar pedido ${order.orderNumber} a andén`}
+          onSend={() =>
+            onRequestSend({
+              packageIds: order.packages.map((p) => p.id),
+              packageLabels: order.packages.map((p) => p.label),
+              code: order.orderNumber,
+              comunaName: order.comunaName,
+              suggestedZone,
+            })
+          }
+        />
       </div>
 
       <div className="flex flex-col gap-1 pl-3">
