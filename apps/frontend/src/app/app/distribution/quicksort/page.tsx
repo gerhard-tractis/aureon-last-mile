@@ -27,6 +27,7 @@ import {
   useDockVerificationMutation,
 } from '@/hooks/distribution/useDockVerifications';
 import { useManualDockAssignment } from '@/hooks/distribution/useManualDockAssignment';
+import { getDockCapacityStatus } from '@/lib/distribution/dock-capacity';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -253,17 +254,22 @@ function QuickSortDesktopContent() {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {activeZones.map((zone) => (
-                <DockCard
-                  key={zone.id}
-                  code={zone.code}
-                  zoneName={zone.name}
-                  comunas={zone.comunas.map((c) => c.nombre)}
-                  packageCount={sectorizedByZone?.[zone.id] ?? 0}
-                  tone={zone.is_consolidation ? 'warning' : 'neutral'}
-                  active={lastOkScan?.zoneCode === zone.code}
-                />
-              ))}
+              {activeZones.map((zone) => {
+                const count = sectorizedByZone?.[zone.id] ?? 0;
+                const capacityStatus = getDockCapacityStatus(count, zone.capacity);
+                return (
+                  <DockCard
+                    key={zone.id}
+                    code={zone.code}
+                    zoneName={zone.name}
+                    comunas={zone.comunas.map((c) => c.nombre)}
+                    packageCount={count}
+                    occupancyPct={capacityStatus.fillPct ?? undefined}
+                    tone={zone.is_consolidation ? 'warning' : 'neutral'}
+                    active={lastOkScan?.zoneCode === zone.code}
+                  />
+                );
+              })}
             </div>
           </section>
 

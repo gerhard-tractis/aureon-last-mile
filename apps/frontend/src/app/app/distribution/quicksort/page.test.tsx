@@ -11,6 +11,7 @@ const mockManualMutateAsync = vi.fn();
 let pendingGroups: ZoneGroup[] = [];
 let verifiedIds = new Set<string>();
 let managerCanAssign = false;
+let sectorizedByZone: Record<string, number> = {};
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -53,6 +54,7 @@ vi.mock('@/hooks/distribution/useDockZones', () => ({
         is_consolidation: false,
         is_active: true,
         comunas: [],
+        capacity: 200,
       },
       {
         id: 'zone-cons',
@@ -61,13 +63,14 @@ vi.mock('@/hooks/distribution/useDockZones', () => ({
         is_consolidation: true,
         is_active: true,
         comunas: [],
+        capacity: null,
       },
     ],
   }),
 }));
 
 vi.mock('@/hooks/distribution/useSectorizedByZone', () => ({
-  useSectorizedByZone: () => ({ data: {} }),
+  useSectorizedByZone: () => ({ data: sectorizedByZone }),
 }));
 
 vi.mock('@/hooks/distribution/useDistributionKPIs', () => ({
@@ -141,6 +144,7 @@ beforeEach(() => {
   pendingGroups = [zoneGroup()];
   verifiedIds = new Set<string>();
   managerCanAssign = false;
+  sectorizedByZone = {};
   belowLg = false;
 });
 
@@ -197,6 +201,29 @@ describe('QuickSortPage — pending list (spec-39 regression)', () => {
     expect(
       screen.getAllByLabelText(/asignar manualmente/i).length,
     ).toBeGreaterThan(0);
+  });
+});
+
+// spec-96 fase 0, task 0.2 — DockCard already renders an occupancy bar given
+// a non-null occupancyPct; the gap was this page never computing one from
+// dock_zones.capacity. zone-a is given capacity: 200 in the useDockZones
+// mock above.
+describe('QuickSortPage — dock capacity (spec-96 fase 0)', () => {
+  it('passes a non-null occupancyPct to a dock with a configured capacity', () => {
+    sectorizedByZone = { 'zone-a': 100 };
+    render(<QuickSortPage />);
+
+    // zone-a: 100/200 -> 50% fill width.
+    expect(screen.getByTestId('dock-occupancy').style.width).toBe('50%');
+  });
+
+  it('renders exactly one occupancy bar when only one dock has capacity configured', () => {
+    sectorizedByZone = {};
+    render(<QuickSortPage />);
+
+    // zone-a (capacity: 200) gets a bar; zone-cons (capacity: null) gets
+    // none — only one DockCard on this page ends up with an occupancy bar.
+    expect(screen.getAllByTestId('dock-occupancy').length).toBe(1);
   });
 });
 

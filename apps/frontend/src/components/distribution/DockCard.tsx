@@ -3,7 +3,7 @@
 import { cn } from '@/lib/utils';
 
 /**
- * spec-54 phase 3 — dock tile (mock 1d).
+ * spec-54 phase 3, spec-96 fase 0 — dock tile (mock 1d, `4b`).
  *
  * Read from a distance while sorting, so the dock code is 30px display type
  * and everything else is support. The tile for the dock the last scan went to
@@ -17,11 +17,14 @@ interface DockCardProps {
   zoneName: string;
   comunas?: string[];
   packageCount: number;
+  /** No source in `useDockZones`/`DockZoneRecord` yet (spec-96 fase 0, open
+   *  finding) — omit rather than invent a count. */
   routeCount?: number;
-  /** 0–100, clamped. Omit to hide the bar. `dock_zones.capacity` exists
-   *  (spec-68 Fase 1) but this card is not wired to it yet — callers still
-   *  pass `occupancyPct` (or nothing) directly; an always-0% track would
-   *  read as a rendering fault. */
+  /** 0–100, clamped. Omit to hide the bar. Callers derive this from
+   *  `dock_zones.capacity` via `getDockCapacityStatus(...).fillPct` (see
+   *  `quicksort/page.tsx`) — a zone with no capacity configured yields
+   *  `null`, which callers must pass through as `undefined`, never `0`; an
+   *  always-0% track would read as a rendering fault. */
   occupancyPct?: number;
   /** Destination of the most recent scan. */
   active?: boolean;
