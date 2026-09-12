@@ -455,7 +455,7 @@ hermanos.
 
 ---
 
-### Fase 2 — Pendientes, móvil `[pending]`
+### Fase 2 — Pendientes, móvil `[in_progress]`
 
 **Benchmark:** `4d`.
 
