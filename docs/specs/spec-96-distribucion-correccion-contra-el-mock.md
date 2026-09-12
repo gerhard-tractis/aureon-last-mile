@@ -724,6 +724,42 @@ hermanos.
 
 ### Fase 8 — Andenes de la nave `[in_progress]`
 
+> Implementado por: implementer — rama `feat/spec-96-fase-8-andenes`, SHAs `76eea78..<HEAD>` (ver commits de este rango; el primero de la ronda de review es `fix(spec-96): revierte SIN ABRIR en 4l y usa getDockCapacityStatus().configured`)
+> Review: reviewer (opus), ronda 1 — 4 hallazgos bloqueantes (banner sobre un predicado excluyente con `get_unmatched_comunas`/`determineDockZone().flagged` y agrupado por texto crudo; el único test de esa fuente pasaba con el conteo hardcodeado; `SIN ABRIR` mapeado a "sin capacidad" cuando `4a` lo define como "sin lote abierto" — el mock se contradice, ruling del coordinador mientras se escala al diseñador; tres copias de la aritmética `capacity > 0` que `getDockCapacityStatus` ya expone) + 4 "Also fix" (dos tests de subtítulo asertando copy; banner dentro del scroll en vez de footer fijo; dependencia declarada de Fase 0 incumplida y no dicha; sin evidencia en el spec) — los 8 cerrados en este rango, con mutation-test manual sobre el hallazgo #2 (hardcodear el conteo a `{13}` rompe el test anclado en `data-testid`; revertido después de confirmar el rojo).
+> QA: pendiente — todavía no hay PR (instrucción explícita de esta ronda: sin PR, sin self-review, sin rebase). Corresponde al orquestador abrir el PR y leer el reporte de `e2e-qa`, no el check.
+> Downstream: revisado spec-96 fase 4 (`OutboundDockGrid.tsx`, no tocado por esta fase) y fase 6 (`DistributionMobileView.tsx` tiene el mismo mis-wiring de `SIN ABRIR`/predicado de comunas en `main`; el coordinador lo registra como hallazgo abierto de Fase 6, no de ésta) — sin cambios necesarios en ninguna.
+
+**Hallazgos abiertos, que esta fase NO cierra:**
+
+- **`SIN ABRIR` está escalado al diseñador.** `4a` (`Distribucion.dc.html:194-203`,
+  A6 con capacidad configurada y "lote sin abrir") y `4l` (`:1236`, A6 sin
+  capacidad) usan el mismo texto para dos predicados distintos. Mientras no
+  vuelva el ruling, `DockListMobile` no emite ningún chip para la fila sin
+  configurar — coherente con el fallback (ningún dato de lote/actividad por
+  andén), pero es una decisión reversible en una línea si el diseñador falla
+  al revés.
+- **`EN RITMO` y el resto de la familia de chips de actividad siguen sin
+  fuente** — mismo hallazgo abierto que `OutboundDockGrid` (`4a`, Fase 0/4):
+  esta lista no recibe lotes/actividad por andén.
+- **La dependencia declarada (`Depende de: spec-96 fase 0`) no se cumplió.**
+  Fase 0 (mergeada, `[done]`) revirtió la derivación de chips de actividad y
+  se la cedió a Fase 4 — nunca entregó lo que esta fase esperaba consumir.
+  Se implementó igual, con el subconjunto capacity-derived únicamente; se
+  declara aquí porque el campo existe precisamente para que esto no se
+  descubra tarde.
+- **`usePendingSectorization` es un fetch nuevo en esta ruta**, añadido para
+  corregir el banner (hallazgo #1 de la ronda 1): trae todo paquete
+  `en_bodega` del operador. Cache key compartida con `/pendientes` y
+  quicksort, así que en la navegación normal (`4c` → andenes) suele llegar
+  tibio; en frío, o a escala de producción (~61k paquetes), no es gratis.
+- **El nombre de la nave ("Nave Quilicura") no tiene fuente** en ningún
+  componente existente — queda fuera del subtítulo en vez de hardcodearlo.
+- **QA no puede evidenciar los tonos `warning`/`error`** (cero paquetes
+  sectorizados en el fixture) **ni confirmar visualmente el banner corregido**
+  (no se verificó si el fixture actual tiene al menos una orden con comuna
+  resuelta y sin andén que la cubra — la lógica está mutation-testeada contra
+  fixtures locales, no contra QA en vivo).
+
 **Benchmark:** `4l`.
 
 **Depende de:** spec-96 fase 0
@@ -743,11 +779,11 @@ hermanos.
 
 **Task 8.1 — The unconfigured zone is a first-class state**
 
-- [ ] Write a failing test: a zone with `capacity: null` renders no occupancy element **and** renders an explanatory region; a zone with a capacity renders the bar.
-- [ ] Run — expect the first half to pass already (`DockCapacityBar` returns nothing) and the explanatory region to fail.
-- [ ] Implement. Run — expect PASS. Commit.
+- [x] Write a failing test: a zone with `capacity: null` renders no occupancy element **and** renders an explanatory region; a zone with a capacity renders the bar.
+- [x] Run — expect the first half to pass already (`DockCapacityBar` returns nothing) and the explanatory region to fail.
+- [x] Implement. Run — expect PASS. Commit.
 
-**Task 8.2 — Close the visual diff** on `4l` at 402 px. Run suite + type-check, PR with auto-merge.
+**Task 8.2 — Close the visual diff** on `4l` at 402 px. Run suite + type-check, PR with auto-merge. — Closed except the PR (not opened, per this round's explicit instruction). Fixed in this round: scroll container around the row list with the comunas-banner as a fixed footer outside it (`4l:1179-1250`); `A6`'s subtitle slot now carries "sin capacidad configurada" instead of the comuna list. `warning`/`error` tones remain unverified in QA per the prerequisite section above this table.
 
 ---
 
