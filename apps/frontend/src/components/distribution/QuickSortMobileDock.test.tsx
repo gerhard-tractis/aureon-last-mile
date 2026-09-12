@@ -106,6 +106,18 @@ describe('QuickSortMobileDock — 4h/4j normal destination', () => {
     expect(notice).toHaveTextContent('180');
   });
 
+  // spec-96 Fase 1 review round 2, "Also fix" #2 — `4h` (:895-940) draws
+  // the capacity notice AFTER the armed-field panel, in the flex:1 region
+  // just above the footer — not between the destination card and "AHORA
+  // ESCANEA EL ANDÉN", which puts the advice before the instruction.
+  it('renders the capacity notice AFTER the armed andén field, not before it', () => {
+    render(<QuickSortMobileDock {...baseProps()} zoneCount={169} zoneCapacity={180} />);
+    const notice = screen.getByTestId('quicksort-capacity-notice');
+    const andenField = screen.getByLabelText(/escanear andén/i);
+    // DOCUMENT_POSITION_FOLLOWING (4) — the field precedes the notice.
+    expect(andenField.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("carries the notice's tone from getDockCapacityStatus, not a fixed neutral wrapper", () => {
     const { rerender } = render(
       <QuickSortMobileDock {...baseProps()} zoneCount={169} zoneCapacity={180} />,

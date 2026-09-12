@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { QuickSortMobile } from './QuickSortMobile';
 import type { QuickSortScanEvent } from '@/hooks/distribution/useQuickSortFlow';
 import type { ZoneMatchResult } from '@/lib/distribution/sectorization-engine';
@@ -294,17 +294,47 @@ describe('QuickSortMobile', () => {
       expect(props.onScan).toHaveBeenCalledWith('PKG-002');
     });
 
-    // The mock swaps the footer's second action for "Marcar excepción" —
-    // its target action is an open product question (see the phase's
-    // spec evidence): recordQuickSortException is scoped to a rejected
-    // `rejectedCode`, which does not exist once the andén scan already
-    // succeeded. Rendered present, disabled, rather than wired to a call
-    // that would misrecord or silently no-op.
-    it('replaces "Cerrar lote" with a disabled "Marcar excepción" in the footer', () => {
+    // spec-96 Fase 1 review round 2, "Also fix" #3 — the mock's own
+    // "Marcar excepción" here has no target action `useQuickSortFlow`
+    // supports (see the phase's open findings), and a permanently disabled
+    // control occupying half the footer of the screen shown after EVERY
+    // correct scan is worse than declaring the gap: it displaces the only
+    // live control there with no `title` and no reason text, reading as a
+    // broken app. `Cerrar lote` stays functional in every state.
+    it('keeps "Cerrar lote" functional, not a disabled "Marcar excepción"', () => {
+      const props = { ...baseProps(), confirmed: confirmedProps() };
+      render(<QuickSortMobile {...props} />);
+      expect(screen.queryByText('Marcar excepción')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByText('Cerrar lote'));
+      expect(props.onCloseBatch).toHaveBeenCalled();
+    });
+
+    // spec-96 Fase 1 review round 2, "Also fix" #1 — `4j` is header →
+    // destination card → capacity block → últimos escaneos (flex:1) →
+    // compact armed field in the footer. The dashed `PASO 1 · PAQUETE`
+    // panel (~220px) and the session-counter row (~48px) are `4g`-only;
+    // keeping both in `'confirmed'` pushed ÚLTIMOS ESCANEOS under the fold
+    // on an 844px screen, when `4j` is designed not to scroll.
+    it('drops the dashed PASO 1 panel and the session-counter row when confirmed', () => {
       render(<QuickSortMobile {...baseProps()} confirmed={confirmedProps()} />);
-      expect(screen.queryByText('Cerrar lote')).not.toBeInTheDocument();
-      const exceptionButton = screen.getByText('Marcar excepción').closest('button')!;
-      expect(exceptionButton).toBeDisabled();
+      expect(screen.queryByText('PASO 1 · PAQUETE')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('quicksort-session-counter')).not.toBeInTheDocument();
+    });
+
+    it('keeps the dashed PASO 1 panel and the session-counter row on the plain first visit (4g)', () => {
+      render(<QuickSortMobile {...baseProps()} />);
+      expect(screen.getByText('PASO 1 · PAQUETE')).toBeInTheDocument();
+      expect(screen.getByTestId('quicksort-session-counter')).toBeInTheDocument();
+    });
+
+    it('moves the armed package field into the footer, still submitting on Enter', () => {
+      const props = { ...baseProps(), confirmed: confirmedProps() };
+      render(<QuickSortMobile {...props} />);
+      const footerField = screen.getByTestId('quicksort-confirmed-scan-field');
+      const input = within(footerField).getByLabelText(/escanear paquete/i);
+      fireEvent.change(input, { target: { value: 'PKG-003' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(props.onScan).toHaveBeenCalledWith('PKG-003');
     });
   });
 });
