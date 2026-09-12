@@ -75,6 +75,15 @@ import { useOperatorId } from '@/hooks/useOperatorId';
  * navigation path (`4c` → andenes) the data is usually already warm — but
  * cold, or at production scale (~61k packages/~112k dispatches per
  * `project_prod_data_scale`), this is not free. Declared, not hidden.
+ *
+ * Review round 3 — that hook reports `truncated` rather than throwing at
+ * PostgREST's row cap (see its own doc for why throwing broke its other
+ * three consumers). This page is the one place that DOES need to know:
+ * `unassignedComunasCount` under a truncated fetch is a lower bound, not
+ * the truth, so it renders as an explicit "cannot be counted" state
+ * (`unassigned-comunas-indeterminate`) rather than either the real banner
+ * or silence — silence there is indistinguishable from "confirmed zero",
+ * which is the exact bug this recompute exists to fix.
  */
 function countUnassignedComunas(
   groups: ZoneGroup[],
@@ -114,7 +123,11 @@ export default function AndenesPage() {
   const { operatorId } = useOperatorId();
   const { data: zones, isError: zonesIsError } = useDockZones(operatorId);
   const { data: sectorizedCounts = {} } = useSectorizedByZone(operatorId);
-  const { data: pendingGroups = [], isLoading: pendingLoading } = usePendingSectorization(operatorId);
+  const {
+    data: pendingGroups = [],
+    isLoading: pendingLoading,
+    truncated: pendingTruncated,
+  } = usePendingSectorization(operatorId);
 
   const goBack = () => router.push('/app/distribution');
 
@@ -185,17 +198,36 @@ export default function AndenesPage() {
         <DockListMobile zones={zones} sectorizedCounts={sectorizedCounts} />
       </div>
 
-      {/* Review round 2, finding #6 — between `zones` resolving and this
-          query settling, `unassignedComunasCount` reads 0 exactly like
-          "confirmed none flagged" would. That gap is otherwise
-          indistinguishable from the truncation error above, so it gets
-          its own quiet state rather than silently rendering nothing. */}
+      {/* Review round 2, finding #6 / round 3 — three states, each its own
+          testid so none reads as another: (1) still loading — between
+          `zones` resolving and this query settling,
+          `unassignedComunasCount` reads 0 exactly like "confirmed none
+          flagged" would; (2) truncated — `usePendingSectorization` hit
+          PostgREST's row cap, so the count is a lower bound, not the
+          truth, and must read as "unknown", never as a real zero (review
+          round 3: this used to throw here — see the hook's doc for why
+          that broke the other three consumers); (3) settled and complete
+          — the real count, banner only when it's nonzero. */}
       {pendingLoading ? (
         <div
           data-testid="unassigned-comunas-checking"
           className="flex-none px-5 py-2 text-[10.5px] text-text-muted"
         >
           Comprobando comunas sin andén…
+        </div>
+      ) : pendingTruncated ? (
+        <div
+          data-testid="unassigned-comunas-indeterminate"
+          className="flex flex-none flex-col gap-2 border-t border-border bg-surface px-5 py-3.5"
+        >
+          <div className="flex items-center gap-2.5 rounded-[11px] border border-border-strong bg-surface-raised px-3.5 py-2.5">
+            <span className="grid h-[26px] w-[26px] flex-none place-items-center rounded-lg border border-border-strong bg-surface font-mono text-xs font-bold text-text-secondary">
+              ?
+            </span>
+            <span className="text-[11.5px] font-medium text-text-secondary">
+              Hay demasiados pendientes para confirmar si faltan comunas sin andén
+            </span>
+          </div>
         </div>
       ) : (
         unassignedComunasCount > 0 && (

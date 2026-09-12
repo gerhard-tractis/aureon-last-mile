@@ -56,8 +56,13 @@ vi.mock('@/hooks/distribution/useSectorizedByZone', () => ({
 // `countUnassignedComunas`/`determineDockZone` actually read.
 let mockPendingGroups: unknown[] = [];
 let mockPendingLoading = false;
+let mockPendingTruncated = false;
 vi.mock('@/hooks/distribution/usePendingSectorization', () => ({
-  usePendingSectorization: () => ({ data: mockPendingGroups, isLoading: mockPendingLoading }),
+  usePendingSectorization: () => ({
+    data: mockPendingGroups,
+    isLoading: mockPendingLoading,
+    truncated: mockPendingTruncated,
+  }),
 }));
 
 // A past delivery date is always "active" per isDeliveryDateActive
@@ -92,6 +97,7 @@ beforeEach(() => {
   mockZonesError = false;
   mockPendingGroups = [];
   mockPendingLoading = false;
+  mockPendingTruncated = false;
 });
 
 afterEach(() => {
@@ -101,6 +107,7 @@ afterEach(() => {
   mockZonesError = false;
   mockPendingGroups = [];
   mockPendingLoading = false;
+  mockPendingTruncated = false;
 });
 
 describe('AndenesPage', () => {
@@ -299,8 +306,8 @@ describe('AndenesPage', () => {
 
     // Review round 2 (finding #6) — while the packages query is still
     // settling, the count reads 0 exactly like "confirmed none flagged"
-    // would, and that gap is indistinguishable from the truncation error
-    // usePendingSectorization now throws. A quiet, distinct loading state
+    // would, and that gap is otherwise indistinguishable from the
+    // truncated-and-unknown state below. A quiet, distinct loading state
     // closes that gap instead of silently rendering nothing.
     it('shows a quiet loading state instead of silently omitting the banner', () => {
       mockZones = [zoneA, zoneUnconfigured];
@@ -309,6 +316,7 @@ describe('AndenesPage', () => {
       render(<AndenesPage />);
       expect(screen.getByTestId('unassigned-comunas-checking')).toBeInTheDocument();
       expect(screen.queryByTestId('unassigned-comunas-banner')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('unassigned-comunas-indeterminate')).not.toBeInTheDocument();
     });
 
     it('does not show the loading state once the query settles with nothing flagged', () => {
@@ -317,6 +325,57 @@ describe('AndenesPage', () => {
       mockPendingLoading = false;
       render(<AndenesPage />);
       expect(screen.queryByTestId('unassigned-comunas-checking')).not.toBeInTheDocument();
+    });
+
+    // Review round 3 — `usePendingSectorization` now REPORTS truncation
+    // instead of throwing (throwing broke `/pendientes`, quicksort and
+    // `/batch`, which need to keep working from the rows they got). This
+    // page is the one consumer that must treat `truncated: true` as
+    // "unknown", never as a confirmed zero — and that state must be its
+    // own thing, not read as either of the other two.
+    describe('the truncated (indeterminate) state', () => {
+      it('shows the indeterminate state instead of the real banner when truncated, even with flagged orders present', () => {
+        mockZones = [zoneA, zoneUnconfigured];
+        mockPendingGroups = [
+          {
+            zone: zoneUnconfigured,
+            matchResult: { zone_id: 'zone-b1', zone_name: 'x', zone_code: 'x', is_consolidation: true, reason: 'unmapped', flagged: false },
+            orders: [flaggedOrder('o1', 'c-901', 'Melipilla')],
+          },
+        ];
+        mockPendingTruncated = true;
+        render(<AndenesPage />);
+        expect(screen.getByTestId('unassigned-comunas-indeterminate')).toBeInTheDocument();
+        expect(screen.queryByTestId('unassigned-comunas-banner')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('unassigned-comunas-checking')).not.toBeInTheDocument();
+      });
+
+      it('shows the indeterminate state when truncated even with nothing (yet) flagged — not a confirmed zero', () => {
+        mockZones = [zoneA, zoneUnconfigured];
+        mockPendingGroups = [];
+        mockPendingTruncated = true;
+        render(<AndenesPage />);
+        expect(screen.getByTestId('unassigned-comunas-indeterminate')).toBeInTheDocument();
+        expect(screen.queryByTestId('unassigned-comunas-banner')).not.toBeInTheDocument();
+      });
+
+      it('does not show the indeterminate state once settled and not truncated', () => {
+        mockZones = [zoneA, zoneUnconfigured];
+        mockPendingGroups = [];
+        mockPendingTruncated = false;
+        render(<AndenesPage />);
+        expect(screen.queryByTestId('unassigned-comunas-indeterminate')).not.toBeInTheDocument();
+      });
+
+      it('prefers the loading state over the indeterminate state while still fetching', () => {
+        mockZones = [zoneA, zoneUnconfigured];
+        mockPendingGroups = [];
+        mockPendingLoading = true;
+        mockPendingTruncated = true;
+        render(<AndenesPage />);
+        expect(screen.getByTestId('unassigned-comunas-checking')).toBeInTheDocument();
+        expect(screen.queryByTestId('unassigned-comunas-indeterminate')).not.toBeInTheDocument();
+      });
     });
   });
 });
