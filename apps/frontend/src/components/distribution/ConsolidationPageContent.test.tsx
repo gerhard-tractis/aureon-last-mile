@@ -209,6 +209,18 @@ describe('ConsolidationPage (route: /app/distribution/consolidacion)', () => {
     expect(screen.getByRole('button', { name: /liberar a sectorización/i })).toBeDisabled();
   });
 
+  // Task 3.2 — 4f draws the footer as a stacked column: "Mover a andén"
+  // (primary) above "Liberar a sectorización" (secondary). The app had
+  // them reversed, side by side. Order, not copy, is what this asserts.
+  it('the footer orders Mover a andén before Liberar a sectorización', () => {
+    mockCanUse = true;
+    mockRole = 'ops_leader';
+    render(<ConsolidationPage />);
+    const move = screen.getByRole('button', { name: /mover a andén/i });
+    const release = screen.getByRole('button', { name: /liberar a sectorización/i });
+    expect(move.compareDocumentPosition(release) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('selecting a package enables both actions', async () => {
     const user = userEvent.setup();
     render(<ConsolidationPage />);

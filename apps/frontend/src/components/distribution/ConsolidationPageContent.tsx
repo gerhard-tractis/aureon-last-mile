@@ -264,25 +264,29 @@ export function ConsolidationPageContent({ now }: ConsolidationPageContentProps 
         onConfirm={handleConfirm}
       />
 
-      <div className="fixed inset-x-0 bottom-0 z-40 flex items-center gap-2 border-t border-border bg-surface px-4 py-3 [padding-bottom:calc(0.75rem+env(safe-area-inset-bottom))]">
-        <button
-          type="button"
-          onClick={handleRelease}
-          disabled={selectedPackages.length === 0}
-          className="flex h-[56px] flex-1 items-center justify-center rounded-xl border border-border bg-surface px-3 text-[13.5px] font-semibold text-text transition-colors active:bg-surface-raised disabled:opacity-40"
-        >
-          Liberar a sectorización
-        </button>
+      {/* Task 3.2 (4f) — the footer stacks full-width: "Mover a andén"
+          primary on top, "Liberar a sectorización" secondary below. The
+          app had them side by side with Liberar first; the mock draws a
+          column with Mover first. */}
+      <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col gap-2.5 border-t border-border bg-surface px-4 py-3 [padding-bottom:calc(0.75rem+env(safe-area-inset-bottom))]">
         {manualAssign.canUse && (
           <button
             type="button"
             onClick={handleMoveToAnden}
             disabled={moveDisabled}
-            className="flex h-[56px] flex-1 items-center justify-center rounded-xl bg-accent-light px-3 text-[13.5px] font-semibold text-accent-light-foreground transition-opacity active:opacity-90 disabled:opacity-40"
+            className="flex h-[56px] w-full items-center justify-center rounded-xl bg-accent-light px-3 text-[14.5px] font-semibold text-accent-light-foreground transition-opacity active:opacity-90 disabled:opacity-40"
           >
             Mover a andén
           </button>
         )}
+        <button
+          type="button"
+          onClick={handleRelease}
+          disabled={selectedPackages.length === 0}
+          className="flex h-[52px] w-full items-center justify-center rounded-xl border border-border-strong bg-surface px-3 text-[13px] font-semibold text-text transition-colors active:bg-surface-raised disabled:opacity-40"
+        >
+          Liberar a sectorización
+        </button>
       </div>
     </div>
   );
