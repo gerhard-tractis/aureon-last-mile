@@ -1,8 +1,31 @@
 name: CI
 
 on:
+  # `main` only, deliberately. Branch protection requires exactly one check
+  # context ("Lint, Type-Check, Test, Build"), and this used to be
+  # `branches: ['**']` — so pushing a branch and then opening its PR
+  # produced TWO runs reporting that one context, seconds apart. GitHub
+  # aggregates a required context across every run that reports it, so if
+  # either run is cancelled the context is never satisfied:
+  # `mergeStateStatus` goes BLOCKED and auto-merge waits forever while the
+  # PR still reports auto-merge as armed. Nothing surfaces it.
+  #
+  # It happened on PR #823 — runs 34666985642 (push) and 34666987770
+  # (pull_request), 3 seconds apart, the second CANCELLED — and had to be
+  # cleared by hand with `gh run rerun`. Auto-merge is mandatory in this
+  # repo (CLAUDE.md), so a stall that reports itself as armed is the worst
+  # possible shape for this bug.
+  #
+  # A PR branch now gets exactly one run, from the `pull_request` event
+  # below, which is the run branch protection actually reads. It also halves
+  # CI cost per push: both runs were full 12-minute jobs.
+  #
+  # Do NOT drop this trigger to fix the duplication. `deploy.yml` keys off
+  # `workflow_run` and deploys only when the completed CI run both succeeded
+  # AND was a **push to `main`** (see its header, and workflows/README.md).
+  # Without a push trigger on `main`, nothing would ever deploy.
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
     branches: ['**']
   # The merge queue rebases each PR onto the tip of main and asks CI to run
