@@ -5,7 +5,7 @@ and the E2E suite against QA must pass.** From there, `approve-production`
 (spec-92) resolves one of two ways:
 
 ```
-push / PR ──▶ ci.yml ──(success, push to main only)──▶ deploy.yml
+PR / push to main ──▶ ci.yml ──(success, push to main only)──▶ deploy.yml
                                                           │
                                                           ├─▶ changes            (incl. auth_hook, pg_net)
                                                           ├─▶ deploy-qa          (QA VPS)
@@ -33,7 +33,21 @@ minutes, opens/updates a single issue labelled `deploy-approval-stale`.
 
 ## `ci.yml` — Lint, Type-Check, Test, Build
 
-**Trigger:** every push and every pull request, on all branches.
+**Trigger:** every pull request on any branch, every push **to `main`**, and
+`merge_group`.
+
+> **Push is `main`-only on purpose.** It used to be `branches: ['**']`, which
+> gave a PR branch two runs — one from its push, one from the `pull_request`
+> event — both reporting the single required context
+> `Lint, Type-Check, Test, Build`. GitHub aggregates a required context across
+> every run that reports it, so one cancelled run left the context unsatisfied:
+> `mergeStateStatus` BLOCKED and auto-merge waiting forever, while the PR still
+> reported auto-merge as armed. PR #823 stalled exactly that way and needed a
+> manual `gh run rerun`. A PR branch now gets one run, and CI cost per push
+> halves — both runs were full 12-minute jobs.
+>
+> The push trigger cannot simply be dropped: `deploy.yml` keys off
+> `workflow_run` and deploys only when CI succeeded **on a push to `main`**.
 
 One job named `Lint, Type-Check, Test, Build` runs, in order:
 
