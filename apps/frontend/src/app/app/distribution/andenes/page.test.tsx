@@ -51,17 +51,45 @@ vi.mock('@/hooks/distribution/useSectorizedByZone', () => ({
   useSectorizedByZone: () => ({ data: { 'zone-a1': 42 } }),
 }));
 
-let mockUnmatchedComunas: unknown[] = [];
-vi.mock('@/hooks/distribution/useUnmatchedComunas', () => ({
-  useUnmatchedComunas: () => ({ data: mockUnmatchedComunas }),
+// spec-96 Fase 8 review round 1 (finding #1) — `usePendingSectorization`'s
+// `ZoneGroup[]` shape, kept minimal: only the fields
+// `countUnassignedComunas`/`determineDockZone` actually read.
+let mockPendingGroups: unknown[] = [];
+vi.mock('@/hooks/distribution/usePendingSectorization', () => ({
+  usePendingSectorization: () => ({ data: mockPendingGroups }),
 }));
+
+// A past delivery date is always "active" per isDeliveryDateActive
+// (delivery <= tomorrow), regardless of when the suite runs.
+const PAST_DATE = '2020-01-01';
+
+function flaggedOrder(orderId: string, comunaId: string, comunaName: string) {
+  return {
+    orderId,
+    orderNumber: orderId,
+    deliveryDate: PAST_DATE,
+    comunaName,
+    packages: [
+      {
+        id: `${orderId}-p1`,
+        label: `BULTO-${orderId}`,
+        order_id: orderId,
+        orderNumber: orderId,
+        comunaId,
+        comunaName,
+        delivery_date: PAST_DATE,
+        skuItems: [],
+      },
+    ],
+  };
+}
 
 beforeEach(() => {
   mockOperatorId = 'op-1';
   mockZones = [zoneA];
   mockZonesLoading = false;
   mockZonesError = false;
-  mockUnmatchedComunas = [];
+  mockPendingGroups = [];
 });
 
 afterEach(() => {
@@ -69,7 +97,7 @@ afterEach(() => {
   mockZones = [zoneA];
   mockZonesLoading = false;
   mockZonesError = false;
-  mockUnmatchedComunas = [];
+  mockPendingGroups = [];
 });
 
 describe('AndenesPage', () => {
@@ -148,35 +176,107 @@ describe('AndenesPage', () => {
 
   // spec-96 Fase 8 (4l) — the subtitle's unconfigured-capacity count must
   // track the zones the route already fetched, not stay silent about it.
-  it('carries the unconfigured-capacity count in the subtitle when present', () => {
+  // Review round 1 (finding #2) — anchored on a dedicated data-testid, not
+  // a copy regex: `/1 sin abrir/` kept passing against a hardcoded wrong
+  // value because the regex matched a substring of a different number.
+  it('carries the unconfigured-capacity count, derived from the zones', () => {
     mockZones = [zoneA, zoneUnconfigured];
     render(<AndenesPage />);
-    expect(screen.getByText(/1 sin abrir/)).toBeInTheDocument();
+    expect(screen.getByTestId('andenes-unconfigured-count')).toHaveTextContent('1');
   });
 
-  it('omits the unconfigured-capacity mention when every active zone has one', () => {
+  it('counts zero unconfigured zones when every active zone has a capacity', () => {
     mockZones = [zoneA];
     render(<AndenesPage />);
-    expect(screen.queryByText(/sin abrir/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('andenes-unconfigured-count')).toHaveTextContent('0');
   });
 
-  // spec-96 Fase 8 (4l) — the footer banner over unrecognised comunas
-  // falling to consolidation; sourced from the same get_unmatched_comunas
-  // RPC 4a's tile already reads, via useUnmatchedComunas — no new query.
-  it('shows the unmatched-comunas banner with the count the hook returns', () => {
-    mockUnmatchedComunas = [
-      { comuna_raw: 'Foo', order_count: 1 },
-      { comuna_raw: 'Bar', order_count: 2 },
-      { comuna_raw: 'Baz', order_count: 1 },
-    ];
+  // Review round 1 (finding #4) — capacity: 0 has no CHECK constraint
+  // preventing it; must land in "unconfigured" the same as null.
+  it('treats an active zone with capacity: 0 as unconfigured', () => {
+    mockZones = [{ ...zoneA, capacity: 0 }];
     render(<AndenesPage />);
-    const banner = screen.getByTestId('unmatched-comunas-banner');
-    expect(within(banner).getByText(/3/)).toBeInTheDocument();
+    expect(screen.getByTestId('andenes-unconfigured-count')).toHaveTextContent('1');
   });
 
-  it('omits the unmatched-comunas banner when there are none', () => {
-    mockUnmatchedComunas = [];
-    render(<AndenesPage />);
-    expect(screen.queryByTestId('unmatched-comunas-banner')).not.toBeInTheDocument();
+  // spec-96 Fase 8 (4l) review round 1 (finding #1) — the footer banner
+  // over comunas falling to consolidation for want of a covering andén.
+  // `get_unmatched_comunas`/`useUnmatchedComunas` cannot source this: its
+  // predicate (`comuna_id IS NULL`) is the exact complement of
+  // `determineDockZone`'s `flagged` (`comunaId !== null`) — zero overlap.
+  // This recomputes per order over `usePendingSectorization`'s data
+  // instead, the same way `PendingMobileList` already does.
+  describe('the comunas-without-dock banner', () => {
+    it('counts distinct comunas among flagged orders, not raw rows', () => {
+      mockZones = [zoneA, zoneUnconfigured];
+      mockPendingGroups = [
+        {
+          zone: zoneUnconfigured,
+          matchResult: { zone_id: 'zone-b1', zone_name: 'x', zone_code: 'x', is_consolidation: true, reason: 'unmapped', flagged: false },
+          orders: [
+            flaggedOrder('o1', 'c-901', 'Melipilla'),
+            // same comuna as o1, different order — must count once, not twice
+            flaggedOrder('o2', 'c-901', 'Melipilla'),
+            flaggedOrder('o3', 'c-902', 'Til Til'),
+          ],
+        },
+      ];
+      render(<AndenesPage />);
+      const banner = screen.getByTestId('unassigned-comunas-banner');
+      expect(within(banner).getByTestId('unassigned-comunas-count')).toHaveTextContent('2');
+    });
+
+    it('excludes an order whose comuna is unknown (comunaId null — a different predicate)', () => {
+      mockZones = [zoneA, zoneUnconfigured];
+      mockPendingGroups = [
+        {
+          zone: zoneUnconfigured,
+          matchResult: { zone_id: 'zone-b1', zone_name: 'x', zone_code: 'x', is_consolidation: true, reason: 'unmapped', flagged: false },
+          orders: [
+            {
+              orderId: 'o1',
+              orderNumber: 'o1',
+              deliveryDate: PAST_DATE,
+              comunaName: null,
+              packages: [
+                {
+                  id: 'o1-p1',
+                  label: 'BULTO-o1',
+                  order_id: 'o1',
+                  orderNumber: 'o1',
+                  comunaId: null,
+                  comunaName: null,
+                  delivery_date: PAST_DATE,
+                  skuItems: [],
+                },
+              ],
+            },
+          ],
+        },
+      ];
+      render(<AndenesPage />);
+      expect(screen.queryByTestId('unassigned-comunas-banner')).not.toBeInTheDocument();
+    });
+
+    it('excludes an order matched to a real zone', () => {
+      mockZones = [zoneA, zoneUnconfigured];
+      mockPendingGroups = [
+        {
+          zone: zoneA,
+          matchResult: { zone_id: 'zone-a1', zone_name: 'x', zone_code: 'x', is_consolidation: false, reason: 'matched', flagged: false },
+          // zoneA covers comuna 'c-1' (Quilicura) — this order matches it.
+          orders: [flaggedOrder('o1', 'c-1', 'Quilicura')],
+        },
+      ];
+      render(<AndenesPage />);
+      expect(screen.queryByTestId('unassigned-comunas-banner')).not.toBeInTheDocument();
+    });
+
+    it('omits the banner when there is nothing flagged', () => {
+      mockZones = [zoneA, zoneUnconfigured];
+      mockPendingGroups = [];
+      render(<AndenesPage />);
+      expect(screen.queryByTestId('unassigned-comunas-banner')).not.toBeInTheDocument();
+    });
   });
 });
