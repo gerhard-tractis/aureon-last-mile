@@ -26,17 +26,23 @@ import { countNoDockIncidents } from '@/lib/distribution/no-dock-incident-count'
 import { todayISOInTimezone } from '@/lib/utils/dateFormat';
 
 /**
- * spec-54 mock 3d — Distribución, estado inicial del módulo.
+ * spec-54 mock 3d, spec-96 fase 4 — Distribución, estado inicial del módulo
+ * (`4a`).
  *
  * The screen the floor lead sits on between sorting runs: what is waiting,
  * how fast it is moving, which andenes are filling, and who is on the floor.
  * The primary action is entering Modo rápido (1d), where the work happens.
  *
- * Not rendered yet: the mock's "168 / 180 paq." denominator, its fill bar
- * and the CASI LLENO badge. `dock_zones.capacity` and its admin surface
- * (DockZoneForm) shipped in spec-68 Fase 1, but this screen still isn't
- * wired to lib/distribution/dock-capacity.ts / DockCapacityBar — that's a
- * follow-up, not a schema gap.
+ * `OutboundDockGrid` is fully wired now: capacity (`dock_zones.capacity` →
+ * `lib/distribution/dock-capacity.ts` → `DockCapacityBar`) and, since fase
+ * 4, per-zone activity via `useOpenBatchesByZone`. Two things `4a` draws
+ * that this screen still cannot: the `DETENIDO` chip (no driver-assignment
+ * source exists pre-load — see `OutboundDockGrid`'s doc comment) and the
+ * tile footer's route codes (no route field on `DockZoneRecord`).
+ *
+ * `SectorizationIncidentsPanel`'s `wrongDockCount` also stays unpassed:
+ * `quicksort-exception.ts` records the event but no hook reads it back
+ * operator-wide yet.
  *
  * spec-68 Fase 2 (Decisión 1) — below `lg` (1024px) this swaps entirely for
  * `DistributionMobileView`'s phone card layout (mock 4c) instead of
