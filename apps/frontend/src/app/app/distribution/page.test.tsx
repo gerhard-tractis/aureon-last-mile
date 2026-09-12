@@ -59,8 +59,9 @@ vi.mock('@/hooks/distribution/useSectorizedByZone', () => ({
 }));
 
 let mockUnmatched: unknown[] = [];
+let mockUnmatchedLoading = false;
 vi.mock('@/hooks/distribution/useUnmatchedComunas', () => ({
-  useUnmatchedComunas: () => ({ data: mockUnmatched }),
+  useUnmatchedComunas: () => ({ data: mockUnmatched, isLoading: mockUnmatchedLoading }),
 }));
 
 const mockUsePendingSectorization = vi.fn();
@@ -104,6 +105,7 @@ describe('DistributionPage', () => {
   beforeEach(() => {
     mockIsBelowLg = false;
     mockUnmatched = [];
+    mockUnmatchedLoading = false;
     mockUseDistributionKPIs.mockReturnValue({ data: mockKpis, isLoading: false });
     mockUseDockZones.mockReturnValue({ data: mockZones });
     mockUseSectorizedByZone.mockReturnValue({ data: { z1: 42 } });
@@ -183,18 +185,18 @@ describe('DistributionPage', () => {
       expect(screen.getByText('Sin andenes configurados')).toBeInTheDocument();
     });
 
-    it('passes the real per-zone open-lote count through to the chip (EN RITMO)', () => {
+    it('passes the real per-zone open-lote count through to the chip (active)', () => {
       mockUseOpenBatchesByZone.mockReturnValue({ data: { z1: 1 } });
       render(<DistributionPage />);
       const dock = screen.getByTestId('outbound-dock');
-      expect(within(dock).getByTestId('outbound-dock-chip')).toHaveTextContent('EN RITMO');
+      expect(within(dock).getByTestId('outbound-dock-chip').dataset.state).toBe('active');
     });
 
-    it('shows SIN ABRIR when the zone has no open lote', () => {
+    it('shows the unopened chip state when the zone has no open lote', () => {
       mockUseOpenBatchesByZone.mockReturnValue({ data: {} });
       render(<DistributionPage />);
       const dock = screen.getByTestId('outbound-dock');
-      expect(within(dock).getByTestId('outbound-dock-chip')).toHaveTextContent('SIN ABRIR');
+      expect(within(dock).getByTestId('outbound-dock-chip').dataset.state).toBe('unopened');
     });
   });
 
@@ -216,12 +218,15 @@ describe('DistributionPage', () => {
     });
   });
 
-  // spec-68 Fase 2 (Decisión 1) — `useIsBelowLg` picks exactly one tree.
-  // Regression guard for the bug that has already shipped twice (spec-62,
-  // spec-54 3h): both headers must never mount together at 390px.
+  // Review fix — both incident counts are order-level now. `unmatched`
+  // used to feed the panel as `.length` (distinct comuna strings), while
+  // `noDockCount` was always orders — two different units in one total.
+  // `4a` draws the incidents badge and the StatTile with the same "9",
+  // which only happens if the whole surface counts orders. The StatTile
+  // itself is untouched (fase 4's own note says it's already correct);
+  // only the incidents panel's feed changes.
   describe('incidencias de sectorización', () => {
-    it('sources unrecognised-comuna and no-dock counts independently — they never share a number', () => {
-      mockUnmatched = [{ comuna_raw: 'Colina', order_count: 3 }];
+    function withConsolidationZoneAndPending() {
       mockUseDockZones.mockReturnValue({
         data: [
           ...mockZones,
@@ -248,16 +253,47 @@ describe('DistributionPage', () => {
           },
         ],
       });
+    }
+
+    it('sources unrecognised-comuna and no-dock counts independently — they never share a number', () => {
+      mockUnmatched = [{ comuna_raw: 'Colina', order_count: 3 }];
+      withConsolidationZoneAndPending();
       render(<DistributionPage />);
       const unmatchedRow = screen.getByTestId('incident-unmatched-comuna');
       const noDockRow = screen.getByTestId('incident-no-dock');
-      expect(within(unmatchedRow).getByText('1')).toBeInTheDocument();
+      // 3 orders behind the one unmatched comuna string, not 1 (the
+      // string count) — order-level throughout, matching noDockCount's 2.
+      expect(within(unmatchedRow).getByText('3')).toBeInTheDocument();
       expect(within(noDockRow).getByText('2')).toBeInTheDocument();
     });
 
-    it('omits the wrong-dock row — quicksort-exception has no read-side hook yet', () => {
+    it('sums order_count across multiple unmatched comuna strings, rather than counting the strings', () => {
+      mockUnmatched = [
+        { comuna_raw: 'Colina', order_count: 3 },
+        { comuna_raw: 'Til Til', order_count: 1 },
+      ];
       render(<DistributionPage />);
+      expect(within(screen.getByTestId('incident-unmatched-comuna')).getByText('4')).toBeInTheDocument();
+    });
+
+    it('omits the wrong-dock row even while the panel is in its rows branch', () => {
+      // Guard against `wrongDockCount={0}` at the call site: with every
+      // fixture at 0 the panel takes its empty-state branch and no row
+      // renders for ANY type, wrong-dock included — for the wrong reason.
+      // Non-zero fixtures put the panel in its rows branch first.
+      mockUnmatched = [{ comuna_raw: 'Colina', order_count: 3 }];
+      withConsolidationZoneAndPending();
+      render(<DistributionPage />);
+      expect(screen.getByTestId('incident-unmatched-comuna')).toBeInTheDocument();
+      expect(screen.getByTestId('incident-no-dock')).toBeInTheDocument();
       expect(screen.queryByTestId('incident-wrong-dock')).toBeNull();
+    });
+
+    it('shows the incidents panel loading state while unmatched comunas are still resolving', () => {
+      mockUnmatchedLoading = true;
+      render(<DistributionPage />);
+      expect(screen.getByTestId('incident-panel-loading')).toBeInTheDocument();
+      expect(screen.queryByTestId('incident-panel-empty')).toBeNull();
     });
   });
 

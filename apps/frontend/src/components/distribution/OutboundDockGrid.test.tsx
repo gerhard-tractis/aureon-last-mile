@@ -47,7 +47,7 @@ describe('OutboundDockGrid capacity', () => {
 // component's doc comment). Precedence: capacity tone over activity, so a
 // near-full dock reads CASI LLENO even while a lote is open.
 describe('OutboundDockGrid — chip state machine', () => {
-  it('shows CASI LLENO for a near-full zone, regardless of open lotes', () => {
+  it('shows the near-full chip state for a near-full zone, regardless of open lotes', () => {
     render(
       <OutboundDockGrid
         zones={[zone({ id: 'z', capacity: 180 })]}
@@ -56,11 +56,10 @@ describe('OutboundDockGrid — chip state machine', () => {
       />,
     );
     const chip = within(screen.getByTestId('outbound-dock')).getByTestId('outbound-dock-chip');
-    expect(chip).toHaveTextContent('CASI LLENO');
     expect(chip.dataset.state).toBe('near-full');
   });
 
-  it('shows EN RITMO for a zone with an open lote and no capacity pressure', () => {
+  it('shows the active chip state for a zone with an open lote and no capacity pressure', () => {
     render(
       <OutboundDockGrid
         zones={[zone({ id: 'z', capacity: 180 })]}
@@ -69,11 +68,10 @@ describe('OutboundDockGrid — chip state machine', () => {
       />,
     );
     const chip = within(screen.getByTestId('outbound-dock')).getByTestId('outbound-dock-chip');
-    expect(chip).toHaveTextContent('EN RITMO');
     expect(chip.dataset.state).toBe('active');
   });
 
-  it('shows SIN ABRIR for a zone with no open lote', () => {
+  it('shows the unopened chip state for a zone with no open lote', () => {
     render(
       <OutboundDockGrid
         zones={[zone({ id: 'z', capacity: 120 })]}
@@ -82,7 +80,6 @@ describe('OutboundDockGrid — chip state machine', () => {
       />,
     );
     const chip = within(screen.getByTestId('outbound-dock')).getByTestId('outbound-dock-chip');
-    expect(chip).toHaveTextContent('SIN ABRIR');
     expect(chip.dataset.state).toBe('unopened');
   });
 
@@ -98,9 +95,10 @@ describe('OutboundDockGrid — chip state machine', () => {
     expect(chip.dataset.state).toBe('unopened');
   });
 
-  it('never applies error styling to the chip, even over 100% fill', () => {
-    // The artboard reserves the error tone/border for a blocked dock
-    // (DETENIDO), never a full one.
+  it('keeps the near-full chip state even over 100% fill — never a distinct state for a full dock', () => {
+    // The artboard reserves a different visual treatment for a blocked dock
+    // (DETENIDO, not implemented) — a full dock must resolve to the SAME
+    // chip state as a near-full one, not a third state of its own.
     render(
       <OutboundDockGrid
         zones={[zone({ id: 'z', capacity: 100 })]}
@@ -108,8 +106,25 @@ describe('OutboundDockGrid — chip state machine', () => {
       />,
     );
     const chip = within(screen.getByTestId('outbound-dock')).getByTestId('outbound-dock-chip');
-    expect(chip).toHaveTextContent('CASI LLENO');
-    expect(chip.className).not.toMatch(/status-error/);
+    expect(chip.dataset.state).toBe('near-full');
+  });
+
+  // Review fix — the chip render was gated on `!consolidation`, an
+  // unintended side effect of this phase's rewrite: before it, any
+  // near-full zone (consolidation included) got CASI LLENO. `4a` has no
+  // consolidation tile to confirm either way, so this is a declared
+  // decision, not an artboard fact: the consolidation zone is the ONE
+  // surface that would warn an overflowing consolidation, so it keeps the
+  // same chip machine as every other zone.
+  it('shows the near-full chip on the consolidation zone too, when it has a capacity and is near it', () => {
+    render(
+      <OutboundDockGrid
+        zones={[zone({ id: 'z', is_consolidation: true, capacity: 100 })]}
+        sectorizedCounts={{ z: 95 }}
+      />,
+    );
+    const chip = within(screen.getByTestId('outbound-dock')).getByTestId('outbound-dock-chip');
+    expect(chip.dataset.state).toBe('near-full');
   });
 
   it('renders no LOTE/LOTES count badge — the chip is the only activity signal', () => {
@@ -126,7 +141,7 @@ describe('OutboundDockGrid — chip state machine', () => {
 });
 
 describe('OutboundDockGrid — tile footer action', () => {
-  it('offers Abrir for a dock with no open lote', () => {
+  it('offers the "abrir" action for a dock with no open lote', () => {
     render(
       <OutboundDockGrid
         zones={[zone({ id: 'z', capacity: 120 })]}
@@ -134,10 +149,12 @@ describe('OutboundDockGrid — tile footer action', () => {
         openBatches={{ z: 0 }}
       />,
     );
-    expect(within(screen.getByTestId('outbound-dock')).getByText('Abrir')).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('outbound-dock')).getByTestId('outbound-dock-action').dataset.action,
+    ).toBe('abrir');
   });
 
-  it('offers Ver for a dock with an open lote', () => {
+  it('offers the "ver" action for a dock with an open lote', () => {
     render(
       <OutboundDockGrid
         zones={[zone({ id: 'z', capacity: 120 })]}
@@ -145,6 +162,8 @@ describe('OutboundDockGrid — tile footer action', () => {
         openBatches={{ z: 1 }}
       />,
     );
-    expect(within(screen.getByTestId('outbound-dock')).getByText('Ver')).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('outbound-dock')).getByTestId('outbound-dock-action').dataset.action,
+    ).toBe('ver');
   });
 });

@@ -39,6 +39,16 @@ import { getDockCapacityStatus } from '@/lib/distribution/dock-capacity';
  * none is open) instead of inventing a route list. The right side is the
  * per-state action, matching the artboard's `Ver`/`Abrir` (never
  * `Asignar`, since that belongs to the unbuilt `DETENIDO` state).
+ *
+ * Review fix — the chip used to render only `!consolidation`, an
+ * unintended side effect of this phase's rewrite (before it, ANY
+ * near-full zone got `CASI LLENO`, consolidation included). `4a` draws no
+ * consolidation tile, so nothing in the artboard confirms this either way
+ * — declared decision: the consolidation zone keeps the same chip machine
+ * as every other zone, since it is the one surface that would warn of an
+ * overflowing consolidation. `4a:188` also draws the near-full tile with
+ * a warn-tinted 1px ring, not the neutral one `active`/`unopened` use —
+ * `BORDER_CLASSNAME['near-full']` matches that now.
  */
 
 type ChipState = 'near-full' | 'active' | 'unopened';
@@ -56,7 +66,11 @@ const CHIP_CLASSNAME: Record<ChipState, string> = {
 };
 
 const BORDER_CLASSNAME: Record<ChipState, string> = {
-  'near-full': 'border-border border-t-[3px] border-t-status-warning',
+  // `4a:188` draws BOTH a 1px warn ring and the 3px warn top on the
+  // near-full tile — a plain `border-border` here dropped the ring
+  // (`active`/`unopened` correctly reuse the neutral ring, only this one
+  // needed the warn-tinted one).
+  'near-full': 'border-status-warning-border border-t-[3px] border-t-status-warning',
   active: 'border-border border-t-[3px] border-t-status-success',
   unopened: 'border-border border-t-[3px] border-t-border-strong',
 };
@@ -114,18 +128,16 @@ export function OutboundDockGrid({
                   ? 'Consolidación'
                   : zone.comunas.map((c) => c.nombre).join(' · ') || zone.name}
               </span>
-              {!consolidation && (
-                <span
-                  data-testid="outbound-dock-chip"
-                  data-state={chipState}
-                  className={cn(
-                    'ml-auto flex-none rounded px-1.5 py-1 font-mono text-[9.5px] font-semibold leading-none',
-                    CHIP_CLASSNAME[chipState],
-                  )}
-                >
-                  {CHIP_LABEL[chipState]}
-                </span>
-              )}
+              <span
+                data-testid="outbound-dock-chip"
+                data-state={chipState}
+                className={cn(
+                  'ml-auto flex-none rounded px-1.5 py-1 font-mono text-[9.5px] font-semibold leading-none',
+                  CHIP_CLASSNAME[chipState],
+                )}
+              >
+                {CHIP_LABEL[chipState]}
+              </span>
             </div>
 
             <div className="flex items-baseline gap-1.5">
@@ -143,7 +155,11 @@ export function OutboundDockGrid({
               <span className="truncate text-[10.5px] leading-none text-text-muted">
                 {open > 0 ? `${open} ${open === 1 ? 'lote' : 'lotes'} en curso` : 'lote sin abrir'}
               </span>
-              <span className="ml-auto flex-none text-[10.5px] font-semibold leading-none text-accent">
+              <span
+                data-testid="outbound-dock-action"
+                data-action={open > 0 ? 'ver' : 'abrir'}
+                className="ml-auto flex-none text-[10.5px] font-semibold leading-none text-accent"
+              >
                 {open > 0 ? 'Ver' : 'Abrir'}
               </span>
             </div>

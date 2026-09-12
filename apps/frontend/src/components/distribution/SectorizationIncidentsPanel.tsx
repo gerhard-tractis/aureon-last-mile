@@ -14,6 +14,13 @@ import { CheckCircle2 } from 'lucide-react';
  * source isn't wired yet, per the phase's ban on a placeholder zero that
  * would misread as "no wrong-dock incidents" rather than "not sourced".
  * When omitted, the row does not render at all.
+ *
+ * `isLoading` guards the SAME failure by a different route (review fix):
+ * every count defaults to 0 while its query resolves, so with no loading
+ * state at all this rendered a green "Sin incidencias" for a beat on
+ * every load with a real backlog. Only gates the empty-state branch —
+ * once real counts are known (`hasIncidents`), a background refetch must
+ * not flash a skeleton over rows the floor lead is already reading.
  */
 interface IncidentRowSpec {
   testId: string;
@@ -28,6 +35,8 @@ interface SectorizationIncidentsPanelProps {
   /** Undefined when not sourced — omits the row rather than showing 0. */
   wrongDockCount?: number;
   onResolve: () => void;
+  /** True while any of the counts' sources hasn't resolved yet. */
+  isLoading?: boolean;
 }
 
 export function SectorizationIncidentsPanel({
@@ -35,6 +44,7 @@ export function SectorizationIncidentsPanel({
   noDockCount,
   wrongDockCount,
   onResolve,
+  isLoading = false,
 }: SectorizationIncidentsPanelProps) {
   const rows: IncidentRowSpec[] = [
     {
@@ -77,7 +87,11 @@ export function SectorizationIncidentsPanel({
         )}
       </div>
 
-      {!hasIncidents ? (
+      {isLoading && !hasIncidents ? (
+        <div data-testid="incident-panel-loading" className="flex-1 animate-pulse p-4">
+          <div className="h-4 w-2/3 rounded bg-surface-raised" />
+        </div>
+      ) : !hasIncidents ? (
         <div data-testid="incident-panel-empty" className="flex-1">
           <EmptyState
             icon={CheckCircle2}
