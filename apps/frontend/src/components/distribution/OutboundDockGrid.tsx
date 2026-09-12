@@ -3,6 +3,7 @@
 import { cn } from '@/lib/utils';
 import type { DockZoneRecord } from '@/hooks/distribution/useDockZones';
 import { DockCapacityBar } from './DockCapacityBar';
+import { getDockCapacityStatus } from '@/lib/distribution/dock-capacity';
 
 /**
  * spec-54 mock 3d, spec-96 fase 0 — "Andenes de salida" (`4a`).
@@ -16,10 +17,14 @@ import { DockCapacityBar } from './DockCapacityBar';
  * all read — so a zone with no capacity configured renders no bar, never one
  * pinned at 0%.
  *
- * The tile also carries an activity state, distinguishable via
- * `data-testid="outbound-dock-activity"`'s `data-state` attribute
- * (`inactive` | `open` | `idle`), derived from `openBatches` and
- * `zone.is_active` — not from capacity, and not a new query.
+ * `4a` draws one status chip per tile (`CASI LLENO` / `EN RITMO` / `DETENIDO`
+ * / `SIN ABRIR`). Two of those are capacity states (already sourced from
+ * `dock-capacity.ts`'s tone); the other two would need a driver/route
+ * assignment this app has no query for, so this grid derives its chip from
+ * what it does have — capacity tone first, then `openBatches` and
+ * `zone.is_active` — distinguishable via
+ * `data-testid="outbound-dock-activity"`'s `data-state` attribute, never by
+ * asserting its copy.
  */
 
 interface OutboundDockGridProps {
@@ -29,7 +34,31 @@ interface OutboundDockGridProps {
   openBatches?: Record<string, number>;
 }
 
-function activityState(isActive: boolean, open: number): 'inactive' | 'open' | 'idle' {
+type OutboundDockState = 'full' | 'warning' | 'inactive' | 'open' | 'idle';
+
+const STATE_LABEL: Record<OutboundDockState, string> = {
+  full: 'LLENO',
+  warning: 'CASI LLENO',
+  inactive: 'INACTIVO',
+  open: 'EN RITMO',
+  idle: 'SIN ABRIR',
+};
+
+const STATE_CLASS: Record<OutboundDockState, string> = {
+  full: 'bg-status-error-bg text-status-error-text',
+  warning: 'bg-status-warning-bg text-status-warning-text',
+  inactive: 'bg-surface-raised text-text-muted',
+  open: 'bg-status-success-bg text-status-success-text',
+  idle: 'bg-surface-raised text-text-muted',
+};
+
+function dockState(
+  tone: ReturnType<typeof getDockCapacityStatus>['tone'],
+  isActive: boolean,
+  open: number,
+): OutboundDockState {
+  if (tone === 'error') return 'full';
+  if (tone === 'warning') return 'warning';
   if (!isActive) return 'inactive';
   if (open > 0) return 'open';
   return 'idle';
@@ -46,7 +75,8 @@ export function OutboundDockGrid({
         const count = sectorizedCounts?.[zone.id] ?? 0;
         const open = openBatches?.[zone.id] ?? 0;
         const consolidation = zone.is_consolidation;
-        const state = activityState(zone.is_active, open);
+        const capacityStatus = getDockCapacityStatus(count, zone.capacity);
+        const state = dockState(capacityStatus.tone, zone.is_active, open);
 
         return (
           <div
@@ -75,11 +105,16 @@ export function OutboundDockGrid({
                   ? 'Consolidación'
                   : zone.comunas.map((c) => c.nombre).join(' · ') || zone.name}
               </span>
-              {open > 0 && (
-                <span className="ml-auto flex-none rounded bg-status-success-bg px-1.5 py-1 font-mono text-[9.5px] font-semibold leading-none text-status-success-text">
-                  {open} {open === 1 ? 'LOTE' : 'LOTES'}
-                </span>
-              )}
+              <span
+                data-testid="outbound-dock-activity"
+                data-state={state}
+                className={cn(
+                  'ml-auto flex-none rounded px-1.5 py-1 font-mono text-[9.5px] font-semibold leading-none',
+                  STATE_CLASS[state],
+                )}
+              >
+                {STATE_LABEL[state]}
+              </span>
             </div>
 
             <div className="flex items-baseline gap-1.5">
@@ -90,16 +125,6 @@ export function OutboundDockGrid({
             </div>
 
             <DockCapacityBar count={count} capacity={zone.capacity} />
-
-            <div className="mt-auto flex items-center gap-2">
-              <span
-                data-testid="outbound-dock-activity"
-                data-state={state}
-                className="truncate text-[10.5px] leading-none text-text-muted"
-              >
-                {zone.is_active ? 'Activo' : 'Inactivo'}
-              </span>
-            </div>
           </div>
         );
       })}
