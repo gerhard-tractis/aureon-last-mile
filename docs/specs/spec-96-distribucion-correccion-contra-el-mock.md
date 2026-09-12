@@ -463,8 +463,15 @@ hermanos.
 
 **Archivos:** `apps/frontend/src/components/distribution/PendingMobileList.tsx`,
 `apps/frontend/src/components/distribution/PendingMobileOrderGroup.tsx`,
-`apps/frontend/src/app/app/distribution/pendientes/page.tsx`, y sus tests
-hermanos.
+`apps/frontend/src/app/app/distribution/pendientes/page.tsx`,
+`apps/frontend/src/components/distribution/PendingZoneSection.tsx`,
+`apps/frontend/src/components/distribution/PendingOrderActionSlot.tsx`,
+`apps/frontend/src/components/distribution/PendingSelectionFooter.tsx`,
+`apps/frontend/src/lib/distribution/pending-selection.ts`, y sus tests
+hermanos. Los cuatro últimos se extrajeron de los tres primeros durante la
+implementación (piso de 300 líneas) — **Fase 9 depende de esta fase porque
+ambas tocan `pendientes/page.tsx`**; el chequeo de solapamiento debe ver
+también estos cuatro, no sólo los tres originales.
 
 **Notas no visuales:**
 
@@ -482,22 +489,62 @@ hermanos.
 
 **Task 2.1 — `DET` / `CMP`**
 
-- [ ] Write a failing test: in `CMP`, a three-bulto order renders one row; in `DET`, it renders the order line plus one row per bulto. Assert row counts, not copy.
-- [ ] Run — expect FAIL. Implement as a state in the page, passed down; `PendingMobileOrderGroup` already renders both shapes.
-- [ ] Run — expect PASS. Commit.
+- [x] Write a failing test: in `CMP`, a three-bulto order renders one row; in `DET`, it renders the order line plus one row per bulto. Assert row counts, not copy.
+- [x] Run — expect FAIL. Implement as a state in the page, passed down; `PendingMobileOrderGroup` already renders both shapes.
+- [x] Run — expect PASS. Commit.
 
 **Task 2.2 — `SEL`**
 
-- [ ] Write a failing test: entering selection mode exposes a checkbox per order; selecting two and confirming calls the send handler once with both orders' package ids.
-- [ ] Run — expect FAIL. Implement, reusing `SendToDockSheet` with the selection.
-- [ ] Run — expect PASS. Commit.
+- [x] Write a failing test: entering selection mode exposes a checkbox per order; selecting two and confirming calls the send handler once with both orders' package ids.
+- [x] Run — expect FAIL. Implement, reusing `SendToDockSheet` with the selection.
+- [x] Run — expect PASS. Commit.
+
+Review fix — the confirm action first shipped as a `sticky bottom-0` bar
+with no `z-index` *inside* the scrolling list; the page's own `fixed z-40`
+opaque footer painted over it at every scroll position where the list
+overflows (the window is the scroll container — `AppLayout`'s `<main>` has
+no `overflow-y-auto`), making SEL a dead end. Moved into the same fixed
+footer as Escanear/SEL, in `4f`'s shape (counter, then the primary
+action). The checkbox also moved from replacing the trailing `⋯` to
+leading each row (per `4f`), and its `aria-label` no longer reuses the
+send affordance's "Enviar … a andén" — a checkbox is not a send action.
+`mixedComunaBatch` (a second, pre-existing caller: `ConsolidationPageContent`,
+Fase 3) now uses that caller's documented predicate — disagreement between
+ACTUAL andén matches, ignoring consolidación — instead of counting every
+distinct zone id, which flagged a batch mixed for containing a SIN ANDÉN
+order alongside one real match with nothing actually in disagreement.
+Selection also now survives Cancelar (only exits on a fully successful
+send, or on tapping SEL again) and prunes ids that vanish from a refetch
+(a coworker sectorizing a selected order mid-selection), mirroring
+`ConsolidationPageContent`'s Fase 4 review (finding #3).
 
 **Task 2.3 — Keep the two predicates apart**
 
-- [ ] Write a test asserting the no-dock group is computed per order via `determineDockZone`, not from the bucket-level flag. `PendingMobileList.tsx`'s own doc comment explains why — the consolidation bucket legitimately mixes three cases, so the bucket-level flag depends on whichever order was fetched first. This test locks that reasoning in before the group header is restyled.
-- [ ] Run, implement if needed, commit.
+- [x] Write a test asserting the no-dock group is computed per order via `determineDockZone`, not from the bucket-level flag. `PendingMobileList.tsx`'s own doc comment explains why — the consolidation bucket legitimately mixes three cases, so the bucket-level flag depends on whichever order was fetched first. This test locks that reasoning in before the group header is restyled.
+- [x] Run, implement if needed, commit. (Already passed — `isOrderFlagged`/`determineDockZone` predates this test, spec-68 Fase 3 review #5. Test-only commit.)
 
-**Task 2.4 — Close the visual diff** at 402 px, including the group header that truncates today. Run suite + type-check, PR with auto-merge.
+**Task 2.4 — Close the visual diff** at 402 px, including the group header that truncates today.
+
+- [x] Zone/SIN ANDÉN header: was a `rounded-lg` card (filled background, tinted border when flagged). `4d` (`:609-612,658-664`) draws a plain baseline row with a neutral bottom border in both states. Exact label `SIN ANDÉN ASIGNADO` (not `SIN ANDÉN`), detail `▸ {zone.name} · {comunas}` (not a bare comuna list), count un-padded.
+- [x] Compact row (single-bulto and CMP-forced): led with the barcode; `4d` (`:620-621`) leads with the order (`Pedido #{orderNumber}`), no barcode in that row at all. **Declared gap:** `4d`'s example also shows the customer's name (`Rodrigo Silva`) — `OrderGroup`/`PendingPackage` carry no such field, so it is not rendered. Whoever adds a customer-name column to this query should also add it here.
+- [ ] Not done: the header's own type scale (title/back-button size) vs the `DET`/`CMP` toggle's width — see the truncation-risk note below. Left as declared risk, not silently shipped.
+- [x] Run suite + type-check.
+
+**Declared exceptions, not silent drift:**
+
+- The `DET`/`CMP` buttons are ~30×38 px, under this module's own 44px
+  touch-floor test. `4d` itself draws them at 34px — the mock is the
+  source of truth here, so this is the module's own floor yielding to its
+  own benchmark, not an oversight.
+- **Truncation risk not resolved.** `DetCmpToggle` sits beside
+  `DistributionMobileHeader`'s `<h1>` the same way `4g`'s `SECT`/`ESTIB`
+  control does, which truncates today at 402px. `4d` avoids this because
+  its title is 14px with a bare 19px chevron, versus this route's 18px
+  title and 44px back button — both inside `DistributionMobileHeader`,
+  which this phase must not modify (eight consumers, one of them
+  Despacho). The toggle's own padding was trimmed (`px-2.5 py-2` →
+  `px-2 py-1.5`) as the only mitigation available without touching that
+  component. Unverified in a real browser — flagged for the QA pass.
 
 ---
 
