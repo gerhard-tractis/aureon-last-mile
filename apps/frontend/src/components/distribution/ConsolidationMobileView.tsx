@@ -21,10 +21,13 @@ import type { DockZoneRecord } from '@/hooks/distribution/useDockZones';
  * simply wrong for an overdue package sitting in that same section with
  * an AYER row tag. Bare "URGENTES" doesn't over-promise a window, the
  * same way PRÓXIMOS is one word with no qualifier. The header
- * ("Consolidación", "N bultos retenidos · zona CNS", "N SALEN YA" chip)
- * and the fixed action footer live in the route (mirrors `pendientes`'s
- * page.tsx/PendingMobileList split), not here — this component owns the
- * list and the selection UI only.
+ * ("Consolidación", "N bultos retenidos · zona CNS", "N SALEN YA" chip),
+ * the "N SELECCIONADOS" counter and the fixed action footer all live in
+ * the route (mirrors `pendientes`'s page.tsx/PendingMobileList split) —
+ * spec-96 Fase 3 review moved the counter there from here, since `4f`
+ * draws it inside the footer block, after the list and before the
+ * buttons, not floating above the sections. This component owns the
+ * list and its row-level selection only.
  *
  * "comuna → andén" resolves the DESTINATION andén, not
  * `pkg.dock_zone_id` — every retenido package's `dock_zone_id` already
@@ -71,15 +74,6 @@ export function ConsolidationMobileView({
 
   return (
     <div className="flex flex-col gap-5">
-      {selectedIds.size > 0 && (
-        <div
-          data-testid="consolidation-selection-count"
-          className="rounded-lg border border-accent bg-accent-muted px-3 py-2 text-center font-mono text-[12.5px] font-semibold uppercase tracking-[.08em] text-accent"
-        >
-          {selectedIds.size} {selectedIds.size === 1 ? 'SELECCIONADO' : 'SELECCIONADOS'}
-        </div>
-      )}
-
       {urgent.length > 0 && (
         <Section
           testId="consolidation-section-urgentes"
@@ -231,7 +225,9 @@ function PackageRow({
             noZone ? 'text-status-error-text' : urgent ? 'text-status-warning-text' : 'text-text-secondary',
           )}
         >
-          {comunaLabel} → {zoneLabel} · entrega {dateLabel}
+          {noZone
+            ? `${comunaLabel} · sin andén · entrega ${dateLabel}`
+            : `${comunaLabel} → ${zoneLabel} · entrega ${dateLabel}`}
         </span>
       </span>
 

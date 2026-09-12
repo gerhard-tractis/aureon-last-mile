@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ConsolidationPageContent } from './ConsolidationPageContent';
+import { ConsolidationPageContent, getFooterContentHeight } from './ConsolidationPageContent';
 
 // spec-68 Fase 4 review (finding #5) — the page threads `now` the same
 // way ConsolidationMobileView's own tests do, so nothing here depends on
@@ -209,12 +209,84 @@ describe('ConsolidationPage (route: /app/distribution/consolidacion)', () => {
     expect(screen.getByRole('button', { name: /liberar a sectorización/i })).toBeDisabled();
   });
 
+  // Task 3.2 — 4f draws the footer as a stacked column: "Mover a andén"
+  // (primary) above "Liberar a sectorización" (secondary). The app had
+  // them reversed, side by side. Order, not copy, is what this asserts.
+  it('the footer orders Mover a andén before Liberar a sectorización', () => {
+    mockCanUse = true;
+    mockRole = 'ops_leader';
+    render(<ConsolidationPage />);
+    const move = screen.getByRole('button', { name: /mover a andén/i });
+    const release = screen.getByRole('button', { name: /liberar a sectorización/i });
+    expect(move.compareDocumentPosition(release) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('selecting a package enables both actions', async () => {
     const user = userEvent.setup();
     render(<ConsolidationPage />);
     await user.click(screen.getByRole('checkbox', { name: /BULTO-1/i }));
     expect(screen.getByRole('button', { name: /mover a andén/i })).toBeEnabled();
     expect(screen.getByRole('button', { name: /liberar a sectorización/i })).toBeEnabled();
+  });
+
+  // spec-96 Fase 3 review — "N SELECCIONADOS" moved from
+  // ConsolidationMobileView into this page's footer (`4f` draws it in the
+  // footer block, after the list and before the buttons). Behavioural
+  // only: absent at zero, singular/plural text at one/many. Which
+  // component hosts it is not asserted.
+  describe('the selection counter', () => {
+    it('is absent with nothing selected', () => {
+      render(<ConsolidationPage />);
+      expect(screen.queryByText(/SELECCIONADO/)).not.toBeInTheDocument();
+    });
+
+    it('reads "1 SELECCIONADO" for exactly one', async () => {
+      const user = userEvent.setup();
+      render(<ConsolidationPage />);
+      await user.click(screen.getByRole('checkbox', { name: /BULTO-1/i }));
+      expect(screen.getByText('1 SELECCIONADO')).toBeInTheDocument();
+    });
+
+    it('reads "2 SELECCIONADOS" for more than one', async () => {
+      const user = userEvent.setup();
+      render(<ConsolidationPage />);
+      await user.click(screen.getByRole('checkbox', { name: /BULTO-1/i }));
+      await user.click(screen.getByRole('checkbox', { name: /BULTO-2/i }));
+      expect(screen.getByText('2 SELECCIONADOS')).toBeInTheDocument();
+    });
+  });
+
+  // spec-96 Fase 3 review, must-fix 2 — the stacked footer (counter +
+  // Mover a andén + Liberar a sectorización) is taller than the old
+  // single-row one; the space reserved above it for the scrollable
+  // content must grow with it or the last row hides underneath. Both
+  // numbers now come from `getFooterContentHeight`, so this fails if
+  // whoever changes the footer's rows forgets to keep the reservation in
+  // step with it.
+  describe('the scroll clearance above the fixed footer', () => {
+    it('reserves exactly getFooterContentHeight for the tallest footer (ops_leader, selection active)', async () => {
+      mockCanUse = true;
+      mockRole = 'ops_leader';
+      const user = userEvent.setup();
+      render(<ConsolidationPage />);
+      await user.click(screen.getByRole('checkbox', { name: /BULTO-1/i }));
+      const expected = getFooterContentHeight({ hasMoveButton: true, hasCounter: true });
+      expect(screen.getByTestId('consolidation-scroll')).toHaveStyle({
+        paddingBottom: `calc(${expected}px + env(safe-area-inset-bottom))`,
+      });
+    });
+
+    it('reserves less for warehouse_staff, who never sees Mover a andén', async () => {
+      mockCanUse = false;
+      mockRole = 'warehouse_staff';
+      const user = userEvent.setup();
+      render(<ConsolidationPage />);
+      await user.click(screen.getByRole('checkbox', { name: /BULTO-1/i }));
+      const expected = getFooterContentHeight({ hasMoveButton: false, hasCounter: true });
+      expect(screen.getByTestId('consolidation-scroll')).toHaveStyle({
+        paddingBottom: `calc(${expected}px + env(safe-area-inset-bottom))`,
+      });
+    });
   });
 
   it('Mover a andén opens SendToDockSheet and confirming assigns via useManualDockAssignment', async () => {
@@ -348,13 +420,13 @@ describe('ConsolidationPage (route: /app/distribution/consolidacion)', () => {
       const { rerender } = render(<ConsolidationPage />);
       await user.click(screen.getByRole('checkbox', { name: /BULTO-1/i }));
       await user.click(screen.getByRole('checkbox', { name: /BULTO-2/i }));
-      expect(screen.getByTestId('consolidation-selection-count')).toHaveTextContent('2 SELECCIONADOS');
+      expect(screen.getByText('2 SELECCIONADOS')).toBeInTheDocument();
 
       // Simulate a refetch that drops BULTO-2 (e.g. someone else moved it).
       mockPackages = [pkg1];
       rerender(<ConsolidationPage />);
 
-      expect(screen.getByTestId('consolidation-selection-count')).toHaveTextContent('1 SELECCIONADO');
+      expect(screen.getByText('1 SELECCIONADO')).toBeInTheDocument();
       // The footer must agree too — releasing now only sends pkg-1.
       await user.click(screen.getByRole('button', { name: /liberar a sectorización/i }));
       expect(mockRelease).toHaveBeenCalledWith(['pkg-1'], expect.anything());

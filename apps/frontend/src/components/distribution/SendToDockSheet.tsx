@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Info } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { DockCapacityBar } from './DockCapacityBar';
 import type { SendToDockRequest } from './PendingMobileList';
@@ -100,8 +101,10 @@ export function SendToDockSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="bottom" className="flex max-h-[85vh] flex-col gap-4 rounded-t-2xl">
         <SheetHeader className="text-left">
-          <SheetTitle>Enviar {request.code} a</SheetTitle>
-          <SheetDescription>
+          <SheetTitle className="font-heading text-[15px] font-semibold leading-[1.2] [overflow-wrap:anywhere]">
+            Enviar {request.code} a
+          </SheetTitle>
+          <SheetDescription className="text-[11.5px] leading-[1.4]">
             {mixedComunaBatch
               ? 'El lote abarca comunas distintas — revisa el andén de cada bulto antes de enviar.'
               : `${request.comunaName ? `${request.comunaName} · ` : ''}sugerido ${request.suggestedZone.code} por comuna`}
@@ -121,15 +124,18 @@ export function SendToDockSheet({
           ))}
         </div>
 
-        <p className="text-[11.5px] leading-[1.4] text-text-secondary">
-          El envío manual queda registrado con tu nombre y hora.
-        </p>
+        <div className="flex flex-none items-center gap-[9px] rounded-[11px] bg-surface-raised px-3 py-2.5">
+          <Info className="h-[15px] w-[15px] flex-none text-text-secondary" strokeWidth={2} />
+          <p className="text-[11px] leading-[1.4] text-text-secondary">
+            El envío manual queda registrado con tu nombre y hora
+          </p>
+        </div>
 
         <div className="flex flex-none gap-2">
           <button
             type="button"
             onClick={() => onOpenChange(false)}
-            className="flex h-[56px] flex-1 items-center justify-center rounded-xl border border-border bg-surface text-[15px] font-medium text-text transition-colors active:bg-surface-raised"
+            className="flex h-[56px] w-[104px] flex-none items-center justify-center rounded-xl border border-border-strong bg-surface text-[13.5px] font-semibold text-text transition-colors active:bg-surface-raised"
           >
             Cancelar
           </button>
@@ -189,7 +195,7 @@ function ZoneOption({
         )}
       </div>
       {zone.is_consolidation ? (
-        <p className="text-[11.5px] text-text-secondary">Queda retenido hasta su fecha</p>
+        <p className="text-[11.5px] text-text-secondary">queda retenido hasta su fecha</p>
       ) : (
         <DockCapacityBar count={count} capacity={zone.capacity} />
       )}

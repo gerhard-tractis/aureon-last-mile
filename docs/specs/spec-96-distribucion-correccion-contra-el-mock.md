@@ -329,7 +329,7 @@ hermanos.
 
 ---
 
-### Fase 3 — Send sheet and consolidación `[pending]`
+### Fase 3 — Send sheet and consolidación `[in_progress]`
 
 **Benchmark:** `4e`, `4f`.
 
