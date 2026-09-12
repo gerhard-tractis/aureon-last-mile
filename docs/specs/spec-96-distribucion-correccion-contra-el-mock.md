@@ -567,6 +567,7 @@ tests hermanos.
 `apps/frontend/src/components/distribution/ConsolidationPanel.tsx`,
 `apps/frontend/src/components/distribution/OutboundDockGrid.tsx`,
 `apps/frontend/src/components/distribution/SectorizationIncidentsPanel.tsx`
+(nuevo), `apps/frontend/src/components/distribution/DockFilterPills.tsx`
 (nuevo), `apps/frontend/src/hooks/distribution/useConsolidation.ts`,
 `apps/frontend/src/hooks/distribution/useOpenBatchesByZone.ts` (nuevo),
 `apps/frontend/src/lib/distribution/no-dock-incident-count.ts` (nuevo), y sus
@@ -584,6 +585,10 @@ tests hermanos.
 > por esta fase. Tal como estaba escrita, `check-phase-overlap.mjs` habría
 > dejado pasar una fase futura que tocara `useConsolidation.ts` en paralelo
 > con esta. Añadidos aquí.
+>
+> Review round 2 — `DockFilterPills.tsx` se extrajo de `page.tsx` (que había
+> pasado las 300 líneas del cap del repo en el diff de correcciones, no en el
+> trabajo original) y se añade aquí.
 
 **Notas no visuales:**
 
@@ -626,7 +631,9 @@ tests hermanos.
 > **Implementado por:** implementer — rama `feat/spec-96-fase-4-escritorio`.
 > Primera ronda (rehash tras un rebase del orquestador; contenido idéntico
 > al SHA range original `48bd193..b9736dc`): `953937d..614ef7c`. Ronda de
-> correcciones tras el review (mergeable-with-corrections): `c2c4945..bd7039c`.
+> correcciones (round 1, mergeable-with-corrections): `c2c4945..bd7039c`.
+> Ronda de correcciones (round 2, mergeable-with-corrections):
+> `19c43ba..838fab5`.
 >
 > **Desviaciones y decisiones declaradas, no cubiertas por el spec:**
 > - `DETENIDO` no implementado: no existe join pre-carga zona↔ruta.
@@ -663,17 +670,83 @@ tests hermanos.
 >   zona cerca de su capacidad, consolidación incluida, muestra `CASI
 >   LLENO`. `4a` no dibuja tile de consolidación, así que no hay hecho del
 >   artboard que lo confirme — decisión declarada.
-> - La unidad de conteo del panel de incidencias es **órdenes** en las tres
->   filas (antes, la fila de comuna no reconocida usaba `.length` —
->   cadenas de comuna distintas— mientras `noDockCount` siempre fue
->   órdenes). El StatTile `Comunas no reconocidas` no se tocó — sigue
->   usando `.length`, tal como el spec ya lo declaraba correcto.
+> - La unidad de conteo **dentro del panel** de incidencias es **órdenes**
+>   en sus dos filas propias (antes, la fila de comuna no reconocida usaba
+>   `.length` — cadenas de comuna distintas — mientras `noDockCount`
+>   siempre fue órdenes: dos unidades en un mismo total). Corrección a una
+>   justificación falsa que quedó escrita aquí: `4a` **no** establece que
+>   "toda la superficie cuenta órdenes" — sólo establece
+>   `StatTile == badge total` (`:167-170` y `:293`, ambos "9"), y la propia
+>   fila 1 del mock (4) ya difiere de su StatTile (9). El StatTile
+>   `Comunas no reconocidas` no se tocó — sigue usando `.length`, con su
+>   propio `detail` ahora nombrando la unidad ("comuna(s)") para que los
+>   dos números distintos no se lean como un bug.
 > - `usePendingSectorization` en esta página es un fetch sin `.limit()`
 >   reducido a un entero (`noDockCount`); a escala de producción (~61k
 >   paquetes) el tope de fila por defecto de PostgREST lo truncaría sin
 >   error, subestimando el conteo. Coste conocido, no resuelto — el
 >   arreglo honesto es una fuente solo-de-conteo (idealmente dentro de
 >   `get_distribution_overview`).
+> - **Round 2 del review — brecha real cerrada en el gate de carga**:
+>   `incidentsLoading` ya incluía `pendingLoading`/`zonesLoading` en código
+>   pero sin un solo test — la mutación `incidentsLoading =
+>   unmatchedLoading` pasaba 24/24. Cada término tiene ahora su propio
+>   test rojo→verde, y se agregó `zonesError`/`!zones`: si `useDockZones`
+>   falla, `zonesLoading` pasa a `false` (la query terminó, solo que mal),
+>   `usePendingSectorization` queda `enabled:false` para siempre sobre el
+>   fallback `[]`, y sin este término una carga fallida pintaba "Sin
+>   incidencias" en verde. Límite que sigue sin cerrar: un array de zonas
+>   vacío pero **exitoso** (0 andenes configurados de verdad) no es un
+>   error y ningún término lo cubre — `usePendingSectorization` nunca
+>   corre en ese estado (su propio `enabled` gate), así que `noDockCount`
+>   queda en 0 aunque cada paquete pendiente sea por definición
+>   sin-andén. Arreglarlo necesita tocar `usePendingSectorization.ts`
+>   (Fase 8 lo está editando este round) o una fuente que no dependa de él.
+> - **Round 2 — `deliveryLabel` usaba `new Date(now)` + `setHours(0,0,0,0)`**,
+>   medianoche en la zona del RUNTIME. Next prerenderea `'use client'` en
+>   el servidor con `TZ=UTC`; a las 21:30 en Santiago el servidor calculaba
+>   "hoy" como el día siguiente — una orden que vence hoy se mostraba AYER
+>   en rojo. En vez de re-derivar la comparación una segunda vez, se
+>   reusa `lib/distribution/relative-date.ts`'s `formatRelativeDeliveryDate`
+>   (que la lista de pendientes ya usa) — toma `todayISO` como string
+>   plano, sin dependencia de zona del runtime. Esto también corrigió un
+>   diff no declarado: las filas `HOY` ahora llevan tono `warning` en vez
+>   de `error`, como `4a:354` dibuja (antes ambas usaban `error`). El
+>   fallback de fecha lejana usa el `DD MMM` que ya existe en el repo en
+>   vez de un ISO crudo.
+> - **Round 2 — tres diffs no declarados de `4a` corregidos**: las filas 2
+>   y 3 del panel de incidencias usaban `status-error` donde `4a:305,312`
+>   dibujan `warn` (la fila 1 sí es `err`, `4a:298`) — corregido, sin test
+>   de color por la regla del repo. `ENTREGA` imprimía una fecha ISO cruda
+>   en una UI en español — corregido reusando `formatRelativeDeliveryDate`.
+>   **Sin corregir, declarado**: `page.tsx:208-214` dice `Modo lote` donde
+>   `4a:148` dice `Cerrar lotes` — preexistente a esta fase (la pantalla
+>   detrás de `Cerrar lotes` es la pregunta abierta que
+>   `mock-feedback-distribucion.md` ya registra, fuera de cualquier fase),
+>   pero esta es la fase que cierra `4a` y no lo tocó.
+> - **Round 2 — `page.tsx` pasó de 256 a 344 líneas en el diff de
+>   correcciones** (sobre el cap de 300 del repo, roto por las
+>   correcciones, no por el trabajo original). Cerrado extrayendo
+>   `DockFilterPills` (componente propio + test) y moviendo el detalle de
+>   los comentarios largos a los archivos que ya declaran cada brecha.
+>   Quedó en 287 líneas.
+> - **Round 2 — el filtro `Lotes abiertos` abría un callejón sin salida**:
+>   con el filtro activo y ningún andén con lote abierto (el inicio de
+>   cada turno), `OutboundDockGrid` recibía `zones={[]}` y pintaba un grid
+>   vacío sin mensaje. Cerrado con un `EmptyState` propio, distinto de
+>   "sin andenes configurados", con una acción `Ver todas` que vuelve a
+>   `all`.
+> - **Round 2 — la justificación de `Todas` por defecto se reescribió**: la
+>   razón real no es "el mock dibuja las 6 tiles" (el grid es catálogo de
+>   los 4 estados de chip y tiene que mostrar `SIN ABRIR` en algún lado),
+>   sino que la única acción `Abrir` del módulo vive solo en los tiles que
+>   el filtro `open` oculta — partir en `Lotes abiertos` escondería un
+>   andén sin abrir justo cuando necesita abrirse. Ver `DockFilterPills.tsx`.
+> - **Pregunta abierta para el diseñador, registrada en `DockFilterPills.tsx`**:
+>   el chip y el filtro miden ejes distintos. `chipStateFor` da precedencia
+>   a capacidad, así que un andén en 168/180 con su lote cerrado muestra
+>   `CASI LLENO` y el filtro `open` lo esconde igual — el tile más urgente
+>   de la pantalla puede desaparecer sin nada que lo explique.
 > - **Seguimiento para después de que Fase 2 aterrice** (no hacer ahora):
 >   `no-dock-incident-count.ts` debería volverse el HOME del predicado —
 >   renombrado para exponer ambas formas (`flaggedNoDockOrders(...)`
