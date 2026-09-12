@@ -22,10 +22,20 @@ import { getDockCapacityStatus } from '@/lib/distribution/dock-capacity';
  * `DETENIDO` / `SIN ABRIR`. Precedence, fixed in fase 0's review: capacity
  * tone over activity — a near-full dock reads `CASI LLENO` even with a lote
  * open. `DETENIDO` (a blocked dock, no driver assigned) is NOT implemented
- * here — fase 4 confirmed no pre-load zone↔route join exists to source it:
- * `dock_batches` carries no driver, and `packages.loaded_route_id` is only
- * populated after staging (post-load). This is a declared gap, not a
- * proxy — never invented from `is_active` or anything else.
+ * here. The precise claim, so nobody "fixes" this with the wrong column:
+ * `load_positions.fronts_dock_zone_id` (spec-71 follow-on) LOOKS like the
+ * adjacency this needs — `routes.load_position_id → load_positions →
+ * fronts_dock_zone_id → dock_zones` reads as "this route feeds this
+ * andén". It is the OPPOSITE: that column's own migration comment says
+ * the offset rule is "deliberately NOT 'assign the route to the position
+ * nearest its andén'" — a route parked in front of a dock is, by
+ * construction, the one whose packages must NOT source from it. Using it
+ * here would silently invert which andén a route is "blocking". The only
+ * correct path is `dock_zone_comunas → orders.comuna_id → dispatches.
+ * order_id → routes.driver_name`: four tables, and reads Dispatch's
+ * planning data from Distribución's screen. Not built here — this is a
+ * declared gap, not a proxy — never invented from `is_active`,
+ * `fronts_dock_zone_id`, or anything else.
  *
  * `openBatches` is a real per-zone count now (`useOpenBatchesByZone`), fed
  * by `distribution/page.tsx`. A prior fase 0 attempt used the page's

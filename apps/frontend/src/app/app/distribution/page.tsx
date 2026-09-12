@@ -313,7 +313,16 @@ export default function DistributionPage() {
           {/* `wrongDockCount` stays unpassed: quicksort-exception.ts records
               the event (dock_scans, scan_result='wrong_zone') but no hook
               reads it back operator-wide yet — a new query, not wiring of
-              an existing one. Declared open rather than shipped as 0. */}
+              an existing one. Declared open rather than shipped as 0.
+
+              `onResolve` → /settings is correct for row 1 only (unrecognised
+              comuna — settings renders UnmatchedComunasPanel, the alias-
+              mapping UI). Row 2 ("comuna resolves, no andén covers it") is
+              actually acted on from /app/distribution/pendientes, not
+              settings — a single footer action cannot serve both
+              destinations, so this deliberately serves row 1's. Per-row
+              destinations are a later phase's work, declared here rather
+              than silently serving only one type. */}
           <SectorizationIncidentsPanel
             unmatchedComunaCount={unmatchedOrderCount}
             noDockCount={noDockCount}
