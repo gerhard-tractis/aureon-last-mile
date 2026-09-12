@@ -117,6 +117,44 @@ It stays in `mock-feedback-distribucion.md`.
    `buildMobileTabs` returns nothing for admin/manager. Fase 6 has no tab-bar
    work.
 
+## Componentes compartidos — leer antes de tocar ninguno
+
+Auditadas las diez listas de `**Archivos:**` el 2026-09-12, después de que dos
+de ellas salieran mal en las dos primeras fases. `check-phase-overlap.mjs`
+decide si dos fases se pueden despachar en paralelo **leyendo estas listas**, así
+que una lista equivocada no es un detalle de documentación: invalida el veredicto
+de seguridad.
+
+**`DistributionMobileHeader.tsx` lo importan ocho ficheros**, y uno de ellos está
+fuera de Distribución:
+
+| Consumidor | Fase |
+|---|---|
+| `QuickSortMobile.tsx` | 1 |
+| `app/distribution/pendientes/page.tsx` | 2 |
+| `ConsolidationPageContent.tsx` | 3 (cerrada) |
+| `DistributionMobileView.tsx` | 6 |
+| `app/distribution/mover-a-posicion/page.tsx` | 7 |
+| `app/distribution/andenes/page.tsx` | 8 |
+| `components/dispatch/mobile/DispatchCrewMobileHeader.tsx` | **ninguna — es Despacho** |
+
+La fase 6 lo declara en su `**Archivos:**`, es decir, "posee" un componente que
+renderizan cinco fases más y **otro módulo del producto**. Regla, entonces:
+
+- Preferir conseguir la cabecera con los props que el componente ya acepta.
+- Si hay que tocarlo, el cambio es **estrictamente aditivo y opt-in**: un prop
+  nuevo con default igual al comportamiento de hoy, de forma que los ocho
+  consumidores rendericen idéntico.
+- Si hace falta cambiar su comportamiento actual, **parar y decirlo** en vez de
+  hacerlo. Dos fases remodelando una cabecera transversal es exactamente lo que
+  esta sección existe para evitar.
+
+Por lo mismo, **las fases 6 y 7 van detrás de la 1**, y no en paralelo con ella.
+
+`DockCapacityBar.tsx` tiene el mismo carácter (cuatro pantallas), y la fase 0 ya
+sentó el precedente: le añadió `showLabel` con default `true`, así que `4e`,
+`4j` y `4l` no cambiaron. Ese es el patrón a copiar.
+
 ## Prerequisite — done, with one limit left
 
 **`QUIL-001` now has `capacity = 30` in QA** (set 2026-09-11 through
@@ -153,17 +191,51 @@ in its evidence line rather than implying it saw all three.
 ## Test commands, once, for every phase
 
 ```
-cd apps/frontend && npx vitest run --pool=forks <path>   # one file
-cd apps/frontend && npm run test:run                      # the suite
+cd apps/frontend && ../../node_modules/.bin/vitest.cmd run --pool=forks <path>
+cd apps/frontend && ../../node_modules/.bin/vitest.cmd run --pool=forks   # all
 cd apps/frontend && npm run type-check
 ```
 
-`--pool=forks` is required locally on Windows; without it the run hangs. Do not
-use `npx prettier` — this repo has no prettier.
+**Invoke the binary directly — never `npx vitest`.** `npx` pulls a stale copy
+from its own cache and dies on `Cannot find module 'vitest/config'`.
+`--pool=forks` is required or the run hangs. Pass **explicit relative file
+paths**: substring and `--dir` filters silently match nothing in this vitest
+version. No prettier in this repo — never `npx prettier`.
+
+**Dependencies per worktree:** `npm ci --no-audit --no-fund` takes ~2-4 minutes
+and is the right way. Never run npm in the primary checkout — it once deleted
+1599 tracked source files there.
+
+**Rebase before every PR.** `git merge-base --is-ancestor origin/main HEAD ||
+git rebase origin/main`. A phase branch cut before a sibling merged still
+carries the OLD copy of every file it touches — including this spec — so
+merging it silently reverts the sibling. It is not a conflict and CI does not
+see it. It nearly happened twice: fase 0 would have reverted PR #821, and fase
+3 would have reverted fase 0.
 
 ---
 
-### Fase 0 — Capacity on the two unwired dock tiles `[in_progress]`
+### Fase 0 — Capacity on the two unwired dock tiles `[done]`
+
+> Implementado por: implementer — rama `feat/spec-96-fase-0-capacidad`, SHAs `01404e9..a8b978e`
+> Review: reviewer (opus) — 8 hallazgos, 5 bloqueantes, cerrados en `1513e37`, `e8fd508`, `ebee8da`, `a8b978e`
+> QA: PR #822 merged 2026-09-12T02:05:43Z; `e2e-qa` **leído en el reporte**, no en el check: rojo en la corrida 34667301795 y verde al repetirlo contra QA caliente. El fallo era `reception-mobile.spec.ts` agotando 4 min en el *setup* del fixture (paso de QR de Recepción), no una aserción de Distribución, y el job `e2e-qa` es `continue-on-error`, así que el check estaba verde con el job rojo.
+> Downstream: este spec no declara `**Downstream:**` — ningún otro spec depende de él. Revisado spec-71 (modo ESTIBAR, comparte `QuickSortMobileView`) — sin cambios: fase 0 no tocó ese árbol.
+
+**Hallazgos abiertos, que esta fase NO cierra:**
+
+- `routeCount` sigue sin pasarse a `DockCard`. No hay fuente en `useDockZones` —
+  verificado contra `DockZoneRecord`. No se inventó ni se añadió query.
+- El badge `LOTE`/`LOTES` y el borde superior verde de `OutboundDockGrid`
+  volvieron con el revert del chip. Son **código muerto** (`openBatches` no
+  llega) y `4a` no contiene `LOTE` ninguna vez. **La fase 4 los quita.**
+- `EN RITMO`, `DETENIDO`, `SIN ABRIR` y el pie de tarjeta (`R-2481 · R-2483`,
+  `Ver`/`Asignar`/`Abrir`) son de la fase 4.
+- `DETENIDO` necesita un join zona↔ruta previo a la carga que no existe:
+  `dock_batches` no lleva conductor y `packages.loaded_route_id` se puebla
+  después del staging. Verificado por el reviewer de forma independiente.
+- La verificación visual la hizo el orquestador contra QA, no el implementer
+  (que no tiene navegador y lo declaró en vez de fingirla).
 
 **Benchmark:** `4a` (grilla «Andenes de salida»), `4b` (grilla `ANDENES`), `4l`.
 
@@ -202,7 +274,7 @@ hermanos.
       none. Build zones from the real `DockZoneRecord` shape — `id`, `name`,
       `code`, `is_consolidation`, `comunas`, `is_active`, `operator_id`,
       `capacity`.
-- [ ] Run `npx vitest run --pool=forks src/components/distribution/OutboundDockGrid.test.tsx` — expect FAIL (no bar rendered in either case).
+- [ ] Run `../../node_modules/.bin/vitest.cmd run --pool=forks src/components/distribution/OutboundDockGrid.test.tsx` — expect FAIL (no bar rendered in either case).
 - [ ] Implement: render `DockCapacityBar` with `count` and `zone.capacity`. Let the component decide; do not branch on `capacity` in the grid.
 - [ ] Run the same command — expect PASS.
 - [ ] Write a failing test for the activity chip: `openBatches[zone.id] > 0` and `is_active === false` each produce a distinguishable state, asserted by `data-testid`/`data-state`, **not by chip copy**.
@@ -238,10 +310,15 @@ hermanos.
 
 **Depende de:** ninguna
 
-**Archivos:** `apps/frontend/src/components/distribution/QuickSortMobileDock.tsx`,
-`apps/frontend/src/components/distribution/QuickSortScanner.tsx`,
-`apps/frontend/src/components/distribution/QuickSortMobileView.tsx`, y sus tests
+**Archivos:** `apps/frontend/src/components/distribution/QuickSortMobile.tsx`,
+`apps/frontend/src/components/distribution/QuickSortMobileView.tsx`,
+`apps/frontend/src/components/distribution/QuickSortMobileDock.tsx`,
+`apps/frontend/src/components/distribution/QuickSortScanner.tsx`, y sus tests
 hermanos.
+
+> `QuickSortMobile.tsx` faltaba en esta lista y es **el fichero que renderiza la
+> cabecera** que esta fase existe para arreglar. Corregido 2026-09-12. Ver la
+> nota de componentes compartidos, arriba: la cabecera en sí es de otro módulo.
 
 **Notas no visuales:**
 
@@ -329,7 +406,28 @@ hermanos.
 
 ---
 
-### Fase 3 — Send sheet and consolidación `[in_progress]`
+### Fase 3 — Send sheet and consolidación `[done]`
+
+> Implementado por: implementer — rama `feat/spec-96-fase-3-hoja-consolidacion`, SHAs `2ec24e3..cbc6958`
+> Review: reviewer (opus) — 5 hallazgos, 2 bloqueantes, cerrados en `2584101` y `cbc6958`
+> QA: PR #823 merged 2026-09-12T02:2xZ; `e2e-qa` **leído en el reporte**: verde en la corrida 34669012716 (SHA `353e6b1`), contra QA ya caliente.
+> Downstream: ningún spec declara depender de éste. Revisado spec-68 fase 4 (consolidación móvil, misma pantalla) — sin cambios de contrato; el contador cambió de componente pero su comportamiento (ausente sin selección, singular/plural) se conserva y sus tests se movieron, no se borraron.
+
+**Lo que el review encontró, porque vale más que el diff:** apilar el footer
+para seguir a `4f` lo llevó de ~80 px a 142 px + `env(safe-area-inset-bottom)`
+mientras la lista seguía reservando `pb-[104px]`. El checkbox de la última fila
+quedaba **bajo** el footer sin scroll restante: ese bulto no se podía
+seleccionar. Sólo afectaba a `ops_leader` (con `warehouse_staff` el footer mide
+76 px), que es por qué todos los tests de rol seguían verdes. Un arreglo visual
+correcto produjo una regresión funcional que ningún test podía ver.
+
+Arreglado por construcción, no subiendo el número: `FOOTER_METRICS` alimenta a
+la vez `getFooterContentHeight()` y las alturas inline de las filas del footer,
+y `hasCounter` gobierna el render **y** el cálculo.
+
+**Y el wrap era un síntoma:** el título era `text-lg` (18 px) donde `4e` pide
+15 px. A 15 px el código entra en una línea y no hace falta envolverlo;
+`break-all` habría partido un identificador escaneable por la mitad.
 
 **Benchmark:** `4e`, `4f`.
 
@@ -337,8 +435,12 @@ hermanos.
 
 **Archivos:** `apps/frontend/src/components/distribution/SendToDockSheet.tsx`,
 `apps/frontend/src/components/distribution/ConsolidationMobileView.tsx`,
-`apps/frontend/src/app/app/distribution/consolidacion/page.tsx`, y sus tests
-hermanos.
+`apps/frontend/src/components/distribution/ConsolidationPageContent.tsx`, y sus
+tests hermanos.
+
+> Decía `consolidacion/page.tsx`, que son 21 líneas que sólo exportan la página;
+> la pantalla entera —cabecera, chip `SALEN YA`, footer— vive en
+> `ConsolidationPageContent.tsx`. Corregido 2026-09-12.
 
 **Notas no visuales:**
 
@@ -367,9 +469,17 @@ hermanos.
 **Depende de:** spec-96 fase 0
 
 **Archivos:** `apps/frontend/src/app/app/distribution/page.tsx`,
-`apps/frontend/src/components/distribution/ConsolidationPanel.tsx`, un
-componente nuevo para el panel de incidencias bajo
-`apps/frontend/src/components/distribution/`, y sus tests hermanos.
+`apps/frontend/src/components/distribution/ConsolidationPanel.tsx`,
+`apps/frontend/src/components/distribution/OutboundDockGrid.tsx`,
+`apps/frontend/src/components/distribution/SectorizationIncidentsPanel.tsx`
+(nuevo), y sus tests hermanos.
+
+> Antes declaraba un **directorio** para el panel nuevo, que
+> `check-phase-overlap.mjs` ignora al resolver contenido e imports — una fase
+> cuya superficie el guard no puede leer no se puede juzgar. Nombrado el fichero.
+> Se añade `OutboundDockGrid.tsx` porque esta fase termina lo que la fase 0 dejó
+> abierto ahí: los chips de actividad, el pie con códigos de ruta y sus acciones,
+> y **quitar** el badge `LOTE` muerto que el revert de la fase 0 devolvió.
 
 **Notas no visuales:**
 
@@ -589,7 +699,7 @@ tests hermanos.
 
 - [ ] Read the route and `app/app/distribution/page.tsx`'s `isBelowLg` early return before writing anything — the second is the pattern to copy.
 - [ ] Write a failing test: below `lg` the mobile list renders and the desktop table does not; at or above `lg` the reverse. Assert each tree is **absent**, not hidden.
-- [ ] Run `npx vitest run --pool=forks src/app/app/distribution/pendientes/page.test.tsx` — expect FAIL (the mobile list renders at both widths).
+- [ ] Run `../../node_modules/.bin/vitest.cmd run --pool=forks src/app/app/distribution/pendientes/page.test.tsx` — expect FAIL (the mobile list renders at both widths).
 - [ ] Implement with an early return, mirroring `distribution/page.tsx`. Reuse `PendingDockList` for the desktop tree.
 - [ ] Run — expect PASS.
 - [ ] Correct the route's doc comment: there is now a desktop equivalent.
