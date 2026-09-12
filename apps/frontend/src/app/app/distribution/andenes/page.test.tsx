@@ -55,8 +55,9 @@ vi.mock('@/hooks/distribution/useSectorizedByZone', () => ({
 // `ZoneGroup[]` shape, kept minimal: only the fields
 // `countUnassignedComunas`/`determineDockZone` actually read.
 let mockPendingGroups: unknown[] = [];
+let mockPendingLoading = false;
 vi.mock('@/hooks/distribution/usePendingSectorization', () => ({
-  usePendingSectorization: () => ({ data: mockPendingGroups }),
+  usePendingSectorization: () => ({ data: mockPendingGroups, isLoading: mockPendingLoading }),
 }));
 
 // A past delivery date is always "active" per isDeliveryDateActive
@@ -90,6 +91,7 @@ beforeEach(() => {
   mockZonesLoading = false;
   mockZonesError = false;
   mockPendingGroups = [];
+  mockPendingLoading = false;
 });
 
 afterEach(() => {
@@ -98,6 +100,7 @@ afterEach(() => {
   mockZonesLoading = false;
   mockZonesError = false;
   mockPendingGroups = [];
+  mockPendingLoading = false;
 });
 
 describe('AndenesPage', () => {
@@ -176,19 +179,24 @@ describe('AndenesPage', () => {
 
   // spec-96 Fase 8 (4l) — the subtitle's unconfigured-capacity count must
   // track the zones the route already fetched, not stay silent about it.
-  // Review round 1 (finding #2) — anchored on a dedicated data-testid, not
-  // a copy regex: `/1 sin abrir/` kept passing against a hardcoded wrong
-  // value because the regex matched a substring of a different number.
+  // Review round 2 (finding #4) — the reviewer A/B tested a sr-only mirror
+  // span against an exact-string assertion on the real subtitle text: the
+  // exact match kills the same hardcode mutation with no DOM addition and
+  // no a11y regression (a screen reader would otherwise announce a bare
+  // "1" right after a header that already said "1 sin abrir"). Asserting
+  // the whole computed string, not a decorative substring, is the
+  // behavioural anchor — round 1's bug was `/1 sin abrir/` matching inside
+  // a different, wrong number, which an exact `getByText` cannot do.
   it('carries the unconfigured-capacity count, derived from the zones', () => {
-    mockZones = [zoneA, zoneUnconfigured];
+    mockZones = [zoneA, { ...zoneUnconfigured, is_consolidation: false, id: 'zone-real' }];
     render(<AndenesPage />);
-    expect(screen.getByTestId('andenes-unconfigured-count')).toHaveTextContent('1');
+    expect(screen.getByText('2 activos · 1 sin abrir')).toBeInTheDocument();
   });
 
-  it('counts zero unconfigured zones when every active zone has a capacity', () => {
+  it('omits the unconfigured mention when every active zone has a capacity', () => {
     mockZones = [zoneA];
     render(<AndenesPage />);
-    expect(screen.getByTestId('andenes-unconfigured-count')).toHaveTextContent('0');
+    expect(screen.getByText('1 activo')).toBeInTheDocument();
   });
 
   // Review round 1 (finding #4) — capacity: 0 has no CHECK constraint
@@ -196,7 +204,17 @@ describe('AndenesPage', () => {
   it('treats an active zone with capacity: 0 as unconfigured', () => {
     mockZones = [{ ...zoneA, capacity: 0 }];
     render(<AndenesPage />);
-    expect(screen.getByTestId('andenes-unconfigured-count')).toHaveTextContent('1');
+    expect(screen.getByText('1 activo · 1 sin abrir')).toBeInTheDocument();
+  });
+
+  // Review round 2 (finding #3) — the consolidation zone carries
+  // `capacity: null` by design (no `Editar` action in Configuración de
+  // Andenes); it must never count toward "sin abrir".
+  it('does not count the consolidation zone toward "sin abrir"', () => {
+    mockZones = [zoneA, zoneUnconfigured];
+    render(<AndenesPage />);
+    expect(screen.getByText('2 activos')).toBeInTheDocument();
+    expect(screen.queryByText(/sin abrir/)).not.toBeInTheDocument();
   });
 
   // spec-96 Fase 8 (4l) review round 1 (finding #1) — the footer banner
@@ -277,6 +295,28 @@ describe('AndenesPage', () => {
       mockPendingGroups = [];
       render(<AndenesPage />);
       expect(screen.queryByTestId('unassigned-comunas-banner')).not.toBeInTheDocument();
+    });
+
+    // Review round 2 (finding #6) — while the packages query is still
+    // settling, the count reads 0 exactly like "confirmed none flagged"
+    // would, and that gap is indistinguishable from the truncation error
+    // usePendingSectorization now throws. A quiet, distinct loading state
+    // closes that gap instead of silently rendering nothing.
+    it('shows a quiet loading state instead of silently omitting the banner', () => {
+      mockZones = [zoneA, zoneUnconfigured];
+      mockPendingGroups = [];
+      mockPendingLoading = true;
+      render(<AndenesPage />);
+      expect(screen.getByTestId('unassigned-comunas-checking')).toBeInTheDocument();
+      expect(screen.queryByTestId('unassigned-comunas-banner')).not.toBeInTheDocument();
+    });
+
+    it('does not show the loading state once the query settles with nothing flagged', () => {
+      mockZones = [zoneA, zoneUnconfigured];
+      mockPendingGroups = [];
+      mockPendingLoading = false;
+      render(<AndenesPage />);
+      expect(screen.queryByTestId('unassigned-comunas-checking')).not.toBeInTheDocument();
     });
   });
 });

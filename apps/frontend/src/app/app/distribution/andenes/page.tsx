@@ -81,7 +81,11 @@ function countUnassignedComunas(
   zones: DockZoneRecord[],
   today: string,
 ): number {
-  if (!zones.some((z) => z.is_consolidation)) return 0;
+  // Review round 2 — the explicit "no consolidation zone" guard that used
+  // to live here was redundant: `determineDockZone` throws exactly that
+  // case, and the `catch` below already turns it into "skip this order",
+  // which is the same net effect (zero flagged orders) without a second
+  // place asserting it.
   const comunas = new Set<string>();
   for (const group of groups) {
     for (const order of group.orders) {
@@ -110,7 +114,7 @@ export default function AndenesPage() {
   const { operatorId } = useOperatorId();
   const { data: zones, isError: zonesIsError } = useDockZones(operatorId);
   const { data: sectorizedCounts = {} } = useSectorizedByZone(operatorId);
-  const { data: pendingGroups = [] } = usePendingSectorization(operatorId);
+  const { data: pendingGroups = [], isLoading: pendingLoading } = usePendingSectorization(operatorId);
 
   const goBack = () => router.push('/app/distribution');
 
@@ -140,8 +144,15 @@ export default function AndenesPage() {
   const activeCount = activeZones.length;
   // Review round 1, finding #4 — was a hand-rolled `capacity > 0` check,
   // duplicating what getDockCapacityStatus already floors to `configured`.
+  // Review round 2, finding #3 — the consolidation zone carries
+  // `capacity: null` BY DESIGN (`Configuración de Andenes` has no `Editar`
+  // action for it — see the spec's prerequisite section); counting it here
+  // made the subtitle read "1 sin abrir" forever, on every operator, even
+  // with all real andenes configured. `4l:1174`'s "sin abrir" means a real
+  // andén missing its capacity, not the holding zone where capacity is
+  // meaningless.
   const unconfiguredCount = activeZones.filter(
-    (z) => !getDockCapacityStatus(0, z.capacity).configured,
+    (z) => !z.is_consolidation && !getDockCapacityStatus(0, z.capacity).configured,
   ).length;
   const subtitle = [
     `${activeCount} ${activeCount === 1 ? 'activo' : 'activos'}`,
@@ -154,24 +165,19 @@ export default function AndenesPage() {
   const unassignedComunasCount = countUnassignedComunas(pendingGroups, zones, today);
 
   return (
-    <div className="flex min-h-0 flex-col gap-4 px-6 py-[22px]">
+    // Review round 2, finding #2 — without `flex-1` here this root sizes
+    // to content inside `<main>` (itself `flex min-h-0 flex-1 flex-col`,
+    // per AppLayout.tsx), so the `flex-1 overflow-y-auto` list below never
+    // had a bounded height to scroll *within* and the banner was an
+    // ordinary in-flow block, not the fixed footer `4l:1244-1250` draws —
+    // invisible with 6 docks, below the fold with 12.
+    <div className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-[22px]">
       <DistributionMobileHeader
         variant="titled"
         title="Andenes"
         subtitle={subtitle}
         onBack={goBack}
       />
-      {/* Review round 1, finding #2 — a plain-text subtitle assertion
-          (`/1 sin abrir/`) passed even with the count hardcoded, because
-          the regex matched a substring of a different number. This mirror
-          exists only so the wiring has a behavioural anchor
-          (`textContent === '<n>'`) that a wrong-but-plausible value cannot
-          slip past — `DistributionMobileHeader` renders the subtitle as a
-          plain string with no seam of its own to hook into, and it is not
-          this phase's file to add one to. */}
-      <span data-testid="andenes-unconfigured-count" className="sr-only">
-        {unconfiguredCount}
-      </span>
 
       {/* `4l:1179-1243` — the row list scrolls; the header and the
           comunas-to-consolidación banner below it do not. */}
@@ -179,21 +185,41 @@ export default function AndenesPage() {
         <DockListMobile zones={zones} sectorizedCounts={sectorizedCounts} />
       </div>
 
-      {unassignedComunasCount > 0 && (
+      {/* Review round 2, finding #6 — between `zones` resolving and this
+          query settling, `unassignedComunasCount` reads 0 exactly like
+          "confirmed none flagged" would. That gap is otherwise
+          indistinguishable from the truncation error above, so it gets
+          its own quiet state rather than silently rendering nothing. */}
+      {pendingLoading ? (
         <div
-          data-testid="unassigned-comunas-banner"
-          className="flex flex-none items-center gap-2.5 border-t border-border bg-surface px-3.5 py-2.5"
+          data-testid="unassigned-comunas-checking"
+          className="flex-none px-5 py-2 text-[10.5px] text-text-muted"
         >
-          <span className="grid h-[26px] w-[26px] flex-none place-items-center rounded-lg border border-status-warning-border bg-surface font-mono text-xs font-bold text-status-warning-text">
-            !
-          </span>
-          <span className="text-[11.5px] font-medium text-status-warning-text">
-            <span data-testid="unassigned-comunas-count">{unassignedComunasCount}</span>{' '}
-            {unassignedComunasCount === 1
-              ? 'comuna sin andén asignado cae a consolidación'
-              : 'comunas sin andén asignado caen a consolidación'}
-          </span>
+          Comprobando comunas sin andén…
         </div>
+      ) : (
+        unassignedComunasCount > 0 && (
+          // Review round 2, finding #1 — `4l` nests two toned elements: the
+          // footer container (`:1244`, border-top + surface) and an inner
+          // warning pill (`:1245`, warn-bg/warn-border, rounded). Collapsing
+          // them into one left the warning as plain amber text on surface.
+          <div
+            data-testid="unassigned-comunas-banner"
+            className="flex flex-none flex-col gap-2 border-t border-border bg-surface px-5 py-3.5"
+          >
+            <div className="flex items-center gap-2.5 rounded-[11px] border border-status-warning-border bg-status-warning-bg px-3.5 py-2.5">
+              <span className="grid h-[26px] w-[26px] flex-none place-items-center rounded-lg border border-status-warning-border bg-surface font-mono text-xs font-bold text-status-warning-text">
+                !
+              </span>
+              <span className="text-[11.5px] font-medium text-status-warning-text">
+                <span data-testid="unassigned-comunas-count">{unassignedComunasCount}</span>{' '}
+                {unassignedComunasCount === 1
+                  ? 'comuna sin andén asignado cae a consolidación'
+                  : 'comunas sin andén asignado caen a consolidación'}
+              </span>
+            </div>
+          </div>
+        )
       )}
     </div>
   );
