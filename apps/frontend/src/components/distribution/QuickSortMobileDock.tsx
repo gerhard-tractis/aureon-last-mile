@@ -1,7 +1,6 @@
 'use client';
 
 import { ScanField } from '@/components/scan/ScanField';
-import { DockCapacityBar } from './DockCapacityBar';
 import { DistributionMobileHeader } from './DistributionMobileHeader';
 import { getDockCapacityStatus, type DockCapacityTone } from '@/lib/distribution/dock-capacity';
 import { cn } from '@/lib/utils';
@@ -71,13 +70,16 @@ function timeLabel(at: Date): string {
   return at.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
 }
 
-// spec-96 Fase 1, Task 1.3 (4h/4j) — `4h`'s capacity block is drawn in the
-// warning palette at 169/180 (93.9 %), not the neutral card the app used to
-// render regardless of fill. `getDockCapacityStatus`'s own tone drives it.
-const CAPACITY_BLOCK_TONE_CLASS: Record<DockCapacityTone, string> = {
-  neutral: 'border-border bg-surface',
-  warning: 'border-status-warning-border bg-status-warning-bg',
-  error: 'border-status-error-border bg-status-error-bg',
+// spec-96 Fase 1 review finding #6 (4h) — `4h` draws capacity as a single
+// inline advisory sentence, toned, not the bar+label shape (`4j`'s own
+// screen — QuickSortMobile.tsx — keeps that one). `getDockCapacityStatus`'s
+// tone drives the palette, same three tokens the tone-block elsewhere in
+// this file uses, just applied to a bordered `<p>` instead of a bar's
+// wrapper `<div>`.
+const CAPACITY_NOTICE_TONE_CLASS: Record<DockCapacityTone, string> = {
+  neutral: 'border-border bg-surface text-text-secondary',
+  warning: 'border-status-warning-border bg-status-warning-bg text-status-warning-text',
+  error: 'border-status-error-border bg-status-error-bg text-status-error-text',
 };
 
 export function QuickSortMobileDock({
@@ -139,17 +141,22 @@ export function QuickSortMobileDock({
         </p>
       )}
 
-      {capacityStatus.configured && capacityStatus.tone && (
-        <div
-          data-testid="quicksort-capacity-block"
+      {/* spec-96 Fase 1 review finding #6 — `4i` (rejected) draws no
+          capacity notice at all; only `4h` (not yet rejected) does. Before
+          this fix the block rendered in both, stacking on top of the
+          error card and the incomplete-order warning. */}
+      {!rejected && capacityStatus.configured && capacityStatus.tone && (
+        <p
+          data-testid="quicksort-capacity-notice"
           data-tone={capacityStatus.tone}
           className={cn(
-            'rounded-lg border px-4 py-3',
-            CAPACITY_BLOCK_TONE_CLASS[capacityStatus.tone],
+            'rounded-lg border px-4 py-2.5 text-[12.5px] leading-[1.4]',
+            CAPACITY_NOTICE_TONE_CLASS[capacityStatus.tone],
           )}
         >
-          <DockCapacityBar count={zoneCount} capacity={zoneCapacity} />
-        </div>
+          {destination.zone_code} va en {zoneCount} / {zoneCapacity} · si no cabe, mándalo a
+          consolidación
+        </p>
       )}
 
       <div className="flex flex-col gap-2.5 rounded-2xl border-2 border-dashed border-accent bg-accent-muted px-5 py-6">
@@ -223,42 +230,43 @@ export function QuickSortMobileDock({
         </p>
       )}
 
-      <div className="fixed inset-x-0 bottom-0 z-40 flex items-center gap-3 border-t border-border bg-surface px-4 py-3 [padding-bottom:calc(0.75rem+env(safe-area-inset-bottom))]">
+      {/* spec-96 Fase 1 review finding #7 — the mock stacks the SAME
+          primary ("Enviar a consolidación", boxed) above a plain-text
+          secondary in BOTH `4h` and `4i`; only the secondary differs
+          ("Cancelar…" vs "Marcar excepción…"). Before this fix `4i` had no
+          "Enviar a consolidación" at all — the one exit missing on the
+          screen where the operator is stuck with a rejected dock. The
+          secondary keeps its 44px touch-target floor via `minHeight`/
+          `minWidth` (same hit-area pattern as `QuickSortMobile`'s
+          SECT/ESTIB, review finding #3), not a visible box the mock
+          doesn't draw for it. */}
+      <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col gap-2.5 border-t border-border bg-surface px-4 py-3 [padding-bottom:calc(0.75rem+env(safe-area-inset-bottom))]">
+        <button
+          type="button"
+          onClick={onSendToConsolidation}
+          className="flex h-[56px] items-center justify-center rounded-xl border border-border-strong text-[13.5px] font-semibold text-text transition-colors active:bg-surface-raised"
+        >
+          Enviar a consolidación
+        </button>
         {rejected ? (
-          <>
-            <button
-              type="button"
-              onClick={onCancel}
-              className="flex h-[56px] flex-1 items-center justify-center rounded-xl border border-border bg-surface text-[13px] font-medium text-text transition-colors active:bg-surface-raised"
-            >
-              Cancelar y volver al paso 1
-            </button>
-            <button
-              type="button"
-              onClick={onMarkException}
-              disabled={isMarkingException}
-              className="flex h-[56px] flex-1 items-center justify-center rounded-xl bg-status-warning-chip text-[13px] font-semibold text-status-warning-chip-fg transition-opacity active:opacity-90 disabled:opacity-60"
-            >
-              Marcar excepción y seguir
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={onMarkException}
+            disabled={isMarkingException}
+            style={{ minHeight: '44px' }}
+            className="flex items-center justify-center text-[12.5px] font-semibold text-status-error-text disabled:opacity-60"
+          >
+            Marcar excepción y seguir
+          </button>
         ) : (
-          <>
-            <button
-              type="button"
-              onClick={onCancel}
-              className="flex h-[56px] flex-1 items-center justify-center rounded-xl border border-border bg-surface text-[13px] font-medium text-text transition-colors active:bg-surface-raised"
-            >
-              Cancelar y volver al paso 1
-            </button>
-            <button
-              type="button"
-              onClick={onSendToConsolidation}
-              className="flex h-[56px] flex-1 items-center justify-center rounded-xl bg-accent-light text-[13px] font-semibold text-accent-light-foreground transition-opacity active:opacity-90"
-            >
-              Enviar a consolidación
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{ minHeight: '44px' }}
+            className="flex items-center justify-center text-[12.5px] font-semibold text-text-muted"
+          >
+            Cancelar y volver al paso 1
+          </button>
         )}
       </div>
     </div>

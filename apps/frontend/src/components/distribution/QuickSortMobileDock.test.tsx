@@ -90,53 +90,65 @@ describe('QuickSortMobileDock — 4h/4j normal destination', () => {
     expect(screen.getByText(/falta 3 paquetes de esta orden/i)).toBeInTheDocument();
   });
 
-  it('renders no capacity block when the zone has no capacity configured', () => {
+  // spec-96 Fase 1 review finding #6 (4h) — the mock draws capacity here as
+  // an inline banner with a single advisory sentence, not the bar+label
+  // shape (that belongs to `4j`'s confirmed screen — see
+  // QuickSortMobile.test.tsx's `quicksort-confirmed-capacity`).
+  it('renders no capacity notice when the zone has no capacity configured', () => {
     render(<QuickSortMobileDock {...baseProps()} zoneCount={5} zoneCapacity={null} />);
-    expect(screen.queryByTestId('dock-capacity-fill')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('quicksort-capacity-notice')).not.toBeInTheDocument();
   });
 
-  it('renders the capacity block when capacity is configured (4j)', () => {
+  it('renders the capacity notice, carrying the count and capacity, when configured (4h)', () => {
     render(<QuickSortMobileDock {...baseProps()} zoneCount={169} zoneCapacity={180} />);
-    expect(screen.getByText('169 / 180')).toBeInTheDocument();
-    expect(screen.getByTestId('dock-capacity-fill')).toBeInTheDocument();
+    const notice = screen.getByTestId('quicksort-capacity-notice');
+    expect(notice).toHaveTextContent('169');
+    expect(notice).toHaveTextContent('180');
   });
 
-  // spec-96 Fase 1, Task 1.3 (4h/4j) — the capacity block's own container
-  // must carry the same tone getDockCapacityStatus already computes, not a
-  // constant neutral wrapper regardless of how full the zone is.
-  it("carries the capacity block's tone from getDockCapacityStatus, not a fixed neutral wrapper", () => {
+  it("carries the notice's tone from getDockCapacityStatus, not a fixed neutral wrapper", () => {
     const { rerender } = render(
       <QuickSortMobileDock {...baseProps()} zoneCount={169} zoneCapacity={180} />,
     );
-    expect(screen.getByTestId('quicksort-capacity-block').dataset.tone).toBe('warning');
+    expect(screen.getByTestId('quicksort-capacity-notice').dataset.tone).toBe('warning');
 
     rerender(<QuickSortMobileDock {...baseProps()} zoneCount={180} zoneCapacity={180} />);
-    expect(screen.getByTestId('quicksort-capacity-block').dataset.tone).toBe('error');
+    expect(screen.getByTestId('quicksort-capacity-notice').dataset.tone).toBe('error');
 
     rerender(<QuickSortMobileDock {...baseProps()} zoneCount={5} zoneCapacity={180} />);
-    expect(screen.getByTestId('quicksort-capacity-block').dataset.tone).toBe('neutral');
+    expect(screen.getByTestId('quicksort-capacity-notice').dataset.tone).toBe('neutral');
   });
 
   // spec-96 Fase 1 review finding #5 — `data-tone` alone doesn't prove the
   // fix: a tone-to-class map flattened to one class for every tone still
   // reports the right `data-tone` while the visible fix (the whole point
-  // of the tone) is gone, and the test above stays green either way. This
-  // pins that the three tones actually render three DIFFERENT classNames.
-  it("renders three genuinely different classNames for the capacity block's three tones, not just three different data-tone values", () => {
+  // of the tone) is gone. This pins that the three tones actually render
+  // three DIFFERENT classNames.
+  it("renders three genuinely different classNames for the notice's three tones, not just three different data-tone values", () => {
     const { rerender } = render(
       <QuickSortMobileDock {...baseProps()} zoneCount={5} zoneCapacity={180} />,
     );
-    const neutralClass = screen.getByTestId('quicksort-capacity-block').className;
+    const neutralClass = screen.getByTestId('quicksort-capacity-notice').className;
 
     rerender(<QuickSortMobileDock {...baseProps()} zoneCount={169} zoneCapacity={180} />);
-    const warningClass = screen.getByTestId('quicksort-capacity-block').className;
+    const warningClass = screen.getByTestId('quicksort-capacity-notice').className;
 
     rerender(<QuickSortMobileDock {...baseProps()} zoneCount={180} zoneCapacity={180} />);
-    const errorClass = screen.getByTestId('quicksort-capacity-block').className;
+    const errorClass = screen.getByTestId('quicksort-capacity-notice').className;
 
     expect(neutralClass).not.toBe(warningClass);
     expect(warningClass).not.toBe(errorClass);
     expect(neutralClass).not.toBe(errorClass);
+  });
+
+  // spec-96 Fase 1 review finding #6 (4i) — the rejected state draws NO
+  // capacity block at all; before this fix the app stacked error + warning
+  // (siblings) + warning (capacity) + accent cards regardless of state.
+  it('renders no capacity notice at all when rejected (4i)', () => {
+    render(
+      <QuickSortMobileDock {...baseProps()} rejectedCode="B7" zoneCount={169} zoneCapacity={180} />,
+    );
+    expect(screen.queryByTestId('quicksort-capacity-notice')).not.toBeInTheDocument();
   });
 
   it('arms the andén field with the AHORA ESCANEA copy and the accepted-codes note', () => {
@@ -157,6 +169,10 @@ describe('QuickSortMobileDock — 4h/4j normal destination', () => {
     expect(props.onScanAnden).toHaveBeenCalledWith('A3');
   });
 
+  // spec-96 Fase 1 review finding #7 (4h) — the mock stacks a full-width
+  // "Enviar a consolidación" above a plain-text "Cancelar y volver al
+  // paso 1", not two 56px boxed buttons side by side. The click contract
+  // is unchanged; only the shape moved.
   it('shows the non-rejected footer: Enviar a consolidación / Cancelar', () => {
     const props = baseProps();
     render(<QuickSortMobileDock {...props} />);
@@ -212,12 +228,20 @@ describe('QuickSortMobileDock — 4i rejected andén', () => {
     expect(screen.getByLabelText(/escanear andén/i)).toBeInTheDocument();
   });
 
-  it('shows the rejected footer: Marcar excepción y seguir / Cancelar', () => {
+  // spec-96 Fase 1 review finding #7 (4i) — the escape hatch was missing:
+  // the app rendered "Cancelar y volver al paso 1" + "Marcar excepción y
+  // seguir" here, dropping the one exit ("Enviar a consolidación") the
+  // mock keeps on the ONE screen where the operator is stuck with a
+  // rejected dock. `4i`'s footer has no "Cancelar" slot at all — the
+  // header's back arrow (Task 1.1) already covers that path.
+  it('shows the rejected footer: Enviar a consolidación / Marcar excepción, no Cancelar', () => {
     const props = { ...baseProps(), rejectedCode: 'B7' };
     render(<QuickSortMobileDock {...props} />);
+    fireEvent.click(screen.getByText('Enviar a consolidación'));
+    expect(props.onSendToConsolidation).toHaveBeenCalled();
     fireEvent.click(screen.getByText('Marcar excepción y seguir'));
     expect(props.onMarkException).toHaveBeenCalled();
-    expect(screen.queryByText('Enviar a consolidación')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cancelar y volver al paso 1')).not.toBeInTheDocument();
   });
 
   // Review fix (finding #1) — a failed exception write must be visible,
@@ -242,19 +266,26 @@ describe('QuickSortMobileDock — 4i rejected andén', () => {
 });
 
 describe('QuickSortMobileDock — accessibility floor', () => {
-  it('keeps both footer actions between 56 and 60px in every state', () => {
+  // spec-96 Fase 1 review finding #7 — the footer is now a stacked primary
+  // ("Enviar a consolidación", boxed, 56px) above a plain-text secondary
+  // action ("Cancelar…"/"Marcar excepción…", no box). The secondary keeps
+  // its 44px touch-target floor via `minHeight`/`minWidth` (same hit-area
+  // pattern as the SECT/ESTIB toggle, review finding #3) rather than a
+  // visible 56px box the mock doesn't draw for it.
+  it('keeps the primary footer action at 56px and the secondary at the 44px hit-area floor, in every state', () => {
     const { rerender } = render(<QuickSortMobileDock {...baseProps()} />);
-    for (const btn of screen.getAllByRole('button')) {
-      if (btn.textContent?.match(/consolidación|cancelar/i)) {
-        expect(btn.className).toMatch(/h-\[5[6-9]px\]|h-\[60px\]/);
-      }
-    }
+    expect(screen.getByText('Enviar a consolidación').closest('button')!.className).toMatch(
+      /h-\[5[6-9]px\]|h-\[60px\]/,
+    );
+    const cancelBtn = screen.getByText('Cancelar y volver al paso 1').closest('button')!;
+    expect(parseInt(cancelBtn.style.minHeight, 10)).toBeGreaterThanOrEqual(44);
+
     rerender(<QuickSortMobileDock {...baseProps()} rejectedCode="B7" />);
-    for (const btn of screen.getAllByRole('button')) {
-      if (btn.textContent?.match(/excepción|cancelar/i)) {
-        expect(btn.className).toMatch(/h-\[5[6-9]px\]|h-\[60px\]/);
-      }
-    }
+    expect(screen.getByText('Enviar a consolidación').closest('button')!.className).toMatch(
+      /h-\[5[6-9]px\]|h-\[60px\]/,
+    );
+    const exceptionBtn = screen.getByText('Marcar excepción y seguir').closest('button')!;
+    expect(parseInt(exceptionBtn.style.minHeight, 10)).toBeGreaterThanOrEqual(44);
   });
 
   it('keeps recent-scan rows at or above 44px', () => {

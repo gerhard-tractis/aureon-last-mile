@@ -127,7 +127,12 @@ describe('QuickSortMobileView', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
 
     await screen.findByText('DOCK-001');
-    expect(screen.getByText('169 / 180')).toBeInTheDocument();
+    // spec-96 Fase 1 review finding #6 (4h) — the count/capacity are now
+    // embedded in an inline advisory sentence, not a standalone "169 / 180"
+    // bar label (that shape moved to 4j's confirmed screen).
+    const notice = screen.getByTestId('quicksort-capacity-notice');
+    expect(notice).toHaveTextContent('169');
+    expect(notice).toHaveTextContent('180');
   });
 
   // spec-68 Fase 6 accessibility sweep (6.3) — regression guard: step 2
