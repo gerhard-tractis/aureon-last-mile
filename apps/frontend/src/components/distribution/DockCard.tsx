@@ -96,16 +96,17 @@ export function DockCard({
         >
           {packageCount}
         </span>
-        {routeCount != null && (
-          <span
-            className={cn(
-              'text-[11px] leading-none',
-              warning ? 'text-status-warning-text' : 'text-text-muted',
-            )}
-          >
-            paquetes · {routeCount} {routeCount === 1 ? 'ruta' : 'rutas'}
-          </span>
-        )}
+        {/* spec-96 fase 0 review — "paquetes" is the unit for packageCount
+            and must show regardless of routeCount, which has no source yet
+            (see the prop's doc comment) and is routinely omitted. */}
+        <span
+          className={cn(
+            'text-[11px] leading-none',
+            warning ? 'text-status-warning-text' : 'text-text-muted',
+          )}
+        >
+          paquetes{routeCount != null ? ` · ${routeCount} ${routeCount === 1 ? 'ruta' : 'rutas'}` : ''}
+        </span>
       </div>
 
       {pct !== null && (
