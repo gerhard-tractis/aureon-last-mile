@@ -14,6 +14,7 @@ import { useDistributionOverview } from '@/hooks/distribution/useDistributionOve
 import { useConsolidation, useReleaseFromConsolidation } from '@/hooks/distribution/useConsolidation';
 import { useDockZones } from '@/hooks/distribution/useDockZones';
 import { useSectorizedByZone } from '@/hooks/distribution/useSectorizedByZone';
+import { useOpenBatchesByZone } from '@/hooks/distribution/useOpenBatchesByZone';
 import { useUnmatchedComunas } from '@/hooks/distribution/useUnmatchedComunas';
 import { usePendingSectorization } from '@/hooks/distribution/usePendingSectorization';
 import { useOperatorId } from '@/hooks/useOperatorId';
@@ -63,6 +64,7 @@ export default function DistributionPage() {
   const { data: consolidationPackages = [] } = useConsolidation(operatorId);
   const { data: zones } = useDockZones(operatorId);
   const { data: sectorizedCounts } = useSectorizedByZone(operatorId);
+  const { data: openBatchesByZone } = useOpenBatchesByZone(operatorId);
   const { data: unmatched = [] } = useUnmatchedComunas(operatorId);
   const { data: pendingGroups } = usePendingSectorization(operatorId);
   const releaseFromConsolidation = useReleaseFromConsolidation(operatorId ?? '');
@@ -211,7 +213,11 @@ export default function DistributionPage() {
               action={{ label: 'Configurar andenes', href: '/app/distribution/settings' }}
             />
           ) : (
-            <OutboundDockGrid zones={activeZones} sectorizedCounts={sectorizedCounts} />
+            <OutboundDockGrid
+              zones={activeZones}
+              sectorizedCounts={sectorizedCounts}
+              openBatches={openBatchesByZone}
+            />
           )}
         </section>
 

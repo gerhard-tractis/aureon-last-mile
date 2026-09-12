@@ -68,6 +68,11 @@ vi.mock('@/hooks/distribution/usePendingSectorization', () => ({
   usePendingSectorization: (...args: unknown[]) => mockUsePendingSectorization(...args),
 }));
 
+const mockUseOpenBatchesByZone = vi.fn();
+vi.mock('@/hooks/distribution/useOpenBatchesByZone', () => ({
+  useOpenBatchesByZone: (...args: unknown[]) => mockUseOpenBatchesByZone(...args),
+}));
+
 vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1' }),
 }));
@@ -103,6 +108,7 @@ describe('DistributionPage', () => {
     mockUseDockZones.mockReturnValue({ data: mockZones });
     mockUseSectorizedByZone.mockReturnValue({ data: { z1: 42 } });
     mockUsePendingSectorization.mockReturnValue({ data: [] });
+    mockUseOpenBatchesByZone.mockReturnValue({ data: {} });
     mockUseDistributionOverview.mockReturnValue({
       data: {
         open_batches: 5,
@@ -175,6 +181,20 @@ describe('DistributionPage', () => {
       mockUseDockZones.mockReturnValue({ data: [] });
       render(<DistributionPage />);
       expect(screen.getByText('Sin andenes configurados')).toBeInTheDocument();
+    });
+
+    it('passes the real per-zone open-lote count through to the chip (EN RITMO)', () => {
+      mockUseOpenBatchesByZone.mockReturnValue({ data: { z1: 1 } });
+      render(<DistributionPage />);
+      const dock = screen.getByTestId('outbound-dock');
+      expect(within(dock).getByTestId('outbound-dock-chip')).toHaveTextContent('EN RITMO');
+    });
+
+    it('shows SIN ABRIR when the zone has no open lote', () => {
+      mockUseOpenBatchesByZone.mockReturnValue({ data: {} });
+      render(<DistributionPage />);
+      const dock = screen.getByTestId('outbound-dock');
+      expect(within(dock).getByTestId('outbound-dock-chip')).toHaveTextContent('SIN ABRIR');
     });
   });
 
