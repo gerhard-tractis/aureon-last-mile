@@ -724,20 +724,23 @@ hermanos.
 
 ### Fase 8 — Andenes de la nave `[in_progress]`
 
-> Implementado por: implementer — rama `feat/spec-96-fase-8-andenes`, SHAs `76eea78..5f3f3bc` (`da411b8` es el primer commit de la ronda de review; `76eea78..58afdc7` es la implementación original)
-> Review: reviewer (opus), ronda 1 — 4 hallazgos bloqueantes (banner sobre un predicado excluyente con `get_unmatched_comunas`/`determineDockZone().flagged` y agrupado por texto crudo; el único test de esa fuente pasaba con el conteo hardcodeado; `SIN ABRIR` mapeado a "sin capacidad" cuando `4a` lo define como "sin lote abierto" — el mock se contradice, ruling del coordinador mientras se escala al diseñador; tres copias de la aritmética `capacity > 0` que `getDockCapacityStatus` ya expone) + 4 "Also fix" (dos tests de subtítulo asertando copy; banner dentro del scroll en vez de footer fijo; dependencia declarada de Fase 0 incumplida y no dicha; sin evidencia en el spec) — los 8 cerrados en este rango, con mutation-test manual sobre el hallazgo #2 (hardcodear el conteo a `{13}` rompe el test anclado en `data-testid`; revertido después de confirmar el rojo).
+> Implementado por: implementer — rama `feat/spec-96-fase-8-andenes`, SHAs `76eea78..a73a5fd` (ronda 1: `76eea78..58afdc7` implementación, `da411b8..e3e3fdd` correcciones; ronda 2: `93a0ce3..a73a5fd`)
+> Review: reviewer (opus), ronda 1 — 4 hallazgos bloqueantes (banner sobre un predicado excluyente con `get_unmatched_comunas`/`determineDockZone().flagged` y agrupado por texto crudo; el único test de esa fuente pasaba con el conteo hardcodeado; `SIN ABRIR` mapeado a "sin capacidad" cuando `4a` lo define como "sin lote abierto" — el mock se contradice, ruling del coordinador mientras se escala al diseñador; tres copias de la aritmética `capacity > 0` que `getDockCapacityStatus` ya expone) + 4 "Also fix" (dos tests de subtítulo asertando copy; banner dentro del scroll en vez de footer fijo; dependencia declarada de Fase 0 incumplida y no dicha; sin evidencia en el spec) — los 8 cerrados, con mutation-test manual sobre el hallazgo #2 (hardcodear el conteo a `{13}` rompe el test anclado en `data-testid`). Ronda 2 — 1 hallazgo obligatorio (`usePendingSectorization` sin `.limit()` ni chequeo de truncamiento contra el `max_rows = 1000` de PostgREST — correctness, no el costo ya declarado; el banner podía leer 0 con la verdad en 300) + 6 "Also fix" (banner perdió el tono de advertencia anidado de `4l`; el "footer fijo" era inerte por falta de `flex-1` en la raíz de la página; la zona de consolidación contaba como "sin abrir" y mostraba el aviso de capacidad; el mirror `sr-only` era una regresión de accesibilidad e innecesario frente a una aserción exacta; el ternario nota/comunas no tenía test propio; la ventana de carga entre `zones` y `usePendingSectorization` era indistinguible del error de truncamiento) + limpieza de un guard redundante y el `**Status:**` de cabecera obsoleto — los 9 cerrados en `93a0ce3..a73a5fd`, con mutation-test manual sobre 3 de ellos (truncamiento: comentar `assertNotTruncated` rompe el test nuevo; subtítulo exacto: hardcodear `unconfiguredCount` a `13` rompe 4 tests; testid del ternario: renombrarlo rompe el test nuevo).
 > QA: pendiente — todavía no hay PR (instrucción explícita de esta ronda: sin PR, sin self-review, sin rebase). Corresponde al orquestador abrir el PR y leer el reporte de `e2e-qa`, no el check.
 > Downstream: revisado spec-96 fase 4 (`OutboundDockGrid.tsx`, no tocado por esta fase) y fase 6 (`DistributionMobileView.tsx` tiene el mismo mis-wiring de `SIN ABRIR`/predicado de comunas en `main`; el coordinador lo registra como hallazgo abierto de Fase 6, no de ésta) — sin cambios necesarios en ninguna.
 
 **Hallazgos abiertos, que esta fase NO cierra:**
 
-- **`SIN ABRIR` está escalado al diseñador.** `4a` (`Distribucion.dc.html:194-203`,
-  A6 con capacidad configurada y "lote sin abrir") y `4l` (`:1236`, A6 sin
-  capacidad) usan el mismo texto para dos predicados distintos. Mientras no
-  vuelva el ruling, `DockListMobile` no emite ningún chip para la fila sin
-  configurar — coherente con el fallback (ningún dato de lote/actividad por
-  andén), pero es una decisión reversible en una línea si el diseñador falla
-  al revés.
+- **`SIN ABRIR` es una desviación conocida del benchmark, no un fallback
+  coherente — decisión del coordinador, no reversible en esta fase.** `4l:1236`
+  dibuja `SIN ABRIR` en `A6`, cuya única señal distintiva es la capacidad sin
+  configurar; un chip capacity-derived reproduciría `4l` exactamente. Esta
+  lista no lo emite porque Fase 4 ya envió `SIN ABRIR` activity-derived
+  ("sin lote abierto") para el `A6` de `4a` — que sí tiene capacidad
+  configurada en ese artboard — y un mismo texto con dos significados en
+  escritorio y móvil se juzgó peor que una fila sin ese chip. Sigue siendo
+  falsificable: si el diseñador falla al revés, es un cambio de una línea en
+  `chipStateFor`.
 - **`EN RITMO` y el resto de la familia de chips de actividad siguen sin
   fuente** — mismo hallazgo abierto que `OutboundDockGrid` (`4a`, Fase 0/4):
   esta lista no recibe lotes/actividad por andén.
@@ -747,11 +750,23 @@ hermanos.
   Se implementó igual, con el subconjunto capacity-derived únicamente; se
   declara aquí porque el campo existe precisamente para que esto no se
   descubra tarde.
-- **`usePendingSectorization` es un fetch nuevo en esta ruta**, añadido para
-  corregir el banner (hallazgo #1 de la ronda 1): trae todo paquete
-  `en_bodega` del operador. Cache key compartida con `/pendientes` y
+- **`usePendingSectorization` sigue siendo un fetch nuevo en esta ruta**
+  (hallazgo #1 de la ronda 1, con su costo de bytes/latencia): trae todo
+  paquete `en_bodega` del operador. Cache key compartida con `/pendientes` y
   quicksort, así que en la navegación normal (`4c` → andenes) suele llegar
-  tibio; en frío, o a escala de producción (~61k paquetes), no es gratis.
+  tibio; en frío, o a escala de producción (~61k paquetes), no es gratis. La
+  ronda 2 añadió `assertNotTruncated` para que el límite de PostgREST
+  (`max_rows = 1000`) falle ruidoso en vez de devolver un conteo silenciosamente
+  incompleto — eso cierra la corrección, no el costo.
+- **Una RPC de solo conteo sería la forma correcta a largo plazo** para el
+  banner de comunas sin andén, en vez de traer y agrupar en el cliente todo
+  paquete `en_bodega`. Declarado, no implementado — es query nueva y el
+  coordinador lo puso fuera de alcance explícitamente.
+- **`MAX_ROWS_PER_QUERY`/`assertNotTruncated` está duplicado** entre
+  `usePendingSectorization.ts` y `hooks/dispatch/useEnRutaSnapshot.ts` (que no
+  lo exporta y no es archivo de esta fase). Un `lib/supabase/assert-not-truncated.ts`
+  compartido es la forma correcta a largo plazo para que el número `1000` no
+  viva en dos sitios independientes.
 - **El nombre de la nave ("Nave Quilicura") no tiene fuente** en ningún
   componente existente — queda fuera del subtítulo en vez de hardcodearlo.
 - **QA no puede evidenciar los tonos `warning`/`error`** (cero paquetes
@@ -765,7 +780,10 @@ hermanos.
 **Depende de:** spec-96 fase 0
 
 **Archivos:** `apps/frontend/src/components/distribution/DockListMobile.tsx`,
-`apps/frontend/src/app/app/distribution/andenes/page.tsx`, y sus tests hermanos.
+`apps/frontend/src/app/app/distribution/andenes/page.tsx`,
+`apps/frontend/src/hooks/distribution/usePendingSectorization.ts` (extendido en
+ronda 2 por el coordinador, para un solo cambio: `assertNotTruncated`; Fase 4
+no lo toca), y sus tests hermanos.
 
 **Notas no visuales:**
 
@@ -783,7 +801,7 @@ hermanos.
 - [x] Run — expect the first half to pass already (`DockCapacityBar` returns nothing) and the explanatory region to fail.
 - [x] Implement. Run — expect PASS. Commit.
 
-**Task 8.2 — Close the visual diff** on `4l` at 402 px. Run suite + type-check, PR with auto-merge. — Closed except the PR (not opened, per this round's explicit instruction). Fixed in this round: scroll container around the row list with the comunas-banner as a fixed footer outside it (`4l:1179-1250`); `A6`'s subtitle slot now carries "sin capacidad configurada" instead of the comuna list. `warning`/`error` tones remain unverified in QA per the prerequisite section above this table.
+**Task 8.2 — Close the visual diff** on `4l` at 402 px. Run suite + type-check, PR with auto-merge. — Closed except the PR (not opened, per this round's explicit instruction). Round 1: scroll container around the row list with the comunas-banner as a fixed footer outside it (`4l:1179-1250`); `A6`'s subtitle slot carries "sin capacidad configurada" instead of the comuna list. Round 2: the page root lacked `flex-1`, so that "fixed footer" was actually inert (in-flow, invisible past 6 docks) — one class fixed it; the banner had collapsed `4l`'s two nested toned elements into one, reading as plain text — restored both layers; the consolidation zone no longer gets the capacity-incomplete note. `warning`/`error` tones remain unverified in QA per the prerequisite section above this table.
 
 ---
 
