@@ -114,4 +114,51 @@ describe('DockListMobile', () => {
     const row = screen.getByTestId('dock-list-row-zone-a1');
     expect(row.className).toMatch(/min-h-\[(4[4-9]|[5-9]\d|\d{3,})px\]/);
   });
+
+  describe('the unconfigured-capacity row (4l A6)', () => {
+    it('renders no occupancy element and renders an explanatory region instead', () => {
+      render(<DockListMobile zones={[zoneB]} sectorizedCounts={{ 'zone-b1': 4 }} />);
+      const row = screen.getByTestId('dock-list-row-zone-b1');
+      expect(within(row).queryByTestId('dock-capacity-fill')).not.toBeInTheDocument();
+      expect(within(row).getByTestId('dock-capacity-unconfigured')).toBeInTheDocument();
+    });
+
+    it('renders the bar and no explanatory region when capacity is configured', () => {
+      render(<DockListMobile zones={[zoneA]} sectorizedCounts={{ 'zone-a1': 169 }} />);
+      const row = screen.getByTestId('dock-list-row-zone-a1');
+      expect(within(row).getByTestId('dock-capacity-fill')).toBeInTheDocument();
+      expect(within(row).queryByTestId('dock-capacity-unconfigured')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('the status chip (same family as 4a)', () => {
+    it('marks an unconfigured zone with the unconfigured chip state', () => {
+      render(<DockListMobile zones={[zoneB]} sectorizedCounts={{ 'zone-b1': 4 }} />);
+      const row = screen.getByTestId('dock-list-row-zone-b1');
+      expect(within(row).getByTestId('dock-status-chip')).toHaveAttribute(
+        'data-state',
+        'unconfigured',
+      );
+    });
+
+    it('marks a near-full configured zone with the near-full chip state', () => {
+      render(
+        <DockListMobile
+          zones={[zoneA]}
+          sectorizedCounts={{ 'zone-a1': 169 }} // 169/180 = 93.9% >= warning threshold
+        />,
+      );
+      const row = screen.getByTestId('dock-list-row-zone-a1');
+      expect(within(row).getByTestId('dock-status-chip')).toHaveAttribute(
+        'data-state',
+        'near-full',
+      );
+    });
+
+    it('renders no chip for a configured zone in the neutral tone', () => {
+      render(<DockListMobile zones={[zoneA]} sectorizedCounts={{ 'zone-a1': 10 }} />);
+      const row = screen.getByTestId('dock-list-row-zone-a1');
+      expect(within(row).queryByTestId('dock-status-chip')).not.toBeInTheDocument();
+    });
+  });
 });
