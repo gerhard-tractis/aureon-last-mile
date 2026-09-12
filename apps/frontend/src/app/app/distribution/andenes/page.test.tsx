@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import AndenesPage from './page';
 
 const mockPush = vi.fn();
@@ -51,11 +51,17 @@ vi.mock('@/hooks/distribution/useSectorizedByZone', () => ({
   useSectorizedByZone: () => ({ data: { 'zone-a1': 42 } }),
 }));
 
+let mockUnmatchedComunas: unknown[] = [];
+vi.mock('@/hooks/distribution/useUnmatchedComunas', () => ({
+  useUnmatchedComunas: () => ({ data: mockUnmatchedComunas }),
+}));
+
 beforeEach(() => {
   mockOperatorId = 'op-1';
   mockZones = [zoneA];
   mockZonesLoading = false;
   mockZonesError = false;
+  mockUnmatchedComunas = [];
 });
 
 afterEach(() => {
@@ -63,6 +69,7 @@ afterEach(() => {
   mockZones = [zoneA];
   mockZonesLoading = false;
   mockZonesError = false;
+  mockUnmatchedComunas = [];
 });
 
 describe('AndenesPage', () => {
@@ -151,5 +158,25 @@ describe('AndenesPage', () => {
     mockZones = [zoneA];
     render(<AndenesPage />);
     expect(screen.queryByText(/sin abrir/)).not.toBeInTheDocument();
+  });
+
+  // spec-96 Fase 8 (4l) — the footer banner over unrecognised comunas
+  // falling to consolidation; sourced from the same get_unmatched_comunas
+  // RPC 4a's tile already reads, via useUnmatchedComunas — no new query.
+  it('shows the unmatched-comunas banner with the count the hook returns', () => {
+    mockUnmatchedComunas = [
+      { comuna_raw: 'Foo', order_count: 1 },
+      { comuna_raw: 'Bar', order_count: 2 },
+      { comuna_raw: 'Baz', order_count: 1 },
+    ];
+    render(<AndenesPage />);
+    const banner = screen.getByTestId('unmatched-comunas-banner');
+    expect(within(banner).getByText(/3/)).toBeInTheDocument();
+  });
+
+  it('omits the unmatched-comunas banner when there are none', () => {
+    mockUnmatchedComunas = [];
+    render(<AndenesPage />);
+    expect(screen.queryByTestId('unmatched-comunas-banner')).not.toBeInTheDocument();
   });
 });

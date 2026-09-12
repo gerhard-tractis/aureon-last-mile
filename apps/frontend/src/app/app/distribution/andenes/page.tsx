@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDockZones } from '@/hooks/distribution/useDockZones';
 import { useSectorizedByZone } from '@/hooks/distribution/useSectorizedByZone';
+import { useUnmatchedComunas } from '@/hooks/distribution/useUnmatchedComunas';
 import { useOperatorId } from '@/hooks/useOperatorId';
 
 /**
@@ -44,12 +45,19 @@ import { useOperatorId } from '@/hooks/useOperatorId';
  * also carries a warehouse name ("Nave Quilicura"); this route has no
  * source for it (no code anywhere renders it yet — Fase 6, `4c`, is the
  * phase that would wire it), so it stays out rather than being hardcoded.
+ *
+ * The footer banner over comunas falling to consolidation reads
+ * `useUnmatchedComunas` — the same `get_unmatched_comunas` RPC `4a`'s
+ * renamed tile already reads — no new query. It renders only when there is
+ * at least one such comuna; QA's fixture is 0 for both operators, so it is
+ * unverified there and left for e2e-qa/eye once the fixture has one.
  */
 export default function AndenesPage() {
   const router = useRouter();
   const { operatorId } = useOperatorId();
   const { data: zones, isError: zonesIsError } = useDockZones(operatorId);
   const { data: sectorizedCounts = {} } = useSectorizedByZone(operatorId);
+  const { data: unmatchedComunas = [] } = useUnmatchedComunas(operatorId);
 
   const goBack = () => router.push('/app/distribution');
 
@@ -97,6 +105,23 @@ export default function AndenesPage() {
       />
 
       <DockListMobile zones={zones} sectorizedCounts={sectorizedCounts} />
+
+      {unmatchedComunas.length > 0 && (
+        <div
+          data-testid="unmatched-comunas-banner"
+          className="flex flex-none items-center gap-2.5 rounded-xl border border-status-warning-border bg-status-warning-bg px-3.5 py-2.5"
+        >
+          <span className="grid h-[26px] w-[26px] flex-none place-items-center rounded-lg border border-status-warning-border bg-surface font-mono text-xs font-bold text-status-warning-text">
+            !
+          </span>
+          <span className="text-[11.5px] font-medium text-status-warning-text">
+            {unmatchedComunas.length}{' '}
+            {unmatchedComunas.length === 1
+              ? 'comuna sin andén asignado cae a consolidación'
+              : 'comunas sin andén asignado caen a consolidación'}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
