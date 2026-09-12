@@ -55,4 +55,19 @@ describe('DockCapacityBar', () => {
     const { container } = render(<DockCapacityBar count={100} capacity={100} />);
     expect(container.innerHTML).not.toMatch(/#[0-9a-fA-F]{3,6}/);
   });
+
+  it('renders only the fill track when showLabel is false, no count/capacity or remaining-spaces text', () => {
+    // spec-96 fase 0 — the caller that prints its own "N / M paq." line
+    // (OutboundDockGrid, `4a`) opts out of this component's own label so
+    // the count is not printed twice.
+    render(<DockCapacityBar count={169} capacity={180} showLabel={false} />);
+    expect(screen.queryByText(/169/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Quedan/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('dock-capacity-fill')).toBeInTheDocument();
+  });
+
+  it('still renders the label by default (existing callers unchanged)', () => {
+    render(<DockCapacityBar count={169} capacity={180} />);
+    expect(screen.getByText(/169 \/ 180/)).toBeInTheDocument();
+  });
 });
