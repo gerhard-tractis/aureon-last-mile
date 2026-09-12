@@ -137,19 +137,21 @@ describe('QuickSortMobile', () => {
       expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
     });
 
-    it('defaults to Sectorizar selected, and shows the andén copy, when mode is omitted', () => {
+    // spec-96 Fase 1 review finding #2/#3 (4g) — the mock's control reads
+    // SECT/ESTIB, not the full words; the app now matches it.
+    it('defaults to SECT selected, and shows the andén copy, when mode is omitted', () => {
       render(<QuickSortMobile {...baseProps()} onModeChange={vi.fn()} />);
-      expect(screen.getByRole('tab', { name: 'Sectorizar' })).toHaveAttribute('aria-selected', 'true');
-      expect(screen.getByRole('tab', { name: 'Estibar' })).toHaveAttribute('aria-selected', 'false');
+      expect(screen.getByRole('tab', { name: 'SECT' })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByRole('tab', { name: 'ESTIB' })).toHaveAttribute('aria-selected', 'false');
       expect(screen.getByText('Clasificación en andén')).toBeInTheDocument();
       expect(
         screen.getByText('El sistema te dirá a qué andén va antes de que lo muevas'),
       ).toBeInTheDocument();
     });
 
-    it('shows the Estibar tab selected and the posición copy when mode="stage"', () => {
+    it('shows the ESTIB tab selected and the posición copy when mode="stage"', () => {
       render(<QuickSortMobile {...baseProps()} mode="stage" onModeChange={vi.fn()} />);
-      expect(screen.getByRole('tab', { name: 'Estibar' })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByRole('tab', { name: 'ESTIB' })).toHaveAttribute('aria-selected', 'true');
       expect(screen.getByText('Carga a posición')).toBeInTheDocument();
       expect(
         screen.getByText('El sistema te dirá a qué posición va antes de que lo muevas'),
@@ -159,14 +161,22 @@ describe('QuickSortMobile', () => {
     it('calls onModeChange with the tapped mode', () => {
       const onModeChange = vi.fn();
       render(<QuickSortMobile {...baseProps()} onModeChange={onModeChange} />);
-      fireEvent.click(screen.getByRole('tab', { name: 'Estibar' }));
+      fireEvent.click(screen.getByRole('tab', { name: 'ESTIB' }));
       expect(onModeChange).toHaveBeenCalledWith('stage');
     });
 
-    it('keeps both toggle buttons at the 44px touch-target floor', () => {
+    // spec-96 Fase 1 review finding #3 — the artboard's visual box is
+    // 91×23.5px, well under 44px; the reviewer's fix is to keep that visual
+    // box and expand the HIT area instead, via `minHeight`/`minWidth`
+    // rather than a visible `h-11` (a class-string assertion is itself the
+    // implementation-detail check the spec forbids). Asserting inline
+    // style, not a Tailwind class, is what makes this the touch-target
+    // contract rather than a re-statement of one utility class.
+    it('keeps both toggle buttons at the 44px touch-target floor via hit-area sizing, not visual height', () => {
       render(<QuickSortMobile {...baseProps()} onModeChange={vi.fn()} />);
       for (const tab of screen.getAllByRole('tab')) {
-        expect(tab.className).toMatch(/h-11/);
+        expect(parseInt(tab.style.minHeight, 10)).toBeGreaterThanOrEqual(44);
+        expect(parseInt(tab.style.minWidth, 10)).toBeGreaterThanOrEqual(44);
       }
     });
   });

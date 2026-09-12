@@ -116,42 +116,54 @@ export function QuickSortMobile({
 
   // spec-96 Fase 1 (`4g`) — moved from its own pill row below the header
   // into DistributionMobileHeader's `titleControl` slot, right of the
-  // title, matching the artboard. `h-11` (44px) stays — the accessibility
-  // floor every touch target on this screen holds to — so the pill is
-  // sized to its content rather than stretched full-width like the old row.
+  // title, matching the artboard.
+  //
+  // review findings #2/#3 — the artboard's box is ~91×23.5px with `SECT`/
+  // `ESTIB` at 9.5px mono, nowhere near 44px. Rather than either shrink the
+  // spec-71 touch-target floor to fit the mock or inflate the visual box
+  // past it, each `<button>` carries the REAL 44px hit area via inline
+  // `minHeight`/`minWidth` (invisible — no border, no background of its
+  // own), and an inner `<span>` carries 100% of the artboard's visible
+  // styling. The two boxes are deliberately different sizes.
   const modeToggle = onModeChange && (
     <div
       role="tablist"
       aria-label="Modo de escaneo"
-      className="flex flex-none items-center gap-1 rounded-full border border-border bg-surface p-1"
+      className="flex flex-none items-center gap-0.5 rounded-[7px] border border-border bg-surface-raised p-0.5"
     >
       <button
         type="button"
         role="tab"
         aria-selected={mode === 'sectorize'}
         onClick={() => { onModeChange('sectorize'); refocusPackageField(); }}
-        className={cn(
-          'h-11 rounded-full px-3 font-mono text-[10px] font-semibold uppercase tracking-[.08em] transition-colors',
-          mode === 'sectorize'
-            ? 'bg-accent-light text-accent-light-foreground'
-            : 'text-text-secondary active:bg-surface-raised',
-        )}
+        style={{ minHeight: '44px', minWidth: '44px' }}
+        className="flex items-center justify-center"
       >
-        Sectorizar
+        <span
+          className={cn(
+            'rounded-[5px] px-2 py-1 font-mono text-[9.5px] transition-colors',
+            mode === 'sectorize' ? 'bg-surface font-semibold text-text' : 'font-medium text-text-muted',
+          )}
+        >
+          SECT
+        </span>
       </button>
       <button
         type="button"
         role="tab"
         aria-selected={mode === 'stage'}
         onClick={() => { onModeChange('stage'); refocusPackageField(); }}
-        className={cn(
-          'h-11 rounded-full px-3 font-mono text-[10px] font-semibold uppercase tracking-[.08em] transition-colors',
-          mode === 'stage'
-            ? 'bg-accent-light text-accent-light-foreground'
-            : 'text-text-secondary active:bg-surface-raised',
-        )}
+        style={{ minHeight: '44px', minWidth: '44px' }}
+        className="flex items-center justify-center"
       >
-        Estibar
+        <span
+          className={cn(
+            'rounded-[5px] px-2 py-1 font-mono text-[9.5px] transition-colors',
+            mode === 'stage' ? 'bg-surface font-semibold text-text' : 'font-medium text-text-muted',
+          )}
+        >
+          ESTIB
+        </span>
       </button>
     </div>
   );
