@@ -119,8 +119,12 @@ const mockGroups: Array<Record<string, unknown>> = [
   },
 ];
 
+// A mutable holder, not the const directly — the "stale selection on
+// refetch" test below needs a rerender to pick up NEW data from the same
+// mocked hook, the same way a real refetch would.
+let mockGroupsData: Array<Record<string, unknown>> = mockGroups;
 vi.mock('@/hooks/distribution/usePendingSectorization', () => ({
-  usePendingSectorization: () => ({ data: mockGroups, isLoading: false }),
+  usePendingSectorization: () => ({ data: mockGroupsData, isLoading: false }),
 }));
 
 const mockMutateAsync = vi.fn().mockResolvedValue(undefined);
@@ -135,6 +139,7 @@ beforeEach(async () => {
   mockMutateAsync.mockResolvedValue(undefined);
   mockUseManualDockAssignment.mockClear();
   mockUseManualDockAssignment.mockImplementation(() => ({ canUse: true, mutateAsync: mockMutateAsync }));
+  mockGroupsData = mockGroups;
   const { toast } = await import('sonner');
   vi.mocked(toast.success).mockClear();
   vi.mocked(toast.error).mockClear();
@@ -158,7 +163,10 @@ describe('PendingSectorizationPage (route: /app/distribution/pendientes)', () =>
     render(<PendingSectorizationPage />);
     const link = screen.getByRole('link', { name: /escanear/i });
     expect(link).toHaveAttribute('href', '/app/distribution/quicksort');
-    expect(link.className).toMatch(/h-\[?(5[6-9]|60)/);
+    // spec-96 review — the row height now comes from the shared
+    // FOOTER_METRICS-pattern wrapper (56px), not a literal class on the
+    // link itself; the link fills it via h-full.
+    expect(link.parentElement).toHaveStyle({ height: '56px' });
   });
 
   it('tapping the ⋯ affordance opens the send-to-dock sheet, and confirming assigns the package', async () => {
@@ -247,15 +255,42 @@ describe('PendingSectorizationPage (route: /app/distribution/pendientes)', () =>
   // Fase 2 (spec-96) — `4d`'s SEL control. Confirming a selection reuses
   // the same SendToDockSheet pipeline the single-order ⋯ affordance does.
   describe('SEL', () => {
-    it('toggling SEL exposes a checkbox per order and hides the ⋯ affordances', async () => {
+    it('toggling SEL exposes an unchecked checkbox per order and hides the ⋯ affordances', async () => {
       const user = userEvent.setup();
       render(<PendingSectorizationPage />);
       await user.click(screen.getByTestId('pendientes-sel-toggle'));
       expect(screen.getByTestId('pendientes-sel-toggle')).toHaveAttribute('aria-pressed', 'true');
-      expect(
-        within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox'),
-      ).toBeInTheDocument();
+      const checkbox = within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox');
+      // Regression guard — a handler firing on click is not evidence the
+      // box itself ever fills in.
+      expect(checkbox).toHaveAttribute('aria-checked', 'false');
       expect(screen.queryAllByRole('button', { name: /enviar/i })).toHaveLength(0);
+    });
+
+    it('clicking a checkbox flips its aria-checked and shows the counter', async () => {
+      const user = userEvent.setup();
+      render(<PendingSectorizationPage />);
+      await user.click(screen.getByTestId('pendientes-sel-toggle'));
+      const checkbox = within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox');
+      await user.click(checkbox);
+      expect(checkbox).toHaveAttribute('aria-checked', 'true');
+      expect(screen.getByText('1 SELECCIONADO')).toBeInTheDocument();
+    });
+
+    // Review fix — the confirm bar used to be `sticky bottom-0` with no
+    // `z-index` inside the scrolling list, painted over by this page's own
+    // `fixed z-40` footer at every scroll position where the list
+    // overflows. There must be exactly one fixed footer, and the confirm
+    // action must live inside it — not float as a second element.
+    it('the confirm action renders inside the single fixed footer, not a second floating element', async () => {
+      const user = userEvent.setup();
+      render(<PendingSectorizationPage />);
+      await user.click(screen.getByTestId('pendientes-sel-toggle'));
+      await user.click(within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox'));
+      const confirm = screen.getByTestId('pending-selection-confirm');
+      const fixedFooters = document.querySelectorAll('.fixed.inset-x-0.bottom-0');
+      expect(fixedFooters).toHaveLength(1);
+      expect(fixedFooters[0].contains(confirm)).toBe(true);
     });
 
     it('selecting both orders and confirming opens the sheet and assigns every package', async () => {
@@ -280,6 +315,54 @@ describe('PendingSectorizationPage (route: /app/distribution/pendientes)', () =>
       expect(mockMutateAsync).toHaveBeenCalledWith(
         expect.objectContaining({ packageId: 'pkg-3', zoneId: 'zone-a1' }),
       );
+    });
+
+    // Review fix — Cancelar used to also exit SEL mode, dropping the
+    // selection with no way back to the same ticks to double-check an
+    // andén and resend. It must now only close the sheet.
+    it('cancelling the sheet keeps the selection intact', async () => {
+      const user = userEvent.setup();
+      render(<PendingSectorizationPage />);
+      await user.click(screen.getByTestId('pendientes-sel-toggle'));
+      await user.click(within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox'));
+      await user.click(within(screen.getByTestId('pending-order-order-2')).getByRole('checkbox'));
+      await user.click(screen.getByTestId('pending-selection-confirm'));
+
+      await user.click(screen.getByRole('button', { name: 'Cancelar' }));
+
+      expect(screen.getByTestId('pending-selection-confirm')).toBeInTheDocument();
+      expect(
+        within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox'),
+      ).toHaveAttribute('aria-checked', 'true');
+      expect(
+        within(screen.getByTestId('pending-order-order-2')).getByRole('checkbox'),
+      ).toHaveAttribute('aria-checked', 'true');
+      expect(mockMutateAsync).not.toHaveBeenCalled();
+    });
+
+    // Review fix — `usePendingSectorization` refetches (15s staleTime +
+    // focus refetch). A selected order that vanishes from the next fetch
+    // (sectorized by a coworker mid-selection) must drop out of the
+    // selection instead of staying ticked with nothing behind it.
+    it('drops a selected order that disappears from a refetch, instead of overclaiming it', async () => {
+      const user = userEvent.setup();
+      const { rerender } = render(<PendingSectorizationPage />);
+      await user.click(screen.getByTestId('pendientes-sel-toggle'));
+      await user.click(within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox'));
+      await user.click(within(screen.getByTestId('pending-order-order-2')).getByRole('checkbox'));
+      expect(screen.getByText('2 SELECCIONADOS')).toBeInTheDocument();
+
+      mockGroupsData = [
+        {
+          ...mockGroups[0],
+          orders: (mockGroups[0].orders as Array<{ orderId: string }>).filter(
+            (o) => o.orderId !== 'order-1',
+          ),
+        },
+      ];
+      rerender(<PendingSectorizationPage />);
+
+      await vi.waitFor(() => expect(screen.getByText('1 SELECCIONADO')).toBeInTheDocument());
     });
   });
 });

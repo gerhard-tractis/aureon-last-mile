@@ -8,7 +8,7 @@ import { todayISOInTimezone } from '@/lib/utils/dateFormat';
 import type { OrderGroup, PendingPackage } from '@/hooks/distribution/usePendingSectorization';
 import type { DockZoneRecord } from '@/hooks/distribution/useDockZones';
 import type { SendToDockRequest } from './PendingMobileList';
-import { SendAffordance, OrderActionSlot } from './PendingOrderActionSlot';
+import { SendAffordance, OrderActionSlot, SelectCheckbox } from './PendingOrderActionSlot';
 
 const TONE_CLASS: Record<DeliveryDateTone, string> = {
   overdue: 'text-status-error font-semibold',
@@ -93,6 +93,13 @@ export function PendingMobileOrderGroup({
         data-testid={`pending-order-${order.orderId}`}
         className="flex min-h-[52px] items-center gap-2.5 rounded-lg border border-border bg-surface px-3 py-2"
       >
+        {selectable && (
+          <SelectCheckbox
+            label={`Seleccionar pedido ${order.orderNumber}`}
+            checked={selected}
+            onChange={() => onToggleSelect?.()}
+          />
+        )}
         <div className="min-w-0 flex-1 space-y-0.5">
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="font-mono text-[14px] font-semibold tabular-nums tracking-tight text-text">
@@ -114,14 +121,9 @@ export function PendingMobileOrderGroup({
             )}
           </div>
         </div>
-        <OrderActionSlot
-          canManualAssign={canManualAssign}
-          selectable={selectable}
-          selected={selected}
-          onToggleSelect={onToggleSelect}
-          sendLabel={sendLabel}
-          onSend={handleSend}
-        />
+        {!selectable && (
+          <OrderActionSlot canManualAssign={canManualAssign} sendLabel={sendLabel} onSend={handleSend} />
+        )}
       </div>
     );
   }
@@ -132,6 +134,13 @@ export function PendingMobileOrderGroup({
       className="flex min-h-[44px] flex-col gap-1 rounded-lg border border-border bg-surface p-2"
     >
       <div className="flex min-h-[44px] items-center gap-2.5 border-b border-border/60 pb-1.5">
+        {selectable && (
+          <SelectCheckbox
+            label={`Seleccionar pedido ${order.orderNumber}`}
+            checked={selected}
+            onChange={() => onToggleSelect?.()}
+          />
+        )}
         <div className="min-w-0 flex-1 space-y-0.5">
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="text-[13px] font-bold text-status-info">Pedido #{order.orderNumber}</span>
@@ -144,22 +153,21 @@ export function PendingMobileOrderGroup({
             <span className="text-[12px] text-text-secondary">{order.comunaName}</span>
           )}
         </div>
-        <OrderActionSlot
-          canManualAssign={canManualAssign}
-          selectable={selectable}
-          selected={selected}
-          onToggleSelect={onToggleSelect}
-          sendLabel={`Enviar pedido ${order.orderNumber} a andén`}
-          onSend={() =>
-            onRequestSend({
-              packageIds: order.packages.map((p) => p.id),
-              packageLabels: order.packages.map((p) => p.label),
-              code: order.orderNumber,
-              comunaName: order.comunaName,
-              suggestedZone,
-            })
-          }
-        />
+        {!selectable && (
+          <OrderActionSlot
+            canManualAssign={canManualAssign}
+            sendLabel={`Enviar pedido ${order.orderNumber} a andén`}
+            onSend={() =>
+              onRequestSend({
+                packageIds: order.packages.map((p) => p.id),
+                packageLabels: order.packages.map((p) => p.label),
+                code: order.orderNumber,
+                comunaName: order.comunaName,
+                suggestedZone,
+              })
+            }
+          />
+        )}
       </div>
 
       <div className="flex flex-col gap-1 pl-3">

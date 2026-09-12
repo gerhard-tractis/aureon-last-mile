@@ -1,11 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { PendingZoneSection } from './PendingZoneSection';
 import { determineDockZone } from '@/lib/distribution/sectorization-engine';
 import { todayISOInTimezone } from '@/lib/utils/dateFormat';
-import { buildSelectionRequest, type SendToDockRequest } from '@/lib/distribution/pending-selection';
+import type { SendToDockRequest } from '@/lib/distribution/pending-selection';
 import type { ZoneGroup, OrderGroup } from '@/hooks/distribution/usePendingSectorization';
 import type { DockZoneRecord } from '@/hooks/distribution/useDockZones';
 
@@ -23,13 +22,18 @@ import type { DockZoneRecord } from '@/hooks/distribution/useDockZones';
  * is an order line plus one row per package; `'cmp'` forces every order
  * into one compact row (spec-96 Fase 2, `4d`'s DET/CMP control).
  *
- * `selectionMode` (spec-96 Fase 2, `4d`'s SEL control) is a controlled prop
- * — the toggle button lives in the page's fixed footer, alongside
- * Escanear, not in this component — but the selected-order-ids state is
- * owned here and resets whenever selectionMode goes false. Confirming a
- * selection calls `onRequestSend` exactly once with every selected order's
- * package ids combined (`buildSelectionRequest`), reusing the same
- * `SendToDockSheet` pipeline a single order's ⋯ affordance already drives.
+ * `selectionMode`/`selectedOrderIds`/`onToggleOrderSelection` (spec-96
+ * Fase 2, `4d`'s SEL control) are fully controlled by the page — this
+ * component owns no selection state of its own. Review fix: the confirm
+ * action (counter + "Enviar seleccionados") does NOT live in here either.
+ * It first shipped as a `sticky bottom-0` bar with no `z-index`, painted
+ * over by the page's own `fixed z-40` footer at every scroll position
+ * where the list overflows (the window is the scroll container —
+ * `AppLayout`'s `<main>` has no `overflow-y-auto`) — the identical shape
+ * to the Fase 3 regression this spec already records. The page renders
+ * that confirm action in its own fixed footer instead, following `4f`'s
+ * shape (counter eyebrow, then the primary action, both inside the
+ * `flex:none` footer) and the review's `FOOTER_METRICS` pattern.
  */
 export type { SendToDockRequest };
 
@@ -49,8 +53,10 @@ export interface PendingMobileListProps {
   now?: Date;
   /** spec-96 Fase 2 — `4d`'s DET/CMP control. Defaults to `'det'`. */
   mode?: 'det' | 'cmp';
-  /** spec-96 Fase 2 — `4d`'s SEL control, toggled from the page's footer. */
+  /** spec-96 Fase 2 — `4d`'s SEL control. Fully controlled by the page. */
   selectionMode?: boolean;
+  selectedOrderIds?: Set<string>;
+  onToggleOrderSelection?: (orderId: string) => void;
 }
 
 /**
@@ -80,6 +86,9 @@ function isOrderFlagged(order: OrderGroup, zones: DockZoneRecord[], today: strin
   }
 }
 
+const EMPTY_SELECTION = new Set<string>();
+function noop() {}
+
 export function PendingMobileList({
   groups,
   zones,
@@ -88,15 +97,9 @@ export function PendingMobileList({
   now,
   mode = 'det',
   selectionMode = false,
+  selectedOrderIds = EMPTY_SELECTION,
+  onToggleOrderSelection = noop,
 }: PendingMobileListProps) {
-  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
-
-  // Leaving selection mode always clears the selection — a stale pick must
-  // not silently carry over into the next time SEL is entered.
-  useEffect(() => {
-    if (!selectionMode) setSelectedOrderIds(new Set());
-  }, [selectionMode]);
-
   if (groups.length === 0) {
     return (
       <Card>
@@ -108,20 +111,6 @@ export function PendingMobileList({
   }
 
   const today = todayISOInTimezone(now);
-
-  const toggleOrderSelection = (orderId: string) => {
-    setSelectedOrderIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(orderId)) next.delete(orderId);
-      else next.add(orderId);
-      return next;
-    });
-  };
-
-  const handleConfirmSelection = () => {
-    const request = buildSelectionRequest(groups, selectedOrderIds);
-    if (request) onRequestSend(request);
-  };
 
   return (
     <div className="flex flex-col gap-5">
@@ -146,7 +135,7 @@ export function PendingMobileList({
                 mode={mode}
                 selectionMode={selectionMode}
                 selectedOrderIds={selectedOrderIds}
-                onToggleOrderSelection={toggleOrderSelection}
+                onToggleOrderSelection={onToggleOrderSelection}
               />
             )}
             {normalOrders.length > 0 && (
@@ -160,31 +149,12 @@ export function PendingMobileList({
                 mode={mode}
                 selectionMode={selectionMode}
                 selectedOrderIds={selectedOrderIds}
-                onToggleOrderSelection={toggleOrderSelection}
+                onToggleOrderSelection={onToggleOrderSelection}
               />
             )}
           </div>
         );
       })}
-
-      {selectionMode && selectedOrderIds.size > 0 && (
-        <div
-          data-testid="pending-selection-bar"
-          className="sticky bottom-0 flex items-center gap-3 rounded-lg border border-border bg-surface-raised px-3 py-2.5"
-        >
-          <span className="flex-1 font-mono text-[12.5px] text-text-secondary">
-            {selectedOrderIds.size} seleccionados
-          </span>
-          <button
-            type="button"
-            data-testid="pending-selection-confirm"
-            onClick={handleConfirmSelection}
-            className="flex h-11 items-center justify-center rounded-xl bg-accent-light px-4 text-[13.5px] font-semibold text-accent-light-foreground transition-opacity active:opacity-90"
-          >
-            Enviar seleccionados
-          </button>
-        </div>
-      )}
     </div>
   );
 }

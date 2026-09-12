@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -374,13 +375,30 @@ describe('PendingMobileList (4d)', () => {
     });
   });
 
-  // Fase 2 (spec-96) Task 2.2 — `4d`'s SEL control. Entering selection mode
-  // exposes a checkbox per order; confirming reuses `onRequestSend` (and
-  // therefore the existing SendToDockSheet) once, with every selected
-  // order's package ids combined.
+  // Fase 2 (spec-96) Task 2.2 — `4d`'s SEL control. Review fix: the
+  // confirm action moved to the page's fixed footer (see PendingMobileList's
+  // doc comment for why); this component now only exposes a checkbox per
+  // order and reports toggles upward. `selectedOrderIds`/
+  // `onToggleOrderSelection` are fully controlled — a stateful harness
+  // drives them the way the page does, so a click's effect on
+  // `aria-checked` is actually asserted, not just the click handler firing.
   describe('SEL', () => {
-    it('exposes a checkbox per order when selectionMode is true, and no ⋯ affordance', () => {
-      render(
+    function SelectionHarness({
+      onToggle,
+    }: {
+      onToggle?: (orderId: string) => void;
+    }) {
+      const [selected, setSelected] = useState<Set<string>>(new Set());
+      const toggle = (orderId: string) => {
+        onToggle?.(orderId);
+        setSelected((prev) => {
+          const next = new Set(prev);
+          if (next.has(orderId)) next.delete(orderId);
+          else next.add(orderId);
+          return next;
+        });
+      };
+      return (
         <PendingMobileList
           groups={[baseGroup]}
           zones={allZones}
@@ -388,89 +406,61 @@ describe('PendingMobileList (4d)', () => {
           onRequestSend={vi.fn()}
           now={NOW}
           selectionMode
-        />,
+          selectedOrderIds={selected}
+          onToggleOrderSelection={toggle}
+        />
       );
-      expect(
-        within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox'),
-      ).toBeInTheDocument();
-      expect(
-        within(screen.getByTestId('pending-order-order-2')).getByRole('checkbox'),
-      ).toBeInTheDocument();
+    }
+
+    it('exposes an unchecked checkbox per order when selectionMode is true, and no ⋯ affordance', () => {
+      render(<SelectionHarness />);
+      const checkbox1 = within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox');
+      const checkbox2 = within(screen.getByTestId('pending-order-order-2')).getByRole('checkbox');
+      expect(checkbox1).toHaveAttribute('aria-checked', 'false');
+      expect(checkbox2).toHaveAttribute('aria-checked', 'false');
       expect(screen.queryAllByRole('button', { name: /enviar/i })).toHaveLength(0);
     });
 
-    it('selecting two orders and confirming calls onRequestSend once with both orders\' package ids', async () => {
+    // The exact regression class the review caught elsewhere: a handler
+    // firing is not evidence the box the operator is looking at actually
+    // fills in. Assert the real DOM attribute changes after a real click.
+    it('clicking a checkbox flips its own aria-checked, and only its own', async () => {
       const user = userEvent.setup();
-      const onRequestSend = vi.fn();
-      render(
-        <PendingMobileList
-          groups={[baseGroup]}
-          zones={allZones}
-          canManualAssign
-          onRequestSend={onRequestSend}
-          now={NOW}
-          selectionMode
-        />,
-      );
-      await user.click(within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox'));
-      await user.click(within(screen.getByTestId('pending-order-order-2')).getByRole('checkbox'));
-      await user.click(screen.getByTestId('pending-selection-confirm'));
+      render(<SelectionHarness />);
+      const checkbox1 = within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox');
+      const checkbox2 = within(screen.getByTestId('pending-order-order-2')).getByRole('checkbox');
 
-      expect(onRequestSend).toHaveBeenCalledTimes(1);
-      const request = onRequestSend.mock.calls[0][0];
-      expect(new Set(request.packageIds)).toEqual(new Set(['pkg-1', 'pkg-2', 'pkg-3']));
+      await user.click(checkbox1);
+      expect(checkbox1).toHaveAttribute('aria-checked', 'true');
+      expect(checkbox2).toHaveAttribute('aria-checked', 'false');
+
+      await user.click(checkbox1);
+      expect(checkbox1).toHaveAttribute('aria-checked', 'false');
     });
 
-    it('renders no confirm affordance until at least one order is selected', () => {
-      render(
-        <PendingMobileList
-          groups={[baseGroup]}
-          zones={allZones}
-          canManualAssign
-          onRequestSend={vi.fn()}
-          now={NOW}
-          selectionMode
-        />,
-      );
-      expect(screen.queryByTestId('pending-selection-confirm')).not.toBeInTheDocument();
+    it('reports the toggled order id to the caller', async () => {
+      const user = userEvent.setup();
+      const onToggle = vi.fn();
+      render(<SelectionHarness onToggle={onToggle} />);
+      await user.click(within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox'));
+      expect(onToggle).toHaveBeenCalledWith('order-1');
     });
 
-    it('leaving selection mode clears any selection', async () => {
-      const user = userEvent.setup();
-      const { rerender } = render(
-        <PendingMobileList
-          groups={[baseGroup]}
-          zones={allZones}
-          canManualAssign
-          onRequestSend={vi.fn()}
-          now={NOW}
-          selectionMode
-        />,
-      );
-      await user.click(within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox'));
-      expect(screen.getByTestId('pending-selection-confirm')).toBeInTheDocument();
-
-      rerender(
-        <PendingMobileList
-          groups={[baseGroup]}
-          zones={allZones}
-          canManualAssign
-          onRequestSend={vi.fn()}
-          now={NOW}
-          selectionMode={false}
-        />,
-      );
-      rerender(
-        <PendingMobileList
-          groups={[baseGroup]}
-          zones={allZones}
-          canManualAssign
-          onRequestSend={vi.fn()}
-          now={NOW}
-          selectionMode
-        />,
-      );
-      expect(screen.queryByTestId('pending-selection-confirm')).not.toBeInTheDocument();
+    it('defaults to no selection and a no-op toggle when the caller passes neither prop', () => {
+      // The page always controls this in practice; the defaults exist so a
+      // caller that only wants `selectionMode` off never has to pass the
+      // other two. Must not throw.
+      expect(() =>
+        render(
+          <PendingMobileList
+            groups={[baseGroup]}
+            zones={allZones}
+            canManualAssign
+            onRequestSend={vi.fn()}
+            now={NOW}
+          />,
+        ),
+      ).not.toThrow();
     });
   });
 
