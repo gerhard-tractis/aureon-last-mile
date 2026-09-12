@@ -18,6 +18,14 @@ interface DockCapacityBarProps {
   /** Max packages this zone can hold. Null (or <= 0) means "not
    *  configured" — the component renders nothing. */
   capacity: number | null;
+  /** Set false to render only the fill track, no "count / capacity" text
+   *  and no "quedan N espacios" copy — spec-96 fase 0: `4a`'s tile prints
+   *  its own single "169 / 180 paq." line and has no remaining-spaces
+   *  copy at all (that belongs to `4l`), so the caller that owns that line
+   *  opts out of this component's to avoid printing the count twice.
+   *  Defaults to `true` — every existing caller (`4e`, the quicksort
+   *  step-2 screen, `/andenes`) keeps today's rendering unchanged. */
+  showLabel?: boolean;
   className?: string;
 }
 
@@ -39,7 +47,12 @@ const LABEL_TONE_CLASS: Record<DockCapacityTone, string> = {
   error: 'text-status-error-text',
 };
 
-export function DockCapacityBar({ count, capacity, className }: DockCapacityBarProps) {
+export function DockCapacityBar({
+  count,
+  capacity,
+  showLabel = true,
+  className,
+}: DockCapacityBarProps) {
   const status = getDockCapacityStatus(count, capacity);
 
   if (!status.configured || status.tone === null || status.fillPct === null) {
@@ -51,16 +64,18 @@ export function DockCapacityBar({ count, capacity, className }: DockCapacityBarP
 
   return (
     <div className={cn('flex flex-col gap-1', className)}>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className={cn('text-xs font-semibold', LABEL_TONE_CLASS[tone])}>
-          {count} / {capacity}
-        </span>
-        {status.remainingLabel && (
-          <span className={cn('text-[11px]', LABEL_TONE_CLASS[tone])}>
-            {status.remainingLabel}
+      {showLabel && (
+        <div className="flex items-baseline justify-between gap-2">
+          <span className={cn('text-xs font-semibold', LABEL_TONE_CLASS[tone])}>
+            {count} / {capacity}
           </span>
-        )}
-      </div>
+          {status.remainingLabel && (
+            <span className={cn('text-[11px]', LABEL_TONE_CLASS[tone])}>
+              {status.remainingLabel}
+            </span>
+          )}
+        </div>
+      )}
       <div className={cn('h-1.5 overflow-hidden rounded', TRACK_TONE_CLASS[tone])}>
         <span
           data-testid="dock-capacity-fill"

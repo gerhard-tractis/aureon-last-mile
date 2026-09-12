@@ -11,7 +11,7 @@ import type { QuickSortFlowMode } from '@/hooks/distribution/useQuickSortFlow';
 import { QuickSortMobileView } from '@/components/distribution/QuickSortMobileView';
 import { SealPositionCard } from '@/components/distribution/SealPositionCard';
 import { refocusPackageField } from '@/lib/scan/refocus-package-field';
-import { DockCard } from '@/components/distribution/DockCard';
+import { QuickSortDockGrid } from '@/components/distribution/QuickSortDockGrid';
 import { RecentScansPanel } from '@/components/distribution/RecentScansPanel';
 import { PendingDockList } from '@/components/distribution/PendingDockList';
 import { useOperatorId } from '@/hooks/useOperatorId';
@@ -252,19 +252,11 @@ function QuickSortDesktopContent() {
               </span>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {activeZones.map((zone) => (
-                <DockCard
-                  key={zone.id}
-                  code={zone.code}
-                  zoneName={zone.name}
-                  comunas={zone.comunas.map((c) => c.nombre)}
-                  packageCount={sectorizedByZone?.[zone.id] ?? 0}
-                  tone={zone.is_consolidation ? 'warning' : 'neutral'}
-                  active={lastOkScan?.zoneCode === zone.code}
-                />
-              ))}
-            </div>
+            <QuickSortDockGrid
+              zones={activeZones}
+              sectorizedByZone={sectorizedByZone}
+              activeZoneCode={lastOkScan?.zoneCode ?? undefined}
+            />
           </section>
 
           {/* The pile still to sort. It takes the height the dock grid leaves

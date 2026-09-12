@@ -26,6 +26,14 @@ describe('DockCard', () => {
     expect(screen.getByText('paquetes · 1 ruta')).toBeInTheDocument();
   });
 
+  it('still shows the "paquetes" unit when routeCount has no source (unpassed)', () => {
+    // spec-96 fase 0 review — routeCount has no source in useDockZones and
+    // is routinely omitted; the packageCount unit must not disappear with it.
+    const { routeCount: _omit, ...withoutRouteCount } = BASE;
+    render(<DockCard {...withoutRouteCount} />);
+    expect(screen.getByText('paquetes')).toBeInTheDocument();
+  });
+
   it('marks the last-scanned dock with an ACTIVO badge, not colour alone', () => {
     render(<DockCard {...BASE} active />);
     expect(screen.getByText('ACTIVO')).toBeInTheDocument();
