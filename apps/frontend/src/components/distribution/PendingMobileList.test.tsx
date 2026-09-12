@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -166,27 +167,38 @@ describe('PendingMobileList (4d)', () => {
     );
     const header = screen.getByTestId('pending-group-header-zone-a1');
     expect(within(header).getByText('ANDÉN A1')).toBeInTheDocument();
-    expect(within(header).getByText('Quilicura')).toBeInTheDocument();
-    expect(within(header).getByText('03 pendientes')).toBeInTheDocument();
+    // Round-2 review — behaviour, not copy: a detail line is present, and
+    // the count reflects the real package total (baseGroup: 1 + 2 = 3),
+    // via testids rather than the exact rendered string.
+    expect(within(header).getByTestId('pending-group-detail')).toBeInTheDocument();
+    expect(within(header).getByTestId('pending-group-count')).toHaveTextContent('3');
   });
 
-  it('renders the flagged bucket as SIN ANDÉN in the warning palette, not as a normal andén', () => {
+  it('renders the flagged bucket as SIN ANDÉN ASIGNADO in the warning palette, not as a normal andén', () => {
     render(
       <PendingMobileList groups={[flaggedGroup]} zones={allZones} canManualAssign onRequestSend={vi.fn()} now={NOW} />,
     );
-    expect(screen.getByText('SIN ANDÉN')).toBeInTheDocument();
+    // spec-96 Fase 2 review (Task 2.4) — 4d's exact label is "SIN ANDÉN
+    // ASIGNADO" (Distribucion.dc.html:658), not the bare "SIN ANDÉN" the
+    // pre-mock implementation used.
+    expect(screen.getByText('SIN ANDÉN ASIGNADO')).toBeInTheDocument();
     expect(screen.queryByText('ANDÉN CONS')).not.toBeInTheDocument();
     const header = screen.getByTestId('pending-group-header-zone-cons-sin-anden');
     expect(header.querySelector('[data-tone="warning"]')).toBeInTheDocument();
   });
 
-  it('renders a single-bulto order as one compact row', () => {
+  it('renders a single-bulto order as one compact row, leading with the order rather than the barcode', () => {
     render(
       <PendingMobileList groups={[baseGroup]} zones={allZones} canManualAssign onRequestSend={vi.fn()} now={NOW} />,
     );
     const row = screen.getByTestId('pending-order-order-1');
     expect(row).toBeInTheDocument();
-    expect(within(row).getByText('BULTO-1')).toBeInTheDocument();
+    // Round-2 review — behaviour, not copy: the headline carries the
+    // order's own identifying data (its number), not the package's
+    // barcode (Distribucion.dc.html:620-621 leads with the order).
+    const headline = within(row).getByTestId('pending-order-headline');
+    expect(headline).toHaveTextContent('1001');
+    expect(headline).not.toHaveTextContent('BULTO-1');
     // No nested per-package rows for a single-bulto order.
     expect(screen.queryByTestId('pending-package-pkg-1')).not.toBeInTheDocument();
   });
@@ -313,12 +325,200 @@ describe('PendingMobileList (4d)', () => {
     expect(screen.getByText(/no hay paquetes pendientes/i)).toBeInTheDocument();
   });
 
+  // Fase 2 (spec-96) Task 2.1 — `4d`'s DET/CMP control. CMP always renders
+  // one row per order, even a multi-bulto one; DET keeps the existing
+  // expansion (order line + one row per package).
+  describe('DET / CMP', () => {
+    it('CMP renders one row per order regardless of bulto count', () => {
+      render(
+        <PendingMobileList
+          groups={[baseGroup]}
+          zones={allZones}
+          canManualAssign
+          onRequestSend={vi.fn()}
+          now={NOW}
+          mode="cmp"
+        />,
+      );
+      expect(screen.getByTestId('pending-order-order-2')).toBeInTheDocument();
+      expect(screen.queryByTestId('pending-package-pkg-2')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('pending-package-pkg-3')).not.toBeInTheDocument();
+    });
+
+    it('DET expands a multi-bulto order into the order line plus one row per package', () => {
+      render(
+        <PendingMobileList
+          groups={[baseGroup]}
+          zones={allZones}
+          canManualAssign
+          onRequestSend={vi.fn()}
+          now={NOW}
+          mode="det"
+        />,
+      );
+      expect(screen.getByTestId('pending-order-order-2')).toBeInTheDocument();
+      expect(screen.getByTestId('pending-package-pkg-2')).toBeInTheDocument();
+      expect(screen.getByTestId('pending-package-pkg-3')).toBeInTheDocument();
+    });
+
+    it('CMP still sends every package id when the order-level affordance is used', async () => {
+      const user = userEvent.setup();
+      const onRequestSend = vi.fn();
+      render(
+        <PendingMobileList
+          groups={[baseGroup]}
+          zones={allZones}
+          canManualAssign
+          onRequestSend={onRequestSend}
+          now={NOW}
+          mode="cmp"
+        />,
+      );
+      const row = screen.getByTestId('pending-order-order-2');
+      await user.click(within(row).getByRole('button', { name: /enviar/i }));
+      expect(onRequestSend).toHaveBeenCalledWith({
+        packageIds: ['pkg-2', 'pkg-3'],
+        packageLabels: ['BULTO-2', 'BULTO-3'],
+        code: '1002',
+        comunaName: 'Quilicura',
+        suggestedZone: zoneA,
+      });
+    });
+  });
+
+  // Fase 2 (spec-96) Task 2.2 — `4d`'s SEL control. Review fix: the
+  // confirm action moved to the page's fixed footer (see PendingMobileList's
+  // doc comment for why); this component now only exposes a checkbox per
+  // order and reports toggles upward. `selectedOrderIds`/
+  // `onToggleOrderSelection` are fully controlled — a stateful harness
+  // drives them the way the page does, so a click's effect on
+  // `aria-checked` is actually asserted, not just the click handler firing.
+  describe('SEL', () => {
+    function SelectionHarness({
+      onToggle,
+    }: {
+      onToggle?: (orderId: string) => void;
+    }) {
+      const [selected, setSelected] = useState<Set<string>>(new Set());
+      const toggle = (orderId: string) => {
+        onToggle?.(orderId);
+        setSelected((prev) => {
+          const next = new Set(prev);
+          if (next.has(orderId)) next.delete(orderId);
+          else next.add(orderId);
+          return next;
+        });
+      };
+      return (
+        <PendingMobileList
+          groups={[baseGroup]}
+          zones={allZones}
+          canManualAssign
+          onRequestSend={vi.fn()}
+          now={NOW}
+          selectionMode
+          selectedOrderIds={selected}
+          onToggleOrderSelection={toggle}
+        />
+      );
+    }
+
+    it('exposes an unchecked checkbox per order when selectionMode is true, and no ⋯ affordance', () => {
+      render(<SelectionHarness />);
+      const checkbox1 = within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox');
+      const checkbox2 = within(screen.getByTestId('pending-order-order-2')).getByRole('checkbox');
+      expect(checkbox1).toHaveAttribute('aria-checked', 'false');
+      expect(checkbox2).toHaveAttribute('aria-checked', 'false');
+      expect(screen.queryAllByRole('button', { name: /enviar/i })).toHaveLength(0);
+    });
+
+    // Round-2 review, also-fix 5 — the module's 44px touch-floor test
+    // queries `getAllByRole('button', {name: /enviar/i})`, which a
+    // `role="checkbox"` node never matches. `4f`'s 22px is a VISUAL
+    // square, not a declared hit-area exception like DET/CMP's — the
+    // checkbox's own clickable button must still meet the floor.
+    it('the checkbox itself meets the 44px touch floor, independent of the 22px visual square', () => {
+      render(<SelectionHarness />);
+      const checkbox = within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox');
+      expect(checkbox.className).toMatch(/h-11|h-\[44px\]|min-h-\[?(4[4-9]|[5-9]\d)/);
+    });
+
+    // The exact regression class the review caught elsewhere: a handler
+    // firing is not evidence the box the operator is looking at actually
+    // fills in. Assert the real DOM attribute changes after a real click.
+    it('clicking a checkbox flips its own aria-checked, and only its own', async () => {
+      const user = userEvent.setup();
+      render(<SelectionHarness />);
+      const checkbox1 = within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox');
+      const checkbox2 = within(screen.getByTestId('pending-order-order-2')).getByRole('checkbox');
+
+      await user.click(checkbox1);
+      expect(checkbox1).toHaveAttribute('aria-checked', 'true');
+      expect(checkbox2).toHaveAttribute('aria-checked', 'false');
+
+      await user.click(checkbox1);
+      expect(checkbox1).toHaveAttribute('aria-checked', 'false');
+    });
+
+    it('reports the toggled order id to the caller', async () => {
+      const user = userEvent.setup();
+      const onToggle = vi.fn();
+      render(<SelectionHarness onToggle={onToggle} />);
+      await user.click(within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox'));
+      expect(onToggle).toHaveBeenCalledWith('order-1');
+    });
+
+    it('defaults to no selection and a no-op toggle when the caller passes neither prop', () => {
+      // The page always controls this in practice; the defaults exist so a
+      // caller that only wants `selectionMode` off never has to pass the
+      // other two. Must not throw.
+      expect(() =>
+        render(
+          <PendingMobileList
+            groups={[baseGroup]}
+            zones={allZones}
+            canManualAssign
+            onRequestSend={vi.fn()}
+            now={NOW}
+          />,
+        ),
+      ).not.toThrow();
+    });
+  });
+
   // Finding #5 (Fase 3 review) — usePendingSectorization stores matchResult
   // ONCE PER ZONE BUCKET, from whichever order landed there first. The
   // consolidation bucket mixes a genuinely-unmapped order (SIN ANDÉN) and a
   // genuinely future-dated retention (not SIN ANDÉN) under the SAME zone_id.
   // The component must classify each order independently — regardless of
   // which one the hook happened to key the bucket's matchResult on.
+  // Fase 2 (spec-96) Task 2.3 — locks in the reasoning `isOrderFlagged`
+  // already implements: the SIN ANDÉN split is `determineDockZone`
+  // recomputed PER ORDER, never the bucket-level `matchResult.flagged`.
+  // This is deliberately the sharpest possible case — a bucket whose OWN
+  // flag says `false` (not flagged) containing one order that genuinely
+  // is. Trusting the bucket flag would silently swallow it into the
+  // normal ANDÉN CONS section; it must still surface under SIN ANDÉN.
+  it('a genuinely-unmapped order surfaces as SIN ANDÉN even when its bucket matchResult.flagged is false', () => {
+    const group: ZoneGroup = {
+      zone: zoneCons,
+      matchResult: {
+        zone_id: 'zone-cons',
+        zone_name: 'Consolidación',
+        zone_code: 'CONS',
+        is_consolidation: true,
+        reason: 'future_date',
+        flagged: false,
+      },
+      orders: [unmappedOrder()],
+    };
+    render(
+      <PendingMobileList groups={[group]} zones={allZones} canManualAssign onRequestSend={vi.fn()} now={NOW} />,
+    );
+    expect(screen.getByTestId('pending-group-zone-cons-sin-anden')).toBeInTheDocument();
+    expect(screen.queryByTestId('pending-group-zone-cons')).not.toBeInTheDocument();
+  });
+
   describe('a mixed consolidation bucket (unmapped comuna + future-dated retention)', () => {
     function mixedGroup(orders: ZoneGroup['orders'], keyedOnFlagged: boolean): ZoneGroup {
       return {
@@ -342,7 +542,7 @@ describe('PendingMobileList (4d)', () => {
       const normal = screen.getByTestId('pending-group-zone-cons');
       expect(within(normal).getByTestId('pending-order-order-future')).toBeInTheDocument();
       expect(within(normal).queryByTestId('pending-order-order-flagged')).not.toBeInTheDocument();
-      expect(screen.queryByText('SIN ANDÉN')).toBeInTheDocument();
+      expect(screen.queryByText('SIN ANDÉN ASIGNADO')).toBeInTheDocument();
     });
 
     it('splits correctly when the future-dated order was inserted first (matchResult keyed on it)', () => {

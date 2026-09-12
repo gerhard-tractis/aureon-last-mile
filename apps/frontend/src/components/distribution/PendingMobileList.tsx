@@ -1,9 +1,10 @@
 'use client';
 
 import { Card, CardContent } from '@/components/ui/card';
-import { PendingMobileOrderGroup } from './PendingMobileOrderGroup';
+import { PendingZoneSection } from './PendingZoneSection';
 import { determineDockZone } from '@/lib/distribution/sectorization-engine';
 import { todayISOInTimezone } from '@/lib/utils/dateFormat';
+import type { SendToDockRequest } from '@/lib/distribution/pending-selection';
 import type { ZoneGroup, OrderGroup } from '@/hooks/distribution/usePendingSectorization';
 import type { DockZoneRecord } from '@/hooks/distribution/useDockZones';
 
@@ -13,22 +14,28 @@ import type { DockZoneRecord } from '@/hooks/distribution/useDockZones';
  * Grouped by the andén the engine computed (`usePendingSectorization`
  * already returns this shape — no new query). Within a group, an order
  * renders under SIN ANDÉN (warning palette) instead of a normal header
- * when it is genuinely unmapped (unknown comuna) — see `splitByFlagged`
+ * when it is genuinely unmapped (unknown comuna) — see `isOrderFlagged`
  * below for why that can't just be read off `group.matchResult.flagged`.
  *
- * Row expansion lives in `PendingMobileOrderGroup`: a single-bulto order is
- * one compact row, a multi-bulto order is an order line plus one row per
- * package.
+ * Row expansion lives in `PendingMobileOrderGroup`: in `'det'` mode (the
+ * default) a single-bulto order is one compact row and a multi-bulto order
+ * is an order line plus one row per package; `'cmp'` forces every order
+ * into one compact row (spec-96 Fase 2, `4d`'s DET/CMP control).
+ *
+ * `selectionMode`/`selectedOrderIds`/`onToggleOrderSelection` (spec-96
+ * Fase 2, `4d`'s SEL control) are fully controlled by the page — this
+ * component owns no selection state of its own. Review fix: the confirm
+ * action (counter + "Enviar seleccionados") does NOT live in here either.
+ * It first shipped as a `sticky bottom-0` bar with no `z-index`, painted
+ * over by the page's own `fixed z-40` footer at every scroll position
+ * where the list overflows (the window is the scroll container —
+ * `AppLayout`'s `<main>` has no `overflow-y-auto`) — the identical shape
+ * to the Fase 3 regression this spec already records. The page renders
+ * that confirm action in its own fixed footer instead, following `4f`'s
+ * shape (counter eyebrow, then the primary action, both inside the
+ * `flex:none` footer) and the review's `FOOTER_METRICS` pattern.
  */
-export interface SendToDockRequest {
-  packageIds: string[];
-  /** Same order as packageIds — the audit trail's barcode field per package. */
-  packageLabels: string[];
-  /** BULTO-code for a single package, order number for a whole order. */
-  code: string;
-  comunaName: string | null;
-  suggestedZone: ZoneGroup['zone'];
-}
+export type { SendToDockRequest };
 
 export interface PendingMobileListProps {
   groups: ZoneGroup[];
@@ -44,6 +51,12 @@ export interface PendingMobileListProps {
   onRequestSend: (request: SendToDockRequest) => void;
   /** Injectable for tests; defaults to now. */
   now?: Date;
+  /** spec-96 Fase 2 — `4d`'s DET/CMP control. Defaults to `'det'`. */
+  mode?: 'det' | 'cmp';
+  /** spec-96 Fase 2 — `4d`'s SEL control. Fully controlled by the page. */
+  selectionMode?: boolean;
+  selectedOrderIds?: Set<string>;
+  onToggleOrderSelection?: (orderId: string) => void;
 }
 
 /**
@@ -73,12 +86,20 @@ function isOrderFlagged(order: OrderGroup, zones: DockZoneRecord[], today: strin
   }
 }
 
-function countLabelFor(orders: OrderGroup[]): string {
-  const total = orders.reduce((n, o) => n + o.packages.length, 0);
-  return `${String(total).padStart(2, '0')} ${total === 1 ? 'pendiente' : 'pendientes'}`;
-}
+const EMPTY_SELECTION = new Set<string>();
+function noop() {}
 
-export function PendingMobileList({ groups, zones, canManualAssign, onRequestSend, now }: PendingMobileListProps) {
+export function PendingMobileList({
+  groups,
+  zones,
+  canManualAssign,
+  onRequestSend,
+  now,
+  mode = 'det',
+  selectionMode = false,
+  selectedOrderIds = EMPTY_SELECTION,
+  onToggleOrderSelection = noop,
+}: PendingMobileListProps) {
   if (groups.length === 0) {
     return (
       <Card>
@@ -104,92 +125,36 @@ export function PendingMobileList({ groups, zones, canManualAssign, onRequestSen
         return (
           <div key={group.zone.id} className="flex flex-col gap-5">
             {flaggedOrders.length > 0 && (
-              <ZoneSection
+              <PendingZoneSection
                 testId={`pending-group-${group.zone.id}-sin-anden`}
                 zone={group.zone}
                 orders={flaggedOrders}
                 isFlagged
                 canManualAssign={canManualAssign}
                 onRequestSend={onRequestSend}
+                mode={mode}
+                selectionMode={selectionMode}
+                selectedOrderIds={selectedOrderIds}
+                onToggleOrderSelection={onToggleOrderSelection}
               />
             )}
             {normalOrders.length > 0 && (
-              <ZoneSection
+              <PendingZoneSection
                 testId={`pending-group-${group.zone.id}`}
                 zone={group.zone}
                 orders={normalOrders}
                 isFlagged={false}
                 canManualAssign={canManualAssign}
                 onRequestSend={onRequestSend}
+                mode={mode}
+                selectionMode={selectionMode}
+                selectedOrderIds={selectedOrderIds}
+                onToggleOrderSelection={onToggleOrderSelection}
               />
             )}
           </div>
         );
       })}
     </div>
-  );
-}
-
-function ZoneSection({
-  testId,
-  zone,
-  orders,
-  isFlagged,
-  canManualAssign,
-  onRequestSend,
-}: {
-  testId: string;
-  zone: DockZoneRecord;
-  orders: OrderGroup[];
-  isFlagged: boolean;
-  canManualAssign: boolean;
-  onRequestSend: (request: SendToDockRequest) => void;
-}) {
-  const comunaNames = zone.comunas.map((c) => c.nombre).join(' · ');
-  const headerLabel = isFlagged ? 'SIN ANDÉN' : zone.is_consolidation ? zone.name.toUpperCase() : `ANDÉN ${zone.code}`;
-  const detailText = isFlagged
-    ? 'Comuna sin mapear a un andén'
-    : zone.is_consolidation
-      ? 'Retenido hasta la fecha de entrega'
-      : comunaNames || zone.name;
-
-  return (
-    <section data-testid={testId}>
-      <header
-        data-testid={`${testId.replace('pending-group-', 'pending-group-header-')}`}
-        className={`flex items-baseline gap-2 rounded-lg border px-3 py-2 ${
-          isFlagged ? 'border-status-warning-border bg-status-warning-bg' : 'border-border bg-surface-raised'
-        }`}
-      >
-        <span
-          data-tone={isFlagged ? 'warning' : undefined}
-          className={`font-mono text-[13px] font-bold uppercase tracking-[.1em] ${
-            isFlagged ? 'text-status-warning-text' : 'text-text'
-          }`}
-        >
-          {headerLabel}
-        </span>
-        <span
-          className={`truncate text-[12.5px] ${isFlagged ? 'text-status-warning-text' : 'text-text-secondary'}`}
-        >
-          {detailText}
-        </span>
-        <span className="ml-auto flex-none font-mono text-[12.5px] tabular-nums text-text-secondary">
-          {countLabelFor(orders)}
-        </span>
-      </header>
-
-      <div className="mt-2 flex flex-col gap-2">
-        {orders.map((order) => (
-          <PendingMobileOrderGroup
-            key={order.orderId}
-            order={order}
-            canManualAssign={canManualAssign}
-            suggestedZone={zone}
-            onRequestSend={onRequestSend}
-          />
-        ))}
-      </div>
-    </section>
   );
 }
