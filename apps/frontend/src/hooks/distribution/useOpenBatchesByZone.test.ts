@@ -47,7 +47,6 @@ describe('useOpenBatchesByZone', () => {
       { dock_zone_id: 'zone-a' },
       { dock_zone_id: 'zone-b' },
     ];
-    let capturedStatusFilter: unknown;
     const filters: Record<string, unknown> = {};
     function chainable(): Record<string, unknown> {
       const node: Record<string, unknown> = {};
@@ -56,7 +55,6 @@ describe('useOpenBatchesByZone', () => {
         return chainable();
       });
       node.is = vi.fn().mockImplementation(() => {
-        capturedStatusFilter = filters.status;
         return Promise.resolve({ data: rawBatches, error: null });
       });
       return node;
@@ -68,6 +66,10 @@ describe('useOpenBatchesByZone', () => {
     const { result } = renderHook(() => useOpenBatchesByZone('op-1'), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual({ 'zone-a': 2, 'zone-b': 1 });
-    expect(capturedStatusFilter).toBe('open');
+    expect(filters.status).toBe('open');
+    // Review fix — the repo's operator_id-on-every-query non-negotiable was
+    // unguarded on this query: deleting `.eq('operator_id', ...)` from the
+    // implementation left this suite green before this assertion existed.
+    expect(filters.operator_id).toBe('op-1');
   });
 });

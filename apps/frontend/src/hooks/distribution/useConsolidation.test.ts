@@ -122,6 +122,25 @@ describe('useConsolidation', () => {
     expect(result.current.data![0]).toMatchObject({ comunaId: 'c-1', comunaName: 'Quilicura' });
   });
 
+  // Review fix — the prior version of this test only proved the mapper
+  // handled these fields when present, never that the query actually asks
+  // Supabase for them. Deleting `order_number, customer_name` from the
+  // `.select(...)` string left the mapper test green (raw fixtures pass
+  // them in directly) while production would show a raw order UUID.
+  it('selects order_number and customer_name in the orders join', () => {
+    let capturedSelect = '';
+    mockFromFn = vi.fn().mockImplementation(() => ({
+      select: vi.fn().mockImplementation((arg: string) => {
+        capturedSelect = arg;
+        return makeChain([], null);
+      }),
+    }));
+
+    renderHook(() => useConsolidation('op-1'), { wrapper });
+    expect(capturedSelect).toContain('order_number');
+    expect(capturedSelect).toContain('customer_name');
+  });
+
   // spec-96 fase 4 — `4a`'s full-width consolidation table groups by order
   // and needs the order number and the recipient name, neither selected
   // before. Extends the existing `orders!inner(...)` join, not a second
