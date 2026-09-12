@@ -532,10 +532,16 @@ send, or on tapping SEL again) and prunes ids that vanish from a refetch
 
 **Declared exceptions, not silent drift:**
 
-- The `DET`/`CMP` buttons are ~30×38 px, under this module's own 44px
-  touch-floor test. `4d` itself draws them at 34px — the mock is the
-  source of truth here, so this is the module's own floor yielding to its
-  own benchmark, not an oversight.
+- The `DET`/`CMP` buttons are under this module's own 44px touch-floor
+  test. `4d:601-602` draws them at 34×34 — the mock is the source of
+  truth here, so this is the module's own floor yielding to its own
+  benchmark, not an oversight. Round-2 review correction: the code was
+  NOT actually 34×34 (the earlier "~30×38" note was a guess, unmeasured
+  and wrong on both counts) — left as `px-2 py-1.5` rather than forced to
+  `h-[34px] w-[34px]`, because the exception should be verified against a
+  real render before being pinned to a specific pixel value neither side
+  has confirmed. Flagged for the QA pass alongside the truncation risk
+  below, not fixed blind.
 - **Truncation risk not resolved.** `DetCmpToggle` sits beside
   `DistributionMobileHeader`'s `<h1>` the same way `4g`'s `SECT`/`ESTIB`
   control does, which truncates today at 402px. `4d` avoids this because
@@ -545,6 +551,31 @@ send, or on tapping SEL again) and prunes ids that vanish from a refetch
   Despacho). The toggle's own padding was trimmed (`px-2.5 py-2` →
   `px-2 py-1.5`) as the only mitigation available without touching that
   component. Unverified in a real browser — flagged for the QA pass.
+- **SIN ANDÉN order-row tinting is missing.** `4d:654-659` tints the
+  flagged group's individual order rows warn (background, border, text),
+  not just the group header. `PendingMobileOrderGroup`/`PendingOrderGroup`
+  take no `isFlagged` prop at all — pre-existing (predates this phase's
+  Fase 2 work) and not on round 1's diff list, but Task 2.4 is ticked as
+  closing the visual diff, so it's declared here rather than left for
+  someone to discover the hard way.
+- **Two round-1 fixes are visually unguarded.** Dropping the header's
+  `border-b border-border` (the flat-baseline-row restyle) and moving the
+  SEL checkbox to lead the row both pass every current test if reverted —
+  0 tests go red either way. The artboard diff closes them; no test
+  claims to.
+
+**Follow-up noted, not done now:** `PendingSelectionFooter.tsx`'s
+`FOOTER_METRICS`/`getFooterContentHeight` duplicate the *shape* of
+`ConsolidationPageContent`'s object of the same name — deliberately kept
+as two functions, since the two footers genuinely differ in row shape
+(this one's base state is a two-item row, Consolidación's is always
+stacked). What will actually drift between them is the primitive chrome
+constants (`paddingTop`/`paddingBottom`/`gap`) and the summing formula
+(`paddingTop + paddingBottom + Σrows + (n-1)*gap`) — a
+`lib/ui/fixed-footer-metrics.ts` exporting those primitives plus a
+`sumFooterRows(rows)` helper would let both callers share the arithmetic
+without sharing the row layout. Not this phase's file surface; flagged
+for whoever next touches either footer.
 
 ---
 
