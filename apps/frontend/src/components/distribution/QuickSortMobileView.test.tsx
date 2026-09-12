@@ -210,6 +210,32 @@ describe('QuickSortMobileView', () => {
     });
   });
 
+  // spec-96 Fase 1 review round 2, "Must fix" — `confirmed` was derived
+  // from `flow.state`/`flow.destination` alone, with no regard for `mode`.
+  // A dock's `'confirmed'` context (destination card, capacity block, the
+  // footer built for it) survived a switch to ESTIB, where none of it
+  // means anything — a dock is not a load position. It only self-healed on
+  // the next scan, so it persisted indefinitely if the operator switched
+  // and stopped there.
+  it('leaves no dock context on screen when switching to ESTIB from "confirmed" (4j)', async () => {
+    render(<QuickSortMobileView />);
+    const packageInput = screen.getByLabelText(/escanear paquete/i);
+    fireEvent.change(packageInput, { target: { value: 'PKG-001' } });
+    fireEvent.keyDown(packageInput, { key: 'Enter' });
+    await screen.findByText('DOCK-001');
+
+    const andenInput = screen.getByLabelText(/escanear andén/i);
+    fireEvent.change(andenInput, { target: { value: 'DOCK-001' } });
+    fireEvent.keyDown(andenInput, { key: 'Enter' });
+    await screen.findByTestId('quicksort-confirmed-context');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'ESTIB' }));
+
+    expect(screen.getByText('Carga a posición')).toBeInTheDocument();
+    expect(screen.queryByTestId('quicksort-confirmed-context')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('quicksort-confirmed-capacity')).not.toBeInTheDocument();
+  });
+
   // spec-71 phase 3 mobile — the Sectorizar/Estibar switch and the
   // scan_position (stage) step 2 screen. Before this, nothing on mobile
   // ever passed mode='stage' to useQuickSortFlow; staging was reachable on

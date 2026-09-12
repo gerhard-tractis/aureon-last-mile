@@ -141,8 +141,14 @@ export function QuickSortMobileView() {
   // is the step-1 render reached only after a successful andén scan.
   // `flow.destination` is deliberately still non-null there (the hook
   // keeps it), unlike the plain first-visit `4g` state.
+  //
+  // review round 2, "Must fix" — gated on `mode === 'sectorize'` too.
+  // `setMode` doesn't reset the flow, so without this a dock's confirmed
+  // context (destination card, capacity block) survived a switch to
+  // ESTIB, where it means nothing — a dock is not a load position. It
+  // only self-healed on the next scan, so it could persist indefinitely.
   const confirmed =
-    flow.state === 'confirmed' && flow.destination
+    mode === 'sectorize' && flow.state === 'confirmed' && flow.destination
       ? {
           destination: flow.destination,
           currentPackage: flow.currentPackage,
