@@ -2,12 +2,29 @@
 
 import { ScanLine } from 'lucide-react';
 import { DistributionMobileHeader, useIsOnline } from './DistributionMobileHeader';
+import { DockCapacityBar } from './DockCapacityBar';
 import { ScanField } from '@/components/scan/ScanField';
 import { ScanResult } from '@/components/scan/ScanResult';
 import { SealPositionCard } from '@/components/distribution/SealPositionCard';
 import { refocusPackageField } from '@/lib/scan/refocus-package-field';
+import { getDockCapacityStatus, type DockCapacityTone } from '@/lib/distribution/dock-capacity';
 import { cn } from '@/lib/utils';
-import type { QuickSortFlowMode, QuickSortScanEvent } from '@/hooks/distribution/useQuickSortFlow';
+import type { ZoneMatchResult } from '@/lib/distribution/sectorization-engine';
+import type {
+  QuickSortFlowMode,
+  QuickSortPackageInfo,
+  QuickSortScanEvent,
+} from '@/hooks/distribution/useQuickSortFlow';
+
+// spec-96 Fase 1, Task 1.3 (4h/4j) — the same tone-to-class mapping
+// QuickSortMobileDock uses for its own capacity block; kept local rather
+// than shared because it's three lines and the two components already
+// don't share a base.
+const CAPACITY_BLOCK_TONE_CLASS: Record<DockCapacityTone, string> = {
+  neutral: 'border-border bg-surface',
+  warning: 'border-status-warning-border bg-status-warning-bg',
+  error: 'border-status-error-border bg-status-error-bg',
+};
 
 /**
  * spec-68 Fase 5.2 — `4g`, quicksort step 1, below `lg`.
@@ -57,6 +74,21 @@ export interface QuickSortMobileProps {
   mode?: QuickSortFlowMode;
   /** Renders the Sectorizar/Estibar toggle when provided. */
   onModeChange?: (mode: QuickSortFlowMode) => void;
+  /**
+   * spec-96 Fase 1 review finding #1 (`4j`) — present only when
+   * `useQuickSortFlow`'s state is `'confirmed'`: the destination, package
+   * and sibling-count kept from the andén scan that JUST succeeded, plus
+   * the destination zone's live count/capacity for the capacity block.
+   * `undefined` by default — every other caller (and `4g`'s own first
+   * visit, before any scan) renders exactly as before.
+   */
+  confirmed?: {
+    destination: ZoneMatchResult;
+    currentPackage: QuickSortPackageInfo | null;
+    siblingsPending: number;
+    zoneCount: number;
+    zoneCapacity: number | null;
+  };
 }
 
 function timeLabel(at: Date): string {
@@ -75,8 +107,12 @@ export function QuickSortMobile({
   isOnline: isOnlineOverride,
   mode = 'sectorize',
   onModeChange,
+  confirmed,
 }: QuickSortMobileProps) {
   const isOnline = useIsOnline(isOnlineOverride);
+  const confirmedCapacity = confirmed
+    ? getDockCapacityStatus(confirmed.zoneCount, confirmed.zoneCapacity)
+    : null;
 
   // spec-96 Fase 1 (`4g`) — moved from its own pill row below the header
   // into DistributionMobileHeader's `titleControl` slot, right of the
@@ -135,13 +171,56 @@ export function QuickSortMobile({
         }
       />
 
+      {confirmed && (
+        <div data-testid="quicksort-confirmed-context" className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5 rounded-2xl border-2 border-status-success-border bg-status-success-bg px-5 py-5">
+            <span className="font-mono text-[9.5px] font-semibold uppercase tracking-[.12em] text-status-success-text">
+              LLEVAR A
+            </span>
+            <span className="font-mono text-[62px] font-bold leading-none tracking-tight text-status-success-text">
+              {confirmed.destination.zone_code}
+            </span>
+            <p className="text-[13px] text-status-success-text">{confirmed.destination.zone_name}</p>
+            {confirmed.currentPackage && (
+              <p className="mt-1 text-[12px] text-status-success-text">
+                {confirmed.currentPackage.comunaName ?? 'Sin comuna'} · {confirmed.currentPackage.label} · orden{' '}
+                {confirmed.currentPackage.orderNumber}
+              </p>
+            )}
+            {confirmed.siblingsPending > 0 && (
+              <p
+                data-testid="quicksort-confirmed-incomplete-order"
+                className="mt-1 rounded-lg border border-status-warning-border bg-status-warning-bg px-3 py-2 text-[12px] leading-[1.4] text-status-warning-text"
+              >
+                Falta {confirmed.siblingsPending}{' '}
+                {confirmed.siblingsPending === 1 ? 'paquete' : 'paquetes'} de esta orden · sale
+                incompleta si cierras el andén
+              </p>
+            )}
+          </div>
+
+          {confirmedCapacity?.configured && confirmedCapacity.tone && (
+            <div
+              data-testid="quicksort-confirmed-capacity"
+              data-tone={confirmedCapacity.tone}
+              className={cn(
+                'rounded-lg border px-4 py-3',
+                CAPACITY_BLOCK_TONE_CLASS[confirmedCapacity.tone],
+              )}
+            >
+              <DockCapacityBar count={confirmed.zoneCount} capacity={confirmed.zoneCapacity} />
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-accent bg-accent-muted px-5 py-8 text-center">
         <span className="font-mono text-[9.5px] font-semibold uppercase tracking-[.12em] text-accent">
           PASO 1 · PAQUETE
         </span>
         <ScanLine className="h-9 w-9 text-accent" aria-hidden="true" />
         <p className="font-heading text-[17px] font-semibold leading-tight text-text">
-          Escanea el paquete
+          {confirmed ? 'Escanea el siguiente paquete' : 'Escanea el paquete'}
         </p>
         <p className="text-[12.5px] leading-[1.4] text-text-secondary">
           {mode === 'stage'
@@ -242,13 +321,30 @@ export function QuickSortMobile({
         >
           Ingresar código
         </button>
-        <button
-          type="button"
-          onClick={onCloseBatch}
-          className="flex h-[56px] flex-1 items-center justify-center rounded-xl bg-accent-light text-[14px] font-semibold text-accent-light-foreground transition-opacity active:opacity-90"
-        >
-          Cerrar lote
-        </button>
+        {confirmed ? (
+          // spec-96 Fase 1 review finding #1 (4j) — the mock swaps this
+          // slot for "Marcar excepción", but its target action is an open
+          // product question: `markException`/`recordQuickSortException`
+          // are scoped to a rejected `rejectedCode`, which does not exist
+          // once the andén scan already succeeded. Rendered present,
+          // disabled, rather than wired to a call that would misrecord or
+          // silently no-op — see the phase's spec evidence.
+          <button
+            type="button"
+            disabled
+            className="flex h-[56px] flex-1 items-center justify-center rounded-xl border border-status-error-border text-[14px] font-semibold text-status-error-text opacity-60"
+          >
+            Marcar excepción
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onCloseBatch}
+            className="flex h-[56px] flex-1 items-center justify-center rounded-xl bg-accent-light text-[14px] font-semibold text-accent-light-foreground transition-opacity active:opacity-90"
+          >
+            Cerrar lote
+          </button>
+        )}
       </div>
     </div>
   );

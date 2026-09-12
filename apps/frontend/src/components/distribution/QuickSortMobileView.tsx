@@ -71,6 +71,21 @@ export function QuickSortMobileView() {
 
   const goToDistribution = () => router.push('/app/distribution');
 
+  // `zones` is a `const` binding from here on — the guard above already
+  // narrowed it, but that narrowing doesn't survive into a closure that
+  // reads the outer `zones` variable directly, so this rebinds it once.
+  const dockZones = zones;
+
+  // spec-96 Fase 1 review finding #1 (4j) — same lookup `scan_anden` uses
+  // below, needed again for the `'confirmed'` branch's capacity block:
+  // `flow.destination` is kept (not cleared) once state is `'confirmed'`.
+  function capacityFor(zoneId: string) {
+    return {
+      zoneCount: sectorizedByZone?.[zoneId] ?? 0,
+      zoneCapacity: dockZones.find((z) => z.id === zoneId)?.capacity ?? null,
+    };
+  }
+
   if (flow.state === 'scan_anden' && flow.destination) {
     // Review fix (finding #5) — `validateDockDestination` only accepts a
     // consolidación zone that is BOTH `is_consolidation` AND `is_active`
@@ -79,8 +94,7 @@ export function QuickSortMobileView() {
     // validator rejects as `rejected_wrong_dock` — the screen flipped to
     // the red `4i` state blaming the operator for a scan they never made.
     const activeConsolidation = zones.find((z) => z.is_consolidation && z.is_active);
-    const zoneCount = sectorizedByZone?.[flow.destination.zone_id] ?? 0;
-    const zoneCapacity = zones.find((z) => z.id === flow.destination!.zone_id)?.capacity ?? null;
+    const { zoneCount, zoneCapacity } = capacityFor(flow.destination.zone_id);
 
     return (
       <QuickSortMobileDock
@@ -123,6 +137,20 @@ export function QuickSortMobileView() {
     );
   }
 
+  // spec-96 Fase 1 review finding #1 (4j) — `flow.state === 'confirmed'`
+  // is the step-1 render reached only after a successful andén scan.
+  // `flow.destination` is deliberately still non-null there (the hook
+  // keeps it), unlike the plain first-visit `4g` state.
+  const confirmed =
+    flow.state === 'confirmed' && flow.destination
+      ? {
+          destination: flow.destination,
+          currentPackage: flow.currentPackage,
+          siblingsPending: flow.siblingsPending,
+          ...capacityFor(flow.destination.zone_id),
+        }
+      : undefined;
+
   return (
     <QuickSortMobile
       operatorName={userName ?? null}
@@ -138,6 +166,7 @@ export function QuickSortMobileView() {
       onCloseBatch={goToDistribution}
       mode={mode}
       onModeChange={setMode}
+      confirmed={confirmed}
     />
   );
 }

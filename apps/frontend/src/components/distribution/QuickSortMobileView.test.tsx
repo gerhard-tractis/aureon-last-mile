@@ -152,6 +152,28 @@ describe('QuickSortMobileView', () => {
     expect(mockPush).toHaveBeenCalledWith('/app/distribution');
   });
 
+  // spec-96 Fase 1 review finding #1 (4j) — a successful andén scan used to
+  // wipe the destination/capacity context the instant it returned to step
+  // 1. It must now carry through into the confirmed view.
+  it('keeps the destination, capacity and incomplete-order context on screen after a successful andén scan (4j)', async () => {
+    render(<QuickSortMobileView />);
+    const packageInput = screen.getByLabelText(/escanear paquete/i);
+    fireEvent.change(packageInput, { target: { value: 'PKG-001' } });
+    fireEvent.keyDown(packageInput, { key: 'Enter' });
+    await screen.findByText('DOCK-001');
+
+    const andenInput = screen.getByLabelText(/escanear andén/i);
+    fireEvent.change(andenInput, { target: { value: 'DOCK-001' } });
+    fireEvent.keyDown(andenInput, { key: 'Enter' });
+
+    const confirmed = await screen.findByTestId('quicksort-confirmed-context');
+    expect(confirmed).toHaveTextContent('DOCK-001');
+    expect(screen.getByTestId('quicksort-confirmed-capacity').dataset.tone).toBe('warning');
+    expect(screen.getByText('169 / 180')).toBeInTheDocument();
+    // The next scan field is armed for the NEXT package, not the andén.
+    expect(screen.getByLabelText(/escanear paquete/i)).toBeInTheDocument();
+  });
+
   // Review fix (finding #5) — "Enviar a consolidación" must require an
   // ACTIVE consolidation zone, and must give feedback instead of doing
   // nothing when there isn't one.

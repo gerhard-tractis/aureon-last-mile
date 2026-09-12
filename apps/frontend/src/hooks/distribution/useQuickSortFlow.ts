@@ -23,7 +23,20 @@ export interface QuickSortScanEvent {
 
 // Destination shown + confirming scan armed in one step. `scan_anden`
 // (sectorize) / `scan_position` (stage) are mutually exclusive per `mode`.
-export type QuickSortFlowState = 'scan_package' | 'scan_anden' | 'scan_position';
+//
+// spec-96 Fase 1 review finding #1 (`4j`) — `'confirmed'` is entered only
+// from a successful `handleAndenScan` (sectorize path). It is step 1's
+// armed-for-the-next-package screen, NOT a third step: `destination`,
+// `currentPackage` and `siblingsPending` are deliberately kept (not
+// cleared, unlike `resetToStepOne()`) so the view layer can still show the
+// just-resolved andén and its capacity/incomplete-order context while the
+// package field is already re-armed. A package scan out of this state
+// behaves exactly as it does from `'scan_package'` — success moves to
+// `'scan_anden'` with the new destination; failure leaves `state` as
+// `'confirmed'` and just sets `error`, so the old context stays on screen
+// alongside the new error. Stage mode (`handlePositionScan`) never sets
+// this — it keeps calling `resetToStepOne()`, unchanged (spec-96 Fase 7).
+export type QuickSortFlowState = 'scan_package' | 'scan_anden' | 'scan_position' | 'confirmed';
 
 /** `stage` repoints the scan-package-then-scan-destination loop at the
  * wave-cutoff staging pass: destination is `load_positions`, not `dock_zones`. */
@@ -156,6 +169,11 @@ export function useQuickSortFlow({ operatorId, userId, zones, onScanEvent, mode 
 
     setError(null);
     setRejectedCode(null);
+    setExceptionError(null);
+    // The batch this scan closed is done; not the same clear as
+    // resetToStepOne(), which also drops destination/currentPackage/
+    // siblingsPending — those are what `'confirmed'` (4j) keeps on screen.
+    setCurrentBatchId(null);
     onScanEvent?.({
       code: currentPackage?.label ?? '',
       zoneCode: outcome.zoneCode,
@@ -164,7 +182,7 @@ export function useQuickSortFlow({ operatorId, userId, zones, onScanEvent, mode 
       status: 'ok',
     });
     setCounter(c => c + 1);
-    resetToStepOne();
+    setState('confirmed');
   };
 
   // `lookupStagePackageScan` finds the package + the position its

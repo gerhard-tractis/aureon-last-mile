@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { QuickSortMobile } from './QuickSortMobile';
 import type { QuickSortScanEvent } from '@/hooks/distribution/useQuickSortFlow';
+import type { ZoneMatchResult } from '@/lib/distribution/sectorization-engine';
 
 /** spec-68 Fase 5.2 — `4g`, quicksort step 1. */
 
@@ -125,8 +126,11 @@ describe('QuickSortMobile', () => {
   });
 
   // spec-71 phase 3 mobile — the mode toggle. Desktop's entry point into
-  // `mode: 'stage'` is a `Tabs` in the header row; this screen has no such
-  // row, so the switch is its own segmented pill instead of a `Tabs` drop-in.
+  // `mode: 'stage'` is a `Tabs` dropped into `/app/distribution/quicksort`'s
+  // header row; this screen's own segmented pill mirrors that semantics
+  // (`role="tablist"`). spec-96 Fase 1 moved it into
+  // `DistributionMobileHeader`'s title row (`titleControl`) — it used to
+  // render as its own row below the whole header.
   describe('mode toggle (spec-71 phase 3 mobile)', () => {
     it('renders no toggle when onModeChange is not passed (every other caller unaffected)', () => {
       render(<QuickSortMobile {...baseProps()} />);
@@ -179,5 +183,94 @@ describe('QuickSortMobile', () => {
 
     expect(screen.queryByLabelText('Escanear posición a sellar')).not.toBeInTheDocument();
     expect(document.activeElement).toBe(screen.getByLabelText('Escanear paquete'));
+  });
+
+  // spec-96 Fase 1 review finding #1 (4j) — after a successful andén scan
+  // the flow returns here with `state: 'confirmed'`, not a wiped step 1.
+  // The destination/capacity/incomplete-order context must render, and the
+  // package field must stay armed for the next scan.
+  describe('confirmed context (4j)', () => {
+    const confirmedDestination: ZoneMatchResult = {
+      zone_id: 'zone-1',
+      zone_name: 'La Florida',
+      zone_code: 'A3',
+      is_consolidation: false,
+      reason: 'matched',
+      flagged: false,
+    };
+
+    function confirmedProps() {
+      return {
+        destination: confirmedDestination,
+        currentPackage: {
+          id: 'pkg-1',
+          label: 'CL7742891004',
+          orderNumber: 'ORD-48213',
+          comunaName: 'La Florida',
+        },
+        siblingsPending: 1,
+        zoneCount: 169,
+        zoneCapacity: 180,
+      };
+    }
+
+    it('renders no confirmed context when omitted (every other caller unaffected)', () => {
+      render(<QuickSortMobile {...baseProps()} />);
+      expect(screen.queryByTestId('quicksort-confirmed-context')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('quicksort-confirmed-capacity')).not.toBeInTheDocument();
+    });
+
+    it('renders the kept destination and the incomplete-order notice', () => {
+      render(<QuickSortMobile {...baseProps()} confirmed={confirmedProps()} />);
+      const context = screen.getByTestId('quicksort-confirmed-context');
+      expect(context).toBeInTheDocument();
+      expect(screen.getByTestId('quicksort-confirmed-incomplete-order')).toBeInTheDocument();
+    });
+
+    it('shows no incomplete-order notice when there are no pending siblings', () => {
+      render(
+        <QuickSortMobile {...baseProps()} confirmed={{ ...confirmedProps(), siblingsPending: 0 }} />,
+      );
+      expect(screen.queryByTestId('quicksort-confirmed-incomplete-order')).not.toBeInTheDocument();
+    });
+
+    it('renders the capacity block, toned, when the zone has a capacity', () => {
+      render(<QuickSortMobile {...baseProps()} confirmed={confirmedProps()} />);
+      const capacity = screen.getByTestId('quicksort-confirmed-capacity');
+      expect(capacity.dataset.tone).toBe('warning');
+      expect(screen.getByTestId('dock-capacity-fill')).toBeInTheDocument();
+    });
+
+    it('renders no capacity block when the zone has no capacity configured', () => {
+      render(
+        <QuickSortMobile
+          {...baseProps()}
+          confirmed={{ ...confirmedProps(), zoneCapacity: null }}
+        />,
+      );
+      expect(screen.queryByTestId('quicksort-confirmed-capacity')).not.toBeInTheDocument();
+    });
+
+    it('keeps the package field armed for the next scan', () => {
+      const props = baseProps();
+      render(<QuickSortMobile {...props} confirmed={confirmedProps()} />);
+      const input = screen.getByLabelText(/escanear paquete/i);
+      fireEvent.change(input, { target: { value: 'PKG-002' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(props.onScan).toHaveBeenCalledWith('PKG-002');
+    });
+
+    // The mock swaps the footer's second action for "Marcar excepción" —
+    // its target action is an open product question (see the phase's
+    // spec evidence): recordQuickSortException is scoped to a rejected
+    // `rejectedCode`, which does not exist once the andén scan already
+    // succeeded. Rendered present, disabled, rather than wired to a call
+    // that would misrecord or silently no-op.
+    it('replaces "Cerrar lote" with a disabled "Marcar excepción" in the footer', () => {
+      render(<QuickSortMobile {...baseProps()} confirmed={confirmedProps()} />);
+      expect(screen.queryByText('Cerrar lote')).not.toBeInTheDocument();
+      const exceptionButton = screen.getByText('Marcar excepción').closest('button')!;
+      expect(exceptionButton).toBeDisabled();
+    });
   });
 });

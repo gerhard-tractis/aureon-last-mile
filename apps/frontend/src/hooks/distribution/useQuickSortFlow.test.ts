@@ -167,7 +167,14 @@ describe('useQuickSortFlow', () => {
     expect(result.current.siblingsPending).toBe(1);
   });
 
-  it('accepts the suggested andén, records the scan, closes the batch and resets to step 1', async () => {
+  // spec-96 Fase 1 review finding #1 (4j) — `resetToStepOne()` used to wipe
+  // `destination`/`siblingsPending` the instant the andén scan succeeded, so
+  // the screen the operator saw next carried none of the capacity/
+  // incomplete-order context `4j` draws. `state` becomes `'confirmed'` —
+  // still armed for the next package scan, but with the just-resolved
+  // destination and sibling count kept for the view layer to render.
+  it('accepts the suggested andén, records the scan, closes the batch and enters "confirmed" with the destination and siblings kept (4j)', async () => {
+    mockNeq.mockReturnValue({ is: vi.fn().mockResolvedValue({ count: 1, error: null }) });
     const { result } = setup();
     await act(async () => {
       await result.current.handlePackageScan('PKG-001');
@@ -176,10 +183,47 @@ describe('useQuickSortFlow', () => {
       await result.current.handleAndenScan('DOCK-001');
     });
     expect(mockScanMutateAsync).toHaveBeenCalledWith({ barcode: 'PKG-001' });
-    expect(result.current.state).toBe('scan_package');
+    expect(result.current.state).toBe('confirmed');
     expect(result.current.counter).toBe(1);
-    expect(result.current.destination).toBeNull();
+    expect(result.current.destination?.zone_code).toBe('DOCK-001');
+    expect(result.current.siblingsPending).toBe(1);
     expect(result.current.rejectedCode).toBeNull();
+  });
+
+  it('a package scan while "confirmed" replaces the kept destination on success, same as from step 1', async () => {
+    const { result } = setup();
+    await act(async () => {
+      await result.current.handlePackageScan('PKG-001');
+    });
+    await act(async () => {
+      await result.current.handleAndenScan('DOCK-001');
+    });
+    expect(result.current.state).toBe('confirmed');
+
+    await act(async () => {
+      await result.current.handlePackageScan('PKG-001');
+    });
+    expect(result.current.state).toBe('scan_anden');
+    expect(result.current.destination?.zone_code).toBe('DOCK-001');
+  });
+
+  it('a failed package scan while "confirmed" keeps the prior destination visible and surfaces the error', async () => {
+    const { result } = setup();
+    await act(async () => {
+      await result.current.handlePackageScan('PKG-001');
+    });
+    await act(async () => {
+      await result.current.handleAndenScan('DOCK-001');
+    });
+    const keptDestination = result.current.destination;
+
+    mockLimit.mockResolvedValueOnce({ data: [], error: null });
+    await act(async () => {
+      await result.current.handlePackageScan('UNKNOWN');
+    });
+    expect(result.current.state).toBe('confirmed');
+    expect(result.current.destination).toBe(keptDestination);
+    expect(result.current.error).toBe('Código no encontrado');
   });
 
   it('redirects to consolidación when CONSOL is scanned, switching the batch zone first', async () => {
