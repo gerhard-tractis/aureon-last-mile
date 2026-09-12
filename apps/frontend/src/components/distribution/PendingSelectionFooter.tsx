@@ -91,7 +91,7 @@ export function PendingSelectionFooter({
               data-testid="pending-selection-count"
               className="font-mono text-[11px] font-semibold uppercase tracking-[.1em] text-text-secondary"
             >
-              {selectedCount}
+              {selectedCount} {selectedCount === 1 ? 'SELECCIONADO' : 'SELECCIONADOS'}
             </span>
           </div>
           <button
