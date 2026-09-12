@@ -11,7 +11,7 @@ import type { QuickSortFlowMode } from '@/hooks/distribution/useQuickSortFlow';
 import { QuickSortMobileView } from '@/components/distribution/QuickSortMobileView';
 import { SealPositionCard } from '@/components/distribution/SealPositionCard';
 import { refocusPackageField } from '@/lib/scan/refocus-package-field';
-import { DockCard } from '@/components/distribution/DockCard';
+import { QuickSortDockGrid } from '@/components/distribution/QuickSortDockGrid';
 import { RecentScansPanel } from '@/components/distribution/RecentScansPanel';
 import { PendingDockList } from '@/components/distribution/PendingDockList';
 import { useOperatorId } from '@/hooks/useOperatorId';
@@ -27,7 +27,6 @@ import {
   useDockVerificationMutation,
 } from '@/hooks/distribution/useDockVerifications';
 import { useManualDockAssignment } from '@/hooks/distribution/useManualDockAssignment';
-import { getDockCapacityStatus } from '@/lib/distribution/dock-capacity';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -253,24 +252,11 @@ function QuickSortDesktopContent() {
               </span>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {activeZones.map((zone) => {
-                const count = sectorizedByZone?.[zone.id] ?? 0;
-                const capacityStatus = getDockCapacityStatus(count, zone.capacity);
-                return (
-                  <DockCard
-                    key={zone.id}
-                    code={zone.code}
-                    zoneName={zone.name}
-                    comunas={zone.comunas.map((c) => c.nombre)}
-                    packageCount={count}
-                    occupancyPct={capacityStatus.fillPct ?? undefined}
-                    tone={zone.is_consolidation ? 'warning' : 'neutral'}
-                    active={lastOkScan?.zoneCode === zone.code}
-                  />
-                );
-              })}
-            </div>
+            <QuickSortDockGrid
+              zones={activeZones}
+              sectorizedByZone={sectorizedByZone}
+              activeZoneCode={lastOkScan?.zoneCode ?? undefined}
+            />
           </section>
 
           {/* The pile still to sort. It takes the height the dock grid leaves
