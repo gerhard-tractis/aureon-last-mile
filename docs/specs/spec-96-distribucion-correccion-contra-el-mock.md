@@ -226,9 +226,18 @@ see it. It nearly happened twice: fase 0 would have reverted PR #821, and fase
 
 - `routeCount` sigue sin pasarse a `DockCard`. No hay fuente en `useDockZones` —
   verificado contra `DockZoneRecord`. No se inventó ni se añadió query.
-- El badge `LOTE`/`LOTES` y el borde superior verde de `OutboundDockGrid`
-  volvieron con el revert del chip. Son **código muerto** (`openBatches` no
-  llega) y `4a` no contiene `LOTE` ninguna vez. **La fase 4 los quita.**
+- El badge `LOTE`/`LOTES` volvió con el revert del chip. Es **código muerto**
+  (`openBatches` no llegaba) y `4a` no contiene `LOTE` ninguna vez. **La fase 4
+  lo quitó.**
+- **Corrección de esta evidencia (2026-09-12).** Esta lista decía también que el
+  borde superior verde era decoración muerta y que la fase 4 debía quitarlo.
+  **Era falso:** `4a:199`, `:210` y `:232` lo dibujan (`border-top:3px solid
+  var(--ok)`) en cada tile `EN RITMO`. La fase 4 lo **conservó**, ahora gobernado
+  por el estado del chip, y divergió de esta instrucción con razón. El error es
+  mío y del mismo tipo que los otros dos que cometí en este spec: **parafraseé el
+  artboard en vez de apuntar a él.** Es exactamente lo que la regla del benchmark
+  existe para evitar, y no la estaba aplicando a mis propios bloques de
+  evidencia.
 - `EN RITMO`, `DETENIDO`, `SIN ABRIR` y el pie de tarjeta (`R-2481 · R-2483`,
   `Ver`/`Asignar`/`Abrir`) son de la fase 4.
 - `DETENIDO` necesita un join zona↔ruta previo a la carga que no existe:
