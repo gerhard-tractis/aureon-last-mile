@@ -272,13 +272,16 @@ describe('DistributionPage', () => {
     });
   });
 
-  // Review fix — both incident counts are order-level now. `unmatched`
-  // used to feed the panel as `.length` (distinct comuna strings), while
-  // `noDockCount` was always orders — two different units in one total.
-  // `4a` draws the incidents badge and the StatTile with the same "9",
-  // which only happens if the whole surface counts orders. The StatTile
-  // itself is untouched (fase 4's own note says it's already correct);
-  // only the incidents panel's feed changes.
+  // Review fix — the panel's OWN two counts are order-level now, so they
+  // never disagree on unit inside one total: `unmatchedComunaCount` used
+  // to feed the panel as `unmatched.length` (distinct comuna strings)
+  // while `noDockCount` was always orders. Correction to a prior, false
+  // justification: `4a` only establishes `StatTile == badge total`
+  // (`:167-170` and `:293` both read "9") — nothing in the artboard
+  // speaks to units generally, and its own row 1 (4) already differs from
+  // the StatTile (9). The StatTile itself is untouched — it keeps
+  // `unmatched.length`, with its own `detail` text now naming the unit
+  // ("comuna(s)") so the two different numbers don't read as a bug.
   describe('incidencias de sectorización', () => {
     function withConsolidationZoneAndPending() {
       mockUseDockZones.mockReturnValue({
@@ -316,7 +319,8 @@ describe('DistributionPage', () => {
       const unmatchedRow = screen.getByTestId('incident-unmatched-comuna');
       const noDockRow = screen.getByTestId('incident-no-dock');
       // 3 orders behind the one unmatched comuna string, not 1 (the
-      // string count) — order-level throughout, matching noDockCount's 2.
+      // string count) — this row is now order-level, the same unit
+      // noDockCount already was (independently, not because 4a requires it).
       expect(within(unmatchedRow).getByText('3')).toBeInTheDocument();
       expect(within(noDockRow).getByText('2')).toBeInTheDocument();
     });

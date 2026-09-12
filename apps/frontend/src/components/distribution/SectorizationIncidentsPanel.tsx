@@ -29,12 +29,19 @@ import { CheckCircle2 } from 'lucide-react';
  * `/app/distribution/pendientes` — a single footer action can't serve
  * both, so this deliberately serves row 1's. Per-row destinations are a
  * later phase's work, declared here rather than silently serving one type.
+ *
+ * Review fix — row tones now match `4a`: row 1 (unrecognised comuna) is
+ * `error` (`:298`), rows 2 and 3 are `warning` (`:305`, `:312`). All
+ * three rendered `error` before this fix, an undeclared diff. Not
+ * covered by a test — the repo's own rule is that colour is verified by
+ * eye against the artboard, not asserted.
  */
 interface IncidentRowSpec {
   testId: string;
   title: string;
   description: string;
   count: number;
+  tone: 'error' | 'warning';
 }
 
 interface SectorizationIncidentsPanelProps {
@@ -60,12 +67,14 @@ export function SectorizationIncidentsPanel({
       title: 'Comuna no reconocida',
       description: 'el texto de comuna no resuelve a ningún registro',
       count: unmatchedComunaCount,
+      tone: 'error',
     },
     {
       testId: 'incident-no-dock',
       title: 'Sin andén asignado',
       description: 'la comuna resuelve pero ningún andén la cubre',
       count: noDockCount,
+      tone: 'warning',
     },
     ...(wrongDockCount !== undefined
       ? [
@@ -74,6 +83,7 @@ export function SectorizationIncidentsPanel({
             title: 'Andén incorrecto',
             description: 'el andén escaneado no es el que calculó el motor',
             count: wrongDockCount,
+            tone: 'warning' as const,
           },
         ]
       : []),
@@ -116,7 +126,14 @@ export function SectorizationIncidentsPanel({
                 data-testid={row.testId}
                 className="flex flex-none items-center gap-2.5 border-b border-border-strong/20 px-3.5 py-2.5"
               >
-                <span className="flex h-6.5 w-6.5 flex-none items-center justify-center rounded-md border border-status-error-border bg-status-error-bg font-mono text-[10.5px] font-bold text-status-error-text">
+                <span
+                  className={
+                    'flex h-6.5 w-6.5 flex-none items-center justify-center rounded-md border font-mono text-[10.5px] font-bold ' +
+                    (row.tone === 'error'
+                      ? 'border-status-error-border bg-status-error-bg text-status-error-text'
+                      : 'border-status-warning-border bg-status-warning-bg text-status-warning-text')
+                  }
+                >
                   {row.count}
                 </span>
                 <div className="flex min-w-0 flex-col gap-0.5">
