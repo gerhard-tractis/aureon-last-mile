@@ -306,7 +306,7 @@ hermanos.
 
 ### Fase 1 — Scan flow `[in_progress]`
 
-> Implementado por: implementer — rama `feat/spec-96-fase-1-escaneo`, SHAs `57fefbc..HEAD` (rango final en el reporte de cierre; ver el último commit de esta fase antes de la review)
+> Implementado por: implementer — rama `feat/spec-96-fase-1-escaneo`, SHAs `57fefbc..7f1be6d`
 > Review: pendiente — round 1 recibido y trabajado en esta misma rama (7 hallazgos + 1 hallazgo propio no reportado por el review, ver abajo). El reviewer/orquestador cierra esta línea al validar la rama, no el implementer.
 > QA: pendiente — no corrido aún contra QA.
 > Downstream: este spec no declara `**Downstream:**`. Revisado spec-71 (modo ESTIBAR, `QuickSortMobileStagePosition`/`mode: 'stage'`, comparte `useQuickSortFlow` y `QuickSortMobileView`) — sin cambios de contrato: `'confirmed'` solo se alcanza desde `handleAndenScan` (ruta sectorize); `handlePositionScan` sigue llamando `resetToStepOne()` sin tocar. `QuickSortScanner.tsx` (escritorio, mismo hook) SÍ requirió un cambio de una línea — ver Hallazgos abiertos.
