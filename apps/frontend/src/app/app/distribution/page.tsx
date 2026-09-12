@@ -7,6 +7,7 @@ import { Layers, LayoutGrid, ScanLine, Settings } from 'lucide-react';
 import { StatTile } from '@/components/StatTile';
 import { EmptyState } from '@/components/EmptyState';
 import { OutboundDockGrid } from '@/components/distribution/OutboundDockGrid';
+import { DockFilterPills } from '@/components/distribution/DockFilterPills';
 import { ActiveSortersPanel } from '@/components/distribution/ActiveSortersPanel';
 import { ConsolidationPanel } from '@/components/distribution/ConsolidationPanel';
 import { SectorizationIncidentsPanel } from '@/components/distribution/SectorizationIncidentsPanel';
@@ -34,45 +35,25 @@ import { todayISOInTimezone } from '@/lib/utils/dateFormat';
  * how fast it is moving, which andenes are filling, and who is on the floor.
  * The primary action is entering Modo rápido (1d), where the work happens.
  *
- * `OutboundDockGrid` is fully wired now: capacity (`dock_zones.capacity` →
- * `lib/distribution/dock-capacity.ts` → `DockCapacityBar`) and, since fase
- * 4, per-zone activity via `useOpenBatchesByZone`. Two things `4a` draws
- * that this screen still cannot: the `DETENIDO` chip (no driver-assignment
- * source exists pre-load — see `OutboundDockGrid`'s doc comment) and the
- * tile footer's route codes (no route field on `DockZoneRecord`).
+ * Declared gaps and unit/loading decisions this page makes live in the
+ * components/hooks that own them, not here (review — this comment grew
+ * past what a page-level doc block should carry and helped push the file
+ * over the repo's 300-line cap): `OutboundDockGrid`'s doc comment covers
+ * `DETENIDO` and the missing route codes; `SectorizationIncidentsPanel`'s
+ * covers `wrongDockCount` and its loading contract; `no-dock-incident-
+ * count.ts`'s covers the `usePendingSectorization` unbounded-fetch cost
+ * and the zero-zones edge case; `DockFilterPills`'s covers the filter's
+ * default and the chip/filter axis mismatch.
  *
- * `SectorizationIncidentsPanel`'s `wrongDockCount` also stays unpassed:
- * `quicksort-exception.ts` records the event but no hook reads it back
- * operator-wide yet.
- *
- * Review fix — `unmatchedComunaCount` sums `order_count` across
- * `get_unmatched_comunas` rows rather than counting the rows: the panel's
- * other count (`noDockCount`) is always orders, and mixing units inside
- * one badge/total was a real bug. The `Comunas no reconocidas` StatTile
- * above is untouched — it keeps its own `unmatched.length`, unaffected.
- *
- * `usePendingSectorization` on this landing page is an unbounded fetch
- * (no `.limit()`) reduced to a single integer (`noDockCount`); at prod
- * scale (~61k packages) PostgREST's default row cap would silently
- * truncate it with no error, under-reporting the count. Known cost, not
- * fixed here — the honest fix is a count-only source (ideally folded into
- * `get_distribution_overview`), a follow-up this note exists to not let
- * evaporate. `useOpenBatchesByZone` has no such problem: one row per zone
- * per refetch cycle, and `idx_dock_batches_operator_id` covers it.
- *
- * `incidentsLoading` covers `usePendingSectorization` being `enabled`
- * only once `useDockZones` resolves: while zones are loading, that
- * query's own `isLoading` reports false (never started), so `zonesLoading`
- * is included too — otherwise a real backlog could still read as "Sin
- * incidencias" for a beat.
+ * `unmatchedComunaCount` sums `order_count` across `get_unmatched_comunas`
+ * rows (orders), not the row count `Comunas no reconocidas` above uses
+ * (distinct comuna strings) — two different units on purpose; see the
+ * StatTile's own `detail` text for the disambiguation.
  *
  * spec-68 Fase 2 (Decisión 1) — below `lg` (1024px) this swaps entirely for
- * `DistributionMobileView`'s phone card layout (mock 4c) instead of
- * squeezing the KPI grid / OutboundDockGrid / ActiveSortersPanel /
- * ConsolidationPanel above into 390px. `useIsBelowLg` picks exactly one of
- * the two trees, and the desktop `<h1>` + panels sit behind `!isBelowLg` —
- * the same bug (two headers stacked on one phone screen) has already
- * shipped twice, in spec-54's 3h and in spec-62.
+ * `DistributionMobileView`'s phone card layout (mock 4c); `useIsBelowLg`
+ * picks exactly one of the two trees (the bug of both mounting together
+ * has shipped twice, spec-54's 3h and spec-62).
  */
 
 function timeLabel(iso: string | null): string | null {
@@ -85,11 +66,7 @@ function timeLabel(iso: string | null): string | null {
 export default function DistributionPage() {
   const { operatorId } = useOperatorId();
   const router = useRouter();
-  // `4a:180-183` draws `Lotes abiertos` / `Todas` — the two states never
-  // co-render in a static mock, so the artboard doesn't settle which one
-  // starts active. Default 'all': the artboard's drawn grid shows all 6
-  // tiles, including `A6` (SIN ABRIR, no open lote) — starting on 'open'
-  // would hide the tile the mock actually shows.
+  // Default 'all' — see DockFilterPills's doc comment for why.
   const [dockFilter, setDockFilter] = useState<'open' | 'all'>('all');
   const isBelowLg = useIsBelowLg();
   const { data: userName = null } = useCurrentUserName();
@@ -143,14 +120,15 @@ export default function DistributionPage() {
 
   const allZones = zones ?? [];
   const activeZones = allZones.filter((z) => z.is_active);
+  const filteredZones =
+    dockFilter === 'open'
+      ? activeZones.filter((z) => (openBatchesByZone?.[z.id] ?? 0) > 0)
+      : activeZones;
   const lastClose = timeLabel(overview?.last_closed_at ?? null);
   const openBatches = overview?.open_batches ?? 0;
 
-  // `4a`'s "Sin andén asignado" row. Same predicate PendingMobileList (`4d`)
-  // recomputes per order rather than trusting the zone-bucket-level flag
-  // (spec-68 Fase 3 review #5) — see countNoDockIncidents's doc comment.
-  // Duplicated rather than imported from PendingMobileList.tsx, which is
-  // Fase 2's file, not this phase's.
+  // See countNoDockIncidents's doc comment: predicate, cost and the
+  // zero-zones edge case it declares rather than fixes.
   const today = todayISOInTimezone(new Date());
   const pendingOrders = (pendingGroups ?? []).flatMap((group) =>
     group.orders.map((order) => ({
@@ -159,35 +137,14 @@ export default function DistributionPage() {
     })),
   );
   const noDockCount = countNoDockIncidents(pendingOrders, allZones, today);
-
-  // Review fix — order-level throughout the incidents panel. This used to
-  // pass `unmatched.length` (distinct comuna STRINGS), while `noDockCount`
-  // is always orders — two different units feeding one panel/badge total.
-  // get_unmatched_comunas's own `order_count` per row makes the order-level
-  // total available without a new query; sum it instead of counting rows.
-  // The StatTile above is untouched — it keeps `unmatched.length`, per this
-  // phase's note that it's already correct.
+  // Order-level, matching noDockCount — not unmatched.length (distinct
+  // comuna strings), which the StatTile below keeps using on purpose.
   const unmatchedOrderCount = unmatched.reduce((sum, u) => sum + (u.order_count ?? 0), 0);
-  // Also gated on zonesLoading: usePendingSectorization is `enabled` only
-  // once zones resolve, so while zones are still loading its OWN
-  // `isLoading` reports false (never started) rather than "unknown" —
-  // exactly the illusion that let a real backlog read as "no incidents".
-  //
-  // Review fix — `zonesError` closes the same window a settled FAILURE
-  // opens: once useDockZones errors, zonesLoading goes false (the query
-  // is done, just failed), zones stays undefined, `usePendingSectorization`
-  // stays permanently `enabled:false` off the empty `allZones` fallback,
-  // so pendingLoading is false too — a failed load, not an idle one,
-  // would otherwise still paint the green "Sin incidencias".
-  //
-  // Known, undeclared-fixed limit: a *successfully* empty zones array
-  // (operator genuinely has zero dock zones configured) is NOT an error
-  // and isn't caught by any term here either — usePendingSectorization's
-  // own `enabled` gate never runs in that state, so `noDockCount` reads 0
-  // even though every pending package is, by definition, dock-less. This
-  // reads identically to "no incidents" today; fixing it needs either a
-  // change to usePendingSectorization's enabling condition (Fase 8's file
-  // this round) or a count that doesn't depend on it.
+  // zonesLoading/zonesError/`!zones` all guard the same class of failure:
+  // usePendingSectorization is `enabled` only once zones resolve
+  // successfully, so a loading OR failed zones query must not let this
+  // read as "no incidents" — see SectorizationIncidentsPanel's doc
+  // comment for the isLoading contract itself.
   const incidentsLoading = unmatchedLoading || pendingLoading || zonesLoading || zonesError || !zones;
 
   // Sorted vs everything the shift has touched, for the percentage the mock
@@ -273,36 +230,7 @@ export default function DistributionPage() {
             <span className="text-[11px] leading-none text-text-muted">
               capacidad y avance por destino
             </span>
-            <div className="ml-auto flex gap-1.5">
-              <button
-                type="button"
-                data-testid="dock-filter-open"
-                data-active={dockFilter === 'open'}
-                onClick={() => setDockFilter('open')}
-                className={
-                  'rounded-md border px-2.5 py-1 text-[11px] font-semibold ' +
-                  (dockFilter === 'open'
-                    ? 'border-border bg-surface-raised text-text'
-                    : 'border-border text-text-secondary')
-                }
-              >
-                Lotes abiertos
-              </button>
-              <button
-                type="button"
-                data-testid="dock-filter-all"
-                data-active={dockFilter === 'all'}
-                onClick={() => setDockFilter('all')}
-                className={
-                  'rounded-md border px-2.5 py-1 text-[11px] font-medium ' +
-                  (dockFilter === 'all'
-                    ? 'border-border bg-surface-raised text-text'
-                    : 'border-border text-text-secondary')
-                }
-              >
-                Todas
-              </button>
-            </div>
+            <DockFilterPills value={dockFilter} onChange={setDockFilter} />
           </div>
 
           {activeZones.length === 0 ? (
@@ -312,13 +240,20 @@ export default function DistributionPage() {
               description="Configura tus andenes para comenzar a sectorizar paquetes por zona de entrega."
               action={{ label: 'Configurar andenes', href: '/app/distribution/settings' }}
             />
+          ) : filteredZones.length === 0 ? (
+            // Review fix — "Lotes abiertos" with no zone holding an open
+            // lote (the start of every shift) used to render an empty
+            // grid `div` with no message. Real zones exist; the filter is
+            // what's hiding them.
+            <EmptyState
+              icon={Layers}
+              title="Ningún andén con un lote abierto"
+              description="El filtro «Lotes abiertos» está ocultando todos los andenes activos — ninguno tiene un lote abierto en este momento."
+              action={{ label: 'Ver todas', onClick: () => setDockFilter('all') }}
+            />
           ) : (
             <OutboundDockGrid
-              zones={
-                dockFilter === 'open'
-                  ? activeZones.filter((z) => (openBatchesByZone?.[z.id] ?? 0) > 0)
-                  : activeZones
-              }
+              zones={filteredZones}
               sectorizedCounts={sectorizedCounts}
               openBatches={openBatchesByZone}
             />
@@ -330,19 +265,7 @@ export default function DistributionPage() {
             sorters={overview?.operators ?? []}
             isLoading={overviewLoading}
           />
-          {/* `wrongDockCount` stays unpassed: quicksort-exception.ts records
-              the event (dock_scans, scan_result='wrong_zone') but no hook
-              reads it back operator-wide yet — a new query, not wiring of
-              an existing one. Declared open rather than shipped as 0.
-
-              `onResolve` → /settings is correct for row 1 only (unrecognised
-              comuna — settings renders UnmatchedComunasPanel, the alias-
-              mapping UI). Row 2 ("comuna resolves, no andén covers it") is
-              actually acted on from /app/distribution/pendientes, not
-              settings — a single footer action cannot serve both
-              destinations, so this deliberately serves row 1's. Per-row
-              destinations are a later phase's work, declared here rather
-              than silently serving only one type. */}
+          {/* wrongDockCount/onResolve: see SectorizationIncidentsPanel's doc comment. */}
           <SectorizationIncidentsPanel
             unmatchedComunaCount={unmatchedOrderCount}
             noDockCount={noDockCount}

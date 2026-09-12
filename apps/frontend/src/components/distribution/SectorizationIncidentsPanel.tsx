@@ -21,6 +21,14 @@ import { CheckCircle2 } from 'lucide-react';
  * every load with a real backlog. Only gates the empty-state branch —
  * once real counts are known (`hasIncidents`), a background refetch must
  * not flash a skeleton over rows the floor lead is already reading.
+ *
+ * `onResolve` (`distribution/page.tsx` wires it to `/settings`) is only
+ * correct for row 1: unrecognised comuna is fixed at `/settings`
+ * (`UnmatchedComunasPanel`, the alias-mapping UI). Row 2 ("comuna
+ * resolves, no andén covers it") is actually acted on from
+ * `/app/distribution/pendientes` — a single footer action can't serve
+ * both, so this deliberately serves row 1's. Per-row destinations are a
+ * later phase's work, declared here rather than silently serving one type.
  */
 interface IncidentRowSpec {
   testId: string;

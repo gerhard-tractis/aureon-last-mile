@@ -235,6 +235,22 @@ describe('DistributionPage', () => {
         fireEvent.click(screen.getByTestId('dock-filter-all'));
         expect(screen.getAllByTestId('outbound-dock')).toHaveLength(2);
       });
+
+      // Review fix — "the start of every shift" dead-end: real zones
+      // exist, none has an open lote yet, "Lotes abiertos" is active.
+      // Before this fix, OutboundDockGrid got `zones={[]}` and rendered an
+      // empty grid `div` — no message, no hint the filter caused it. The
+      // "new interaction with a dead-end" pattern that showed up in every
+      // prior round.
+      it('explains the filter is why the grid is empty, with a way back to "Todas"', () => {
+        mockUseOpenBatchesByZone.mockReturnValue({ data: {} }); // z1 has no open lote either
+        render(<DistributionPage />);
+        fireEvent.click(screen.getByTestId('dock-filter-open'));
+        expect(screen.queryAllByTestId('outbound-dock')).toHaveLength(0);
+        expect(screen.getByText(/ningún andén con un lote abierto/i)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /ver todas/i }));
+        expect(screen.getAllByTestId('outbound-dock')).toHaveLength(1);
+      });
     });
   });
 

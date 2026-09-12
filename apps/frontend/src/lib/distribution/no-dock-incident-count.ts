@@ -29,6 +29,21 @@ import type { DockZone, PackageOrder } from './sectorization-engine';
  * `catch { return false }` would have swallowed any *other*, genuine
  * future error into a silent 0. Removed rather than narrowed, since the
  * guard alone is the correct, sufficient check.
+ *
+ * Two costs `distribution/page.tsx`'s wiring declares rather than fixes:
+ * (1) its `usePendingSectorization` call is an unbounded fetch (no
+ * `.limit()`) reduced to this one integer; at prod scale (~61k packages)
+ * PostgREST's default row cap would silently truncate it, under-
+ * reporting the count. `useOpenBatchesByZone` has no such problem — one
+ * row per zone per refetch cycle, `idx_dock_batches_operator_id` covers
+ * it. (2) the guard above returning `0` for a *successfully* empty
+ * `zones` array (an operator with genuinely zero dock zones configured)
+ * reads identically to "no incidents" — `usePendingSectorization`'s own
+ * `enabled` gate never runs in that state, so this function never even
+ * sees those orders. Neither is fixed here: (1) needs a count-only
+ * source (ideally folded into `get_distribution_overview`); (2) needs a
+ * change to `usePendingSectorization`'s enabling condition — Fase 8's
+ * file this round.
  */
 export function countNoDockIncidents(orders: PackageOrder[], zones: DockZone[], today: string): number {
   if (!zones.some((z) => z.is_consolidation)) return 0;
