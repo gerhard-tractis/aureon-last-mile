@@ -122,6 +122,36 @@ describe('useConsolidation', () => {
     expect(result.current.data![0]).toMatchObject({ comunaId: 'c-1', comunaName: 'Quilicura' });
   });
 
+  // spec-96 fase 4 — `4a`'s full-width consolidation table groups by order
+  // and needs the order number and the recipient name, neither selected
+  // before. Extends the existing `orders!inner(...)` join, not a second
+  // query — same pattern as the comuna extension above.
+  it('carries order_number and customer_name through, for the 4a table', async () => {
+    const rawPackages = [
+      {
+        id: 'p1',
+        label: 'PKG-001',
+        dock_zone_id: 'z1',
+        order_id: 'o1',
+        orders: {
+          delivery_date: '2026-03-19',
+          order_number: 'ORD-48213',
+          customer_name: 'Camila Fernández',
+        },
+      },
+    ];
+    mockFromFn = vi.fn().mockImplementation(() => ({
+      select: vi.fn().mockReturnValue(makeChain(rawPackages, null)),
+    }));
+
+    const { result } = renderHook(() => useConsolidation('op-1'), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data![0]).toMatchObject({
+      orderNumber: 'ORD-48213',
+      customerName: 'Camila Fernández',
+    });
+  });
+
   it('falls back to null comuna fields when the order has no mapped comuna', async () => {
     const rawPackages = [
       {
