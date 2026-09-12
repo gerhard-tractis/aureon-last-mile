@@ -42,7 +42,13 @@ export function OrderActionSlot({
  * each row (per `4f`) rather than replacing the trailing ⋯, and carries
  * its own selection-scoped label rather than reusing the ⋯'s "Enviar …"
  * label — a checkbox is not a send action, and a screen reader must not
- * announce one. 22px, matching `4f`'s own checkbox square.
+ * announce one.
+ *
+ * Round-2 review — `4f` draws the visual box at 22px but says nothing
+ * about the hit area; this module's own touch-floor test enforces 44px
+ * for every other affordance, so the button itself stays 44px (matching
+ * `SendAffordance`'s own wrapper) and the 22px square is an inner visual
+ * element, not the clickable bounds.
  */
 export function SelectCheckbox({
   label,
@@ -60,9 +66,13 @@ export function SelectCheckbox({
       aria-checked={checked}
       aria-label={label}
       onClick={onChange}
-      className={`h-[22px] w-[22px] flex-none rounded-[6px] border-2 transition-colors ${
-        checked ? 'border-accent bg-accent' : 'border-border-strong'
-      }`}
-    />
+      className="grid h-11 w-11 flex-none place-items-center rounded-full transition-colors active:bg-surface-raised"
+    >
+      <span
+        className={`h-[22px] w-[22px] rounded-[6px] border-2 transition-colors ${
+          checked ? 'border-accent bg-accent' : 'border-border-strong'
+        }`}
+      />
+    </button>
   );
 }

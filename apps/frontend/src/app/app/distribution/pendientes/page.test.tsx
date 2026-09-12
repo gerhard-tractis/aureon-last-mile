@@ -149,9 +149,30 @@ describe('PendingSectorizationPage (route: /app/distribution/pendientes)', () =>
   it('renders the titled header and the pending list', () => {
     render(<PendingSectorizationPage />);
     expect(screen.getByText('Pendientes de sectorizar')).toBeInTheDocument();
-    // spec-96 Fase 2 review (Task 2.4) — 4d's compact row leads with the
-    // order, not the barcode (Distribucion.dc.html:620-621).
-    expect(screen.getByText('Pedido #1001')).toBeInTheDocument();
+    expect(screen.getByTestId('pending-order-order-1')).toBeInTheDocument();
+  });
+
+  // Round-2 review, also-fix 3 — the scroll clearance and the visible
+  // footer's row heights come from the same `getFooterContentHeight`
+  // call, but nothing asserted the ACTUAL value: that function returning
+  // 0 would leave every other test green. Expected numbers are computed
+  // independently here (not by importing `getFooterContentHeight`
+  // itself), so a broken formula can't cancel out against its own bug.
+  it('reserves scroll clearance matching the base footer (Escanear/SEL row: 14 + 26 + 56)', () => {
+    render(<PendingSectorizationPage />);
+    expect(screen.getByTestId('pendientes-scroll')).toHaveStyle({
+      paddingBottom: 'calc(96px + env(safe-area-inset-bottom))',
+    });
+  });
+
+  it('reserves more scroll clearance once the selection footer replaces the base row (14 + 26 + 20 + 56 + 52 + 2×10)', async () => {
+    const user = userEvent.setup();
+    render(<PendingSectorizationPage />);
+    await user.click(screen.getByTestId('pendientes-sel-toggle'));
+    await user.click(within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox'));
+    expect(screen.getByTestId('pendientes-scroll')).toHaveStyle({
+      paddingBottom: 'calc(188px + env(safe-area-inset-bottom))',
+    });
   });
 
   it('the back arrow returns to the distribution home', async () => {
@@ -276,7 +297,7 @@ describe('PendingSectorizationPage (route: /app/distribution/pendientes)', () =>
       const checkbox = within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox');
       await user.click(checkbox);
       expect(checkbox).toHaveAttribute('aria-checked', 'true');
-      expect(screen.getByText('1 SELECCIONADO')).toBeInTheDocument();
+      expect(screen.getByTestId('pending-selection-count')).toHaveTextContent('1');
     });
 
     // Review fix — the confirm bar used to be `sticky bottom-0` with no
@@ -293,6 +314,30 @@ describe('PendingSectorizationPage (route: /app/distribution/pendientes)', () =>
       const fixedFooters = document.querySelectorAll('.fixed.inset-x-0.bottom-0');
       expect(fixedFooters).toHaveLength(1);
       expect(fixedFooters[0].contains(confirm)).toBe(true);
+    });
+
+    // Round-2 review, must-fix 1 — swapping the footer's entire contents
+    // once anything is ticked unmounted the ONLY controls (SEL, Escanear)
+    // that could exit selection mode. An operator who mis-taps one row
+    // out of 50 could then only send it, hunt it back down, or leave the
+    // screen. There must always be a reachable way out.
+    it('offers a way to exit selection mode and clear the set while a selection is active', async () => {
+      const user = userEvent.setup();
+      render(<PendingSectorizationPage />);
+      await user.click(screen.getByTestId('pendientes-sel-toggle'));
+      const checkbox1 = within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox');
+      await user.click(checkbox1);
+      expect(screen.getByTestId('pending-selection-count')).toHaveTextContent('1');
+
+      await user.click(screen.getByTestId('pending-selection-cancel'));
+
+      // Back to the base footer: Escanear/SEL, no leftover ticks.
+      expect(screen.getByTestId('pendientes-sel-toggle')).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.getByRole('link', { name: /escanear/i })).toBeInTheDocument();
+      await user.click(screen.getByTestId('pendientes-sel-toggle'));
+      expect(
+        within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox'),
+      ).toHaveAttribute('aria-checked', 'false');
     });
 
     it('selecting both orders and confirming opens the sheet and assigns every package', async () => {
@@ -352,7 +397,7 @@ describe('PendingSectorizationPage (route: /app/distribution/pendientes)', () =>
       await user.click(screen.getByTestId('pendientes-sel-toggle'));
       await user.click(within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox'));
       await user.click(within(screen.getByTestId('pending-order-order-2')).getByRole('checkbox'));
-      expect(screen.getByText('2 SELECCIONADOS')).toBeInTheDocument();
+      expect(screen.getByTestId('pending-selection-count')).toHaveTextContent('2');
 
       mockGroupsData = [
         {
@@ -364,7 +409,9 @@ describe('PendingSectorizationPage (route: /app/distribution/pendientes)', () =>
       ];
       rerender(<PendingSectorizationPage />);
 
-      await vi.waitFor(() => expect(screen.getByText('1 SELECCIONADO')).toBeInTheDocument());
+      await vi.waitFor(() =>
+        expect(screen.getByTestId('pending-selection-count')).toHaveTextContent('1'),
+      );
     });
   });
 });

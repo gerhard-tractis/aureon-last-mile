@@ -94,6 +94,14 @@ export default function PendingSectorizationPage() {
   useEffect(() => {
     setSelectedOrderIds((prev) => {
       if (prev.size === 0) return prev;
+      // Round-2 review — `groups` transiently empties on a genuine load
+      // (or a query error TanStack Query surfaces as `data: undefined` →
+      // the page's own `= []` default), and this effect must not read
+      // that as "every selected order vanished". Whether that can happen
+      // mid-selection today depends on React Query's cache-retention
+      // behaviour, not on this component's own logic — an explicit guard
+      // keeps that true independent of anyone else's semantics.
+      if (groups.length === 0) return prev;
       const validIds = new Set(flattenOrders(groups).map(({ order }) => order.orderId));
       let changed = false;
       const next = new Set<string>();
@@ -140,7 +148,7 @@ export default function PendingSectorizationPage() {
   };
 
   const handleConfirmSelection = () => {
-    const request = buildSelectionRequest(groups, selectedOrderIds);
+    const request = buildSelectionRequest(groups, selectedOrderIds, zones);
     if (request) handleRequestSend(request);
   };
 
@@ -195,6 +203,7 @@ export default function PendingSectorizationPage() {
 
   return (
     <div
+      data-testid="pendientes-scroll"
       className="flex min-h-0 flex-col gap-4 px-6 py-[22px]"
       style={{ paddingBottom: `calc(${footerContentHeight}px + env(safe-area-inset-bottom))` }}
     >

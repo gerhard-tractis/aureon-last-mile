@@ -109,7 +109,10 @@ export function PendingMobileOrderGroup({
         )}
         <div className="min-w-0 flex-1 space-y-0.5">
           <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="font-mono text-[14px] font-semibold tabular-nums tracking-tight text-text">
+            <span
+              data-testid="pending-order-headline"
+              className="font-mono text-[14px] font-semibold tabular-nums tracking-tight text-text"
+            >
               {headline}
             </span>
             <span className={`text-[12px] tabular-nums ${TONE_CLASS[date.tone]}`}>{date.label}</span>

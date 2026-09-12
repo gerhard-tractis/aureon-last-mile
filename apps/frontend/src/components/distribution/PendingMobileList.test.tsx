@@ -167,11 +167,11 @@ describe('PendingMobileList (4d)', () => {
     );
     const header = screen.getByTestId('pending-group-header-zone-a1');
     expect(within(header).getByText('ANDÉN A1')).toBeInTheDocument();
-    // spec-96 Fase 2 review (Task 2.4) — 4d's detail line is `▸ {zone
-    // name} · {comunas}`, not a bare comuna list, and the count is
-    // un-padded.
-    expect(within(header).getByText('▸ Zona Norte · Quilicura')).toBeInTheDocument();
-    expect(within(header).getByText('3 pendientes')).toBeInTheDocument();
+    // Round-2 review — behaviour, not copy: a detail line is present, and
+    // the count reflects the real package total (baseGroup: 1 + 2 = 3),
+    // via testids rather than the exact rendered string.
+    expect(within(header).getByTestId('pending-group-detail')).toBeInTheDocument();
+    expect(within(header).getByTestId('pending-group-count')).toHaveTextContent('3');
   });
 
   it('renders the flagged bucket as SIN ANDÉN ASIGNADO in the warning palette, not as a normal andén', () => {
@@ -193,12 +193,12 @@ describe('PendingMobileList (4d)', () => {
     );
     const row = screen.getByTestId('pending-order-order-1');
     expect(row).toBeInTheDocument();
-    // spec-96 Fase 2 review (Task 2.4) — 4d's compact row (both the
-    // natural single-bulto case and CMP's forced one) leads with the
-    // order, not the barcode (Distribucion.dc.html:620-621: "ORD-48219"
-    // headline, no barcode in that row at all).
-    expect(within(row).getByText('Pedido #1001')).toBeInTheDocument();
-    expect(within(row).queryByText('BULTO-1')).not.toBeInTheDocument();
+    // Round-2 review — behaviour, not copy: the headline carries the
+    // order's own identifying data (its number), not the package's
+    // barcode (Distribucion.dc.html:620-621 leads with the order).
+    const headline = within(row).getByTestId('pending-order-headline');
+    expect(headline).toHaveTextContent('1001');
+    expect(headline).not.toHaveTextContent('BULTO-1');
     // No nested per-package rows for a single-bulto order.
     expect(screen.queryByTestId('pending-package-pkg-1')).not.toBeInTheDocument();
   });
@@ -430,6 +430,17 @@ describe('PendingMobileList (4d)', () => {
       expect(checkbox1).toHaveAttribute('aria-checked', 'false');
       expect(checkbox2).toHaveAttribute('aria-checked', 'false');
       expect(screen.queryAllByRole('button', { name: /enviar/i })).toHaveLength(0);
+    });
+
+    // Round-2 review, also-fix 5 — the module's 44px touch-floor test
+    // queries `getAllByRole('button', {name: /enviar/i})`, which a
+    // `role="checkbox"` node never matches. `4f`'s 22px is a VISUAL
+    // square, not a declared hit-area exception like DET/CMP's — the
+    // checkbox's own clickable button must still meet the floor.
+    it('the checkbox itself meets the 44px touch floor, independent of the 22px visual square', () => {
+      render(<SelectionHarness />);
+      const checkbox = within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox');
+      expect(checkbox.className).toMatch(/h-11|h-\[44px\]|min-h-\[?(4[4-9]|[5-9]\d)/);
     });
 
     // The exact regression class the review caught elsewhere: a handler

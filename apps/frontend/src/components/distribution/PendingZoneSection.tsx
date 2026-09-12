@@ -5,9 +5,8 @@ import type { OrderGroup } from '@/hooks/distribution/usePendingSectorization';
 import type { DockZoneRecord } from '@/hooks/distribution/useDockZones';
 import type { SendToDockRequest } from '@/lib/distribution/pending-selection';
 
-function countLabelFor(orders: OrderGroup[]): string {
-  const total = orders.reduce((n, o) => n + o.packages.length, 0);
-  return `${total} ${total === 1 ? 'pendiente' : 'pendientes'}`;
+function totalPackages(orders: OrderGroup[]): number {
+  return orders.reduce((n, o) => n + o.packages.length, 0);
 }
 
 /**
@@ -74,9 +73,12 @@ export function PendingZoneSection({
         >
           {headerLabel}
         </span>
-        <span className="truncate text-[11px] text-text-secondary">{detailText}</span>
+        <span data-testid="pending-group-detail" className="truncate text-[11px] text-text-secondary">
+          {detailText}
+        </span>
         <span className="ml-auto flex-none font-mono text-[11px] tabular-nums text-text-secondary">
-          {countLabelFor(orders)}
+          <span data-testid="pending-group-count">{totalPackages(orders)}</span>{' '}
+          {totalPackages(orders) === 1 ? 'pendiente' : 'pendientes'}
         </span>
       </header>
 
