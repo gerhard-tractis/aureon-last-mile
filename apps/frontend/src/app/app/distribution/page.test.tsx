@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import DistributionPage from './page';
 import { todayISOInTimezone } from '@/lib/utils/dateFormat';
 
@@ -197,6 +197,44 @@ describe('DistributionPage', () => {
       render(<DistributionPage />);
       const dock = screen.getByTestId('outbound-dock');
       expect(within(dock).getByTestId('outbound-dock-chip').dataset.state).toBe('unopened');
+    });
+
+    describe('Lotes abiertos / Todas filter', () => {
+      const twoZones = [
+        ...mockZones,
+        {
+          id: 'z2', name: 'Andén 2', code: 'D2', is_consolidation: false,
+          comunas: [{ id: 'c2', nombre: 'Maipú' }], is_active: true, operator_id: 'op1',
+        },
+      ];
+
+      it('starts on "Todas" — shows every active zone, including one with no open lote', () => {
+        mockUseDockZones.mockReturnValue({ data: twoZones });
+        mockUseOpenBatchesByZone.mockReturnValue({ data: { z1: 1 } }); // z2 has none
+        render(<DistributionPage />);
+        expect(screen.getAllByTestId('outbound-dock')).toHaveLength(2);
+        expect(screen.getByTestId('dock-filter-all').dataset.active).toBe('true');
+      });
+
+      it('clicking "Lotes abiertos" hides zones with no open lote', () => {
+        mockUseDockZones.mockReturnValue({ data: twoZones });
+        mockUseOpenBatchesByZone.mockReturnValue({ data: { z1: 1 } });
+        render(<DistributionPage />);
+        fireEvent.click(screen.getByTestId('dock-filter-open'));
+        const docks = screen.getAllByTestId('outbound-dock');
+        expect(docks).toHaveLength(1);
+        expect(within(docks[0]).getByText('D1')).toBeInTheDocument();
+        expect(screen.getByTestId('dock-filter-open').dataset.active).toBe('true');
+      });
+
+      it('clicking back to "Todas" restores every zone', () => {
+        mockUseDockZones.mockReturnValue({ data: twoZones });
+        mockUseOpenBatchesByZone.mockReturnValue({ data: { z1: 1 } });
+        render(<DistributionPage />);
+        fireEvent.click(screen.getByTestId('dock-filter-open'));
+        fireEvent.click(screen.getByTestId('dock-filter-all'));
+        expect(screen.getAllByTestId('outbound-dock')).toHaveLength(2);
+      });
     });
   });
 

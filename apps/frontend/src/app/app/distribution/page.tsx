@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Layers, LayoutGrid, ScanLine, Settings } from 'lucide-react';
@@ -44,6 +45,27 @@ import { todayISOInTimezone } from '@/lib/utils/dateFormat';
  * `quicksort-exception.ts` records the event but no hook reads it back
  * operator-wide yet.
  *
+ * Review fix — `unmatchedComunaCount` sums `order_count` across
+ * `get_unmatched_comunas` rows rather than counting the rows: the panel's
+ * other count (`noDockCount`) is always orders, and mixing units inside
+ * one badge/total was a real bug. The `Comunas no reconocidas` StatTile
+ * above is untouched — it keeps its own `unmatched.length`, unaffected.
+ *
+ * `usePendingSectorization` on this landing page is an unbounded fetch
+ * (no `.limit()`) reduced to a single integer (`noDockCount`); at prod
+ * scale (~61k packages) PostgREST's default row cap would silently
+ * truncate it with no error, under-reporting the count. Known cost, not
+ * fixed here — the honest fix is a count-only source (ideally folded into
+ * `get_distribution_overview`), a follow-up this note exists to not let
+ * evaporate. `useOpenBatchesByZone` has no such problem: one row per zone
+ * per refetch cycle, and `idx_dock_batches_operator_id` covers it.
+ *
+ * `incidentsLoading` covers `usePendingSectorization` being `enabled`
+ * only once `useDockZones` resolves: while zones are loading, that
+ * query's own `isLoading` reports false (never started), so `zonesLoading`
+ * is included too — otherwise a real backlog could still read as "Sin
+ * incidencias" for a beat.
+ *
  * spec-68 Fase 2 (Decisión 1) — below `lg` (1024px) this swaps entirely for
  * `DistributionMobileView`'s phone card layout (mock 4c) instead of
  * squeezing the KPI grid / OutboundDockGrid / ActiveSortersPanel /
@@ -63,16 +85,22 @@ function timeLabel(iso: string | null): string | null {
 export default function DistributionPage() {
   const { operatorId } = useOperatorId();
   const router = useRouter();
+  // `4a:180-183` draws `Lotes abiertos` / `Todas` — the two states never
+  // co-render in a static mock, so the artboard doesn't settle which one
+  // starts active. Default 'all': the artboard's drawn grid shows all 6
+  // tiles, including `A6` (SIN ABRIR, no open lote) — starting on 'open'
+  // would hide the tile the mock actually shows.
+  const [dockFilter, setDockFilter] = useState<'open' | 'all'>('all');
   const isBelowLg = useIsBelowLg();
   const { data: userName = null } = useCurrentUserName();
   const { data: kpis, isLoading: kpisLoading } = useDistributionKPIs(operatorId);
   const { data: overview, isLoading: overviewLoading } = useDistributionOverview(operatorId);
   const { data: consolidationPackages = [] } = useConsolidation(operatorId);
-  const { data: zones } = useDockZones(operatorId);
+  const { data: zones, isLoading: zonesLoading } = useDockZones(operatorId);
   const { data: sectorizedCounts } = useSectorizedByZone(operatorId);
   const { data: openBatchesByZone } = useOpenBatchesByZone(operatorId);
-  const { data: unmatched = [] } = useUnmatchedComunas(operatorId);
-  const { data: pendingGroups } = usePendingSectorization(operatorId);
+  const { data: unmatched = [], isLoading: unmatchedLoading } = useUnmatchedComunas(operatorId);
+  const { data: pendingGroups, isLoading: pendingLoading } = usePendingSectorization(operatorId);
   const releaseFromConsolidation = useReleaseFromConsolidation(operatorId ?? '');
 
   // spec-68 Fase 2 (Decisión 1) — the SAME padded container the desktop
@@ -131,6 +159,20 @@ export default function DistributionPage() {
     })),
   );
   const noDockCount = countNoDockIncidents(pendingOrders, allZones, today);
+
+  // Review fix — order-level throughout the incidents panel. This used to
+  // pass `unmatched.length` (distinct comuna STRINGS), while `noDockCount`
+  // is always orders — two different units feeding one panel/badge total.
+  // get_unmatched_comunas's own `order_count` per row makes the order-level
+  // total available without a new query; sum it instead of counting rows.
+  // The StatTile above is untouched — it keeps `unmatched.length`, per this
+  // phase's note that it's already correct.
+  const unmatchedOrderCount = unmatched.reduce((sum, u) => sum + (u.order_count ?? 0), 0);
+  // Also gated on zonesLoading: usePendingSectorization is `enabled` only
+  // once zones resolve, so while zones are still loading its OWN
+  // `isLoading` reports false (never started) rather than "unknown" —
+  // exactly the illusion that let a real backlog read as "no incidents".
+  const incidentsLoading = unmatchedLoading || pendingLoading || zonesLoading;
 
   // Sorted vs everything the shift has touched, for the percentage the mock
   // shows next to CLASIFICADOS.
@@ -208,7 +250,39 @@ export default function DistributionPage() {
             <h2 className="font-heading text-[13px] font-semibold leading-none text-text">
               Andenes de salida
             </h2>
-            <span className="text-[11px] leading-none text-text-muted">avance por destino</span>
+            <span className="text-[11px] leading-none text-text-muted">
+              capacidad y avance por destino
+            </span>
+            <div className="ml-auto flex gap-1.5">
+              <button
+                type="button"
+                data-testid="dock-filter-open"
+                data-active={dockFilter === 'open'}
+                onClick={() => setDockFilter('open')}
+                className={
+                  'rounded-md border px-2.5 py-1 text-[11px] font-semibold ' +
+                  (dockFilter === 'open'
+                    ? 'border-border bg-surface-raised text-text'
+                    : 'border-border text-text-secondary')
+                }
+              >
+                Lotes abiertos
+              </button>
+              <button
+                type="button"
+                data-testid="dock-filter-all"
+                data-active={dockFilter === 'all'}
+                onClick={() => setDockFilter('all')}
+                className={
+                  'rounded-md border px-2.5 py-1 text-[11px] font-medium ' +
+                  (dockFilter === 'all'
+                    ? 'border-border bg-surface-raised text-text'
+                    : 'border-border text-text-secondary')
+                }
+              >
+                Todas
+              </button>
+            </div>
           </div>
 
           {activeZones.length === 0 ? (
@@ -220,7 +294,11 @@ export default function DistributionPage() {
             />
           ) : (
             <OutboundDockGrid
-              zones={activeZones}
+              zones={
+                dockFilter === 'open'
+                  ? activeZones.filter((z) => (openBatchesByZone?.[z.id] ?? 0) > 0)
+                  : activeZones
+              }
               sectorizedCounts={sectorizedCounts}
               openBatches={openBatchesByZone}
             />
@@ -237,8 +315,9 @@ export default function DistributionPage() {
               reads it back operator-wide yet — a new query, not wiring of
               an existing one. Declared open rather than shipped as 0. */}
           <SectorizationIncidentsPanel
-            unmatchedComunaCount={unmatched.length}
+            unmatchedComunaCount={unmatchedOrderCount}
             noDockCount={noDockCount}
+            isLoading={incidentsLoading}
             onResolve={() => router.push('/app/distribution/settings')}
           />
         </aside>
