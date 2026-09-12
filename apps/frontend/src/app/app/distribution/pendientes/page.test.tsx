@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PendingSectorizationPage from './page';
 
@@ -224,5 +224,62 @@ describe('PendingSectorizationPage (route: /app/distribution/pendientes)', () =>
   it('carries exactly one top-level heading', () => {
     render(<PendingSectorizationPage />);
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  });
+
+  // Fase 2 (spec-96) — `4d`'s DET/CMP control, wired at the page level.
+  describe('DET / CMP', () => {
+    it('defaults to DET, expanding the multi-bulto order', () => {
+      render(<PendingSectorizationPage />);
+      expect(screen.getByTestId('pendientes-mode-det')).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByTestId('pending-package-pkg-2')).toBeInTheDocument();
+    });
+
+    it('switching to CMP collapses the multi-bulto order into one row', async () => {
+      const user = userEvent.setup();
+      render(<PendingSectorizationPage />);
+      await user.click(screen.getByTestId('pendientes-mode-cmp'));
+      expect(screen.getByTestId('pendientes-mode-cmp')).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByTestId('pending-order-order-2')).toBeInTheDocument();
+      expect(screen.queryByTestId('pending-package-pkg-2')).not.toBeInTheDocument();
+    });
+  });
+
+  // Fase 2 (spec-96) — `4d`'s SEL control. Confirming a selection reuses
+  // the same SendToDockSheet pipeline the single-order ⋯ affordance does.
+  describe('SEL', () => {
+    it('toggling SEL exposes a checkbox per order and hides the ⋯ affordances', async () => {
+      const user = userEvent.setup();
+      render(<PendingSectorizationPage />);
+      await user.click(screen.getByTestId('pendientes-sel-toggle'));
+      expect(screen.getByTestId('pendientes-sel-toggle')).toHaveAttribute('aria-pressed', 'true');
+      expect(
+        within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox'),
+      ).toBeInTheDocument();
+      expect(screen.queryAllByRole('button', { name: /enviar/i })).toHaveLength(0);
+    });
+
+    it('selecting both orders and confirming opens the sheet and assigns every package', async () => {
+      const user = userEvent.setup();
+      render(<PendingSectorizationPage />);
+      await user.click(screen.getByTestId('pendientes-sel-toggle'));
+      await user.click(within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox'));
+      await user.click(within(screen.getByTestId('pending-order-order-2')).getByRole('checkbox'));
+      await user.click(screen.getByTestId('pending-selection-confirm'));
+
+      // The sheet is now open, driven by the combined request.
+      expect(screen.getByRole('button', { name: 'Enviar a A1' })).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Enviar a A1' }));
+
+      await vi.waitFor(() => expect(mockMutateAsync).toHaveBeenCalledTimes(3));
+      expect(mockMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ packageId: 'pkg-1', zoneId: 'zone-a1' }),
+      );
+      expect(mockMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ packageId: 'pkg-2', zoneId: 'zone-a1' }),
+      );
+      expect(mockMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ packageId: 'pkg-3', zoneId: 'zone-a1' }),
+      );
+    });
   });
 });

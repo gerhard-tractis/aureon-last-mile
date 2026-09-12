@@ -16,6 +16,39 @@ import { useManualDockAssignment } from '@/hooks/distribution/useManualDockAssig
 import { useOperatorId } from '@/hooks/useOperatorId';
 
 /**
+ * spec-96 Fase 2 — `4d`'s DET/CMP segmented control, in the header row
+ * beside the title. A sibling of `DistributionMobileHeader`, not a prop on
+ * it: that component is shared across eight call sites (including
+ * Despacho) and this toggle belongs to this one screen only.
+ */
+function DetCmpToggle({
+  mode,
+  onChange,
+}: {
+  mode: 'det' | 'cmp';
+  onChange: (mode: 'det' | 'cmp') => void;
+}) {
+  return (
+    <span className="flex flex-none overflow-hidden rounded-lg border border-border-strong">
+      {(['det', 'cmp'] as const).map((option) => (
+        <button
+          key={option}
+          type="button"
+          aria-pressed={mode === option}
+          onClick={() => onChange(option)}
+          data-testid={`pendientes-mode-${option}`}
+          className={`px-2.5 py-2 font-mono text-[10px] font-semibold uppercase tracking-[.05em] ${
+            mode === option ? 'bg-text text-bg' : 'text-text-secondary'
+          }`}
+        >
+          {option.toUpperCase()}
+        </button>
+      ))}
+    </span>
+  );
+}
+
+/**
  * spec-68 Fase 3 — `4d`, pendientes de sectorizar.
  *
  * Mobile-only in spirit but not desktop-guarded (Decisión 2's fixed-footer
@@ -42,14 +75,21 @@ export default function PendingSectorizationPage() {
 
   const [sendRequest, setSendRequest] = useState<SendToDockRequest | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // spec-96 Fase 2 — `4d`'s DET/CMP and SEL controls.
+  const [viewMode, setViewMode] = useState<'det' | 'cmp'>('det');
+  const [selectionMode, setSelectionMode] = useState(false);
 
   const activeZones = zones.filter((z) => z.is_active);
   const totalPending = groups.reduce(
     (n, g) => n + g.orders.reduce((m, o) => m + o.packages.length, 0),
     0,
   );
+  const totalOrders = groups.reduce((n, g) => n + g.orders.length, 0);
 
   const handleRequestSend = (request: SendToDockRequest) => {
+    // Confirming a selection (or a single ⋯) hands off to the sheet — SEL
+    // mode itself has nothing left to do once the request is in flight.
+    setSelectionMode(false);
     setSendRequest(request);
     setSheetOpen(true);
   };
@@ -98,12 +138,19 @@ export default function PendingSectorizationPage() {
 
   return (
     <div className="flex min-h-0 flex-col gap-4 px-6 py-[22px] pb-[104px]">
-      <DistributionMobileHeader
-        variant="titled"
-        title="Pendientes de sectorizar"
-        subtitle={`${totalPending} ${totalPending === 1 ? 'pendiente' : 'pendientes'}`}
-        onBack={() => router.push('/app/distribution')}
-      />
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <DistributionMobileHeader
+            variant="titled"
+            title="Pendientes de sectorizar"
+            subtitle={`${totalPending} ${totalPending === 1 ? 'bulto' : 'bultos'} · ${totalOrders} ${
+              totalOrders === 1 ? 'orden' : 'órdenes'
+            } · en bodega`}
+            onBack={() => router.push('/app/distribution')}
+          />
+        </div>
+        <DetCmpToggle mode={viewMode} onChange={setViewMode} />
+      </div>
 
       {isLoading ? (
         <Skeleton className="h-40 w-full rounded-xl" />
@@ -113,6 +160,8 @@ export default function PendingSectorizationPage() {
           zones={zones}
           canManualAssign={manualAssign.canUse}
           onRequestSend={handleRequestSend}
+          mode={viewMode}
+          selectionMode={selectionMode}
         />
       )}
 
@@ -123,20 +172,31 @@ export default function PendingSectorizationPage() {
         activeZones={activeZones}
         sectorizedCounts={sectorizedCounts}
         canUse={manualAssign.canUse}
+        mixedComunaBatch={sendRequest?.mixedComunaBatch ?? false}
         onConfirm={handleConfirm}
       />
 
       <div className="fixed inset-x-0 bottom-0 z-40 flex items-center gap-3 border-t border-border bg-surface px-4 py-3 [padding-bottom:calc(0.75rem+env(safe-area-inset-bottom))]">
-        <span className="flex-1 truncate font-mono text-[12.5px] text-text-secondary">
-          {totalPending} {totalPending === 1 ? 'pendiente' : 'pendientes'}
-        </span>
         <Link
           href="/app/distribution/quicksort"
-          className="flex h-[56px] flex-none items-center justify-center gap-2 rounded-xl bg-accent-light px-6 text-[15px] font-semibold text-accent-light-foreground transition-opacity active:opacity-90"
+          className="flex h-[56px] flex-1 items-center justify-center gap-2 rounded-xl bg-accent-light px-6 text-[15px] font-semibold text-accent-light-foreground transition-opacity active:opacity-90"
         >
           <ScanLine className="h-5 w-5" />
           Escanear
         </Link>
+        {manualAssign.canUse && (
+          <button
+            type="button"
+            aria-pressed={selectionMode}
+            onClick={() => setSelectionMode((v) => !v)}
+            data-testid="pendientes-sel-toggle"
+            className={`flex h-[56px] w-[56px] flex-none items-center justify-center rounded-xl border font-mono text-[11px] font-semibold ${
+              selectionMode ? 'border-accent bg-accent-muted text-accent' : 'border-border-strong text-text-body'
+            }`}
+          >
+            SEL
+          </button>
+        )}
       </div>
     </div>
   );
