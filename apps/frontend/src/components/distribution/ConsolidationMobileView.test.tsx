@@ -181,34 +181,10 @@ describe('ConsolidationMobileView (4f)', () => {
     expect(screen.getByRole('checkbox', { name: /BULTO-1/i })).toBeChecked();
   });
 
-  it('shows a running N SELECCIONADOS count only once something is selected', () => {
-    const { rerender } = render(
-      <ConsolidationMobileView
-        packages={[pkg({ id: 'a' }), pkg({ id: 'b', label: 'BULTO-2' })]}
-        zones={zones}
-        selectedIds={new Set()}
-        onToggleSelect={vi.fn()}
-        now={NOW}
-      />,
-    );
-    expect(screen.queryByTestId('consolidation-selection-count')).not.toBeInTheDocument();
-
-    rerender(
-      <ConsolidationMobileView
-        packages={[pkg({ id: 'a' }), pkg({ id: 'b', label: 'BULTO-2' })]}
-        zones={zones}
-        selectedIds={new Set(['a', 'b'])}
-        onToggleSelect={vi.fn()}
-        now={NOW}
-      />,
-    );
-    expect(screen.getByTestId('consolidation-selection-count')).toHaveTextContent('2 SELECCIONADOS');
-  });
-
-  it('singularizes the selection count for exactly one', () => {
-    renderView({ packages: [pkg({ id: 'a' })], selectedIds: new Set(['a']) });
-    expect(screen.getByTestId('consolidation-selection-count')).toHaveTextContent('1 SELECCIONADO');
-  });
+  // The "N SELECCIONADOS" counter moved to ConsolidationPageContent's
+  // footer (spec-96 Fase 3 review) — `4f` draws it there, after the list
+  // and before the buttons, not floating above the sections. See
+  // ConsolidationPageContent.test.tsx for its behavioural tests.
 
   describe('accessibility floor', () => {
     it('urgent rows meet the 60px floor', () => {

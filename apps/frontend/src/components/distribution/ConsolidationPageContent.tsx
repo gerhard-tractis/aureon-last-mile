@@ -44,6 +44,47 @@ import type { SendToDockRequest } from '@/components/distribution/PendingMobileL
  */
 
 /**
+ * spec-96 Fase 3 review, must-fix 2 — the ONLY place these numbers exist.
+ * The footer used to be a single row and the scroll area above it
+ * reserved a flat `pb-[104px]` sized for that one row. Once the footer
+ * became a stacked column (an optional counter, an optional "Mover a
+ * andén", and always "Liberar a sectorización"), that literal
+ * under-reserved by up to ~40px — the last PRÓXIMOS row's checkbox sat
+ * under the fixed footer with no scroll left to reach it, for any role
+ * that sees both buttons. Both the visible footer's rows and the
+ * reservation above it are built from this same object via
+ * `getFooterContentHeight`, so a future row added to one is added to
+ * both, instead of two hardcoded literals that can silently disagree.
+ */
+const FOOTER_METRICS = {
+  paddingY: 12,
+  gap: 10,
+  moveButtonHeight: 56,
+  releaseButtonHeight: 52,
+  counterRowHeight: 20,
+} as const;
+
+export function getFooterContentHeight({
+  hasMoveButton,
+  hasCounter,
+}: {
+  hasMoveButton: boolean;
+  hasCounter: boolean;
+}): number {
+  const candidates: (number | null)[] = [
+    hasCounter ? FOOTER_METRICS.counterRowHeight : null,
+    hasMoveButton ? FOOTER_METRICS.moveButtonHeight : null,
+    FOOTER_METRICS.releaseButtonHeight,
+  ];
+  const rows = candidates.filter((n): n is number => n !== null);
+  return (
+    FOOTER_METRICS.paddingY * 2 +
+    rows.reduce((sum, n) => sum + n, 0) +
+    (rows.length - 1) * FOOTER_METRICS.gap
+  );
+}
+
+/**
  * The zone SendToDockSheet pre-selects for a bulk "Mover a andén" request:
  * the first selected package's own comuna match. Fase 4 review (finding
  * #1) — when nothing in the selection matches any andén (every selected
@@ -231,8 +272,18 @@ export function ConsolidationPageContent({ now }: ConsolidationPageContentProps 
     consolidationZone ? ` · zona ${consolidationZone.code}` : ''
   }`;
 
+  const hasCounter = selectedPackages.length > 0;
+  const footerContentHeight = getFooterContentHeight({
+    hasMoveButton: manualAssign.canUse,
+    hasCounter,
+  });
+
   return (
-    <div className="flex min-h-0 flex-col gap-4 px-6 py-[22px] pb-[104px]">
+    <div
+      data-testid="consolidation-scroll"
+      className="flex min-h-0 flex-col gap-4 px-6 py-[22px]"
+      style={{ paddingBottom: `calc(${footerContentHeight}px + env(safe-area-inset-bottom))` }}
+    >
       <DistributionMobileHeader
         variant="titled"
         title="Consolidación"
@@ -264,17 +315,37 @@ export function ConsolidationPageContent({ now }: ConsolidationPageContentProps 
         onConfirm={handleConfirm}
       />
 
-      {/* Task 3.2 (4f) — the footer stacks full-width: "Mover a andén"
-          primary on top, "Liberar a sectorización" secondary below. The
-          app had them side by side with Liberar first; the mock draws a
-          column with Mover first. */}
-      <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col gap-2.5 border-t border-border bg-surface px-4 py-3 [padding-bottom:calc(0.75rem+env(safe-area-inset-bottom))]">
+      {/* Task 3.2 (4f) — the footer stacks full-width: the "N
+          SELECCIONADOS" counter (moved here from ConsolidationMobileView
+          — Fase 3 review), then "Mover a andén" primary, then "Liberar a
+          sectorización" secondary. The app used to render the counter
+          floating above the list and the two buttons side by side with
+          Liberar first; the mock draws all three stacked here, in this
+          order. Every row height below comes from FOOTER_METRICS, the
+          same object `getFooterContentHeight` uses for the scroll
+          clearance above. */}
+      <div
+        className="fixed inset-x-0 bottom-0 z-40 flex flex-col border-t border-border bg-surface px-4"
+        style={{
+          gap: FOOTER_METRICS.gap,
+          paddingTop: FOOTER_METRICS.paddingY,
+          paddingBottom: `calc(${FOOTER_METRICS.paddingY}px + env(safe-area-inset-bottom))`,
+        }}
+      >
+        {hasCounter && (
+          <div className="flex items-center" style={{ height: FOOTER_METRICS.counterRowHeight }}>
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-[.1em] text-text-secondary">
+              {selectedPackages.length} {selectedPackages.length === 1 ? 'SELECCIONADO' : 'SELECCIONADOS'}
+            </span>
+          </div>
+        )}
         {manualAssign.canUse && (
           <button
             type="button"
             onClick={handleMoveToAnden}
             disabled={moveDisabled}
-            className="flex h-[56px] w-full items-center justify-center rounded-xl bg-accent-light px-3 text-[14.5px] font-semibold text-accent-light-foreground transition-opacity active:opacity-90 disabled:opacity-40"
+            style={{ height: FOOTER_METRICS.moveButtonHeight }}
+            className="flex w-full items-center justify-center rounded-xl bg-accent-light px-3 text-[14.5px] font-semibold text-accent-light-foreground transition-opacity active:opacity-90 disabled:opacity-40"
           >
             Mover a andén
           </button>
@@ -283,7 +354,8 @@ export function ConsolidationPageContent({ now }: ConsolidationPageContentProps 
           type="button"
           onClick={handleRelease}
           disabled={selectedPackages.length === 0}
-          className="flex h-[52px] w-full items-center justify-center rounded-xl border border-border-strong bg-surface px-3 text-[13px] font-semibold text-text transition-colors active:bg-surface-raised disabled:opacity-40"
+          style={{ height: FOOTER_METRICS.releaseButtonHeight }}
+          className="flex w-full items-center justify-center rounded-xl border border-border-strong bg-surface px-3 text-[13px] font-semibold text-text transition-colors active:bg-surface-raised disabled:opacity-40"
         >
           Liberar a sectorización
         </button>
