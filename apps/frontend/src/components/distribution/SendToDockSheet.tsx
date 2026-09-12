@@ -189,7 +189,7 @@ function ZoneOption({
         )}
       </div>
       {zone.is_consolidation ? (
-        <p className="text-[11.5px] text-text-secondary">Queda retenido hasta su fecha</p>
+        <p className="text-[11.5px] text-text-secondary">queda retenido hasta su fecha</p>
       ) : (
         <DockCapacityBar count={count} capacity={zone.capacity} />
       )}
