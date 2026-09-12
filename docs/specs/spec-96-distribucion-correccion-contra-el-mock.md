@@ -722,14 +722,85 @@ hermanos.
 
 ---
 
-### Fase 8 — Andenes de la nave `[pending]`
+### Fase 8 — Andenes de la nave `[in_progress]`
+
+> Implementado por: implementer — rama `feat/spec-96-fase-8-andenes`, SHAs `76eea78..8d75813` (ronda 1: `76eea78..58afdc7` implementación, `da411b8..e3e3fdd` correcciones; ronda 2: `93a0ce3..8a60b01`; ronda 3: `8d75813`)
+> Review: reviewer (opus), ronda 1 — 4 hallazgos bloqueantes (banner sobre un predicado excluyente con `get_unmatched_comunas`/`determineDockZone().flagged` y agrupado por texto crudo; el único test de esa fuente pasaba con el conteo hardcodeado; `SIN ABRIR` mapeado a "sin capacidad" cuando `4a` lo define como "sin lote abierto" — el mock se contradice, ruling del coordinador mientras se escala al diseñador; tres copias de la aritmética `capacity > 0` que `getDockCapacityStatus` ya expone) + 4 "Also fix" — los 8 cerrados. Ronda 2 — 1 hallazgo obligatorio (`usePendingSectorization` sin `.limit()` ni chequeo de truncamiento contra el `max_rows = 1000` de PostgREST) + 6 "Also fix" + limpieza — los 9 cerrados con `assertNotTruncated` (throw). Ronda 3 — **el coordinador revirtió su propia instrucción de la ronda 2**: el throw arreglaba `/andenes` pero rompía los otros tres consumidores del mismo hook (`/pendientes` Fase 2, quicksort, `/batch`), colas operativas que a escala de producción podrían seguir trabajando con los primeros 1000 pendientes en vez de recibir un error duro. Cambiado de throw a flag: `usePendingSectorization` devuelve `{ groups, truncated }` internamente y expone `data` (sin cambios de forma para los otros cuatro call sites) más `truncated` (nuevo, sólo `/andenes` lo lee); el banner trata `truncated` como *desconocido*, nunca como cero confirmado, con un tercer estado visual distinto de "cargando" y del conteo real. Mutation-test manual en las tres rondas (detalle abajo y en los mensajes de commit).
+> QA: pendiente — todavía no hay PR (instrucción explícita: sin PR, sin self-review, sin rebase). Corresponde al orquestador abrir el PR y leer el reporte de `e2e-qa`, no el check.
+> Downstream: revisado spec-96 fase 4 (`OutboundDockGrid.tsx`, no tocado por esta fase) y fase 6 (`DistributionMobileView.tsx` tiene el mismo mis-wiring de `SIN ABRIR`/predicado de comunas en `main`; el coordinador lo registra como hallazgo abierto de Fase 6, no de ésta) — sin cambios necesarios en ninguna. Verificado también que `/pendientes` (Fase 2), quicksort, `/batch` y `/batch/[batchId]` — los otros cuatro consumidores de `usePendingSectorization` — no necesitan ningún cambio: siguen leyendo `data` como `ZoneGroup[]`, idéntico a antes de esta fase; sus tests (27 pasando) no se tocaron.
+
+**Hallazgos abiertos, que esta fase NO cierra:**
+
+- **`SIN ABRIR` es una desviación conocida del benchmark, no un fallback
+  coherente — decisión del coordinador, no reversible en esta fase.** `4l:1236`
+  dibuja `SIN ABRIR` en `A6`, cuya única señal distintiva es la capacidad sin
+  configurar; un chip capacity-derived reproduciría `4l` exactamente. Esta
+  lista no lo emite porque Fase 4 ya envió `SIN ABRIR` activity-derived
+  ("sin lote abierto") para el `A6` de `4a` — que sí tiene capacidad
+  configurada en ese artboard — y un mismo texto con dos significados en
+  escritorio y móvil se juzgó peor que una fila sin ese chip. Sigue siendo
+  falsificable: si el diseñador falla al revés, es un cambio de una línea en
+  `chipStateFor`.
+- **`EN RITMO` y el resto de la familia de chips de actividad siguen sin
+  fuente** — mismo hallazgo abierto que `OutboundDockGrid` (`4a`, Fase 0/4):
+  esta lista no recibe lotes/actividad por andén.
+- **La dependencia declarada (`Depende de: spec-96 fase 0`) no se cumplió.**
+  Fase 0 (mergeada, `[done]`) revirtió la derivación de chips de actividad y
+  se la cedió a Fase 4 — nunca entregó lo que esta fase esperaba consumir.
+  Se implementó igual, con el subconjunto capacity-derived únicamente; se
+  declara aquí porque el campo existe precisamente para que esto no se
+  descubra tarde.
+- **`usePendingSectorization` sigue siendo un fetch nuevo en esta ruta**
+  (hallazgo #1 de la ronda 1, con su costo de bytes/latencia): trae todo
+  paquete `en_bodega` del operador. Cache key compartida con `/pendientes` y
+  quicksort, así que en la navegación normal (`4c` → andenes) suele llegar
+  tibio; en frío, o a escala de producción (~61k paquetes), no es gratis.
+- **Una RPC de solo conteo sería la forma correcta a largo plazo** para el
+  banner de comunas sin andén, en vez de traer y agrupar en el cliente todo
+  paquete `en_bodega`. Declarado, no implementado — es query nueva y el
+  coordinador lo puso fuera de alcance explícitamente.
+- **El módulo compartido de truncamiento queda pendiente, y su forma cambió
+  de tirar a reportar.** `MAX_ROWS_PER_QUERY` sigue duplicado entre
+  `usePendingSectorization.ts` (reporta `truncated`) y
+  `hooks/dispatch/useEnRutaSnapshot.ts` (lanza — `assertNotTruncated`, no
+  exportado; `hooks/dispatch/` es otro módulo, no tocado por esta fase). Un
+  `lib/supabase/` compartido que exponga AMBAS variantes — un flag y un
+  assert que tira — es la forma correcta una vez que esta fase y Fase 2/
+  Fase 4 estén mergeadas, con `useEnRutaSnapshot.ts` migrado sobre él. Los
+  dos hooks necesitan comportamientos distintos ante el mismo límite (cola de
+  trabajo que sigue operando vs. número derivado de monitoreo que debe
+  fallar visible), no aritmética distinta — eso es lo que el módulo
+  compartido tendría que capturar, no sólo la constante `1000`.
+- **El nombre de la nave ("Nave Quilicura") no tiene fuente** en ningún
+  componente existente — queda fuera del subtítulo en vez de hardcodearlo.
+- **La geometría del `flex-1`/scroll/footer-fijo con 12+ andenes y
+  `MobileTabBar` no se verificó en un navegador.** Confirmado por lectura de
+  CSS: `/andenes` reutiliza exactamente el mecanismo de reserva de altura que
+  `AppLayout.tsx` ya usa (`<main>` con `pb-[var(--mobile-tabbar-h)]` cuando
+  `showMobileTabs`, `MobileTabBar` fijo a `bottom-0` con esa misma altura) —
+  con la raíz de la página ahora en `flex-1`, el contenedor
+  `overflow-y-auto` queda acotado dentro del espacio que `<main>` ya reserva
+  sin pisar la tab bar. Pero jsdom no hace layout real; no se puede confirmar
+  empíricamente que la última fila queda alcanzable con 12+ andenes sin un
+  navegador. El coordinador dijo que mediría esto en QA a 402 px.
+- **QA no puede evidenciar los tonos `warning`/`error`** (cero paquetes
+  sectorizados en el fixture) **ni confirmar visualmente el banner corregido
+  ni el estado indeterminado por truncamiento** (no se verificó si el
+  fixture actual tiene al menos una orden con comuna resuelta y sin andén
+  que la cubra, ni si tiene 1000+ paquetes `en_bodega` para disparar
+  `truncated` — la lógica está mutation-testeada contra fixtures locales,
+  no contra QA en vivo).
 
 **Benchmark:** `4l`.
 
 **Depende de:** spec-96 fase 0
 
 **Archivos:** `apps/frontend/src/components/distribution/DockListMobile.tsx`,
-`apps/frontend/src/app/app/distribution/andenes/page.tsx`, y sus tests hermanos.
+`apps/frontend/src/app/app/distribution/andenes/page.tsx`,
+`apps/frontend/src/hooks/distribution/usePendingSectorization.ts` (extendido en
+ronda 2 por el coordinador, primero para `assertNotTruncated`, revertido en
+ronda 3 a exponer `truncated` como dato en vez de lanzar; Fase 2 y Fase 4 no
+tocan este archivo), y sus tests hermanos.
 
 **Notas no visuales:**
 
@@ -743,11 +814,11 @@ hermanos.
 
 **Task 8.1 — The unconfigured zone is a first-class state**
 
-- [ ] Write a failing test: a zone with `capacity: null` renders no occupancy element **and** renders an explanatory region; a zone with a capacity renders the bar.
-- [ ] Run — expect the first half to pass already (`DockCapacityBar` returns nothing) and the explanatory region to fail.
-- [ ] Implement. Run — expect PASS. Commit.
+- [x] Write a failing test: a zone with `capacity: null` renders no occupancy element **and** renders an explanatory region; a zone with a capacity renders the bar.
+- [x] Run — expect the first half to pass already (`DockCapacityBar` returns nothing) and the explanatory region to fail.
+- [x] Implement. Run — expect PASS. Commit.
 
-**Task 8.2 — Close the visual diff** on `4l` at 402 px. Run suite + type-check, PR with auto-merge.
+**Task 8.2 — Close the visual diff** on `4l` at 402 px. Run suite + type-check, PR with auto-merge. — Closed except the PR (not opened, per this round's explicit instruction). Round 1: scroll container around the row list with the comunas-banner as a fixed footer outside it (`4l:1179-1250`); `A6`'s subtitle slot carries "sin capacidad configurada" instead of the comuna list. Round 2: the page root lacked `flex-1`, so that "fixed footer" was actually inert (in-flow, invisible past 6 docks) — one class fixed it; the banner had collapsed `4l`'s two nested toned elements into one, reading as plain text — restored both layers; the consolidation zone no longer gets the capacity-incomplete note. Round 3: no visual change — the banner's data source went from throwing to reporting `truncated`, with a third indeterminate visual state for that case. `warning`/`error` tones and the `flex-1`/scroll/footer geometry at 12+ docks remain unverified in a real browser, per the open findings above.
 
 ---
 

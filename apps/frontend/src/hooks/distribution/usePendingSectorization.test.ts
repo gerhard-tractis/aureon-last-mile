@@ -380,4 +380,100 @@ describe('usePendingSectorization', () => {
     expect(result.current.data![0].zone.id).toBe('consol');
     expect(result.current.data![0].matchResult.reason).toBe('future_date');
   });
+
+  // spec-96 Fase 8 review round 3 — PostgREST's `max_rows` (config.toml)
+  // caps this unbounded query at 1000. Round 2 made this THROW at the cap,
+  // which fixed the andenes banner but broke the other three consumers
+  // (`/pendientes`, quicksort, `/batch`) — operational work queues that
+  // could perfectly well keep working from the first 1000 rows, unlike a
+  // monitoring derived-count screen where refusing to show a number is the
+  // safe failure. So: report as data (`truncated: true`), never throw, and
+  // never silently drop the rows either — a work queue still gets to work
+  // from what it has.
+  describe('truncation is reported, not thrown', () => {
+    it('flags truncated: true and still returns the (capped) groups at the row cap', async () => {
+      const { useDockZones } = await import('@/hooks/distribution/useDockZones');
+      vi.mocked(useDockZones).mockReturnValue({
+        data: [ZONE_ANDEN, ZONE_CONSOL],
+        isLoading: false,
+      } as unknown as ReturnType<typeof useDockZones>);
+
+      const cappedRows = Array.from({ length: 1000 }, (_, i) => ({
+        id: `pkg-${i}`,
+        label: `PKG-${i}`,
+        order_id: `ord-${i}`,
+        sku_items: [],
+        orders: {
+          order_number: `#${i}`,
+          comuna_id: 'comuna-lc',
+          delivery_date: '2026-05-10',
+          chile_comunas: { nombre: 'Las Condes' },
+        },
+      }));
+      mockOrder.mockResolvedValue({ data: cappedRows, error: null });
+
+      const { result } = renderHook(() => usePendingSectorization('op-1'), { wrapper });
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(result.current.isError).toBe(false);
+      expect(result.current.truncated).toBe(true);
+      // The rows it DID get are still usable — a work queue keeps working.
+      expect(result.current.data).toHaveLength(1);
+      expect(result.current.data![0].orders).toHaveLength(1000);
+    });
+
+    it('flags truncated: false one row under the cap', async () => {
+      const { useDockZones } = await import('@/hooks/distribution/useDockZones');
+      vi.mocked(useDockZones).mockReturnValue({
+        data: [ZONE_ANDEN, ZONE_CONSOL],
+        isLoading: false,
+      } as unknown as ReturnType<typeof useDockZones>);
+
+      const rows = Array.from({ length: 999 }, (_, i) => ({
+        id: `pkg-${i}`,
+        label: `PKG-${i}`,
+        order_id: `ord-${i}`,
+        sku_items: [],
+        orders: {
+          order_number: `#${i}`,
+          comuna_id: 'comuna-lc',
+          delivery_date: '2026-05-10',
+          chile_comunas: { nombre: 'Las Condes' },
+        },
+      }));
+      mockOrder.mockResolvedValue({ data: rows, error: null });
+
+      const { result } = renderHook(() => usePendingSectorization('op-1'), { wrapper });
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(result.current.isError).toBe(false);
+      expect(result.current.truncated).toBe(false);
+    });
+
+    // spec-96 Fase 8 review round 3 — `data` must keep being a plain
+    // `ZoneGroup[]`, identical to before this change, for every consumer
+    // that doesn't ask about truncation (`/pendientes`, quicksort,
+    // `/batch`, `/batch/[batchId]`) — none of them should need to change.
+    it('keeps `data` as a plain ZoneGroup[] — the shape every other consumer already destructures', async () => {
+      const { useDockZones } = await import('@/hooks/distribution/useDockZones');
+      vi.mocked(useDockZones).mockReturnValue({
+        data: [ZONE_ANDEN, ZONE_CONSOL],
+        isLoading: false,
+      } as unknown as ReturnType<typeof useDockZones>);
+
+      mockOrder.mockResolvedValue({
+        data: [
+          {
+            id: 'pkg-1', label: 'PKG-0041', order_id: 'ord-1', sku_items: [],
+            orders: { order_number: '#1001', comuna_id: 'comuna-lc', delivery_date: '2026-05-10', chile_comunas: { nombre: 'Las Condes' } },
+          },
+        ],
+        error: null,
+      });
+
+      const { result } = renderHook(() => usePendingSectorization('op-1'), { wrapper });
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(Array.isArray(result.current.data)).toBe(true);
+      expect('groups' in (result.current.data as object)).toBe(false);
+      expect(result.current.data![0].zone.id).toBe('z1');
+    });
+  });
 });
