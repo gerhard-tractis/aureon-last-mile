@@ -12,19 +12,28 @@ import { getDockCapacityStatus } from '@/lib/distribution/dock-capacity';
  * metres while sorting, this one is scanned by a floor lead deciding where to
  * send people, so the code is 15px mono rather than 30px display.
  *
- * Reads `dock_zones.capacity` through the shared `DockCapacityBar` — the same
- * component `/andenes`, the quicksort step-2 screen and the `4e` send sheet
- * all read — so a zone with no capacity configured renders no bar, never one
- * pinned at 0%.
+ * Reads `dock_zones.capacity` through the shared `DockCapacityBar`, with
+ * `showLabel={false}` — this tile prints its own single "N / M paq." line,
+ * so the bar contributes only the fill track, never a second count and
+ * never the "quedan N espacios" copy (that belongs to `4l` alone) — so a
+ * zone with no capacity configured renders no bar, never one pinned at 0%.
  *
- * `4a` draws one status chip per tile (`CASI LLENO` / `EN RITMO` / `DETENIDO`
- * / `SIN ABRIR`). Two of those are capacity states (already sourced from
- * `dock-capacity.ts`'s tone); the other two would need a driver/route
- * assignment this app has no query for, so this grid derives its chip from
- * what it does have — capacity tone first, then `openBatches` and
- * `zone.is_active` — distinguishable via
- * `data-testid="outbound-dock-activity"`'s `data-state` attribute, never by
- * asserting its copy.
+ * `4a` draws one capacity chip per tile from the set `CASI LLENO` /
+ * `EN RITMO` / `DETENIDO` / `SIN ABRIR`. Only `CASI LLENO` is a capacity
+ * state; the other three depend on per-zone open-batch and driver-assignment
+ * data this grid's only caller (`distribution/page.tsx`) does not fetch per
+ * zone — that wiring is Fase 4's, which owns that page. This grid renders
+ * `CASI LLENO` for both the `warning` *and* `error` capacity tones: `4a` has
+ * no tile at or above 100% fill, so the artboard is silent on a full dock,
+ * and reusing the one chip it does draw is a declared choice, not an
+ * invention — deliberately *without* the error border/background, which the
+ * artboard reserves for a blocked dock (`DETENIDO`), never a full one.
+ *
+ * The `Activo`/`Inactivo` line is unchanged from before this phase. Its
+ * `Inactivo` branch is unreachable from this grid's only caller today —
+ * `distribution/page.tsx` filters to `is_active` zones before rendering —
+ * but the prop contract itself allows it, so the text stays truthful rather
+ * than assuming the filter forever.
  */
 
 interface OutboundDockGridProps {
@@ -32,36 +41,6 @@ interface OutboundDockGridProps {
   sectorizedCounts?: Record<string, number>;
   /** Open lote count per dock zone id. */
   openBatches?: Record<string, number>;
-}
-
-type OutboundDockState = 'full' | 'warning' | 'inactive' | 'open' | 'idle';
-
-const STATE_LABEL: Record<OutboundDockState, string> = {
-  full: 'LLENO',
-  warning: 'CASI LLENO',
-  inactive: 'INACTIVO',
-  open: 'EN RITMO',
-  idle: 'SIN ABRIR',
-};
-
-const STATE_CLASS: Record<OutboundDockState, string> = {
-  full: 'bg-status-error-bg text-status-error-text',
-  warning: 'bg-status-warning-bg text-status-warning-text',
-  inactive: 'bg-surface-raised text-text-muted',
-  open: 'bg-status-success-bg text-status-success-text',
-  idle: 'bg-surface-raised text-text-muted',
-};
-
-function dockState(
-  tone: ReturnType<typeof getDockCapacityStatus>['tone'],
-  isActive: boolean,
-  open: number,
-): OutboundDockState {
-  if (tone === 'error') return 'full';
-  if (tone === 'warning') return 'warning';
-  if (!isActive) return 'inactive';
-  if (open > 0) return 'open';
-  return 'idle';
 }
 
 export function OutboundDockGrid({
@@ -76,7 +55,7 @@ export function OutboundDockGrid({
         const open = openBatches?.[zone.id] ?? 0;
         const consolidation = zone.is_consolidation;
         const capacityStatus = getDockCapacityStatus(count, zone.capacity);
-        const state = dockState(capacityStatus.tone, zone.is_active, open);
+        const nearFull = capacityStatus.tone === 'warning' || capacityStatus.tone === 'error';
 
         return (
           <div
@@ -105,26 +84,41 @@ export function OutboundDockGrid({
                   ? 'Consolidación'
                   : zone.comunas.map((c) => c.nombre).join(' · ') || zone.name}
               </span>
-              <span
-                data-testid="outbound-dock-activity"
-                data-state={state}
-                className={cn(
-                  'ml-auto flex-none rounded px-1.5 py-1 font-mono text-[9.5px] font-semibold leading-none',
-                  STATE_CLASS[state],
-                )}
-              >
-                {STATE_LABEL[state]}
-              </span>
+              {open > 0 && (
+                <span className="ml-auto flex-none rounded bg-status-success-bg px-1.5 py-1 font-mono text-[9.5px] font-semibold leading-none text-status-success-text">
+                  {open} {open === 1 ? 'LOTE' : 'LOTES'}
+                </span>
+              )}
+              {nearFull && (
+                <span
+                  data-testid="outbound-dock-capacity-state"
+                  data-state="warning"
+                  className={cn(
+                    'flex-none rounded bg-status-warning-bg px-1.5 py-1 font-mono text-[9.5px] font-semibold leading-none text-status-warning-text',
+                    open > 0 ? '' : 'ml-auto',
+                  )}
+                >
+                  CASI LLENO
+                </span>
+              )}
             </div>
 
             <div className="flex items-baseline gap-1.5">
               <span className="font-mono text-[22px] font-bold leading-none text-text">
                 {count}
               </span>
-              <span className="text-[11px] leading-none text-text-muted">paq.</span>
+              <span className="text-[11px] leading-none text-text-muted">
+                {capacityStatus.configured ? `/ ${zone.capacity} paq.` : 'paq.'}
+              </span>
             </div>
 
-            <DockCapacityBar count={count} capacity={zone.capacity} />
+            <DockCapacityBar count={count} capacity={zone.capacity} showLabel={false} />
+
+            <div className="mt-auto flex items-center gap-2">
+              <span className="truncate text-[10.5px] leading-none text-text-muted">
+                {zone.is_active ? 'Activo' : 'Inactivo'}
+              </span>
+            </div>
           </div>
         );
       })}
