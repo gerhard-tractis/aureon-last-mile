@@ -341,22 +341,22 @@ hermanos.
 - Modify: `QuickSortMobileView.tsx`, `QuickSortMobileDock.tsx`
 - Test: their sibling test files
 
-- [ ] Write a failing test: on step 2 and on the rejection state, a visible heading is rendered — assert it is **not** `sr-only` (e.g. the heading element is not inside an element with the `sr-only` class). Do not assert its text.
-- [ ] Run — expect FAIL on both states.
-- [ ] Implement one shared header region used by all four states, so they cannot drift apart again.
-- [ ] Run — expect PASS.
-- [ ] Commit: `fix(spec-96): cabecera visible en los cuatro estados del escaneo (4g-4j)`
+- [x] Write a failing test: on step 2 and on the rejection state, a visible heading is rendered — assert it is **not** `sr-only` (e.g. the heading element is not inside an element with the `sr-only` class). Do not assert its text.
+- [x] Run — expect FAIL on both states.
+- [x] Implement one shared header region used by all four states, so they cannot drift apart again.
+- [x] Run — expect PASS.
+- [x] Commit: `fix(spec-96): cabecera visible en los cuatro estados del escaneo (4g-4j)`
 
 **Task 1.2 — The armed field survives**
 
-- [ ] Write a failing test (or confirm an existing one) that a scan is submitted **without** any click — simulate the gun by typing into the focused field, no Enter, and assert submission via `useScannerAutoSubmit`'s path.
-- [ ] Run. If it already passes, say so and add no code — this task exists to stop Fase 1 from regressing the hardware contract while restyling the footer.
-- [ ] Commit only if something changed.
+- [x] Write a failing test (or confirm an existing one) that a scan is submitted **without** any click — simulate the gun by typing into the focused field, no Enter, and assert submission via `useScannerAutoSubmit`'s path.
+- [x] Run. If it already passes, say so and add no code — this task exists to stop Fase 1 from regressing the hardware contract while restyling the footer.
+- [x] Commit only if something changed.
 
 **Task 1.3 — Close the visual diff**
 
-- [ ] Diff `4g`, `4h`, `4i`, `4j` against the app at 402 px, including the header at that exact width.
-- [ ] Fix, run the suite and `type-check`, commit, PR with auto-merge.
+- [x] Diff `4g`, `4h`, `4i`, `4j` against the app at 402 px, including the header at that exact width.
+- [x] Fix, run the suite and `type-check`, commit, PR with auto-merge.
 
 ---
 
