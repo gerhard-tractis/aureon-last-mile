@@ -149,7 +149,9 @@ describe('PendingSectorizationPage (route: /app/distribution/pendientes)', () =>
   it('renders the titled header and the pending list', () => {
     render(<PendingSectorizationPage />);
     expect(screen.getByText('Pendientes de sectorizar')).toBeInTheDocument();
-    expect(screen.getByText('BULTO-1')).toBeInTheDocument();
+    // spec-96 Fase 2 review (Task 2.4) — 4d's compact row leads with the
+    // order, not the barcode (Distribucion.dc.html:620-621).
+    expect(screen.getByText('Pedido #1001')).toBeInTheDocument();
   });
 
   it('the back arrow returns to the distribution home', async () => {

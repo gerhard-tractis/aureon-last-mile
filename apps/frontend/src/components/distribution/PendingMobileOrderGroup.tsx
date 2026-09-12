@@ -65,7 +65,14 @@ export function PendingMobileOrderGroup({
 
   if (isCompact) {
     const pkg = isSingle ? order.packages[0] : undefined;
-    const headline = pkg ? pkg.label : `Pedido #${order.orderNumber}`;
+    // spec-96 Fase 2 review (Task 2.4) — `4d`'s compact row leads with the
+    // order, not the barcode: `Distribucion.dc.html:620-621` draws
+    // "ORD-48219" as the headline with no barcode anywhere in that row,
+    // for a genuinely single-bulto order. The barcode still surfaces in
+    // DET's expanded per-package rows below, where the operator is
+    // choosing among several.
+    const headline = `Pedido #${order.orderNumber}`;
+    const comunaName = pkg ? pkg.comunaName : order.comunaName;
     const sendLabel = pkg
       ? `Enviar ${pkg.label} a andén`
       : `Enviar pedido ${order.orderNumber} a andén`;
@@ -108,15 +115,13 @@ export function PendingMobileOrderGroup({
             <span className={`text-[12px] tabular-nums ${TONE_CLASS[date.tone]}`}>{date.label}</span>
           </div>
           <div className="flex items-baseline gap-2 text-[12px] text-text-secondary">
-            {pkg ? (
-              <span>Pedido #{order.orderNumber}</span>
-            ) : (
-              <span>{order.packages.length} bultos</span>
-            )}
-            {(pkg ? pkg.comunaName : order.comunaName) && (
+            <span>
+              {order.packages.length} {order.packages.length === 1 ? 'bulto' : 'bultos'}
+            </span>
+            {comunaName && (
               <>
                 <span aria-hidden="true">·</span>
-                <span>{pkg ? pkg.comunaName : order.comunaName}</span>
+                <span>{comunaName}</span>
               </>
             )}
           </div>

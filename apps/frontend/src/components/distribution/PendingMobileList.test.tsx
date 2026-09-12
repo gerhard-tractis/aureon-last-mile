@@ -167,27 +167,38 @@ describe('PendingMobileList (4d)', () => {
     );
     const header = screen.getByTestId('pending-group-header-zone-a1');
     expect(within(header).getByText('ANDÉN A1')).toBeInTheDocument();
-    expect(within(header).getByText('Quilicura')).toBeInTheDocument();
-    expect(within(header).getByText('03 pendientes')).toBeInTheDocument();
+    // spec-96 Fase 2 review (Task 2.4) — 4d's detail line is `▸ {zone
+    // name} · {comunas}`, not a bare comuna list, and the count is
+    // un-padded.
+    expect(within(header).getByText('▸ Zona Norte · Quilicura')).toBeInTheDocument();
+    expect(within(header).getByText('3 pendientes')).toBeInTheDocument();
   });
 
-  it('renders the flagged bucket as SIN ANDÉN in the warning palette, not as a normal andén', () => {
+  it('renders the flagged bucket as SIN ANDÉN ASIGNADO in the warning palette, not as a normal andén', () => {
     render(
       <PendingMobileList groups={[flaggedGroup]} zones={allZones} canManualAssign onRequestSend={vi.fn()} now={NOW} />,
     );
-    expect(screen.getByText('SIN ANDÉN')).toBeInTheDocument();
+    // spec-96 Fase 2 review (Task 2.4) — 4d's exact label is "SIN ANDÉN
+    // ASIGNADO" (Distribucion.dc.html:658), not the bare "SIN ANDÉN" the
+    // pre-mock implementation used.
+    expect(screen.getByText('SIN ANDÉN ASIGNADO')).toBeInTheDocument();
     expect(screen.queryByText('ANDÉN CONS')).not.toBeInTheDocument();
     const header = screen.getByTestId('pending-group-header-zone-cons-sin-anden');
     expect(header.querySelector('[data-tone="warning"]')).toBeInTheDocument();
   });
 
-  it('renders a single-bulto order as one compact row', () => {
+  it('renders a single-bulto order as one compact row, leading with the order rather than the barcode', () => {
     render(
       <PendingMobileList groups={[baseGroup]} zones={allZones} canManualAssign onRequestSend={vi.fn()} now={NOW} />,
     );
     const row = screen.getByTestId('pending-order-order-1');
     expect(row).toBeInTheDocument();
-    expect(within(row).getByText('BULTO-1')).toBeInTheDocument();
+    // spec-96 Fase 2 review (Task 2.4) — 4d's compact row (both the
+    // natural single-bulto case and CMP's forced one) leads with the
+    // order, not the barcode (Distribucion.dc.html:620-621: "ORD-48219"
+    // headline, no barcode in that row at all).
+    expect(within(row).getByText('Pedido #1001')).toBeInTheDocument();
+    expect(within(row).queryByText('BULTO-1')).not.toBeInTheDocument();
     // No nested per-package rows for a single-bulto order.
     expect(screen.queryByTestId('pending-package-pkg-1')).not.toBeInTheDocument();
   });
@@ -520,7 +531,7 @@ describe('PendingMobileList (4d)', () => {
       const normal = screen.getByTestId('pending-group-zone-cons');
       expect(within(normal).getByTestId('pending-order-order-future')).toBeInTheDocument();
       expect(within(normal).queryByTestId('pending-order-order-flagged')).not.toBeInTheDocument();
-      expect(screen.queryByText('SIN ANDÉN')).toBeInTheDocument();
+      expect(screen.queryByText('SIN ANDÉN ASIGNADO')).toBeInTheDocument();
     });
 
     it('splits correctly when the future-dated order was inserted first (matchResult keyed on it)', () => {
