@@ -38,6 +38,15 @@ interface QuickSortScannerProps {
  * `scan_package`/`scan_anden` — the staging pass's destination scan, wired
  * exactly like the andén one: destination shown and the field armed in the
  * same step, reject state on mismatch instead of a state transition.
+ *
+ * spec-96 Fase 1 review finding #1 — `useQuickSortFlow` now enters
+ * `'confirmed'` (not `'scan_package'`) after a successful andén scan, so
+ * the mobile screens can keep the just-resolved destination/capacity on
+ * screen (`4j`). That context is mobile-only; this desktop console has no
+ * artboard asking for it, so it just treats `'confirmed'` the same as
+ * `'scan_package'` — the plain armed field, same as before this hook
+ * change. Without this, the console rendered nothing at all once a scan
+ * succeeded (none of the three states below matched `'confirmed'`).
  */
 export function QuickSortScanner({ operatorId, userId, zones, onScanEvent, mode = 'sectorize' }: QuickSortScannerProps) {
   const {
@@ -54,7 +63,7 @@ export function QuickSortScanner({ operatorId, userId, zones, onScanEvent, mode 
 
   return (
     <div className="flex flex-col gap-3">
-      {state === 'scan_package' && (
+      {(state === 'scan_package' || state === 'confirmed') && (
         <ScanField
           ariaLabel="Escanear paquete"
           onScan={(code) => { void handlePackageScan(code); }}

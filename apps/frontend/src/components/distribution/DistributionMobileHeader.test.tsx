@@ -100,4 +100,39 @@ describe('DistributionMobileHeader — titled variant (later phases)', () => {
     expect(screen.queryByText(/^Hola/)).not.toBeInTheDocument();
     expect(screen.queryByTestId('distribution-mobile-header-isotype')).not.toBeInTheDocument();
   });
+
+  // spec-96 Fase 1 review finding #5 — `titleControl` (added for `4g`'s
+  // SECT/ESTIB control) had no test of its own in this file. Fase 0 set
+  // the precedent for this shape with `showLabel={false}`: one test that
+  // it renders when passed, and one that proves "strictly additive" by
+  // checking nothing extra renders when it's omitted — the second is what
+  // makes that claim checkable rather than merely asserted.
+  describe('titleControl (spec-96 Fase 1, additive)', () => {
+    it('renders the given control next to the title when passed', () => {
+      render(
+        <DistributionMobileHeader
+          variant="titled"
+          title="Clasificación en andén"
+          onBack={vi.fn()}
+          titleControl={<span data-testid="mode-toggle-stub">SECT</span>}
+        />,
+      );
+      expect(screen.getByTestId('mode-toggle-stub')).toBeInTheDocument();
+    });
+
+    it('renders nothing extra when omitted — every existing caller stays unaffected', () => {
+      render(
+        <DistributionMobileHeader
+          variant="titled"
+          title="Clasificación en andén"
+          onBack={vi.fn()}
+        />,
+      );
+      expect(screen.queryByTestId('mode-toggle-stub')).not.toBeInTheDocument();
+      // The title's own row renders only the heading — no empty wrapper
+      // left behind when titleControl is absent.
+      const heading = screen.getByRole('heading', { level: 1 });
+      expect(heading.parentElement?.children).toHaveLength(1);
+    });
+  });
 });

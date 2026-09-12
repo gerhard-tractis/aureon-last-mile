@@ -1,6 +1,6 @@
 # spec-96 — Distribución: corrección contra el mock
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit, e2e-qa
 
 > Written in English on the user's instruction (2026-09-11). Every UI string is
@@ -304,7 +304,63 @@ hermanos.
 
 ---
 
-### Fase 1 — Scan flow `[pending]`
+### Fase 1 — Scan flow `[in_progress]`
+
+> Implementado por: implementer — rama `feat/spec-96-fase-1-escaneo`, SHAs `57fefbc..HEAD` de esta rama (no se fija un SHA final literal aquí — cualquier commit que lo fije queda un commit corto del HEAD real; ver el reporte de cierre de la fase para el valor exacto)
+> Review: pendiente — round 1 recibido y trabajado en esta misma rama (7 hallazgos + 1 hallazgo propio no reportado por el review, ver abajo). El reviewer/orquestador cierra esta línea al validar la rama, no el implementer.
+> QA: pendiente — no corrido aún contra QA.
+> Downstream: este spec no declara `**Downstream:**`. Revisado spec-71 (modo ESTIBAR, `QuickSortMobileStagePosition`/`mode: 'stage'`, comparte `useQuickSortFlow` y `QuickSortMobileView`) — sin cambios de contrato: `'confirmed'` solo se alcanza desde `handleAndenScan` (ruta sectorize); `handlePositionScan` sigue llamando `resetToStepOne()` sin tocar. `QuickSortScanner.tsx` (escritorio, mismo hook) SÍ requirió un cambio de una línea — ver Hallazgos abiertos.
+
+**Hallazgos abiertos, que esta fase NO cierra:**
+
+- **La acción real de "Marcar excepción" en `4j`** sigue sin resolverse como
+  decisión de producto: `markException`/`recordQuickSortException` están
+  acotados a un `rejectedCode` que no existe una vez que el escaneo de andén
+  ya tuvo éxito. **Round 2:** en vez de un botón `disabled` ocupando medio
+  footer de la pantalla que se ve tras cada escaneo correcto, `Cerrar lote`
+  quedó como la segunda acción real del footer en `4j`; `Marcar excepción`
+  queda deferred, sin ningún control fantasma en pantalla.
+- **`DOCK-003` / `rutas R-2481 · R-2483`** — el mock dibuja el código físico
+  del andén y su lista de rutas junto al código de sectorización (`A3`) en
+  `4h`/`4i`/`4j`. `dock_zones` tiene exactamente **una** columna `code`;
+  `ZoneMatchResult` lleva `zone_code`, no dos códigos distintos, y no hay
+  fuente para una lista de rutas en este flujo. Mismo tipo de brecha que el
+  `routeCount` abierto de la fase 0 — **se agrupan como una sola pregunta al
+  diseñador/dato**, no dos. Confirmado independientemente por el reviewer.
+- **El ícono de advertencia** en el aviso de capacidad de `4h` no se
+  reprodujo — el resto de los avisos en línea de este mismo componente
+  (`siblingsPending`, `flagged`) tampoco llevan ícono, y se priorizó la
+  consistencia con ese patrón existente sobre la fidelidad exacta al mock en
+  ese detalle decorativo.
+- **La truncación del título en `4g` a 402 px NO es el conmutador SECT/ESTIB**
+  — el reviewer lo verificó: el pill de área de toque real mide ~92px, casi
+  idéntico a los 91px del mock. La palanca real es
+  `DistributionMobileHeader.tsx:154` (`text-[18px]`, cuando el artboard
+  especifica **14px**) — una desviación preexistente, no de esta fase, y de
+  un componente compartido por siete pantallas de Distribución. El
+  orquestador la deja fuera de esta fase deliberadamente y decide si se abre
+  fase propia tras medirla en QA a 402px.
+- **Los tests de 44px prueban tamaño declarado, no si el control es
+  realmente tocable** — un `pointer-events:none` deja 24/24 en verde. Límite
+  del guard, no un bug encontrado; se deja anotado en vez de reescribir el
+  comportamiento que esos mismos tests ya fijan.
+- **El aviso de capacidad de `4h` se imprime en tono `neutral` también** —
+  a 5/180 (2.8%) el operario lee "si no cabe, mándalo a consolidación" con
+  el andén casi vacío. El mock solo dibuja ese aviso en el caso ajustado;
+  se deja como pregunta de producto, no como cambio de comportamiento
+  tone-gated (los tests ya fijan ese comportamiento).
+- **Hallazgo propio, no señalado por el review:** `QuickSortScanner.tsx`
+  (escritorio, mismo `useQuickSortFlow`) dejaba de renderizar nada en
+  absoluto tras cualquier escaneo de andén exitoso — ninguna de sus tres
+  ramas reconocía el nuevo estado `'confirmed'`. Lo encontró la corrida
+  completa de `src/components/distribution` + `src/hooks/distribution`
+  (500/500 verde tras el fix), no el review. **Round 2 confirmó**: revertir
+  `QuickSortScanner.tsx:66` rompe un test — el reviewer esperaba que esa
+  mutación sobreviviera y no fue así.
+- **Round 2, hallazgo must-fix (corregido):** `confirmed` se derivaba solo de
+  `flow.state`/`flow.destination`, sin mirar `mode` — sobrevivía a un cambio
+  SECT→ESTIB indefinidamente si el operario no volvía a escanear. Corregido
+  con `mode === 'sectorize'` como condición adicional; test agregado.
 
 **Benchmark:** `4g`, `4h`, `4i`, `4j`.
 
@@ -313,26 +369,64 @@ hermanos.
 **Archivos:** `apps/frontend/src/components/distribution/QuickSortMobile.tsx`,
 `apps/frontend/src/components/distribution/QuickSortMobileView.tsx`,
 `apps/frontend/src/components/distribution/QuickSortMobileDock.tsx`,
-`apps/frontend/src/components/distribution/QuickSortScanner.tsx`, y sus tests
-hermanos.
+`apps/frontend/src/components/distribution/QuickSortScanner.tsx`,
+`apps/frontend/src/hooks/distribution/useQuickSortFlow.ts`,
+`apps/frontend/src/components/distribution/DistributionMobileHeader.tsx`
+(aditivo — ver nota abajo), y sus tests hermanos.
 
 > `QuickSortMobile.tsx` faltaba en esta lista y es **el fichero que renderiza la
 > cabecera** que esta fase existe para arreglar. Corregido 2026-09-12. Ver la
 > nota de componentes compartidos, arriba: la cabecera en sí es de otro módulo.
+
+> `apps/frontend/src/components/distribution/DistributionMobileHeader.tsx` —
+> **aditivo únicamente.** Un solo prop opcional nuevo, `titleControl` (sin
+> valor por defecto salvo `undefined`), usado por el conmutador SECT/ESTIB de
+> `4g`. Los ocho consumidores existentes de este componente compartido —
+> incluido `DispatchCrewMobileHeader`, de Despacho — quedan sin cambios;
+> verificado corriendo sus ocho suites de test tras el cambio.
+
+> `useQuickSortFlow.ts` — no estaba en la lista original y **tuvo que
+> tocarse**: el hallazgo #1 del review (`4j` se vaciaba tras un escaneo
+> correcto) vive en la máquina de estados, no en las vistas. Ver Notas no
+> visuales.
 
 **Notas no visuales:**
 
 - On step 2 and on rejection the app currently renders **no screen header at
   all** — only an `sr-only` `<h1>`. Verified in QA 2026-09-11: `main`'s first
   rendered text is the destination card. All four artboards have a header.
-- `4j` is `4h` after a correct scan, not a third step. The flow returns to step 1
-  with the field armed, which is what the app already does.
+- **Corrección 2026-09-12 (review #1):** la nota original decía "`4j` is `4h`
+  after a correct scan, not a third step. The flow returns to step 1 with the
+  field armed, which is what the app already does" — **esa prosa era
+  incorrecta** y, por la regla del propio spec, el artboard manda sobre ella.
+  `4j` carga la tarjeta de destino recién resuelta, el aviso de orden
+  incompleta y el bloque de capacidad — nada de eso sobrevivía a
+  `resetToStepOne()`. `useQuickSortFlow` gana un estado `'confirmed'` que
+  preserva `destination`/`currentPackage`/`siblingsPending` en vez de
+  limpiarlos, condicionado además a `mode === 'sectorize'` (round 2
+  must-fix: sin esa condición, el contexto de un andén sobrevivía a un
+  cambio a ESTIB). El footer mantiene `Cerrar lote` funcional en todo
+  estado — ver Hallazgos abiertos sobre `Marcar excepción`. Ver
+  `useQuickSortFlow.test.ts` y `QuickSortMobile.test.tsx`.
 - The QA scanner is a gun that types the code and sends no Enter. `4j`'s armed
   field is the mock honouring that; keep using
   `ScanField`/`useScannerAutoSubmit` and never require a tap to scan.
 - The header truncates at 402 px today (`Musan Admin · paso 1 de 2 · 0 escan…`).
   Reproduce the artboard's header at that width — do not shorten the string to
   make it fit.
+- **`4h`/`4i`'s capacity block (review #6):** `4h` draws capacity as a single
+  inline advisory sentence, toned; `4j`'s bar+label shape does not belong
+  here. `4i` (rejected) draws no capacity block at all.
+- **`4h`/`4i`'s footer (review #7):** both states stack the SAME primary
+  ("Enviar a consolidación", boxed) above a plain-text secondary that
+  differs — "Cancelar y volver al paso 1" (`4h`) vs "Marcar excepción y
+  seguir" (`4i`). `4i` had no consolidation exit before this fix — the one
+  screen where the operator is stuck with a rejected dock.
+- **`4g`'s SECT/ESTIB control (review #2/#3):** the artboard's box is
+  ~91×23.5px at 9.5px mono — nowhere near the 44px touch-target floor. Each
+  toggle button carries the real hit area via inline `minHeight`/`minWidth`
+  (invisible), with an inner `<span>` carrying the artboard's visible sizing.
+  Same pattern reused for `4h`/`4i`'s plain-text footer secondary.
 
 **Tareas:**
 
@@ -341,22 +435,23 @@ hermanos.
 - Modify: `QuickSortMobileView.tsx`, `QuickSortMobileDock.tsx`
 - Test: their sibling test files
 
-- [ ] Write a failing test: on step 2 and on the rejection state, a visible heading is rendered — assert it is **not** `sr-only` (e.g. the heading element is not inside an element with the `sr-only` class). Do not assert its text.
-- [ ] Run — expect FAIL on both states.
-- [ ] Implement one shared header region used by all four states, so they cannot drift apart again.
-- [ ] Run — expect PASS.
-- [ ] Commit: `fix(spec-96): cabecera visible en los cuatro estados del escaneo (4g-4j)`
+- [x] Write a failing test: on step 2 and on the rejection state, a visible heading is rendered — assert it is **not** `sr-only` (e.g. the heading element is not inside an element with the `sr-only` class). Do not assert its text.
+- [x] Run — expect FAIL on both states.
+- [x] Implement one shared header region used by all four states, so they cannot drift apart again.
+- [x] Run — expect PASS.
+- [x] Commit: `fix(spec-96): cabecera visible en los cuatro estados del escaneo (4g-4j)`
 
 **Task 1.2 — The armed field survives**
 
-- [ ] Write a failing test (or confirm an existing one) that a scan is submitted **without** any click — simulate the gun by typing into the focused field, no Enter, and assert submission via `useScannerAutoSubmit`'s path.
-- [ ] Run. If it already passes, say so and add no code — this task exists to stop Fase 1 from regressing the hardware contract while restyling the footer.
-- [ ] Commit only if something changed.
+- [x] Write a failing test (or confirm an existing one) that a scan is submitted **without** any click — simulate the gun by typing into the focused field, no Enter, and assert submission via `useScannerAutoSubmit`'s path.
+- [x] Run. If it already passes, say so and add no code — this task exists to stop Fase 1 from regressing the hardware contract while restyling the footer.
+- [x] Commit only if something changed.
 
 **Task 1.3 — Close the visual diff**
 
-- [ ] Diff `4g`, `4h`, `4i`, `4j` against the app at 402 px, including the header at that exact width.
-- [ ] Fix, run the suite and `type-check`, commit, PR with auto-merge.
+- [x] Diff `4g`, `4h`, `4i`, `4j` against the app at 402 px, including the header at that exact width.
+- [x] Fix, run the suite and `type-check`, commit.
+- [ ] PR with auto-merge — `gh pr list --head feat/spec-96-fase-1-escaneo --state all` returns `[]`; not opened by the implementer, per this repo's process (the orchestrator opens PRs).
 
 ---
 

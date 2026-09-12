@@ -23,7 +23,17 @@ export interface QuickSortScanEvent {
 
 // Destination shown + confirming scan armed in one step. `scan_anden`
 // (sectorize) / `scan_position` (stage) are mutually exclusive per `mode`.
-export type QuickSortFlowState = 'scan_package' | 'scan_anden' | 'scan_position';
+//
+// spec-96 Fase 1 review finding #1 (`4j`) — `'confirmed'` follows a
+// successful `handleAndenScan` (sectorize only; stage keeps calling
+// `resetToStepOne()`, spec-96 Fase 7). Step 1's armed-for-the-next-package
+// screen, NOT a third step: `destination`/`currentPackage`/
+// `siblingsPending` are deliberately KEPT (unlike `resetToStepOne()`) so
+// the view can still show the just-resolved andén/capacity while the
+// field is re-armed. A package scan from here behaves exactly as from
+// `'scan_package'` — success moves to `'scan_anden'`; failure just sets
+// `error` and leaves `state` as `'confirmed'`, old context and all.
+export type QuickSortFlowState = 'scan_package' | 'scan_anden' | 'scan_position' | 'confirmed';
 
 /** `stage` repoints the scan-package-then-scan-destination loop at the
  * wave-cutoff staging pass: destination is `load_positions`, not `dock_zones`. */
@@ -44,14 +54,11 @@ export interface UseQuickSortFlowArgs {
   mode?: QuickSortFlowMode;
 }
 
-// spec-68 Fase 5.1 — the quicksort state machine, shared by mobile
-// (`4g`-`4j`) and desktop. `siblingsPending`/`rejectedCode`/`markException`
-// are mobile-only — see `lib/distribution/quicksort-exception.ts`.
+// spec-68 Fase 5.1 — the quicksort state machine, shared by mobile/desktop.
 export function useQuickSortFlow({ operatorId, userId, zones, onScanEvent, mode = 'sectorize' }: UseQuickSortFlowArgs) {
   const [state, setState] = useState<QuickSortFlowState>('scan_package');
   const [destination, setDestination] = useState<ZoneMatchResult | null>(null);
-  // Stage mode's destination, kept separate: every consumer reads
-  // `destination` as a `ZoneMatchResult`, and a flow is only ever one mode.
+  // Stage mode's destination, kept separate — a flow is only ever one mode.
   const [positionDestination, setPositionDestination] = useState<ExpectedLoadPosition | null>(null);
   const [currentBatchId, setCurrentBatchId] = useState<string | null>(null);
   const [currentPackage, setCurrentPackage] = useState<QuickSortPackageInfo | null>(null);
@@ -66,13 +73,8 @@ export function useQuickSortFlow({ operatorId, userId, zones, onScanEvent, mode 
   const closeBatch = useCloseDockBatch();
   const today = todayISOInTimezone();
 
-  // useDockScanMutation requires batchId and zoneId — use current values, fallback to empty string
-  const scanMutation = useDockScanMutation(
-    operatorId,
-    currentBatchId ?? '',
-    destination?.zone_id ?? '',
-    userId
-  );
+  // Fallback to empty string — useDockScanMutation requires batchId/zoneId.
+  const scanMutation = useDockScanMutation(operatorId, currentBatchId ?? '', destination?.zone_id ?? '', userId);
 
   function resetToStepOne() {
     setDestination(null);
@@ -156,6 +158,10 @@ export function useQuickSortFlow({ operatorId, userId, zones, onScanEvent, mode 
 
     setError(null);
     setRejectedCode(null);
+    setExceptionError(null);
+    // Clears everything resetToStepOne() would except destination/
+    // currentPackage/siblingsPending — those are what 'confirmed' keeps.
+    setCurrentBatchId(null);
     onScanEvent?.({
       code: currentPackage?.label ?? '',
       zoneCode: outcome.zoneCode,
@@ -164,7 +170,7 @@ export function useQuickSortFlow({ operatorId, userId, zones, onScanEvent, mode 
       status: 'ok',
     });
     setCounter(c => c + 1);
-    resetToStepOne();
+    setState('confirmed');
   };
 
   // `lookupStagePackageScan` finds the package + the position its
@@ -260,8 +266,7 @@ export function useQuickSortFlow({ operatorId, userId, zones, onScanEvent, mode 
 
     closeBatch.mutate({ id: currentBatchId, operator_id: operatorId });
 
-    // E2E finding (QA, 2026-08-25) — emitted only after the write succeeds,
-    // or the exception vanishes from "ÚLTIMOS ESCANEOS", inviting a repeat.
+    // Emitted only after the write succeeds (E2E finding, QA 2026-08-25).
     onScanEvent?.({
       code: currentPackage.label,
       zoneCode: null,

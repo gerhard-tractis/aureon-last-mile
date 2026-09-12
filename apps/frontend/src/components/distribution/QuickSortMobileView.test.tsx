@@ -127,7 +127,12 @@ describe('QuickSortMobileView', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
 
     await screen.findByText('DOCK-001');
-    expect(screen.getByText('169 / 180')).toBeInTheDocument();
+    // spec-96 Fase 1 review finding #6 (4h) — the count/capacity are now
+    // embedded in an inline advisory sentence, not a standalone "169 / 180"
+    // bar label (that shape moved to 4j's confirmed screen).
+    const notice = screen.getByTestId('quicksort-capacity-notice');
+    expect(notice).toHaveTextContent('169');
+    expect(notice).toHaveTextContent('180');
   });
 
   // spec-68 Fase 6 accessibility sweep (6.3) — regression guard: step 2
@@ -150,6 +155,28 @@ describe('QuickSortMobileView', () => {
     render(<QuickSortMobileView />);
     fireEvent.click(screen.getByText('Cerrar lote'));
     expect(mockPush).toHaveBeenCalledWith('/app/distribution');
+  });
+
+  // spec-96 Fase 1 review finding #1 (4j) — a successful andén scan used to
+  // wipe the destination/capacity context the instant it returned to step
+  // 1. It must now carry through into the confirmed view.
+  it('keeps the destination, capacity and incomplete-order context on screen after a successful andén scan (4j)', async () => {
+    render(<QuickSortMobileView />);
+    const packageInput = screen.getByLabelText(/escanear paquete/i);
+    fireEvent.change(packageInput, { target: { value: 'PKG-001' } });
+    fireEvent.keyDown(packageInput, { key: 'Enter' });
+    await screen.findByText('DOCK-001');
+
+    const andenInput = screen.getByLabelText(/escanear andén/i);
+    fireEvent.change(andenInput, { target: { value: 'DOCK-001' } });
+    fireEvent.keyDown(andenInput, { key: 'Enter' });
+
+    const confirmed = await screen.findByTestId('quicksort-confirmed-context');
+    expect(confirmed).toHaveTextContent('DOCK-001');
+    expect(screen.getByTestId('quicksort-confirmed-capacity').dataset.tone).toBe('warning');
+    expect(screen.getByText('169 / 180')).toBeInTheDocument();
+    // The next scan field is armed for the NEXT package, not the andén.
+    expect(screen.getByLabelText(/escanear paquete/i)).toBeInTheDocument();
   });
 
   // Review fix (finding #5) — "Enviar a consolidación" must require an
@@ -183,6 +210,32 @@ describe('QuickSortMobileView', () => {
     });
   });
 
+  // spec-96 Fase 1 review round 2, "Must fix" — `confirmed` was derived
+  // from `flow.state`/`flow.destination` alone, with no regard for `mode`.
+  // A dock's `'confirmed'` context (destination card, capacity block, the
+  // footer built for it) survived a switch to ESTIB, where none of it
+  // means anything — a dock is not a load position. It only self-healed on
+  // the next scan, so it persisted indefinitely if the operator switched
+  // and stopped there.
+  it('leaves no dock context on screen when switching to ESTIB from "confirmed" (4j)', async () => {
+    render(<QuickSortMobileView />);
+    const packageInput = screen.getByLabelText(/escanear paquete/i);
+    fireEvent.change(packageInput, { target: { value: 'PKG-001' } });
+    fireEvent.keyDown(packageInput, { key: 'Enter' });
+    await screen.findByText('DOCK-001');
+
+    const andenInput = screen.getByLabelText(/escanear andén/i);
+    fireEvent.change(andenInput, { target: { value: 'DOCK-001' } });
+    fireEvent.keyDown(andenInput, { key: 'Enter' });
+    await screen.findByTestId('quicksort-confirmed-context');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'ESTIB' }));
+
+    expect(screen.getByText('Carga a posición')).toBeInTheDocument();
+    expect(screen.queryByTestId('quicksort-confirmed-context')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('quicksort-confirmed-capacity')).not.toBeInTheDocument();
+  });
+
   // spec-71 phase 3 mobile — the Sectorizar/Estibar switch and the
   // scan_position (stage) step 2 screen. Before this, nothing on mobile
   // ever passed mode='stage' to useQuickSortFlow; staging was reachable on
@@ -200,15 +253,15 @@ describe('QuickSortMobileView', () => {
     it('switches to stage mode via the Estibar tab, keeping the toggle and posición copy visible', async () => {
       const user = userEvent.setup();
       render(<QuickSortMobileView />);
-      await user.click(screen.getByRole('tab', { name: 'Estibar' }));
-      expect(screen.getByRole('tab', { name: 'Estibar' })).toHaveAttribute('aria-selected', 'true');
+      await user.click(screen.getByRole('tab', { name: 'ESTIB' }));
+      expect(screen.getByRole('tab', { name: 'ESTIB' })).toHaveAttribute('aria-selected', 'true');
       expect(screen.getByText('Carga a posición')).toBeInTheDocument();
     });
 
     it('advances to the scan_position step 2 screen after a package scan in stage mode', async () => {
       const user = userEvent.setup();
       render(<QuickSortMobileView />);
-      await user.click(screen.getByRole('tab', { name: 'Estibar' }));
+      await user.click(screen.getByRole('tab', { name: 'ESTIB' }));
 
       const input = screen.getByLabelText(/escanear paquete/i);
       fireEvent.change(input, { target: { value: 'PKG-001' } });
@@ -223,7 +276,7 @@ describe('QuickSortMobileView', () => {
     it('rejects a mismatched position scan, re-arming the field with the error state', async () => {
       const user = userEvent.setup();
       render(<QuickSortMobileView />);
-      await user.click(screen.getByRole('tab', { name: 'Estibar' }));
+      await user.click(screen.getByRole('tab', { name: 'ESTIB' }));
 
       const packageInput = screen.getByLabelText(/escanear paquete/i);
       fireEvent.change(packageInput, { target: { value: 'PKG-001' } });
@@ -241,7 +294,7 @@ describe('QuickSortMobileView', () => {
     it('Cancelar returns to step 1 without touching the sectorize batch-close path', async () => {
       const user = userEvent.setup();
       render(<QuickSortMobileView />);
-      await user.click(screen.getByRole('tab', { name: 'Estibar' }));
+      await user.click(screen.getByRole('tab', { name: 'ESTIB' }));
 
       const input = screen.getByLabelText(/escanear paquete/i);
       fireEvent.change(input, { target: { value: 'PKG-001' } });
@@ -256,7 +309,7 @@ describe('QuickSortMobileView', () => {
     it('confirms a matching position scan, closing back to step 1 with the counter advanced', async () => {
       const user = userEvent.setup();
       render(<QuickSortMobileView />);
-      await user.click(screen.getByRole('tab', { name: 'Estibar' }));
+      await user.click(screen.getByRole('tab', { name: 'ESTIB' }));
 
       const packageInput = screen.getByLabelText(/escanear paquete/i);
       fireEvent.change(packageInput, { target: { value: 'PKG-001' } });
