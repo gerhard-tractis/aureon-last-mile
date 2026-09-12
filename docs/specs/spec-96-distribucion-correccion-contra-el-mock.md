@@ -1,6 +1,6 @@
 # spec-96 — Distribución: corrección contra el mock
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit, e2e-qa
 
 > Written in English on the user's instruction (2026-09-11). Every UI string is
@@ -313,36 +313,54 @@ hermanos.
 
 **Hallazgos abiertos, que esta fase NO cierra:**
 
-- **El botón "Marcar excepción" del footer de `4j`** (el estado `'confirmed'`,
-  paquete siguiente armado) se renderiza presente pero `disabled`. Su acción
-  real es una decisión de producto sin resolver: `markException`/
-  `recordQuickSortException` están acotados a un `rejectedCode` que no existe
-  una vez que el escaneo de andén ya tuvo éxito — no hay "excepción" que
-  registrar en ese punto del flujo tal como esa función lo modela hoy.
+- **La acción real de "Marcar excepción" en `4j`** sigue sin resolverse como
+  decisión de producto: `markException`/`recordQuickSortException` están
+  acotados a un `rejectedCode` que no existe una vez que el escaneo de andén
+  ya tuvo éxito. **Round 2:** en vez de un botón `disabled` ocupando medio
+  footer de la pantalla que se ve tras cada escaneo correcto, `Cerrar lote`
+  quedó como la segunda acción real del footer en `4j`; `Marcar excepción`
+  queda deferred, sin ningún control fantasma en pantalla.
 - **`DOCK-003` / `rutas R-2481 · R-2483`** — el mock dibuja el código físico
   del andén y su lista de rutas junto al código de sectorización (`A3`) en
   `4h`/`4i`/`4j`. `dock_zones` tiene exactamente **una** columna `code`;
   `ZoneMatchResult` lleva `zone_code`, no dos códigos distintos, y no hay
   fuente para una lista de rutas en este flujo. Mismo tipo de brecha que el
   `routeCount` abierto de la fase 0 — **se agrupan como una sola pregunta al
-  diseñador/dato**, no dos.
+  diseñador/dato**, no dos. Confirmado independientemente por el reviewer.
 - **El ícono de advertencia** en el aviso de capacidad de `4h` no se
   reprodujo — el resto de los avisos en línea de este mismo componente
   (`siblingsPending`, `flagged`) tampoco llevan ícono, y se priorizó la
   consistencia con ese patrón existente sobre la fidelidad exacta al mock en
   ese detalle decorativo.
-- **El ajuste exacto del conmutador SECT/ESTIB a 402 px** (título truncando o
-  no junto al pill de 91×23.5px) se razonó contra el layout pero no se
-  verificó en un navegador real — el implementer no tiene uno. Ver Task 1.3.
-- **Un hallazgo propio, no señalado por el review:** `QuickSortScanner.tsx`
-  (la consola de escritorio, que consume el mismo `useQuickSortFlow`) dejaba
-  de renderizar nada en absoluto tras cualquier escaneo de andén exitoso,
-  porque ninguna de sus tres ramas (`scan_package`/`scan_anden`/
-  `scan_position`) reconocía el nuevo estado `'confirmed'` que el fix del
-  hallazgo #1 introdujo. Lo encontró la corrida completa de
-  `src/components/distribution` + `src/hooks/distribution` (500/500 verde
-  tras el fix), no el review — declarado aquí porque ninguna review previa
-  lo vio.
+- **La truncación del título en `4g` a 402 px NO es el conmutador SECT/ESTIB**
+  — el reviewer lo verificó: el pill de área de toque real mide ~92px, casi
+  idéntico a los 91px del mock. La palanca real es
+  `DistributionMobileHeader.tsx:154` (`text-[18px]`, cuando el artboard
+  especifica **14px**) — una desviación preexistente, no de esta fase, y de
+  un componente compartido por siete pantallas de Distribución. El
+  orquestador la deja fuera de esta fase deliberadamente y decide si se abre
+  fase propia tras medirla en QA a 402px.
+- **Los tests de 44px prueban tamaño declarado, no si el control es
+  realmente tocable** — un `pointer-events:none` deja 24/24 en verde. Límite
+  del guard, no un bug encontrado; se deja anotado en vez de reescribir el
+  comportamiento que esos mismos tests ya fijan.
+- **El aviso de capacidad de `4h` se imprime en tono `neutral` también** —
+  a 5/180 (2.8%) el operario lee "si no cabe, mándalo a consolidación" con
+  el andén casi vacío. El mock solo dibuja ese aviso en el caso ajustado;
+  se deja como pregunta de producto, no como cambio de comportamiento
+  tone-gated (los tests ya fijan ese comportamiento).
+- **Hallazgo propio, no señalado por el review:** `QuickSortScanner.tsx`
+  (escritorio, mismo `useQuickSortFlow`) dejaba de renderizar nada en
+  absoluto tras cualquier escaneo de andén exitoso — ninguna de sus tres
+  ramas reconocía el nuevo estado `'confirmed'`. Lo encontró la corrida
+  completa de `src/components/distribution` + `src/hooks/distribution`
+  (500/500 verde tras el fix), no el review. **Round 2 confirmó**: revertir
+  `QuickSortScanner.tsx:66` rompe un test — el reviewer esperaba que esa
+  mutación sobreviviera y no fue así.
+- **Round 2, hallazgo must-fix (corregido):** `confirmed` se derivaba solo de
+  `flow.state`/`flow.destination`, sin mirar `mode` — sobrevivía a un cambio
+  SECT→ESTIB indefinidamente si el operario no volvía a escanear. Corregido
+  con `mode === 'sectorize'` como condición adicional; test agregado.
 
 **Benchmark:** `4g`, `4h`, `4i`, `4j`.
 
@@ -382,10 +400,13 @@ hermanos.
   field armed, which is what the app already does" — **esa prosa era
   incorrecta** y, por la regla del propio spec, el artboard manda sobre ella.
   `4j` carga la tarjeta de destino recién resuelta, el aviso de orden
-  incompleta, el bloque de capacidad y el footer con "Marcar excepción" en
-  vez de "Cerrar lote" — nada de eso sobrevivía a `resetToStepOne()`.
-  `useQuickSortFlow` gana un estado `'confirmed'` que preserva `destination`/
-  `currentPackage`/`siblingsPending` en vez de limpiarlos; ver
+  incompleta y el bloque de capacidad — nada de eso sobrevivía a
+  `resetToStepOne()`. `useQuickSortFlow` gana un estado `'confirmed'` que
+  preserva `destination`/`currentPackage`/`siblingsPending` en vez de
+  limpiarlos, condicionado además a `mode === 'sectorize'` (round 2
+  must-fix: sin esa condición, el contexto de un andén sobrevivía a un
+  cambio a ESTIB). El footer mantiene `Cerrar lote` funcional en todo
+  estado — ver Hallazgos abiertos sobre `Marcar excepción`. Ver
   `useQuickSortFlow.test.ts` y `QuickSortMobile.test.tsx`.
 - The QA scanner is a gun that types the code and sends no Enter. `4j`'s armed
   field is the mock honouring that; keep using
@@ -429,7 +450,8 @@ hermanos.
 **Task 1.3 — Close the visual diff**
 
 - [x] Diff `4g`, `4h`, `4i`, `4j` against the app at 402 px, including the header at that exact width.
-- [x] Fix, run the suite and `type-check`, commit, PR with auto-merge.
+- [x] Fix, run the suite and `type-check`, commit.
+- [ ] PR with auto-merge — `gh pr list --head feat/spec-96-fase-1-escaneo --state all` returns `[]`; not opened by the implementer, per this repo's process (the orchestrator opens PRs).
 
 ---
 
