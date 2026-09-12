@@ -52,6 +52,11 @@ const CHIP_LABEL: Record<ChipState, string> = {
   'near-full': 'CASI LLENO',
 };
 
+const CHIP_CLASS: Record<ChipState, string> = {
+  unconfigured: 'bg-surface-raised text-text-secondary',
+  'near-full': 'bg-status-warning-bg text-status-warning-text',
+};
+
 export function DockListMobile({ zones, sectorizedCounts }: DockListMobileProps) {
   const activeZones = zones.filter((z) => z.is_active);
 
@@ -81,9 +86,16 @@ export function DockListMobile({ zones, sectorizedCounts }: DockListMobileProps)
               <span className="flex-none rounded-md bg-surface-raised px-2 py-1 font-mono text-[13px] font-bold text-text">
                 {zone.code}
               </span>
-              <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-text">
-                {zone.name}
-              </span>
+              <div className="min-w-0 flex-1">
+                <span className="block truncate text-[14px] font-semibold text-text">
+                  {zone.name}
+                </span>
+                {!zone.is_consolidation && zone.comunas.length > 0 && (
+                  <span className="block truncate text-[11.5px] text-text-secondary">
+                    {zone.comunas.map((c) => c.nombre).join(' · ')}
+                  </span>
+                )}
+              </div>
               {zone.is_consolidation && (
                 <span className="flex-none rounded-sm border border-status-info-border bg-status-info-bg px-1.5 py-[3px] font-mono text-[9.5px] font-semibold uppercase tracking-[.08em] text-status-info">
                   Consolidación
@@ -93,7 +105,7 @@ export function DockListMobile({ zones, sectorizedCounts }: DockListMobileProps)
                 <span
                   data-testid="dock-status-chip"
                   data-state={chipState}
-                  className="flex-none rounded-sm px-1.5 py-[3px] font-mono text-[9.5px] font-semibold uppercase tracking-[.08em]"
+                  className={`flex-none rounded-sm px-1.5 py-[3px] font-mono text-[9.5px] font-semibold uppercase tracking-[.08em] ${CHIP_CLASS[chipState]}`}
                 >
                   {CHIP_LABEL[chipState]}
                 </span>
