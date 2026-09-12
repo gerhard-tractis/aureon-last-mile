@@ -26,22 +26,27 @@ import type { DockZoneRecord } from '@/hooks/distribution/useDockZones';
  * already renders nothing without a configured capacity), and its own
  * `dock-capacity-unconfigured` region says so instead — plus a
  * "sin capacidad configurada" note in the subtitle slot, matching `4l`'s
- * `A6` exactly.
+ * `A6` exactly. That note is scoped to non-consolidation zones only
+ * (review round 2, finding #3): the consolidation zone carries
+ * `capacity: null` BY DESIGN — no `Editar` action in `Configuración de
+ * Andenes` gives it one — so a setup-incomplete warning on a holding area
+ * where capacity is meaningless would be a false alarm on every load.
  *
- * The status chip (review round 1, finding #3, designer's ruling): `4a`'s
- * `A6` is `SIN ABRIR` too, but with capacity *configured* (`0 / 120 paq.`)
- * and a footer reading "lote sin abierto" — so `SIN ABRIR` there means "no
- * open batch", an activity state, not a capacity one. `4l`'s and `4a`'s
- * artboards disagree on what the same label means; escalated to the
- * designer, and until that comes back this list emits `SIN ABRIR` for
- * NOTHING — an unconfigured row has no chip, same as a configured row in
- * the neutral tone, because in both cases this list has no per-zone
- * batch/activity source (same open finding as `OutboundDockGrid`'s, `4a`,
- * Fase 0/4) and the explanatory region already says "unconfigured" on its
- * own. The only chip this list can derive today is `near-full`
- * (`getDockCapacityStatus`'s `warning`/`error` tone). `4l` also draws
- * `EN RITMO`, which needs that same missing activity data — declared open,
- * not guessed.
+ * **Known deviation from the benchmark, not a coherent fallback** (review
+ * round 2, on the designer's ruling): `4l:1236` draws `SIN ABRIR` on `A6`
+ * itself — the artboard has no activity signal on that row at all, capacity
+ * is the only thing distinguishing it, so a capacity-derived `SIN ABRIR`
+ * would reproduce `4l` exactly. This list does not render it, because `4a`
+ * (Fase 4, `OutboundDockGrid.tsx`) has separately shipped `SIN ABRIR` as
+ * activity-derived ("no open batch") for its own `A6` (which, unlike `4l`'s,
+ * *has* a configured capacity in that artboard) — one label meaning two
+ * different conditions across the desktop/mobile split was judged worse
+ * than a missing chip. So: this row is missing a chip the artboard draws.
+ * The only chip this list can derive at all is `near-full`
+ * (`getDockCapacityStatus`'s `warning`/`error` tone) — `4l`'s `EN RITMO`
+ * needs per-zone batch/activity data this list doesn't receive (same open
+ * finding as `OutboundDockGrid`'s, Fase 0/4), so a configured row in the
+ * neutral tone also renders no chip, not a guessed one.
  */
 export interface DockListMobileProps {
   zones: DockZoneRecord[];
@@ -89,6 +94,13 @@ export function DockListMobile({ zones, sectorizedCounts }: DockListMobileProps)
         const status = getDockCapacityStatus(count, zone.capacity);
         const configured = status.configured;
         const chipState = chipStateFor(status);
+        // Review round 2, finding #3 — the consolidation zone's
+        // `capacity: null` is by design, not a setup gap, so it gets
+        // neither the "sin capacidad configurada" note nor the comuna
+        // list (it covers no comunas — that's what the `Consolidación`
+        // badge already says).
+        const showUnconfiguredNote = !configured && !zone.is_consolidation;
+        const showComunas = configured && !zone.is_consolidation && zone.comunas.length > 0;
         return (
           <div
             key={zone.id}
@@ -103,20 +115,21 @@ export function DockListMobile({ zones, sectorizedCounts }: DockListMobileProps)
                 <span className="block truncate text-[14px] font-semibold text-text">
                   {zone.name}
                 </span>
-                {!configured ? (
+                {showUnconfiguredNote && (
                   <span
                     data-testid="dock-unconfigured-note"
                     className="block truncate text-[11.5px] text-text-secondary"
                   >
                     sin capacidad configurada
                   </span>
-                ) : (
-                  !zone.is_consolidation &&
-                  zone.comunas.length > 0 && (
-                    <span className="block truncate text-[11.5px] text-text-secondary">
-                      {zone.comunas.map((c) => c.nombre).join(' · ')}
-                    </span>
-                  )
+                )}
+                {showComunas && (
+                  <span
+                    data-testid="dock-comunas-note"
+                    className="block truncate text-[11.5px] text-text-secondary"
+                  >
+                    {zone.comunas.map((c) => c.nombre).join(' · ')}
+                  </span>
                 )}
               </div>
               {zone.is_consolidation && (

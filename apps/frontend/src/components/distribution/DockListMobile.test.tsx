@@ -157,6 +157,34 @@ describe('DockListMobile', () => {
     });
   });
 
+  // Review round 2 (finding #5) — the subtitle slot's ternary (note vs.
+  // comuna list) survived the rename mutation untested; both halves get
+  // their own assertion now.
+  describe('the subtitle slot', () => {
+    it('renders the unconfigured note and not the comuna list', () => {
+      render(<DockListMobile zones={[zoneB]} sectorizedCounts={{ 'zone-b1': 4 }} />);
+      const row = screen.getByTestId('dock-list-row-zone-b1');
+      expect(within(row).getByTestId('dock-unconfigured-note')).toBeInTheDocument();
+      expect(within(row).queryByTestId('dock-comunas-note')).not.toBeInTheDocument();
+    });
+
+    it('renders the comuna list and not the unconfigured note when configured', () => {
+      render(<DockListMobile zones={[zoneA]} sectorizedCounts={{ 'zone-a1': 10 }} />);
+      const row = screen.getByTestId('dock-list-row-zone-a1');
+      expect(within(row).getByTestId('dock-comunas-note')).toBeInTheDocument();
+      expect(within(row).queryByTestId('dock-unconfigured-note')).not.toBeInTheDocument();
+    });
+
+    // Review round 2 (finding #3) — the consolidation zone's `capacity:
+    // null` is by design; it must not get the setup-incomplete note.
+    it('renders neither note nor comuna list for the (unconfigured) consolidation zone', () => {
+      render(<DockListMobile zones={[consZone]} sectorizedCounts={{ 'zone-cons': 12 }} />);
+      const row = screen.getByTestId('dock-list-row-zone-cons');
+      expect(within(row).queryByTestId('dock-unconfigured-note')).not.toBeInTheDocument();
+      expect(within(row).queryByTestId('dock-comunas-note')).not.toBeInTheDocument();
+    });
+  });
+
   describe('the status chip (same family as 4a)', () => {
     // Review round 1 (finding #3) — the designer's ruling: `SIN ABRIR` is
     // `4a`'s "no open batch" (activity), not `4l`'s "no capacity" reading
