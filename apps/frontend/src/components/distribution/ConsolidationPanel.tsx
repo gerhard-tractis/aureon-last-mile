@@ -17,8 +17,9 @@ import { EmptyState } from '@/components/EmptyState';
  * fetches `status = 'retenido'` packages, never an order's full package
  * count, and adding that would be a genuinely new query axis (an
  * aggregate across ALL of an order's packages regardless of status), not
- * wiring an existing one. Declared gap: this renders only the numerator
- * (how many of the order's bultos are currently held here), not "X de Y".
+ * wiring an existing one. Declared gap: `data-testid="consolidation-bultos"`
+ * renders only the numerator (`group.packageIds.length` — how many of the
+ * order's bultos are currently held here), never "X de Y".
  *
  * Same gap on `ENTREGA`'s "HOY 18:00" — `orders.delivery_date` carries a
  * date, never a time, so this renders `AYER` / `HOY` / the raw date,
@@ -27,6 +28,8 @@ import { EmptyState } from '@/components/EmptyState';
 interface ConsolidationPanelProps {
   packages: ConsolidationPackage[];
   onRelease: (ids: string[]) => void;
+  /** Injectable for tests; defaults to now. */
+  now?: Date;
 }
 
 interface OrderGroup {
@@ -58,16 +61,26 @@ function groupByOrder(packages: ConsolidationPackage[]): OrderGroup[] {
   return Array.from(map.values());
 }
 
-function deliveryLabel(deliveryDate: string): { text: string; urgent: boolean } {
-  const today = new Date();
+/**
+ * Review fix — `date < today → 'AYER'` said AYER for ANY past delivery,
+ * not just yesterday's. A week-late order read as one day late: false in
+ * the reassuring direction on a triage queue, and zero test coverage
+ * caught it (every fixture used one date). `AYER` now means exactly
+ * yesterday, matching the artboard; anything older still gets the error
+ * (urgent) tone but shows its real date instead of a wrong label.
+ */
+function deliveryLabel(deliveryDate: string, now: Date): { text: string; urgent: boolean } {
+  const today = new Date(now);
   today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
   const date = new Date(deliveryDate + 'T00:00:00');
-  if (date.getTime() < today.getTime()) return { text: 'AYER', urgent: true };
+  if (date.getTime() === yesterday.getTime()) return { text: 'AYER', urgent: true };
   if (date.getTime() === today.getTime()) return { text: 'HOY', urgent: true };
-  return { text: deliveryDate, urgent: false };
+  return { text: deliveryDate, urgent: date.getTime() < today.getTime() };
 }
 
-export function ConsolidationPanel({ packages, onRelease }: ConsolidationPanelProps) {
+export function ConsolidationPanel({ packages, onRelease, now = new Date() }: ConsolidationPanelProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   if (packages.length === 0) {
@@ -92,8 +105,27 @@ export function ConsolidationPanel({ packages, onRelease }: ConsolidationPanelPr
   }
 
   function releaseSelected() {
+    const releasedOrderIds = groups.filter((g) => selected.has(g.orderId)).map((g) => g.orderId);
     const ids = groups.filter((g) => selected.has(g.orderId)).flatMap((g) => g.packageIds);
     onRelease(ids);
+    // Review fix — the button stayed enabled with nothing visibly checked
+    // after a release; a second click fired onRelease([]) (an UPDATE ...
+    // .in('id', []) plus two cache invalidations for nothing).
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of releasedOrderIds) next.delete(id);
+      return next;
+    });
+  }
+
+  function releaseOrder(group: OrderGroup) {
+    onRelease(group.packageIds);
+    setSelected((prev) => {
+      if (!prev.has(group.orderId)) return prev;
+      const next = new Set(prev);
+      next.delete(group.orderId);
+      return next;
+    });
   }
 
   return (
@@ -120,7 +152,7 @@ export function ConsolidationPanel({ packages, onRelease }: ConsolidationPanelPr
         </Button>
       </div>
 
-      <div className="grid grid-cols-[22px_118px_1fr_96px_92px] items-center gap-3 border-b border-border bg-bg px-3.5 py-2">
+      <div className="grid grid-cols-[22px_118px_1fr_72px_96px_92px] items-center gap-3 border-b border-border bg-bg px-3.5 py-2">
         <span />
         <span className="text-[9.5px] font-medium uppercase tracking-wide text-text-secondary">
           Orden
@@ -129,18 +161,21 @@ export function ConsolidationPanel({ packages, onRelease }: ConsolidationPanelPr
           Destinatario y comuna
         </span>
         <span className="text-right text-[9.5px] font-medium uppercase tracking-wide text-text-secondary">
+          Bultos
+        </span>
+        <span className="text-right text-[9.5px] font-medium uppercase tracking-wide text-text-secondary">
           Entrega
         </span>
         <span />
       </div>
 
       {groups.map((group) => {
-        const delivery = deliveryLabel(group.deliveryDate);
+        const delivery = deliveryLabel(group.deliveryDate, now);
         return (
           <div
             key={group.orderId}
             data-testid="consolidation-order-row"
-            className="grid grid-cols-[22px_118px_1fr_96px_92px] items-center gap-3 border-b border-border-strong/20 px-3.5 py-2"
+            className="grid grid-cols-[22px_118px_1fr_72px_96px_92px] items-center gap-3 border-b border-border-strong/20 px-3.5 py-2"
           >
             <input
               type="checkbox"
@@ -156,6 +191,12 @@ export function ConsolidationPanel({ packages, onRelease }: ConsolidationPanelPr
               {group.comunaName ? ` · ${group.comunaName}` : ''}
             </span>
             <span
+              data-testid="consolidation-bultos"
+              className="text-right font-mono text-[11.5px] font-semibold text-status-warning-text"
+            >
+              {group.packageIds.length}
+            </span>
+            <span
               className={
                 'text-right font-mono text-[11px] ' +
                 (delivery.urgent ? 'text-status-error-text' : 'text-text-secondary')
@@ -167,7 +208,7 @@ export function ConsolidationPanel({ packages, onRelease }: ConsolidationPanelPr
               variant="outline"
               size="sm"
               className="justify-self-end"
-              onClick={() => onRelease(group.packageIds)}
+              onClick={() => releaseOrder(group)}
             >
               Liberar
             </Button>

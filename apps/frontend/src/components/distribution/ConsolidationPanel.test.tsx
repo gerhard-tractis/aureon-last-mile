@@ -115,4 +115,119 @@ describe('ConsolidationPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /liberar seleccionadas/i }));
     expect(onRelease).toHaveBeenCalledWith(['p1']);
   });
+
+  // Review fix — `date < today → AYER` said AYER for ANY past date, not
+  // just yesterday. On a triage queue that reads a week-late order as one
+  // day late, false in the reassuring direction. `now` is injectable so
+  // this doesn't depend on the real clock.
+  describe('ENTREGA — AYER means exactly yesterday, not "any past date"', () => {
+    const now = new Date('2026-03-20T12:00:00');
+
+    it('shows AYER for a delivery exactly one day ago', () => {
+      render(
+        <ConsolidationPanel
+          packages={[pkg({ id: 'p1', order_id: 'o1', delivery_date: '2026-03-19' })]}
+          onRelease={vi.fn()}
+          now={now}
+        />,
+      );
+      expect(screen.getByTestId('consolidation-order-row')).toHaveTextContent('AYER');
+    });
+
+    it('shows HOY for a delivery today', () => {
+      render(
+        <ConsolidationPanel
+          packages={[pkg({ id: 'p1', order_id: 'o1', delivery_date: '2026-03-20' })]}
+          onRelease={vi.fn()}
+          now={now}
+        />,
+      );
+      expect(screen.getByTestId('consolidation-order-row')).toHaveTextContent('HOY');
+    });
+
+    it('does NOT say AYER for a delivery 10 days ago — shows the real date instead', () => {
+      render(
+        <ConsolidationPanel
+          packages={[pkg({ id: 'p1', order_id: 'o1', delivery_date: '2026-03-10' })]}
+          onRelease={vi.fn()}
+          now={now}
+        />,
+      );
+      const row = screen.getByTestId('consolidation-order-row');
+      expect(row).not.toHaveTextContent('AYER');
+      expect(row).toHaveTextContent('2026-03-10');
+    });
+
+    it('shows the raw date, not HOY/AYER, for a future delivery', () => {
+      render(
+        <ConsolidationPanel
+          packages={[pkg({ id: 'p1', order_id: 'o1', delivery_date: '2026-03-25' })]}
+          onRelease={vi.fn()}
+          now={now}
+        />,
+      );
+      const row = screen.getByTestId('consolidation-order-row');
+      expect(row).not.toHaveTextContent('AYER');
+      expect(row).not.toHaveTextContent('HOY');
+      expect(row).toHaveTextContent('2026-03-25');
+    });
+  });
+
+  describe('BULTOS column', () => {
+    it("renders the order's package count currently held in consolidation", () => {
+      render(
+        <ConsolidationPanel
+          packages={[
+            pkg({ id: 'p1', order_id: 'o1' }),
+            pkg({ id: 'p2', order_id: 'o1' }),
+            pkg({ id: 'p3', order_id: 'o1' }),
+          ]}
+          onRelease={vi.fn()}
+        />,
+      );
+      expect(screen.getByTestId('consolidation-bultos')).toHaveTextContent('3');
+    });
+  });
+
+  describe('selection clears after a release', () => {
+    it('clears the checkbox after releasing via the per-row Liberar button', () => {
+      render(
+        <ConsolidationPanel
+          packages={[
+            pkg({ id: 'p1', order_id: 'o1' }),
+            pkg({ id: 'p2', order_id: 'o2', orderNumber: 'ORD-48241' }),
+          ]}
+          onRelease={vi.fn()}
+        />,
+      );
+      const rows = screen.getAllByTestId('consolidation-order-row');
+      const checkbox = within(rows[0]).getByRole('checkbox') as HTMLInputElement;
+      fireEvent.click(checkbox);
+      expect(checkbox.checked).toBe(true);
+      fireEvent.click(within(rows[0]).getByRole('button', { name: /^liberar$/i }));
+      expect(checkbox.checked).toBe(false);
+    });
+
+    it('a second click on "Liberar seleccionadas" after a release does not fire again with an empty array', () => {
+      const onRelease = vi.fn();
+      render(
+        <ConsolidationPanel
+          packages={[
+            pkg({ id: 'p1', order_id: 'o1' }),
+            pkg({ id: 'p2', order_id: 'o2', orderNumber: 'ORD-48241' }),
+          ]}
+          onRelease={onRelease}
+        />,
+      );
+      const rows = screen.getAllByTestId('consolidation-order-row');
+      fireEvent.click(within(rows[0]).getByRole('checkbox'));
+      const releaseSelectedButton = screen.getByRole('button', { name: /liberar seleccionadas/i });
+      fireEvent.click(releaseSelectedButton);
+      expect(onRelease).toHaveBeenCalledTimes(1);
+      // The button disables itself once the selection is empty again —
+      // clicking (a no-op on a disabled button) must not fire a second time.
+      fireEvent.click(releaseSelectedButton);
+      expect(onRelease).toHaveBeenCalledTimes(1);
+    });
+  });
 });
