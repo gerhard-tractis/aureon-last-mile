@@ -47,6 +47,21 @@ const consZone: DockZoneRecord = {
   capacity: null,
 };
 
+// Review round 1 (finding #4) — capacity: 0 has no CHECK constraint
+// preventing it, and getDockCapacityStatus treats it the same as null.
+// Hand-derived `capacity != null && capacity > 0` checks miss this unless
+// the `> 0` half is present; a fixture forces that half to be exercised.
+const zoneZeroCapacity: DockZoneRecord = {
+  id: 'zone-zero',
+  name: 'Zona Cero',
+  code: 'Z0',
+  is_consolidation: false,
+  is_active: true,
+  comunas: [{ id: 'c-3', nombre: 'Renca' }],
+  operator_id: 'op-1',
+  capacity: 0,
+};
+
 describe('DockListMobile', () => {
   it('renders one row per active andén, with code, zone name and count', () => {
     render(
@@ -129,16 +144,29 @@ describe('DockListMobile', () => {
       expect(within(row).getByTestId('dock-capacity-fill')).toBeInTheDocument();
       expect(within(row).queryByTestId('dock-capacity-unconfigured')).not.toBeInTheDocument();
     });
+
+    // Review round 1 (finding #4) — a hand-rolled `capacity > 0` check is
+    // what getDockCapacityStatus already floors; capacity: 0 must land in
+    // the unconfigured branch (bar absent, explanatory region present),
+    // never a bare number with neither.
+    it('treats capacity: 0 the same as null — unconfigured, not a bare number', () => {
+      render(<DockListMobile zones={[zoneZeroCapacity]} sectorizedCounts={{ 'zone-zero': 5 }} />);
+      const row = screen.getByTestId('dock-list-row-zone-zero');
+      expect(within(row).queryByTestId('dock-capacity-fill')).not.toBeInTheDocument();
+      expect(within(row).getByTestId('dock-capacity-unconfigured')).toBeInTheDocument();
+    });
   });
 
   describe('the status chip (same family as 4a)', () => {
-    it('marks an unconfigured zone with the unconfigured chip state', () => {
+    // Review round 1 (finding #3) — the designer's ruling: `SIN ABRIR` is
+    // `4a`'s "no open batch" (activity), not `4l`'s "no capacity" reading
+    // this phase shipped first. This list has no per-zone batch source, so
+    // an unconfigured row gets no chip at all — the explanatory region
+    // already says so — exactly like the neutral-tone case below.
+    it('renders no chip for an unconfigured zone — its explanatory region already says so', () => {
       render(<DockListMobile zones={[zoneB]} sectorizedCounts={{ 'zone-b1': 4 }} />);
       const row = screen.getByTestId('dock-list-row-zone-b1');
-      expect(within(row).getByTestId('dock-status-chip')).toHaveAttribute(
-        'data-state',
-        'unconfigured',
-      );
+      expect(within(row).queryByTestId('dock-status-chip')).not.toBeInTheDocument();
     });
 
     it('marks a near-full configured zone with the near-full chip state', () => {
