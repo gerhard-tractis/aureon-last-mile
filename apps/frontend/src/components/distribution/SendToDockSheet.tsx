@@ -129,7 +129,7 @@ export function SendToDockSheet({
           <button
             type="button"
             onClick={() => onOpenChange(false)}
-            className="flex h-[56px] flex-1 items-center justify-center rounded-xl border border-border bg-surface text-[15px] font-medium text-text transition-colors active:bg-surface-raised"
+            className="flex h-[56px] w-[104px] flex-none items-center justify-center rounded-xl border border-border-strong bg-surface text-[13.5px] font-semibold text-text transition-colors active:bg-surface-raised"
           >
             Cancelar
           </button>
