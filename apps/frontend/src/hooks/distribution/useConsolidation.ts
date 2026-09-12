@@ -12,6 +12,13 @@ export interface ConsolidationPackage {
    *  usePendingSectorization's PendingPackage). */
   comunaId: string | null;
   comunaName: string | null;
+  /** spec-96 fase 4 — `4a`'s full-width table groups rows by order and
+   *  needs both, neither selected before this phase. Optional: existing
+   *  callers (ConsolidationMobileView, ConsolidationPageContent —
+   *  Fase 3's files) build test fixtures against the narrower shape, so
+   *  this widens the type rather than making every caller supply it. */
+  orderNumber?: string;
+  customerName?: string | null;
 }
 
 export function useConsolidation(operatorId: string | null) {
@@ -25,7 +32,7 @@ export function useConsolidation(operatorId: string | null) {
       // is small; sort client-side instead.
       const { data, error } = await supabase
         .from('packages')
-        .select('id, label, dock_zone_id, order_id, orders!inner(delivery_date, comuna_id, chile_comunas(nombre))')
+        .select('id, label, dock_zone_id, order_id, orders!inner(delivery_date, comuna_id, order_number, customer_name, chile_comunas(nombre))')
         .eq('operator_id', operatorId!)
         .eq('status', 'retenido')
         .is('deleted_at', null);
@@ -42,6 +49,8 @@ export function useConsolidation(operatorId: string | null) {
             delivery_date: orders?.delivery_date as string,
             comunaId: (orders?.comuna_id as string | null) ?? null,
             comunaName: (chileComunas?.nombre as string | null) ?? null,
+            orderNumber: (orders?.order_number as string | undefined) ?? undefined,
+            customerName: (orders?.customer_name as string | null) ?? null,
           };
         })
         .sort((a, b) => (a.delivery_date ?? '').localeCompare(b.delivery_date ?? ''));

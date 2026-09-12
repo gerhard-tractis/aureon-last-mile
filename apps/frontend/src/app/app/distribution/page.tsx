@@ -1,44 +1,59 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Layers, LayoutGrid, ScanLine, Settings } from 'lucide-react';
 import { StatTile } from '@/components/StatTile';
 import { EmptyState } from '@/components/EmptyState';
 import { OutboundDockGrid } from '@/components/distribution/OutboundDockGrid';
+import { DockFilterPills } from '@/components/distribution/DockFilterPills';
 import { ActiveSortersPanel } from '@/components/distribution/ActiveSortersPanel';
 import { ConsolidationPanel } from '@/components/distribution/ConsolidationPanel';
+import { SectorizationIncidentsPanel } from '@/components/distribution/SectorizationIncidentsPanel';
 import { useDistributionKPIs } from '@/hooks/distribution/useDistributionKPIs';
 import { useDistributionOverview } from '@/hooks/distribution/useDistributionOverview';
 import { useConsolidation, useReleaseFromConsolidation } from '@/hooks/distribution/useConsolidation';
 import { useDockZones } from '@/hooks/distribution/useDockZones';
 import { useSectorizedByZone } from '@/hooks/distribution/useSectorizedByZone';
+import { useOpenBatchesByZone } from '@/hooks/distribution/useOpenBatchesByZone';
 import { useUnmatchedComunas } from '@/hooks/distribution/useUnmatchedComunas';
+import { usePendingSectorization } from '@/hooks/distribution/usePendingSectorization';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { useCurrentUserName } from '@/hooks/useCurrentUserName';
 import { useIsBelowLg } from '@/hooks/useViewport';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DistributionMobileView } from '@/components/distribution/DistributionMobileView';
+import { countNoDockIncidents } from '@/lib/distribution/no-dock-incident-count';
+import { todayISOInTimezone } from '@/lib/utils/dateFormat';
 
 /**
- * spec-54 mock 3d — Distribución, estado inicial del módulo.
+ * spec-54 mock 3d, spec-96 fase 4 — Distribución, estado inicial del módulo
+ * (`4a`).
  *
  * The screen the floor lead sits on between sorting runs: what is waiting,
  * how fast it is moving, which andenes are filling, and who is on the floor.
  * The primary action is entering Modo rápido (1d), where the work happens.
  *
- * Not rendered yet: the mock's "168 / 180 paq." denominator, its fill bar
- * and the CASI LLENO badge. `dock_zones.capacity` and its admin surface
- * (DockZoneForm) shipped in spec-68 Fase 1, but this screen still isn't
- * wired to lib/distribution/dock-capacity.ts / DockCapacityBar — that's a
- * follow-up, not a schema gap.
+ * Declared gaps and unit/loading decisions this page makes live in the
+ * components/hooks that own them, not here (review — this comment grew
+ * past what a page-level doc block should carry and helped push the file
+ * over the repo's 300-line cap): `OutboundDockGrid`'s doc comment covers
+ * `DETENIDO` and the missing route codes; `SectorizationIncidentsPanel`'s
+ * covers `wrongDockCount` and its loading contract; `no-dock-incident-
+ * count.ts`'s covers the `usePendingSectorization` unbounded-fetch cost
+ * and the zero-zones edge case; `DockFilterPills`'s covers the filter's
+ * default and the chip/filter axis mismatch.
+ *
+ * `unmatchedComunaCount` sums `order_count` across `get_unmatched_comunas`
+ * rows (orders), not the row count `Comunas no reconocidas` above uses
+ * (distinct comuna strings) — two different units on purpose; see the
+ * StatTile's own `detail` text for the disambiguation.
  *
  * spec-68 Fase 2 (Decisión 1) — below `lg` (1024px) this swaps entirely for
- * `DistributionMobileView`'s phone card layout (mock 4c) instead of
- * squeezing the KPI grid / OutboundDockGrid / ActiveSortersPanel /
- * ConsolidationPanel above into 390px. `useIsBelowLg` picks exactly one of
- * the two trees, and the desktop `<h1>` + panels sit behind `!isBelowLg` —
- * the same bug (two headers stacked on one phone screen) has already
- * shipped twice, in spec-54's 3h and in spec-62.
+ * `DistributionMobileView`'s phone card layout (mock 4c); `useIsBelowLg`
+ * picks exactly one of the two trees (the bug of both mounting together
+ * has shipped twice, spec-54's 3h and spec-62).
  */
 
 function timeLabel(iso: string | null): string | null {
@@ -50,14 +65,19 @@ function timeLabel(iso: string | null): string | null {
 
 export default function DistributionPage() {
   const { operatorId } = useOperatorId();
+  const router = useRouter();
+  // Default 'all' — see DockFilterPills's doc comment for why.
+  const [dockFilter, setDockFilter] = useState<'open' | 'all'>('all');
   const isBelowLg = useIsBelowLg();
   const { data: userName = null } = useCurrentUserName();
   const { data: kpis, isLoading: kpisLoading } = useDistributionKPIs(operatorId);
   const { data: overview, isLoading: overviewLoading } = useDistributionOverview(operatorId);
   const { data: consolidationPackages = [] } = useConsolidation(operatorId);
-  const { data: zones } = useDockZones(operatorId);
+  const { data: zones, isLoading: zonesLoading, isError: zonesError } = useDockZones(operatorId);
   const { data: sectorizedCounts } = useSectorizedByZone(operatorId);
-  const { data: unmatched = [] } = useUnmatchedComunas(operatorId);
+  const { data: openBatchesByZone } = useOpenBatchesByZone(operatorId);
+  const { data: unmatched = [], isLoading: unmatchedLoading } = useUnmatchedComunas(operatorId);
+  const { data: pendingGroups, isLoading: pendingLoading } = usePendingSectorization(operatorId);
   const releaseFromConsolidation = useReleaseFromConsolidation(operatorId ?? '');
 
   // spec-68 Fase 2 (Decisión 1) — the SAME padded container the desktop
@@ -100,8 +120,32 @@ export default function DistributionPage() {
 
   const allZones = zones ?? [];
   const activeZones = allZones.filter((z) => z.is_active);
+  const filteredZones =
+    dockFilter === 'open'
+      ? activeZones.filter((z) => (openBatchesByZone?.[z.id] ?? 0) > 0)
+      : activeZones;
   const lastClose = timeLabel(overview?.last_closed_at ?? null);
   const openBatches = overview?.open_batches ?? 0;
+
+  // See countNoDockIncidents's doc comment: predicate, cost and the
+  // zero-zones edge case it declares rather than fixes.
+  const today = todayISOInTimezone(new Date());
+  const pendingOrders = (pendingGroups ?? []).flatMap((group) =>
+    group.orders.map((order) => ({
+      comunaId: order.packages[0]?.comunaId ?? null,
+      delivery_date: order.deliveryDate,
+    })),
+  );
+  const noDockCount = countNoDockIncidents(pendingOrders, allZones, today);
+  // Order-level, matching noDockCount — not unmatched.length (distinct
+  // comuna strings), which the StatTile below keeps using on purpose.
+  const unmatchedOrderCount = unmatched.reduce((sum, u) => sum + (u.order_count ?? 0), 0);
+  // zonesLoading/zonesError/`!zones` all guard the same class of failure:
+  // usePendingSectorization is `enabled` only once zones resolve
+  // successfully, so a loading OR failed zones query must not let this
+  // read as "no incidents" — see SectorizationIncidentsPanel's doc
+  // comment for the isLoading contract itself.
+  const incidentsLoading = unmatchedLoading || pendingLoading || zonesLoading || zonesError || !zones;
 
   // Sorted vs everything the shift has touched, for the percentage the mock
   // shows next to CLASIFICADOS.
@@ -166,10 +210,14 @@ export default function DistributionPage() {
         />
         <StatTile label="Ritmo" value={overview?.pace_per_hour ?? 0} detail="paq./hora" />
         <StatTile
-          label="Excepciones de andén"
+          label="Comunas no reconocidas"
           value={unmatched.length}
           tone={unmatched.length > 0 ? 'error' : 'neutral'}
-          detail={unmatched.length > 0 ? 'requieren decisión' : undefined}
+          detail={
+            unmatched.length > 0
+              ? `${unmatched.length === 1 ? 'comuna' : 'comunas'} · requieren decisión`
+              : undefined
+          }
         />
       </div>
 
@@ -179,7 +227,10 @@ export default function DistributionPage() {
             <h2 className="font-heading text-[13px] font-semibold leading-none text-text">
               Andenes de salida
             </h2>
-            <span className="text-[11px] leading-none text-text-muted">avance por destino</span>
+            <span className="text-[11px] leading-none text-text-muted">
+              capacidad y avance por destino
+            </span>
+            <DockFilterPills value={dockFilter} onChange={setDockFilter} />
           </div>
 
           {activeZones.length === 0 ? (
@@ -189,8 +240,23 @@ export default function DistributionPage() {
               description="Configura tus andenes para comenzar a sectorizar paquetes por zona de entrega."
               action={{ label: 'Configurar andenes', href: '/app/distribution/settings' }}
             />
+          ) : filteredZones.length === 0 ? (
+            // Review fix — "Lotes abiertos" with no zone holding an open
+            // lote (the start of every shift) used to render an empty
+            // grid `div` with no message. Real zones exist; the filter is
+            // what's hiding them.
+            <EmptyState
+              icon={Layers}
+              title="Ningún andén con un lote abierto"
+              description="El filtro «Lotes abiertos» está ocultando todos los andenes activos — ninguno tiene un lote abierto en este momento."
+              action={{ label: 'Ver todas', onClick: () => setDockFilter('all') }}
+            />
           ) : (
-            <OutboundDockGrid zones={activeZones} sectorizedCounts={sectorizedCounts} />
+            <OutboundDockGrid
+              zones={filteredZones}
+              sectorizedCounts={sectorizedCounts}
+              openBatches={openBatchesByZone}
+            />
           )}
         </section>
 
@@ -198,6 +264,13 @@ export default function DistributionPage() {
           <ActiveSortersPanel
             sorters={overview?.operators ?? []}
             isLoading={overviewLoading}
+          />
+          {/* wrongDockCount/onResolve: see SectorizationIncidentsPanel's doc comment. */}
+          <SectorizationIncidentsPanel
+            unmatchedComunaCount={unmatchedOrderCount}
+            noDockCount={noDockCount}
+            isLoading={incidentsLoading}
+            onResolve={() => router.push('/app/distribution/settings')}
           />
         </aside>
       </div>

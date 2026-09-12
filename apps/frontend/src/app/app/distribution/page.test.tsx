@@ -1,6 +1,30 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import DistributionPage from './page';
+import { todayISOInTimezone } from '@/lib/utils/dateFormat';
+
+const today = todayISOInTimezone(new Date());
+
+function pendingOrderGroup(id: string, comunaId: string | null) {
+  return {
+    orderId: id,
+    orderNumber: id,
+    deliveryDate: today,
+    comunaName: null,
+    packages: [
+      {
+        id: `${id}-p1`,
+        label: `${id}-p1`,
+        order_id: id,
+        orderNumber: id,
+        comunaId,
+        comunaName: null,
+        delivery_date: today,
+        skuItems: [],
+      },
+    ],
+  };
+}
 
 const mockKpis = { pending: 5, consolidation: 3, dueSoon: 2 };
 const mockUseDistributionKPIs = vi.fn();
@@ -35,12 +59,27 @@ vi.mock('@/hooks/distribution/useSectorizedByZone', () => ({
 }));
 
 let mockUnmatched: unknown[] = [];
+let mockUnmatchedLoading = false;
 vi.mock('@/hooks/distribution/useUnmatchedComunas', () => ({
-  useUnmatchedComunas: () => ({ data: mockUnmatched }),
+  useUnmatchedComunas: () => ({ data: mockUnmatched, isLoading: mockUnmatchedLoading }),
+}));
+
+const mockUsePendingSectorization = vi.fn();
+vi.mock('@/hooks/distribution/usePendingSectorization', () => ({
+  usePendingSectorization: (...args: unknown[]) => mockUsePendingSectorization(...args),
+}));
+
+const mockUseOpenBatchesByZone = vi.fn();
+vi.mock('@/hooks/distribution/useOpenBatchesByZone', () => ({
+  useOpenBatchesByZone: (...args: unknown[]) => mockUseOpenBatchesByZone(...args),
 }));
 
 vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1' }),
+}));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
 let mockIsBelowLg = false;
@@ -66,9 +105,12 @@ describe('DistributionPage', () => {
   beforeEach(() => {
     mockIsBelowLg = false;
     mockUnmatched = [];
+    mockUnmatchedLoading = false;
     mockUseDistributionKPIs.mockReturnValue({ data: mockKpis, isLoading: false });
     mockUseDockZones.mockReturnValue({ data: mockZones });
     mockUseSectorizedByZone.mockReturnValue({ data: { z1: 42 } });
+    mockUsePendingSectorization.mockReturnValue({ data: [] });
+    mockUseOpenBatchesByZone.mockReturnValue({ data: {} });
     mockUseDistributionOverview.mockReturnValue({
       data: {
         open_batches: 5,
@@ -103,7 +145,7 @@ describe('DistributionPage', () => {
       expect(tile('Por clasificar')).toHaveTextContent('5');
       expect(tile('Clasificados hoy')).toHaveTextContent('15');
       expect(tile('Ritmo')).toHaveTextContent('214');
-      expect(tile('Excepciones de andén')).toHaveTextContent('0');
+      expect(tile('Comunas no reconocidas')).toHaveTextContent('0');
     });
 
     it('computes the sorted percentage against everything the shift touched', () => {
@@ -125,7 +167,7 @@ describe('DistributionPage', () => {
     it('turns exceptions red when comunas have no zone', () => {
       mockUnmatched = [{ comuna_raw: 'Colina', order_count: 3 }];
       render(<DistributionPage />);
-      expect(tile('Excepciones de andén').className).toContain('bg-status-error-bg');
+      expect(tile('Comunas no reconocidas').className).toContain('bg-status-error-bg');
     });
   });
 
@@ -141,6 +183,74 @@ describe('DistributionPage', () => {
       mockUseDockZones.mockReturnValue({ data: [] });
       render(<DistributionPage />);
       expect(screen.getByText('Sin andenes configurados')).toBeInTheDocument();
+    });
+
+    it('passes the real per-zone open-lote count through to the chip (active)', () => {
+      mockUseOpenBatchesByZone.mockReturnValue({ data: { z1: 1 } });
+      render(<DistributionPage />);
+      const dock = screen.getByTestId('outbound-dock');
+      expect(within(dock).getByTestId('outbound-dock-chip').dataset.state).toBe('active');
+    });
+
+    it('shows the unopened chip state when the zone has no open lote', () => {
+      mockUseOpenBatchesByZone.mockReturnValue({ data: {} });
+      render(<DistributionPage />);
+      const dock = screen.getByTestId('outbound-dock');
+      expect(within(dock).getByTestId('outbound-dock-chip').dataset.state).toBe('unopened');
+    });
+
+    describe('Lotes abiertos / Todas filter', () => {
+      const twoZones = [
+        ...mockZones,
+        {
+          id: 'z2', name: 'Andén 2', code: 'D2', is_consolidation: false,
+          comunas: [{ id: 'c2', nombre: 'Maipú' }], is_active: true, operator_id: 'op1',
+        },
+      ];
+
+      it('starts on "Todas" — shows every active zone, including one with no open lote', () => {
+        mockUseDockZones.mockReturnValue({ data: twoZones });
+        mockUseOpenBatchesByZone.mockReturnValue({ data: { z1: 1 } }); // z2 has none
+        render(<DistributionPage />);
+        expect(screen.getAllByTestId('outbound-dock')).toHaveLength(2);
+        expect(screen.getByTestId('dock-filter-all').dataset.active).toBe('true');
+      });
+
+      it('clicking "Lotes abiertos" hides zones with no open lote', () => {
+        mockUseDockZones.mockReturnValue({ data: twoZones });
+        mockUseOpenBatchesByZone.mockReturnValue({ data: { z1: 1 } });
+        render(<DistributionPage />);
+        fireEvent.click(screen.getByTestId('dock-filter-open'));
+        const docks = screen.getAllByTestId('outbound-dock');
+        expect(docks).toHaveLength(1);
+        expect(within(docks[0]).getByText('D1')).toBeInTheDocument();
+        expect(screen.getByTestId('dock-filter-open').dataset.active).toBe('true');
+      });
+
+      it('clicking back to "Todas" restores every zone', () => {
+        mockUseDockZones.mockReturnValue({ data: twoZones });
+        mockUseOpenBatchesByZone.mockReturnValue({ data: { z1: 1 } });
+        render(<DistributionPage />);
+        fireEvent.click(screen.getByTestId('dock-filter-open'));
+        fireEvent.click(screen.getByTestId('dock-filter-all'));
+        expect(screen.getAllByTestId('outbound-dock')).toHaveLength(2);
+      });
+
+      // Review fix — "the start of every shift" dead-end: real zones
+      // exist, none has an open lote yet, "Lotes abiertos" is active.
+      // Before this fix, OutboundDockGrid got `zones={[]}` and rendered an
+      // empty grid `div` — no message, no hint the filter caused it. The
+      // "new interaction with a dead-end" pattern that showed up in every
+      // prior round.
+      it('explains the filter is why the grid is empty, with a way back to "Todas"', () => {
+        mockUseOpenBatchesByZone.mockReturnValue({ data: {} }); // z1 has no open lote either
+        render(<DistributionPage />);
+        fireEvent.click(screen.getByTestId('dock-filter-open'));
+        expect(screen.queryAllByTestId('outbound-dock')).toHaveLength(0);
+        expect(screen.getByText(/ningún andén con un lote abierto/i)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /ver todas/i }));
+        expect(screen.getAllByTestId('outbound-dock')).toHaveLength(1);
+      });
     });
   });
 
@@ -162,9 +272,121 @@ describe('DistributionPage', () => {
     });
   });
 
-  // spec-68 Fase 2 (Decisión 1) — `useIsBelowLg` picks exactly one tree.
-  // Regression guard for the bug that has already shipped twice (spec-62,
-  // spec-54 3h): both headers must never mount together at 390px.
+  // Review fix — the panel's OWN two counts are order-level now, so they
+  // never disagree on unit inside one total: `unmatchedComunaCount` used
+  // to feed the panel as `unmatched.length` (distinct comuna strings)
+  // while `noDockCount` was always orders. Correction to a prior, false
+  // justification: `4a` only establishes `StatTile == badge total`
+  // (`:167-170` and `:293` both read "9") — nothing in the artboard
+  // speaks to units generally, and its own row 1 (4) already differs from
+  // the StatTile (9). The StatTile itself is untouched — it keeps
+  // `unmatched.length`, with its own `detail` text now naming the unit
+  // ("comuna(s)") so the two different numbers don't read as a bug.
+  describe('incidencias de sectorización', () => {
+    function withConsolidationZoneAndPending() {
+      mockUseDockZones.mockReturnValue({
+        data: [
+          ...mockZones,
+          {
+            id: 'consol',
+            name: 'Consolidación',
+            code: 'CONSOL',
+            is_consolidation: true,
+            comunas: [],
+            is_active: true,
+            operator_id: 'op1',
+          },
+        ],
+      });
+      mockUsePendingSectorization.mockReturnValue({
+        data: [
+          {
+            zone: { id: 'consol', is_consolidation: true },
+            matchResult: { zone_id: 'consol', zone_name: 'Consolidación', zone_code: 'CONSOL', is_consolidation: true, reason: 'unmapped', flagged: true },
+            orders: [
+              pendingOrderGroup('o1', 'c-unmapped'),
+              pendingOrderGroup('o2', 'c-unmapped-2'),
+            ],
+          },
+        ],
+      });
+    }
+
+    it('sources unrecognised-comuna and no-dock counts independently — they never share a number', () => {
+      mockUnmatched = [{ comuna_raw: 'Colina', order_count: 3 }];
+      withConsolidationZoneAndPending();
+      render(<DistributionPage />);
+      const unmatchedRow = screen.getByTestId('incident-unmatched-comuna');
+      const noDockRow = screen.getByTestId('incident-no-dock');
+      // 3 orders behind the one unmatched comuna string, not 1 (the
+      // string count) — this row is now order-level, the same unit
+      // noDockCount already was (independently, not because 4a requires it).
+      expect(within(unmatchedRow).getByText('3')).toBeInTheDocument();
+      expect(within(noDockRow).getByText('2')).toBeInTheDocument();
+    });
+
+    it('sums order_count across multiple unmatched comuna strings, rather than counting the strings', () => {
+      mockUnmatched = [
+        { comuna_raw: 'Colina', order_count: 3 },
+        { comuna_raw: 'Til Til', order_count: 1 },
+      ];
+      render(<DistributionPage />);
+      expect(within(screen.getByTestId('incident-unmatched-comuna')).getByText('4')).toBeInTheDocument();
+    });
+
+    it('omits the wrong-dock row even while the panel is in its rows branch', () => {
+      // Guard against `wrongDockCount={0}` at the call site: with every
+      // fixture at 0 the panel takes its empty-state branch and no row
+      // renders for ANY type, wrong-dock included — for the wrong reason.
+      // Non-zero fixtures put the panel in its rows branch first.
+      mockUnmatched = [{ comuna_raw: 'Colina', order_count: 3 }];
+      withConsolidationZoneAndPending();
+      render(<DistributionPage />);
+      expect(screen.getByTestId('incident-unmatched-comuna')).toBeInTheDocument();
+      expect(screen.getByTestId('incident-no-dock')).toBeInTheDocument();
+      expect(screen.queryByTestId('incident-wrong-dock')).toBeNull();
+    });
+
+    it('shows the incidents panel loading state while unmatched comunas are still resolving', () => {
+      mockUnmatchedLoading = true;
+      render(<DistributionPage />);
+      expect(screen.getByTestId('incident-panel-loading')).toBeInTheDocument();
+      expect(screen.queryByTestId('incident-panel-empty')).toBeNull();
+    });
+
+    // Review fix — `incidentsLoading = unmatchedLoading` alone left this
+    // suite green: neither pendingLoading nor zonesLoading had a single
+    // test, despite three paragraphs of prose about why zonesLoading was
+    // necessary. Each term below gets its own red-before-green case.
+    it('shows the incidents panel loading state while pending sectorization is still resolving', () => {
+      mockUsePendingSectorization.mockReturnValue({ data: [], isLoading: true });
+      render(<DistributionPage />);
+      expect(screen.getByTestId('incident-panel-loading')).toBeInTheDocument();
+      expect(screen.queryByTestId('incident-panel-empty')).toBeNull();
+    });
+
+    it('shows the incidents panel loading state while dock zones are still resolving', () => {
+      mockUseDockZones.mockReturnValue({ data: undefined, isLoading: true });
+      render(<DistributionPage />);
+      expect(screen.getByTestId('incident-panel-loading')).toBeInTheDocument();
+      expect(screen.queryByTestId('incident-panel-empty')).toBeNull();
+    });
+
+    // Review fix — the specific window the gate was added to close:
+    // useDockZones settles to an error (or simply never returns data).
+    // zonesLoading is then false (the query is done, just failed), zones
+    // stays undefined, usePendingSectorization is permanently
+    // enabled:false off an empty zones array, so pendingLoading is false
+    // too and noDockCount is 0 — a failed load painting a green "Sin
+    // incidencias" over data nobody actually has.
+    it('shows the incidents panel loading state when dock zones failed to load, not the empty state', () => {
+      mockUseDockZones.mockReturnValue({ data: undefined, isLoading: false, isError: true });
+      render(<DistributionPage />);
+      expect(screen.getByTestId('incident-panel-loading')).toBeInTheDocument();
+      expect(screen.queryByTestId('incident-panel-empty')).toBeNull();
+    });
+  });
+
   describe('mobile tree (useIsBelowLg)', () => {
     it('above lg (desktop) renders the desktop header and KPI grid, never the mobile greeting', () => {
       mockIsBelowLg = false;
