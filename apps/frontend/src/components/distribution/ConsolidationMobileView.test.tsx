@@ -134,6 +134,17 @@ describe('ConsolidationMobileView (4f)', () => {
     expect(row).toHaveAttribute('data-tone', 'error');
   });
 
+  // 4f — a no-zone row's description reads "{comuna} · sin andén · entrega
+  // {fecha}", not the arrow format matched rows use. There is no "→ —" in
+  // the artboard for this case.
+  it('a SIN ANDÉN row describes itself without the destination arrow', () => {
+    renderView({
+      packages: [pkg({ id: 'a', delivery_date: '2026-08-25', comunaId: 'c-999', comunaName: 'Til Til' })],
+    });
+    const row = screen.getByTestId('consolidation-row-a');
+    expect(within(row).getByText('Til Til · sin andén · entrega hoy')).toBeInTheDocument();
+  });
+
   it('flags a package with no comuna at all as SIN ANDÉN too', () => {
     renderView({
       packages: [pkg({ id: 'a', delivery_date: '2026-08-25', comunaId: null, comunaName: null })],

@@ -231,7 +231,9 @@ function PackageRow({
             noZone ? 'text-status-error-text' : urgent ? 'text-status-warning-text' : 'text-text-secondary',
           )}
         >
-          {comunaLabel} → {zoneLabel} · entrega {dateLabel}
+          {noZone
+            ? `${comunaLabel} · sin andén · entrega ${dateLabel}`
+            : `${comunaLabel} → ${zoneLabel} · entrega ${dateLabel}`}
         </span>
       </span>
 
