@@ -567,7 +567,10 @@ tests hermanos.
 `apps/frontend/src/components/distribution/ConsolidationPanel.tsx`,
 `apps/frontend/src/components/distribution/OutboundDockGrid.tsx`,
 `apps/frontend/src/components/distribution/SectorizationIncidentsPanel.tsx`
-(nuevo), y sus tests hermanos.
+(nuevo), `apps/frontend/src/hooks/distribution/useConsolidation.ts`,
+`apps/frontend/src/hooks/distribution/useOpenBatchesByZone.ts` (nuevo),
+`apps/frontend/src/lib/distribution/no-dock-incident-count.ts` (nuevo), y sus
+tests hermanos.
 
 > Antes declaraba un **directorio** para el panel nuevo, que
 > `check-phase-overlap.mjs` ignora al resolver contenido e imports — una fase
@@ -575,6 +578,12 @@ tests hermanos.
 > Se añade `OutboundDockGrid.tsx` porque esta fase termina lo que la fase 0 dejó
 > abierto ahí: los chips de actividad, el pie con códigos de ruta y sus acciones,
 > y **quitar** el badge `LOTE` muerto que el revert de la fase 0 devolvió.
+>
+> Review — la lista original no incluía `useConsolidation.ts`,
+> `useOpenBatchesByZone.ts` ni `no-dock-incident-count.ts`, los tres tocados
+> por esta fase. Tal como estaba escrita, `check-phase-overlap.mjs` habría
+> dejado pasar una fase futura que tocara `useConsolidation.ts` en paralelo
+> con esta. Añadidos aquí.
 
 **Notas no visuales:**
 
@@ -597,18 +606,80 @@ tests hermanos.
 
 - Create: `apps/frontend/src/components/distribution/SectorizationIncidentsPanel.tsx` + test
 
-- [ ] Write a failing test: given three independent counts, the panel renders three distinct rows, each with its own count, and a footer action. Assert `data-testid` per type, not copy.
-- [ ] Run — expect FAIL (module does not exist). Implement the presentational component; it takes counts as props and owns no queries.
-- [ ] Run — expect PASS. Commit.
-- [ ] Write a failing test that the panel renders an empty state when all three are zero. Run, implement, run, commit.
+- [x] Write a failing test: given three independent counts, the panel renders three distinct rows, each with its own count, and a footer action. Assert `data-testid` per type, not copy.
+- [x] Run — expect FAIL (module does not exist). Implement the presentational component; it takes counts as props and owns no queries.
+- [x] Run — expect PASS. Commit.
+- [x] Write a failing test that the panel renders an empty state when all three are zero. Run, implement, run, commit.
 
 **Task 4.2 — Feed it**
 
-- [ ] Write a failing test at the page level: each row's count comes from its own source, and two types with different underlying values do not show the same number.
-- [ ] Run — expect FAIL. Implement the wiring in `page.tsx`. Any type without a source stays out and is declared — do not pass a placeholder zero that reads as "none".
-- [ ] Run — expect PASS. Commit.
+- [x] Write a failing test at the page level: each row's count comes from its own source, and two types with different underlying values do not show the same number.
+- [x] Run — expect FAIL. Implement the wiring in `page.tsx`. Any type without a source stays out and is declared — do not pass a placeholder zero that reads as "none".
+- [x] Run — expect PASS. Commit.
 
 **Task 4.3 — Close the visual diff** on `4a`, including the consolidation table and the renamed tile. Run suite + type-check, PR with auto-merge.
+
+- [x] Chip state machine (`CASI LLENO`/`EN RITMO`/`SIN ABRIR`) wired with a real per-zone `openBatches` (new `useOpenBatchesByZone`), dead `LOTE` badge and `open>0` border removed, tile footer carries the real open-lote count/action.
+- [x] `ConsolidationPanel` rewritten as a full-width table grouped by order (checkbox per row + `Liberar seleccionadas`, `BULTOS` numerator, `ENTREGA` with exact-yesterday `AYER`).
+- [x] `Comunas no reconocidas` StatTile renamed (was still `Excepciones de andén` in code, despite the phase's own note claiming it was already correct).
+
+> **Implementado por:** implementer — rama `feat/spec-96-fase-4-escritorio`.
+> Primera ronda (rehash tras un rebase del orquestador; contenido idéntico
+> al SHA range original `48bd193..b9736dc`): `953937d..614ef7c`. Ronda de
+> correcciones tras el review (mergeable-with-corrections): `c2c4945..bd7039c`.
+>
+> **Desviaciones y decisiones declaradas, no cubiertas por el spec:**
+> - `DETENIDO` no implementado: no existe join pre-carga zona↔ruta.
+>   `load_positions.fronts_dock_zone_id` PARECE serlo y no lo es — es una
+>   entrada de EXCLUSIÓN (un route parqueado frente a un andén es, por
+>   construcción, el que NO debe sacar de ese andén; ver el comentario de
+>   la migración `20260827000002`). La ruta correcta es
+>   `dock_zone_comunas → orders.comuna_id → dispatches.order_id →
+>   routes.driver_name` — cuatro tablas, y planning data de Despacho, no
+>   de Distribución. Ver `OutboundDockGrid.tsx`'s doc comment.
+> - Códigos de ruta del pie de tarjeta (`R-2481 · R-2483`): sin fuente en
+>   `DockZoneRecord`. El pie muestra en su lugar el conteo real de lotes
+>   abiertos.
+> - `wrongDockCount` sin pasar (nunca `0`): `quicksort-exception.ts` graba
+>   el evento pero ningún hook lo lee de vuelta a nivel operador.
+> - `BULTOS` en la tabla de consolidación: solo el numerador
+>   (`packageIds.length`). El denominador (total de bultos de la orden sin
+>   filtrar por status) no está en ninguna query existente.
+> - `ENTREGA` sin hora: `orders.delivery_date` es solo fecha.
+>   `AYER`/`HOY`/la fecha cruda, nunca una hora inventada.
+> - Filtros `Lotes abiertos`/`Todas`: implementados (el review corrigió mi
+>   declaración inicial de "chrome decorativo" — `Ver`/`Abrir` son igual de
+>   planos en el mock y sí se implementaron). Por defecto en `Todas`: el
+>   artboard dibuja las 6 tiles a la vez, incluida `A6` (`SIN ABRIR`), y
+>   partir en `Lotes abiertos` la ocultaría.
+> - El borde verde `open>0` en `OutboundDockGrid` **sí está en el mock**
+>   (`4a:199,210,232` dibujan `border-top:3px solid var(--ok)` en todo
+>   tile `EN RITMO`) — la evidencia de la fase 0 que decía quitarlo como
+>   decoración muerta estaba equivocada. Esta fase lo mantuvo, ahora
+>   gobernado por el estado del chip; queda declarado aquí porque no
+>   coincidía con la nota de fase 0 que heredé.
+> - El chip de capacidad en la zona de consolidación (gate `!consolidation`
+>   que esta fase había introducido sin declararlo) se revirtió: cualquier
+>   zona cerca de su capacidad, consolidación incluida, muestra `CASI
+>   LLENO`. `4a` no dibuja tile de consolidación, así que no hay hecho del
+>   artboard que lo confirme — decisión declarada.
+> - La unidad de conteo del panel de incidencias es **órdenes** en las tres
+>   filas (antes, la fila de comuna no reconocida usaba `.length` —
+>   cadenas de comuna distintas— mientras `noDockCount` siempre fue
+>   órdenes). El StatTile `Comunas no reconocidas` no se tocó — sigue
+>   usando `.length`, tal como el spec ya lo declaraba correcto.
+> - `usePendingSectorization` en esta página es un fetch sin `.limit()`
+>   reducido a un entero (`noDockCount`); a escala de producción (~61k
+>   paquetes) el tope de fila por defecto de PostgREST lo truncaría sin
+>   error, subestimando el conteo. Coste conocido, no resuelto — el
+>   arreglo honesto es una fuente solo-de-conteo (idealmente dentro de
+>   `get_distribution_overview`).
+> - **Seguimiento para después de que Fase 2 aterrice** (no hacer ahora):
+>   `no-dock-incident-count.ts` debería volverse el HOME del predicado —
+>   renombrado para exponer ambas formas (`flaggedNoDockOrders(...)`
+>   devolviendo el arreglo, `countNoDockIncidents` un `.length` de una
+>   línea sobre él) — y `PendingMobileList.tsx` debería importar de ahí en
+>   vez de mantener su propia copia.
 
 ---
 
