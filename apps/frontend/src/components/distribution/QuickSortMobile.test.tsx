@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { QuickSortMobile } from './QuickSortMobile';
 import type { QuickSortScanEvent } from '@/hooks/distribution/useQuickSortFlow';
 
@@ -19,6 +19,30 @@ function baseProps() {
 }
 
 describe('QuickSortMobile', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // spec-96 Fase 1, Task 1.2 — the QA scanner gun types the code and sends
+  // no Enter. The armed package field must submit from that burst alone,
+  // with no click and no keydown, exactly like ScanField's own guard test.
+  it('submits a scanner burst with no Enter and no click (paso 1)', () => {
+    vi.useFakeTimers();
+    const props = baseProps();
+    render(<QuickSortMobile {...props} />);
+    const input = screen.getByLabelText(/escanear paquete/i) as HTMLInputElement;
+
+    const code = 'CL7742891003';
+    for (let i = 1; i <= code.length; i++) {
+      fireEvent.change(input, { target: { value: code.slice(0, i) } });
+      act(() => vi.advanceTimersByTime(25));
+    }
+    act(() => vi.advanceTimersByTime(120));
+
+    expect(props.onScan).toHaveBeenCalledTimes(1);
+    expect(props.onScan).toHaveBeenCalledWith(code);
+  });
+
   it('renders the titled header with operator, step and session count', () => {
     render(<QuickSortMobile {...baseProps()} />);
     expect(screen.getByText('Clasificación en andén')).toBeInTheDocument();

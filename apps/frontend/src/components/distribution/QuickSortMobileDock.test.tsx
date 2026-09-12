@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { QuickSortMobileDock } from './QuickSortMobileDock';
 import type { ZoneMatchResult } from '@/lib/distribution/sectorization-engine';
 import type { QuickSortPackageInfo, QuickSortScanEvent } from '@/hooks/distribution/useQuickSortFlow';
@@ -42,6 +42,29 @@ function baseProps() {
 }
 
 describe('QuickSortMobileDock — 4h/4j normal destination', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // spec-96 Fase 1, Task 1.2 — the armed andén field must also submit from
+  // a no-Enter scanner burst alone, same contract as the paso 1 field.
+  it('submits a scanner burst with no Enter and no click (paso 2, 4j)', () => {
+    vi.useFakeTimers();
+    const props = baseProps();
+    render(<QuickSortMobileDock {...props} />);
+    const input = screen.getByLabelText(/escanear andén/i) as HTMLInputElement;
+
+    const code = 'DOCK-003';
+    for (let i = 1; i <= code.length; i++) {
+      fireEvent.change(input, { target: { value: code.slice(0, i) } });
+      act(() => vi.advanceTimersByTime(25));
+    }
+    act(() => vi.advanceTimersByTime(120));
+
+    expect(props.onScanAnden).toHaveBeenCalledTimes(1);
+    expect(props.onScanAnden).toHaveBeenCalledWith(code);
+  });
+
   it('renders the andén code at 62px with comuna and package/order context', () => {
     render(<QuickSortMobileDock {...baseProps()} />);
     expect(screen.getByText('LLEVAR A')).toBeInTheDocument();
