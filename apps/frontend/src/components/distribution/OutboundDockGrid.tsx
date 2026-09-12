@@ -2,20 +2,24 @@
 
 import { cn } from '@/lib/utils';
 import type { DockZoneRecord } from '@/hooks/distribution/useDockZones';
+import { DockCapacityBar } from './DockCapacityBar';
 
 /**
- * spec-54 mock 3d — "Andenes de salida".
+ * spec-54 mock 3d, spec-96 fase 0 — "Andenes de salida" (`4a`).
  *
  * A denser tile than the one on Modo rápido (1d): that screen is read at three
  * metres while sorting, this one is scanned by a floor lead deciding where to
  * send people, so the code is 15px mono rather than 30px display.
  *
- * The mock shows a capacity denominator ("168 / 180 paq."), a fill bar and a
- * CASI LLENO badge. `dock_zones.capacity` exists (spec-68 Fase 1) and
- * DockZoneForm can set it, but this grid is not wired to it yet — the count
- * still renders without a denominator and the bar is still omitted, the same
- * choice DockCard makes. Consuming lib/distribution/dock-capacity.ts and
- * DockCapacityBar here is a follow-up, not a schema gap.
+ * Reads `dock_zones.capacity` through the shared `DockCapacityBar` — the same
+ * component `/andenes`, the quicksort step-2 screen and the `4e` send sheet
+ * all read — so a zone with no capacity configured renders no bar, never one
+ * pinned at 0%.
+ *
+ * The tile also carries an activity state, distinguishable via
+ * `data-testid="outbound-dock-activity"`'s `data-state` attribute
+ * (`inactive` | `open` | `idle`), derived from `openBatches` and
+ * `zone.is_active` — not from capacity, and not a new query.
  */
 
 interface OutboundDockGridProps {
@@ -23,6 +27,12 @@ interface OutboundDockGridProps {
   sectorizedCounts?: Record<string, number>;
   /** Open lote count per dock zone id. */
   openBatches?: Record<string, number>;
+}
+
+function activityState(isActive: boolean, open: number): 'inactive' | 'open' | 'idle' {
+  if (!isActive) return 'inactive';
+  if (open > 0) return 'open';
+  return 'idle';
 }
 
 export function OutboundDockGrid({
@@ -36,6 +46,7 @@ export function OutboundDockGrid({
         const count = sectorizedCounts?.[zone.id] ?? 0;
         const open = openBatches?.[zone.id] ?? 0;
         const consolidation = zone.is_consolidation;
+        const state = activityState(zone.is_active, open);
 
         return (
           <div
@@ -78,8 +89,14 @@ export function OutboundDockGrid({
               <span className="text-[11px] leading-none text-text-muted">paq.</span>
             </div>
 
+            <DockCapacityBar count={count} capacity={zone.capacity} />
+
             <div className="mt-auto flex items-center gap-2">
-              <span className="truncate text-[10.5px] leading-none text-text-muted">
+              <span
+                data-testid="outbound-dock-activity"
+                data-state={state}
+                className="truncate text-[10.5px] leading-none text-text-muted"
+              >
                 {zone.is_active ? 'Activo' : 'Inactivo'}
               </span>
             </div>
