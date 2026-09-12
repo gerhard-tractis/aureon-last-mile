@@ -88,18 +88,27 @@ describe('SendToDockSheet (4e)', () => {
 
   // Task 3.1 — a real fixture barcode is far longer than the artboard's, and
   // used to break badly ("Enviar CARGA-EASY-001-ORD-03-CTN-1 a" wrapped after
-  // "a"). jsdom does not lay out text, so this cannot assert the line count —
-  // it asserts the code sits in its own element carrying a wrap-safe class,
-  // which is what makes the browser wrap it as a unit instead of stranding
-  // the trailing "a". Confirmed by eye at 402px separately.
-  it('holds a real barcode in a wrap-safe title element', () => {
+  // "a") at the title's old 18px (`text-lg`). `4e` specifies 15px/1.2 —
+  // Fase 3 review found the 3px oversize was the likely root cause, since
+  // 36 characters is borderline at 18px in ~310px but comfortable at 15px.
+  // `[overflow-wrap:anywhere]` stays as a fallback for whatever code
+  // doesn't fit even at the right size: unlike `break-all`, it only
+  // breaks where a normal wrap would otherwise overflow, so a barcode
+  // that fits stays intact on one line — `break-all` would fragment it
+  // mid-identifier even when there's no need to. jsdom does not lay out
+  // text, so this cannot assert the line count — it asserts the title
+  // element carries both the correct font size and the wrap fallback.
+  // Confirmed by eye at 402px separately.
+  it('titles at 15px with a wrap fallback, not the 18px default that caused the bad wrap', () => {
     const longCodeRequest: SendToDockRequest = {
       ...request,
       code: 'CARGA-EASY-001-ORD-03-CTN-1',
     };
     render(<SendToDockSheet {...baseProps} request={longCodeRequest} />);
     const titleEl = screen.getByText('Enviar CARGA-EASY-001-ORD-03-CTN-1 a');
-    expect(titleEl.className).toMatch(/break-all|break-words/);
+    expect(titleEl.className).toMatch(/text-\[15px\]/);
+    expect(titleEl.className).not.toMatch(/text-lg\b/);
+    expect(titleEl.className).toMatch(/overflow-wrap:anywhere/);
   });
 
   it('footer has Cancelar and "Enviar a {código}", defaulting to the suggested zone', () => {
