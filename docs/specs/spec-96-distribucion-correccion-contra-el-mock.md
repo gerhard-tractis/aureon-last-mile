@@ -722,7 +722,7 @@ hermanos.
 
 ---
 
-### Fase 8 — Andenes de la nave `[pending]`
+### Fase 8 — Andenes de la nave `[in_progress]`
 
 **Benchmark:** `4l`.
 
