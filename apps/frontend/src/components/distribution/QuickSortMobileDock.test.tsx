@@ -101,6 +101,22 @@ describe('QuickSortMobileDock — 4h/4j normal destination', () => {
     expect(screen.getByTestId('dock-capacity-fill')).toBeInTheDocument();
   });
 
+  // spec-96 Fase 1, Task 1.3 (4h/4j) — the capacity block's own container
+  // must carry the same tone getDockCapacityStatus already computes, not a
+  // constant neutral wrapper regardless of how full the zone is.
+  it("carries the capacity block's tone from getDockCapacityStatus, not a fixed neutral wrapper", () => {
+    const { rerender } = render(
+      <QuickSortMobileDock {...baseProps()} zoneCount={169} zoneCapacity={180} />,
+    );
+    expect(screen.getByTestId('quicksort-capacity-block').dataset.tone).toBe('warning');
+
+    rerender(<QuickSortMobileDock {...baseProps()} zoneCount={180} zoneCapacity={180} />);
+    expect(screen.getByTestId('quicksort-capacity-block').dataset.tone).toBe('error');
+
+    rerender(<QuickSortMobileDock {...baseProps()} zoneCount={5} zoneCapacity={180} />);
+    expect(screen.getByTestId('quicksort-capacity-block').dataset.tone).toBe('neutral');
+  });
+
   it('arms the andén field with the AHORA ESCANEA copy and the accepted-codes note', () => {
     render(<QuickSortMobileDock {...baseProps()} />);
     expect(screen.getByText('AHORA ESCANEA EL ANDÉN')).toBeInTheDocument();

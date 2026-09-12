@@ -3,7 +3,7 @@
 import { ScanField } from '@/components/scan/ScanField';
 import { DockCapacityBar } from './DockCapacityBar';
 import { DistributionMobileHeader } from './DistributionMobileHeader';
-import { getDockCapacityStatus } from '@/lib/distribution/dock-capacity';
+import { getDockCapacityStatus, type DockCapacityTone } from '@/lib/distribution/dock-capacity';
 import { cn } from '@/lib/utils';
 import type { ZoneMatchResult } from '@/lib/distribution/sectorization-engine';
 import type { QuickSortPackageInfo, QuickSortScanEvent } from '@/hooks/distribution/useQuickSortFlow';
@@ -71,6 +71,15 @@ function timeLabel(at: Date): string {
   return at.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
 }
 
+// spec-96 Fase 1, Task 1.3 (4h/4j) — `4h`'s capacity block is drawn in the
+// warning palette at 169/180 (93.9 %), not the neutral card the app used to
+// render regardless of fill. `getDockCapacityStatus`'s own tone drives it.
+const CAPACITY_BLOCK_TONE_CLASS: Record<DockCapacityTone, string> = {
+  neutral: 'border-border bg-surface',
+  warning: 'border-status-warning-border bg-status-warning-bg',
+  error: 'border-status-error-border bg-status-error-bg',
+};
+
 export function QuickSortMobileDock({
   operatorName,
   destination,
@@ -130,8 +139,15 @@ export function QuickSortMobileDock({
         </p>
       )}
 
-      {capacityStatus.configured && (
-        <div className="rounded-lg border border-border bg-surface px-4 py-3">
+      {capacityStatus.configured && capacityStatus.tone && (
+        <div
+          data-testid="quicksort-capacity-block"
+          data-tone={capacityStatus.tone}
+          className={cn(
+            'rounded-lg border px-4 py-3',
+            CAPACITY_BLOCK_TONE_CLASS[capacityStatus.tone],
+          )}
+        >
           <DockCapacityBar count={zoneCount} capacity={zoneCapacity} />
         </div>
       )}
