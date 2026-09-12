@@ -24,16 +24,18 @@ import type { QuickSortFlowMode, QuickSortScanEvent } from '@/hooks/distribution
  * don't exist in the schema either (Decisión 9, `4c`).
  *
  * spec-71 phase 3 mobile — desktop's entry point into `mode: 'stage'` is a
- * `Tabs` dropped into `/app/distribution/quicksort`'s header row; this
- * screen has no such row (Decisión 4 keeps step 2 header-less, and step
- * 1's header is the titled `DistributionMobileHeader`, not a bar with room
- * for a second control). So the switch is its own segmented pill row
- * instead — two `h-11` (44px) touch targets, the floor every button on
- * this screen already holds to, in a `role="tablist"` matching the
- * semantics `Tabs` gives desktop. Only rendered when `onModeChange` is
- * passed, so every other caller stays unaffected. Mode only switches on
- * step 1 — step 2 has no header for a toggle to live in, and switching
- * mid-scan makes no operational sense.
+ * `Tabs` dropped into `/app/distribution/quicksort`'s header row. Two
+ * `h-11` (44px) touch targets in a `role="tablist"` matching the semantics
+ * `Tabs` gives desktop. Only rendered when `onModeChange` is passed, so
+ * every other caller stays unaffected. Mode only switches on step 1 — step
+ * 2 has no header for a toggle to live in, and switching mid-scan makes no
+ * operational sense.
+ *
+ * spec-96 Fase 1 (`4g`) — Round 2 of the mock moved this toggle into the
+ * titled header's title row, right of "Clasificación en andén" /
+ * "Carga a posición", via `DistributionMobileHeader`'s new (additive)
+ * `titleControl` prop. It used to render as its own pill row below the
+ * whole header.
  */
 export interface QuickSortMobileProps {
   operatorName: string | null;
@@ -75,6 +77,49 @@ export function QuickSortMobile({
   onModeChange,
 }: QuickSortMobileProps) {
   const isOnline = useIsOnline(isOnlineOverride);
+
+  // spec-96 Fase 1 (`4g`) — moved from its own pill row below the header
+  // into DistributionMobileHeader's `titleControl` slot, right of the
+  // title, matching the artboard. `h-11` (44px) stays — the accessibility
+  // floor every touch target on this screen holds to — so the pill is
+  // sized to its content rather than stretched full-width like the old row.
+  const modeToggle = onModeChange && (
+    <div
+      role="tablist"
+      aria-label="Modo de escaneo"
+      className="flex flex-none items-center gap-1 rounded-full border border-border bg-surface p-1"
+    >
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mode === 'sectorize'}
+        onClick={() => { onModeChange('sectorize'); refocusPackageField(); }}
+        className={cn(
+          'h-11 rounded-full px-3 font-mono text-[10px] font-semibold uppercase tracking-[.08em] transition-colors',
+          mode === 'sectorize'
+            ? 'bg-accent-light text-accent-light-foreground'
+            : 'text-text-secondary active:bg-surface-raised',
+        )}
+      >
+        Sectorizar
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mode === 'stage'}
+        onClick={() => { onModeChange('stage'); refocusPackageField(); }}
+        className={cn(
+          'h-11 rounded-full px-3 font-mono text-[10px] font-semibold uppercase tracking-[.08em] transition-colors',
+          mode === 'stage'
+            ? 'bg-accent-light text-accent-light-foreground'
+            : 'text-text-secondary active:bg-surface-raised',
+        )}
+      >
+        Estibar
+      </button>
+    </div>
+  );
+
   return (
     <div className="flex min-h-0 flex-col gap-5 px-5 py-[22px] pb-[104px]">
       <DistributionMobileHeader
@@ -82,49 +127,13 @@ export function QuickSortMobile({
         title={mode === 'stage' ? 'Carga a posición' : 'Clasificación en andén'}
         subtitle={`${operatorName ?? 'Operario'} · paso 1 de 2 · ${sessionCount} escaneos hoy`}
         onBack={onBack}
+        titleControl={modeToggle}
         statusChip={
           isOnline
             ? { label: 'EN LÍNEA', tone: 'success' }
             : { label: 'SIN CONEXIÓN', tone: 'error' }
         }
       />
-
-      {onModeChange && (
-        <div
-          role="tablist"
-          aria-label="Modo de escaneo"
-          className="flex items-center gap-1 rounded-full border border-border bg-surface p-1"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'sectorize'}
-            onClick={() => { onModeChange('sectorize'); refocusPackageField(); }}
-            className={cn(
-              'h-11 flex-1 rounded-full font-mono text-[11px] font-semibold uppercase tracking-[.08em] transition-colors',
-              mode === 'sectorize'
-                ? 'bg-accent-light text-accent-light-foreground'
-                : 'text-text-secondary active:bg-surface-raised',
-            )}
-          >
-            Sectorizar
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'stage'}
-            onClick={() => { onModeChange('stage'); refocusPackageField(); }}
-            className={cn(
-              'h-11 flex-1 rounded-full font-mono text-[11px] font-semibold uppercase tracking-[.08em] transition-colors',
-              mode === 'stage'
-                ? 'bg-accent-light text-accent-light-foreground'
-                : 'text-text-secondary active:bg-surface-raised',
-            )}
-          >
-            Estibar
-          </button>
-        </div>
-      )}
 
       <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-accent bg-accent-muted px-5 py-8 text-center">
         <span className="font-mono text-[9.5px] font-semibold uppercase tracking-[.12em] text-accent">

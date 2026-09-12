@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { BadgeVariant } from '@/components/StatusBadge';
@@ -80,6 +80,16 @@ export interface DistributionMobileHeaderProps {
   onBack?: () => void;
   /** Titled variant only. */
   statusChip?: DistributionStatusChip;
+  /**
+   * Titled variant only. Optional, additive (spec-96 Fase 1) — rendered
+   * inline, right of the title, on the same row. `undefined` by default,
+   * so every one of this component's eight existing callers (including
+   * `DispatchCrewMobileHeader`, a different module) renders exactly as
+   * before. Introduced for `4g`'s `SECT`/`ESTIB` segmented control, which
+   * Round 2 of the mock moved into the header's title row — previously it
+   * was its own pill row below the whole header.
+   */
+  titleControl?: ReactNode;
 }
 
 /**
@@ -118,6 +128,7 @@ export function DistributionMobileHeader({
   subtitle,
   onBack,
   statusChip,
+  titleControl,
 }: DistributionMobileHeaderProps) {
   const isOnline = useIsOnline(isOnlineOverride);
 
@@ -141,9 +152,12 @@ export function DistributionMobileHeader({
               one of those routes with zero top-level heading at all; this
               is that route's <h1>, not a second one competing with
               anything. */}
-          <h1 className="truncate font-heading text-[18px] font-semibold leading-[1.1] tracking-[-.01em] text-text">
-            {title}
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="truncate font-heading text-[18px] font-semibold leading-[1.1] tracking-[-.01em] text-text">
+              {title}
+            </h1>
+            {titleControl}
+          </div>
           {subtitle && (
             <p className="mt-0.5 truncate text-[12.5px] text-text-secondary">{subtitle}</p>
           )}
