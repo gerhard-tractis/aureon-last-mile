@@ -23,6 +23,17 @@ const zoneA = {
   capacity: 180,
 };
 
+const zoneUnconfigured = {
+  id: 'zone-b1',
+  name: 'Consolidación',
+  code: 'CONS',
+  is_consolidation: true,
+  is_active: true,
+  comunas: [],
+  operator_id: 'op-1',
+  capacity: null,
+};
+
 // spec-68 Fase 6 review (finding #2) — module-level mutable mock state,
 // reset in beforeEach/afterEach rather than at the tail of each test body.
 // A reset that only runs after the assertions never fires if an assertion
@@ -126,5 +137,19 @@ describe('AndenesPage', () => {
     mockZonesError = true;
     render(<AndenesPage />);
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  });
+
+  // spec-96 Fase 8 (4l) — the subtitle's unconfigured-capacity count must
+  // track the zones the route already fetched, not stay silent about it.
+  it('carries the unconfigured-capacity count in the subtitle when present', () => {
+    mockZones = [zoneA, zoneUnconfigured];
+    render(<AndenesPage />);
+    expect(screen.getByText(/1 sin abrir/)).toBeInTheDocument();
+  });
+
+  it('omits the unconfigured-capacity mention when every active zone has one', () => {
+    mockZones = [zoneA];
+    render(<AndenesPage />);
+    expect(screen.queryByText(/sin abrir/)).not.toBeInTheDocument();
   });
 });

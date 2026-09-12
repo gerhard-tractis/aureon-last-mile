@@ -37,6 +37,13 @@ import { useOperatorId } from '@/hooks/useOperatorId';
  * `isError` is checked FIRST and returns a distinct error state; loading
  * is then gated on `!operatorId || !zones` itself (the same pattern
  * `quicksort/page.tsx` already uses), not on `isLoading`.
+ *
+ * spec-96 Fase 8 (`4l`) — the subtitle adds the unconfigured-capacity count
+ * (`4l`'s "N sin abrir") alongside the active count, both derived from the
+ * same `zones` this route already fetches — no new query. `4l`'s subtitle
+ * also carries a warehouse name ("Nave Quilicura"); this route has no
+ * source for it (no code anywhere renders it yet — Fase 6, `4c`, is the
+ * phase that would wire it), so it stays out rather than being hardcoded.
  */
 export default function AndenesPage() {
   const router = useRouter();
@@ -68,14 +75,24 @@ export default function AndenesPage() {
     );
   }
 
-  const activeCount = zones.filter((z) => z.is_active).length;
+  const activeZones = zones.filter((z) => z.is_active);
+  const activeCount = activeZones.length;
+  const unconfiguredCount = activeZones.filter(
+    (z) => z.capacity == null || z.capacity <= 0,
+  ).length;
+  const subtitle = [
+    `${activeCount} ${activeCount === 1 ? 'activo' : 'activos'}`,
+    unconfiguredCount > 0 ? `${unconfiguredCount} sin abrir` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <div className="flex min-h-0 flex-col gap-4 px-6 py-[22px]">
       <DistributionMobileHeader
         variant="titled"
         title="Andenes"
-        subtitle={`${activeCount} ${activeCount === 1 ? 'andén activo' : 'andenes activos'}`}
+        subtitle={subtitle}
         onBack={goBack}
       />
 
