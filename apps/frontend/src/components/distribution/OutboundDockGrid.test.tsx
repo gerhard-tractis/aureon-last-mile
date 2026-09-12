@@ -41,74 +41,110 @@ describe('OutboundDockGrid capacity', () => {
   });
 });
 
-// spec-96 fase 0 review — pins the actual mapping, not merely that two
-// states differ. A prior version of this test only asserted the states
-// were distinct, which stayed green against an inverted implementation.
-describe('OutboundDockGrid capacity chip mapping', () => {
-  it('shows the CASI LLENO chip for a zone at ~93% fill (warning tone)', () => {
+// spec-96 fase 4 — `4a` draws exactly one activity/capacity chip per tile,
+// from CASI LLENO / EN RITMO / SIN ABRIR (DETENIDO is a declared gap: it
+// needs a driver-assignment source no table carries pre-load — see the
+// component's doc comment). Precedence: capacity tone over activity, so a
+// near-full dock reads CASI LLENO even while a lote is open.
+describe('OutboundDockGrid — chip state machine', () => {
+  it('shows CASI LLENO for a near-full zone, regardless of open lotes', () => {
     render(
       <OutboundDockGrid
-        zones={[zone({ id: 'zone-near-full', capacity: 180 })]}
-        sectorizedCounts={{ 'zone-near-full': 169 }}
+        zones={[zone({ id: 'z', capacity: 180 })]}
+        sectorizedCounts={{ z: 169 }}
+        openBatches={{ z: 2 }}
       />,
     );
-    const tile = screen.getByTestId('outbound-dock');
-    expect(within(tile).getByTestId('outbound-dock-capacity-state')).toHaveTextContent(
-      'CASI LLENO',
-    );
+    const chip = within(screen.getByTestId('outbound-dock')).getByTestId('outbound-dock-chip');
+    expect(chip).toHaveTextContent('CASI LLENO');
+    expect(chip.dataset.state).toBe('near-full');
   });
 
-  it('shows no capacity chip for a configured zone at 0% fill (neutral tone)', () => {
+  it('shows EN RITMO for a zone with an open lote and no capacity pressure', () => {
     render(
       <OutboundDockGrid
-        zones={[zone({ id: 'zone-empty', capacity: 180 })]}
-        sectorizedCounts={{ 'zone-empty': 0 }}
+        zones={[zone({ id: 'z', capacity: 180 })]}
+        sectorizedCounts={{ z: 96 }}
+        openBatches={{ z: 1 }}
       />,
     );
-    const tile = screen.getByTestId('outbound-dock');
-    expect(within(tile).queryByTestId('outbound-dock-capacity-state')).toBeNull();
+    const chip = within(screen.getByTestId('outbound-dock')).getByTestId('outbound-dock-chip');
+    expect(chip).toHaveTextContent('EN RITMO');
+    expect(chip.dataset.state).toBe('active');
   });
 
-  it('shows no capacity chip and no fill bar for a zone with no capacity configured', () => {
+  it('shows SIN ABRIR for a zone with no open lote', () => {
     render(
       <OutboundDockGrid
-        zones={[zone({ id: 'zone-unconfigured', capacity: null })]}
-        sectorizedCounts={{ 'zone-unconfigured': 40 }}
+        zones={[zone({ id: 'z', capacity: 120 })]}
+        sectorizedCounts={{ z: 0 }}
+        openBatches={{ z: 0 }}
       />,
     );
-    const tile = screen.getByTestId('outbound-dock');
-    expect(within(tile).queryByTestId('outbound-dock-capacity-state')).toBeNull();
-    expect(within(tile).queryByTestId('dock-capacity-fill')).toBeNull();
+    const chip = within(screen.getByTestId('outbound-dock')).getByTestId('outbound-dock-chip');
+    expect(chip).toHaveTextContent('SIN ABRIR');
+    expect(chip.dataset.state).toBe('unopened');
   });
 
-  it('never applies error styling to the capacity chip, even over 100% fill', () => {
+  it('shows SIN ABRIR for an unconfigured-capacity zone with no open lote (4l A6)', () => {
+    render(
+      <OutboundDockGrid
+        zones={[zone({ id: 'z', capacity: null })]}
+        sectorizedCounts={{ z: 0 }}
+        openBatches={{}}
+      />,
+    );
+    const chip = within(screen.getByTestId('outbound-dock')).getByTestId('outbound-dock-chip');
+    expect(chip.dataset.state).toBe('unopened');
+  });
+
+  it('never applies error styling to the chip, even over 100% fill', () => {
     // The artboard reserves the error tone/border for a blocked dock
-    // (DETENIDO), never a full one — a full dock must read the same
-    // CASI LLENO chip as a near-full one, not an error-styled variant.
+    // (DETENIDO), never a full one.
     render(
       <OutboundDockGrid
-        zones={[zone({ id: 'zone-over-full', capacity: 100 })]}
-        sectorizedCounts={{ 'zone-over-full': 120 }}
+        zones={[zone({ id: 'z', capacity: 100 })]}
+        sectorizedCounts={{ z: 120 }}
       />,
     );
-    const tile = screen.getByTestId('outbound-dock');
-    const chip = within(tile).getByTestId('outbound-dock-capacity-state');
+    const chip = within(screen.getByTestId('outbound-dock')).getByTestId('outbound-dock-chip');
     expect(chip).toHaveTextContent('CASI LLENO');
     expect(chip.className).not.toMatch(/status-error/);
   });
+
+  it('renders no LOTE/LOTES count badge — the chip is the only activity signal', () => {
+    render(
+      <OutboundDockGrid
+        zones={[zone({ id: 'z', capacity: 180 })]}
+        sectorizedCounts={{ z: 50 }}
+        openBatches={{ z: 3 }}
+      />,
+    );
+    const tile = screen.getByTestId('outbound-dock');
+    expect(within(tile).queryByText(/LOTE/)).toBeNull();
+  });
 });
 
-describe('OutboundDockGrid — Activo/Inactivo text (restored, unchanged)', () => {
-  it('shows Activo for an active zone', () => {
-    render(<OutboundDockGrid zones={[zone({ is_active: true })]} />);
-    expect(screen.getByText('Activo')).toBeInTheDocument();
+describe('OutboundDockGrid — tile footer action', () => {
+  it('offers Abrir for a dock with no open lote', () => {
+    render(
+      <OutboundDockGrid
+        zones={[zone({ id: 'z', capacity: 120 })]}
+        sectorizedCounts={{ z: 0 }}
+        openBatches={{ z: 0 }}
+      />,
+    );
+    expect(within(screen.getByTestId('outbound-dock')).getByText('Abrir')).toBeInTheDocument();
   });
 
-  it('shows Inactivo for an inactive zone', () => {
-    // Note: distribution/page.tsx, this grid's only caller, filters to
-    // is_active zones before rendering, so this branch is unreachable in
-    // production today. The component's own contract still allows it.
-    render(<OutboundDockGrid zones={[zone({ is_active: false })]} />);
-    expect(screen.getByText('Inactivo')).toBeInTheDocument();
+  it('offers Ver for a dock with an open lote', () => {
+    render(
+      <OutboundDockGrid
+        zones={[zone({ id: 'z', capacity: 120 })]}
+        sectorizedCounts={{ z: 30 }}
+        openBatches={{ z: 1 }}
+      />,
+    );
+    expect(within(screen.getByTestId('outbound-dock')).getByText('Ver')).toBeInTheDocument();
   });
 });
