@@ -304,7 +304,7 @@ hermanos.
 
 ---
 
-### Fase 1 — Scan flow `[pending]`
+### Fase 1 — Scan flow `[in_progress]`
 
 **Benchmark:** `4g`, `4h`, `4i`, `4j`.
 
