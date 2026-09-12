@@ -117,6 +117,28 @@ describe('QuickSortMobileDock — 4h/4j normal destination', () => {
     expect(screen.getByTestId('quicksort-capacity-block').dataset.tone).toBe('neutral');
   });
 
+  // spec-96 Fase 1 review finding #5 — `data-tone` alone doesn't prove the
+  // fix: a tone-to-class map flattened to one class for every tone still
+  // reports the right `data-tone` while the visible fix (the whole point
+  // of the tone) is gone, and the test above stays green either way. This
+  // pins that the three tones actually render three DIFFERENT classNames.
+  it("renders three genuinely different classNames for the capacity block's three tones, not just three different data-tone values", () => {
+    const { rerender } = render(
+      <QuickSortMobileDock {...baseProps()} zoneCount={5} zoneCapacity={180} />,
+    );
+    const neutralClass = screen.getByTestId('quicksort-capacity-block').className;
+
+    rerender(<QuickSortMobileDock {...baseProps()} zoneCount={169} zoneCapacity={180} />);
+    const warningClass = screen.getByTestId('quicksort-capacity-block').className;
+
+    rerender(<QuickSortMobileDock {...baseProps()} zoneCount={180} zoneCapacity={180} />);
+    const errorClass = screen.getByTestId('quicksort-capacity-block').className;
+
+    expect(neutralClass).not.toBe(warningClass);
+    expect(warningClass).not.toBe(errorClass);
+    expect(neutralClass).not.toBe(errorClass);
+  });
+
   it('arms the andén field with the AHORA ESCANEA copy and the accepted-codes note', () => {
     render(<QuickSortMobileDock {...baseProps()} />);
     expect(screen.getByText('AHORA ESCANEA EL ANDÉN')).toBeInTheDocument();

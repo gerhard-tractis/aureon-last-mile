@@ -251,6 +251,30 @@ describe('QuickSortMobile', () => {
       expect(screen.getByTestId('dock-capacity-fill')).toBeInTheDocument();
     });
 
+    // spec-96 Fase 1 review finding #5 — same guard as
+    // QuickSortMobileDock.test.tsx: `data-tone` alone doesn't prove the
+    // three tones actually render differently.
+    it('renders genuinely different classNames for neutral/warning/error, not just different data-tone', () => {
+      const { rerender } = render(
+        <QuickSortMobile {...baseProps()} confirmed={{ ...confirmedProps(), zoneCount: 5 }} />,
+      );
+      const neutralClass = screen.getByTestId('quicksort-confirmed-capacity').className;
+
+      rerender(
+        <QuickSortMobile {...baseProps()} confirmed={{ ...confirmedProps(), zoneCount: 169 }} />,
+      );
+      const warningClass = screen.getByTestId('quicksort-confirmed-capacity').className;
+
+      rerender(
+        <QuickSortMobile {...baseProps()} confirmed={{ ...confirmedProps(), zoneCount: 180 }} />,
+      );
+      const errorClass = screen.getByTestId('quicksort-confirmed-capacity').className;
+
+      expect(neutralClass).not.toBe(warningClass);
+      expect(warningClass).not.toBe(errorClass);
+      expect(neutralClass).not.toBe(errorClass);
+    });
+
     it('renders no capacity block when the zone has no capacity configured', () => {
       render(
         <QuickSortMobile
