@@ -374,6 +374,106 @@ describe('PendingMobileList (4d)', () => {
     });
   });
 
+  // Fase 2 (spec-96) Task 2.2 — `4d`'s SEL control. Entering selection mode
+  // exposes a checkbox per order; confirming reuses `onRequestSend` (and
+  // therefore the existing SendToDockSheet) once, with every selected
+  // order's package ids combined.
+  describe('SEL', () => {
+    it('exposes a checkbox per order when selectionMode is true, and no ⋯ affordance', () => {
+      render(
+        <PendingMobileList
+          groups={[baseGroup]}
+          zones={allZones}
+          canManualAssign
+          onRequestSend={vi.fn()}
+          now={NOW}
+          selectionMode
+        />,
+      );
+      expect(
+        within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox'),
+      ).toBeInTheDocument();
+      expect(
+        within(screen.getByTestId('pending-order-order-2')).getByRole('checkbox'),
+      ).toBeInTheDocument();
+      expect(screen.queryAllByRole('button', { name: /enviar/i })).toHaveLength(0);
+    });
+
+    it('selecting two orders and confirming calls onRequestSend once with both orders\' package ids', async () => {
+      const user = userEvent.setup();
+      const onRequestSend = vi.fn();
+      render(
+        <PendingMobileList
+          groups={[baseGroup]}
+          zones={allZones}
+          canManualAssign
+          onRequestSend={onRequestSend}
+          now={NOW}
+          selectionMode
+        />,
+      );
+      await user.click(within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox'));
+      await user.click(within(screen.getByTestId('pending-order-order-2')).getByRole('checkbox'));
+      await user.click(screen.getByTestId('pending-selection-confirm'));
+
+      expect(onRequestSend).toHaveBeenCalledTimes(1);
+      const request = onRequestSend.mock.calls[0][0];
+      expect(new Set(request.packageIds)).toEqual(new Set(['pkg-1', 'pkg-2', 'pkg-3']));
+    });
+
+    it('renders no confirm affordance until at least one order is selected', () => {
+      render(
+        <PendingMobileList
+          groups={[baseGroup]}
+          zones={allZones}
+          canManualAssign
+          onRequestSend={vi.fn()}
+          now={NOW}
+          selectionMode
+        />,
+      );
+      expect(screen.queryByTestId('pending-selection-confirm')).not.toBeInTheDocument();
+    });
+
+    it('leaving selection mode clears any selection', async () => {
+      const user = userEvent.setup();
+      const { rerender } = render(
+        <PendingMobileList
+          groups={[baseGroup]}
+          zones={allZones}
+          canManualAssign
+          onRequestSend={vi.fn()}
+          now={NOW}
+          selectionMode
+        />,
+      );
+      await user.click(within(screen.getByTestId('pending-order-order-1')).getByRole('checkbox'));
+      expect(screen.getByTestId('pending-selection-confirm')).toBeInTheDocument();
+
+      rerender(
+        <PendingMobileList
+          groups={[baseGroup]}
+          zones={allZones}
+          canManualAssign
+          onRequestSend={vi.fn()}
+          now={NOW}
+          selectionMode={false}
+        />,
+      );
+      rerender(
+        <PendingMobileList
+          groups={[baseGroup]}
+          zones={allZones}
+          canManualAssign
+          onRequestSend={vi.fn()}
+          now={NOW}
+          selectionMode
+        />,
+      );
+      expect(screen.queryByTestId('pending-selection-confirm')).not.toBeInTheDocument();
+    });
+  });
+
   // Finding #5 (Fase 3 review) — usePendingSectorization stores matchResult
   // ONCE PER ZONE BUCKET, from whichever order landed there first. The
   // consolidation bucket mixes a genuinely-unmapped order (SIN ANDÉN) and a

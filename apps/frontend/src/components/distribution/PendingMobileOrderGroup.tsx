@@ -242,7 +242,11 @@ export function PendingMobileOrderGroup({
           <PendingMobilePackageRow
             key={pkg.id}
             pkg={pkg}
-            canManualAssign={canManualAssign}
+            // spec-96 Fase 2 — SEL selects whole orders; a per-bulto send
+            // mid-selection would let one bulto leave the batch its
+            // checkbox says it's part of. Suppressed here rather than
+            // added as a second selectable target.
+            canManualAssign={canManualAssign && !selectable}
             suggestedZone={suggestedZone}
             onRequestSend={onRequestSend}
             today={today}
