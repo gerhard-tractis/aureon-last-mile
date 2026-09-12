@@ -100,7 +100,7 @@ export function SendToDockSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="bottom" className="flex max-h-[85vh] flex-col gap-4 rounded-t-2xl">
         <SheetHeader className="text-left">
-          <SheetTitle>Enviar {request.code} a</SheetTitle>
+          <SheetTitle className="break-all">Enviar {request.code} a</SheetTitle>
           <SheetDescription>
             {mixedComunaBatch
               ? 'El lote abarca comunas distintas — revisa el andén de cada bulto antes de enviar.'

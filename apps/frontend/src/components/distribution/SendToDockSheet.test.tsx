@@ -86,6 +86,22 @@ describe('SendToDockSheet (4e)', () => {
     ).toBeInTheDocument();
   });
 
+  // Task 3.1 — a real fixture barcode is far longer than the artboard's, and
+  // used to break badly ("Enviar CARGA-EASY-001-ORD-03-CTN-1 a" wrapped after
+  // "a"). jsdom does not lay out text, so this cannot assert the line count —
+  // it asserts the code sits in its own element carrying a wrap-safe class,
+  // which is what makes the browser wrap it as a unit instead of stranding
+  // the trailing "a". Confirmed by eye at 402px separately.
+  it('holds a real barcode in a wrap-safe title element', () => {
+    const longCodeRequest: SendToDockRequest = {
+      ...request,
+      code: 'CARGA-EASY-001-ORD-03-CTN-1',
+    };
+    render(<SendToDockSheet {...baseProps} request={longCodeRequest} />);
+    const titleEl = screen.getByText('Enviar CARGA-EASY-001-ORD-03-CTN-1 a');
+    expect(titleEl.className).toMatch(/break-all|break-words/);
+  });
+
   it('footer has Cancelar and "Enviar a {código}", defaulting to the suggested zone', () => {
     render(<SendToDockSheet {...baseProps} />);
     expect(screen.getByRole('button', { name: /cancelar/i })).toBeInTheDocument();
