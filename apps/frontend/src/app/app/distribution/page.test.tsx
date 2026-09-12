@@ -1,6 +1,30 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import DistributionPage from './page';
+import { todayISOInTimezone } from '@/lib/utils/dateFormat';
+
+const today = todayISOInTimezone(new Date());
+
+function pendingOrderGroup(id: string, comunaId: string | null) {
+  return {
+    orderId: id,
+    orderNumber: id,
+    deliveryDate: today,
+    comunaName: null,
+    packages: [
+      {
+        id: `${id}-p1`,
+        label: `${id}-p1`,
+        order_id: id,
+        orderNumber: id,
+        comunaId,
+        comunaName: null,
+        delivery_date: today,
+        skuItems: [],
+      },
+    ],
+  };
+}
 
 const mockKpis = { pending: 5, consolidation: 3, dueSoon: 2 };
 const mockUseDistributionKPIs = vi.fn();
@@ -39,8 +63,17 @@ vi.mock('@/hooks/distribution/useUnmatchedComunas', () => ({
   useUnmatchedComunas: () => ({ data: mockUnmatched }),
 }));
 
+const mockUsePendingSectorization = vi.fn();
+vi.mock('@/hooks/distribution/usePendingSectorization', () => ({
+  usePendingSectorization: (...args: unknown[]) => mockUsePendingSectorization(...args),
+}));
+
 vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1' }),
+}));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
 let mockIsBelowLg = false;
@@ -69,6 +102,7 @@ describe('DistributionPage', () => {
     mockUseDistributionKPIs.mockReturnValue({ data: mockKpis, isLoading: false });
     mockUseDockZones.mockReturnValue({ data: mockZones });
     mockUseSectorizedByZone.mockReturnValue({ data: { z1: 42 } });
+    mockUsePendingSectorization.mockReturnValue({ data: [] });
     mockUseDistributionOverview.mockReturnValue({
       data: {
         open_batches: 5,
@@ -103,7 +137,7 @@ describe('DistributionPage', () => {
       expect(tile('Por clasificar')).toHaveTextContent('5');
       expect(tile('Clasificados hoy')).toHaveTextContent('15');
       expect(tile('Ritmo')).toHaveTextContent('214');
-      expect(tile('Excepciones de andén')).toHaveTextContent('0');
+      expect(tile('Comunas no reconocidas')).toHaveTextContent('0');
     });
 
     it('computes the sorted percentage against everything the shift touched', () => {
@@ -125,7 +159,7 @@ describe('DistributionPage', () => {
     it('turns exceptions red when comunas have no zone', () => {
       mockUnmatched = [{ comuna_raw: 'Colina', order_count: 3 }];
       render(<DistributionPage />);
-      expect(tile('Excepciones de andén').className).toContain('bg-status-error-bg');
+      expect(tile('Comunas no reconocidas').className).toContain('bg-status-error-bg');
     });
   });
 
@@ -165,6 +199,48 @@ describe('DistributionPage', () => {
   // spec-68 Fase 2 (Decisión 1) — `useIsBelowLg` picks exactly one tree.
   // Regression guard for the bug that has already shipped twice (spec-62,
   // spec-54 3h): both headers must never mount together at 390px.
+  describe('incidencias de sectorización', () => {
+    it('sources unrecognised-comuna and no-dock counts independently — they never share a number', () => {
+      mockUnmatched = [{ comuna_raw: 'Colina', order_count: 3 }];
+      mockUseDockZones.mockReturnValue({
+        data: [
+          ...mockZones,
+          {
+            id: 'consol',
+            name: 'Consolidación',
+            code: 'CONSOL',
+            is_consolidation: true,
+            comunas: [],
+            is_active: true,
+            operator_id: 'op1',
+          },
+        ],
+      });
+      mockUsePendingSectorization.mockReturnValue({
+        data: [
+          {
+            zone: { id: 'consol', is_consolidation: true },
+            matchResult: { zone_id: 'consol', zone_name: 'Consolidación', zone_code: 'CONSOL', is_consolidation: true, reason: 'unmapped', flagged: true },
+            orders: [
+              pendingOrderGroup('o1', 'c-unmapped'),
+              pendingOrderGroup('o2', 'c-unmapped-2'),
+            ],
+          },
+        ],
+      });
+      render(<DistributionPage />);
+      const unmatchedRow = screen.getByTestId('incident-unmatched-comuna');
+      const noDockRow = screen.getByTestId('incident-no-dock');
+      expect(within(unmatchedRow).getByText('1')).toBeInTheDocument();
+      expect(within(noDockRow).getByText('2')).toBeInTheDocument();
+    });
+
+    it('omits the wrong-dock row — quicksort-exception has no read-side hook yet', () => {
+      render(<DistributionPage />);
+      expect(screen.queryByTestId('incident-wrong-dock')).toBeNull();
+    });
+  });
+
   describe('mobile tree (useIsBelowLg)', () => {
     it('above lg (desktop) renders the desktop header and KPI grid, never the mobile greeting', () => {
       mockIsBelowLg = false;

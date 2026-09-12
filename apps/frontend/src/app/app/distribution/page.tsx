@@ -1,23 +1,28 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Layers, LayoutGrid, ScanLine, Settings } from 'lucide-react';
 import { StatTile } from '@/components/StatTile';
 import { EmptyState } from '@/components/EmptyState';
 import { OutboundDockGrid } from '@/components/distribution/OutboundDockGrid';
 import { ActiveSortersPanel } from '@/components/distribution/ActiveSortersPanel';
 import { ConsolidationPanel } from '@/components/distribution/ConsolidationPanel';
+import { SectorizationIncidentsPanel } from '@/components/distribution/SectorizationIncidentsPanel';
 import { useDistributionKPIs } from '@/hooks/distribution/useDistributionKPIs';
 import { useDistributionOverview } from '@/hooks/distribution/useDistributionOverview';
 import { useConsolidation, useReleaseFromConsolidation } from '@/hooks/distribution/useConsolidation';
 import { useDockZones } from '@/hooks/distribution/useDockZones';
 import { useSectorizedByZone } from '@/hooks/distribution/useSectorizedByZone';
 import { useUnmatchedComunas } from '@/hooks/distribution/useUnmatchedComunas';
+import { usePendingSectorization } from '@/hooks/distribution/usePendingSectorization';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { useCurrentUserName } from '@/hooks/useCurrentUserName';
 import { useIsBelowLg } from '@/hooks/useViewport';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DistributionMobileView } from '@/components/distribution/DistributionMobileView';
+import { countNoDockIncidents } from '@/lib/distribution/no-dock-incident-count';
+import { todayISOInTimezone } from '@/lib/utils/dateFormat';
 
 /**
  * spec-54 mock 3d — Distribución, estado inicial del módulo.
@@ -50,6 +55,7 @@ function timeLabel(iso: string | null): string | null {
 
 export default function DistributionPage() {
   const { operatorId } = useOperatorId();
+  const router = useRouter();
   const isBelowLg = useIsBelowLg();
   const { data: userName = null } = useCurrentUserName();
   const { data: kpis, isLoading: kpisLoading } = useDistributionKPIs(operatorId);
@@ -58,6 +64,7 @@ export default function DistributionPage() {
   const { data: zones } = useDockZones(operatorId);
   const { data: sectorizedCounts } = useSectorizedByZone(operatorId);
   const { data: unmatched = [] } = useUnmatchedComunas(operatorId);
+  const { data: pendingGroups } = usePendingSectorization(operatorId);
   const releaseFromConsolidation = useReleaseFromConsolidation(operatorId ?? '');
 
   // spec-68 Fase 2 (Decisión 1) — the SAME padded container the desktop
@@ -102,6 +109,20 @@ export default function DistributionPage() {
   const activeZones = allZones.filter((z) => z.is_active);
   const lastClose = timeLabel(overview?.last_closed_at ?? null);
   const openBatches = overview?.open_batches ?? 0;
+
+  // `4a`'s "Sin andén asignado" row. Same predicate PendingMobileList (`4d`)
+  // recomputes per order rather than trusting the zone-bucket-level flag
+  // (spec-68 Fase 3 review #5) — see countNoDockIncidents's doc comment.
+  // Duplicated rather than imported from PendingMobileList.tsx, which is
+  // Fase 2's file, not this phase's.
+  const today = todayISOInTimezone(new Date());
+  const pendingOrders = (pendingGroups ?? []).flatMap((group) =>
+    group.orders.map((order) => ({
+      comunaId: order.packages[0]?.comunaId ?? null,
+      delivery_date: order.deliveryDate,
+    })),
+  );
+  const noDockCount = countNoDockIncidents(pendingOrders, allZones, today);
 
   // Sorted vs everything the shift has touched, for the percentage the mock
   // shows next to CLASIFICADOS.
@@ -166,7 +187,7 @@ export default function DistributionPage() {
         />
         <StatTile label="Ritmo" value={overview?.pace_per_hour ?? 0} detail="paq./hora" />
         <StatTile
-          label="Excepciones de andén"
+          label="Comunas no reconocidas"
           value={unmatched.length}
           tone={unmatched.length > 0 ? 'error' : 'neutral'}
           detail={unmatched.length > 0 ? 'requieren decisión' : undefined}
@@ -198,6 +219,15 @@ export default function DistributionPage() {
           <ActiveSortersPanel
             sorters={overview?.operators ?? []}
             isLoading={overviewLoading}
+          />
+          {/* `wrongDockCount` stays unpassed: quicksort-exception.ts records
+              the event (dock_scans, scan_result='wrong_zone') but no hook
+              reads it back operator-wide yet — a new query, not wiring of
+              an existing one. Declared open rather than shipped as 0. */}
+          <SectorizationIncidentsPanel
+            unmatchedComunaCount={unmatched.length}
+            noDockCount={noDockCount}
+            onResolve={() => router.push('/app/distribution/settings')}
           />
         </aside>
       </div>
