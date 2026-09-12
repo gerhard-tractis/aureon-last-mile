@@ -96,7 +96,7 @@ export default function DistributionPage() {
   const { data: kpis, isLoading: kpisLoading } = useDistributionKPIs(operatorId);
   const { data: overview, isLoading: overviewLoading } = useDistributionOverview(operatorId);
   const { data: consolidationPackages = [] } = useConsolidation(operatorId);
-  const { data: zones, isLoading: zonesLoading } = useDockZones(operatorId);
+  const { data: zones, isLoading: zonesLoading, isError: zonesError } = useDockZones(operatorId);
   const { data: sectorizedCounts } = useSectorizedByZone(operatorId);
   const { data: openBatchesByZone } = useOpenBatchesByZone(operatorId);
   const { data: unmatched = [], isLoading: unmatchedLoading } = useUnmatchedComunas(operatorId);
@@ -172,7 +172,23 @@ export default function DistributionPage() {
   // once zones resolve, so while zones are still loading its OWN
   // `isLoading` reports false (never started) rather than "unknown" —
   // exactly the illusion that let a real backlog read as "no incidents".
-  const incidentsLoading = unmatchedLoading || pendingLoading || zonesLoading;
+  //
+  // Review fix — `zonesError` closes the same window a settled FAILURE
+  // opens: once useDockZones errors, zonesLoading goes false (the query
+  // is done, just failed), zones stays undefined, `usePendingSectorization`
+  // stays permanently `enabled:false` off the empty `allZones` fallback,
+  // so pendingLoading is false too — a failed load, not an idle one,
+  // would otherwise still paint the green "Sin incidencias".
+  //
+  // Known, undeclared-fixed limit: a *successfully* empty zones array
+  // (operator genuinely has zero dock zones configured) is NOT an error
+  // and isn't caught by any term here either — usePendingSectorization's
+  // own `enabled` gate never runs in that state, so `noDockCount` reads 0
+  // even though every pending package is, by definition, dock-less. This
+  // reads identically to "no incidents" today; fixing it needs either a
+  // change to usePendingSectorization's enabling condition (Fase 8's file
+  // this round) or a count that doesn't depend on it.
+  const incidentsLoading = unmatchedLoading || pendingLoading || zonesLoading || zonesError || !zones;
 
   // Sorted vs everything the shift has touched, for the percentage the mock
   // shows next to CLASIFICADOS.
@@ -240,7 +256,11 @@ export default function DistributionPage() {
           label="Comunas no reconocidas"
           value={unmatched.length}
           tone={unmatched.length > 0 ? 'error' : 'neutral'}
-          detail={unmatched.length > 0 ? 'requieren decisión' : undefined}
+          detail={
+            unmatched.length > 0
+              ? `${unmatched.length === 1 ? 'comuna' : 'comunas'} · requieren decisión`
+              : undefined
+          }
         />
       </div>
 

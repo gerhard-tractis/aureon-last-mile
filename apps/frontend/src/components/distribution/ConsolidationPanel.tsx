@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import type { ConsolidationPackage } from '@/hooks/distribution/useConsolidation';
 import { Package } from 'lucide-react';
 import { EmptyState } from '@/components/EmptyState';
+import { todayISOInTimezone } from '@/lib/utils/dateFormat';
+import { formatRelativeDeliveryDate } from '@/lib/distribution/relative-date';
 
 /**
  * spec-96 fase 4 — `4a`'s "Consolidación" panel. Round 2 of the design
@@ -22,8 +24,8 @@ import { EmptyState } from '@/components/EmptyState';
  * order's bultos are currently held here), never "X de Y".
  *
  * Same gap on `ENTREGA`'s "HOY 18:00" — `orders.delivery_date` carries a
- * date, never a time, so this renders `AYER` / `HOY` / the raw date,
- * never an invented hour.
+ * date, never a time, so this renders `AYER` / `HOY` / `DD MMM` (see
+ * `deliveryLabel` below), never an invented hour.
  */
 interface ConsolidationPanelProps {
   packages: ConsolidationPackage[];
@@ -61,23 +63,38 @@ function groupByOrder(packages: ConsolidationPackage[]): OrderGroup[] {
   return Array.from(map.values());
 }
 
+/** `4a`'s three ENTREGA tones: `AYER` (overdue) is `error`, `HOY`/`mañana`
+ *  are `warning`, anything further out is `neutral`. */
+export type DeliveryTone = 'error' | 'warning' | 'neutral';
+
 /**
  * Review fix — `date < today → 'AYER'` said AYER for ANY past delivery,
  * not just yesterday's. A week-late order read as one day late: false in
  * the reassuring direction on a triage queue, and zero test coverage
- * caught it (every fixture used one date). `AYER` now means exactly
- * yesterday, matching the artboard; anything older still gets the error
- * (urgent) tone but shows its real date instead of a wrong label.
+ * caught it (every fixture used one date).
+ *
+ * Review fix (round 2) — the first fix hand-rolled the "exactly
+ * yesterday" comparison with `new Date(now)` + `setHours(0,0,0,0)`,
+ * midnight in the RUNTIME's own timezone. This component is `'use
+ * client'` but Next prerenders it server-side with `TZ=UTC`; late evening
+ * in Santiago, the server's "today" was already tomorrow's UTC date — an
+ * order due TODAY rendered `AYER` in red.
+ *
+ * `lib/distribution/relative-date.ts`'s `formatRelativeDeliveryDate`
+ * already solves exactly this (spec-68's pendientes list uses it) — it
+ * takes `todayISO` as a plain string, so it carries no runtime-timezone
+ * dependency at all, and its own tone split already matches `4a`'s: `ayer`
+ * is `overdue` (→ `error`), `hoy`/`mañana` are `urgent`/`soon` (→
+ * `warning`). Reused instead of re-deriving the same "is this exactly
+ * yesterday" logic a second, riskier way. Exported for a direct unit test
+ * independent of the test runner's own timezone.
  */
-function deliveryLabel(deliveryDate: string, now: Date): { text: string; urgent: boolean } {
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const date = new Date(deliveryDate + 'T00:00:00');
-  if (date.getTime() === yesterday.getTime()) return { text: 'AYER', urgent: true };
-  if (date.getTime() === today.getTime()) return { text: 'HOY', urgent: true };
-  return { text: deliveryDate, urgent: date.getTime() < today.getTime() };
+export function deliveryLabel(deliveryDate: string, now: Date): { text: string; tone: DeliveryTone } {
+  const todayISO = todayISOInTimezone(now);
+  const { label, tone: relTone } = formatRelativeDeliveryDate(deliveryDate, todayISO);
+  const tone: DeliveryTone =
+    relTone === 'overdue' ? 'error' : relTone === 'urgent' || relTone === 'soon' ? 'warning' : 'neutral';
+  return { text: label.toUpperCase(), tone };
 }
 
 export function ConsolidationPanel({ packages, onRelease, now = new Date() }: ConsolidationPanelProps) {
@@ -199,7 +216,11 @@ export function ConsolidationPanel({ packages, onRelease, now = new Date() }: Co
             <span
               className={
                 'text-right font-mono text-[11px] ' +
-                (delivery.urgent ? 'text-status-error-text' : 'text-text-secondary')
+                (delivery.tone === 'error'
+                  ? 'text-status-error-text'
+                  : delivery.tone === 'warning'
+                    ? 'text-status-warning-text'
+                    : 'text-text-secondary')
               }
             >
               {delivery.text}

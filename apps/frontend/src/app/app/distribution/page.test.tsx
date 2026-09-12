@@ -333,6 +333,38 @@ describe('DistributionPage', () => {
       expect(screen.getByTestId('incident-panel-loading')).toBeInTheDocument();
       expect(screen.queryByTestId('incident-panel-empty')).toBeNull();
     });
+
+    // Review fix — `incidentsLoading = unmatchedLoading` alone left this
+    // suite green: neither pendingLoading nor zonesLoading had a single
+    // test, despite three paragraphs of prose about why zonesLoading was
+    // necessary. Each term below gets its own red-before-green case.
+    it('shows the incidents panel loading state while pending sectorization is still resolving', () => {
+      mockUsePendingSectorization.mockReturnValue({ data: [], isLoading: true });
+      render(<DistributionPage />);
+      expect(screen.getByTestId('incident-panel-loading')).toBeInTheDocument();
+      expect(screen.queryByTestId('incident-panel-empty')).toBeNull();
+    });
+
+    it('shows the incidents panel loading state while dock zones are still resolving', () => {
+      mockUseDockZones.mockReturnValue({ data: undefined, isLoading: true });
+      render(<DistributionPage />);
+      expect(screen.getByTestId('incident-panel-loading')).toBeInTheDocument();
+      expect(screen.queryByTestId('incident-panel-empty')).toBeNull();
+    });
+
+    // Review fix — the specific window the gate was added to close:
+    // useDockZones settles to an error (or simply never returns data).
+    // zonesLoading is then false (the query is done, just failed), zones
+    // stays undefined, usePendingSectorization is permanently
+    // enabled:false off an empty zones array, so pendingLoading is false
+    // too and noDockCount is 0 — a failed load painting a green "Sin
+    // incidencias" over data nobody actually has.
+    it('shows the incidents panel loading state when dock zones failed to load, not the empty state', () => {
+      mockUseDockZones.mockReturnValue({ data: undefined, isLoading: false, isError: true });
+      render(<DistributionPage />);
+      expect(screen.getByTestId('incident-panel-loading')).toBeInTheDocument();
+      expect(screen.queryByTestId('incident-panel-empty')).toBeNull();
+    });
   });
 
   describe('mobile tree (useIsBelowLg)', () => {

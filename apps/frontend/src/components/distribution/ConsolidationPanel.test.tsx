@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
-import { ConsolidationPanel } from './ConsolidationPanel';
+import { ConsolidationPanel, deliveryLabel } from './ConsolidationPanel';
 import type { ConsolidationPackage } from '@/hooks/distribution/useConsolidation';
+import { todayISOInTimezone } from '@/lib/utils/dateFormat';
 
 function pkg(overrides: Partial<ConsolidationPackage> = {}): ConsolidationPackage {
   return {
@@ -155,10 +156,13 @@ describe('ConsolidationPanel', () => {
       );
       const row = screen.getByTestId('consolidation-order-row');
       expect(row).not.toHaveTextContent('AYER');
-      expect(row).toHaveTextContent('2026-03-10');
+      // Review fix — reuses lib/distribution/relative-date.ts's own
+      // "DD MMM" fallback (already used by the pendientes list) instead
+      // of a raw ISO date or a hand-rolled format.
+      expect(row).toHaveTextContent('10 MAR');
     });
 
-    it('shows the raw date, not HOY/AYER, for a future delivery', () => {
+    it('shows the "DD MMM" fallback, not HOY/AYER, for a future delivery', () => {
       render(
         <ConsolidationPanel
           packages={[pkg({ id: 'p1', order_id: 'o1', delivery_date: '2026-03-25' })]}
@@ -169,7 +173,49 @@ describe('ConsolidationPanel', () => {
       const row = screen.getByTestId('consolidation-order-row');
       expect(row).not.toHaveTextContent('AYER');
       expect(row).not.toHaveTextContent('HOY');
-      expect(row).toHaveTextContent('2026-03-25');
+      expect(row).toHaveTextContent('25 MAR');
+    });
+  });
+
+  // Review fix — `deliveryLabel` used `new Date(now)` + `setHours(0,0,0,0)`,
+  // midnight in the RUNTIME's zone. `page.tsx` ten lines above correctly
+  // uses `todayISOInTimezone`. Next prerenders `'use client'` components
+  // server-side with `TZ=UTC`; late evening in Santiago, that server
+  // computes tomorrow's date as "today" — an order due today would render
+  // AYER in red. Tested directly against the exported function so it does
+  // not depend on the test runner's own timezone.
+  describe('deliveryLabel — Santiago civil date, not the runtime local date', () => {
+    it("treats a delivery matching Santiago's civil today as HOY", () => {
+      // 02:30 UTC on the 13th — already the 12th in Santiago (UTC-3/-4).
+      const now = new Date('2026-09-13T02:30:00Z');
+      const santiagoToday = todayISOInTimezone(now);
+      expect(deliveryLabel(santiagoToday, now)).toEqual({ text: 'HOY', tone: 'warning' });
+    });
+
+    it("treats a delivery matching Santiago's civil yesterday as AYER, not HOY", () => {
+      const now = new Date('2026-09-13T02:30:00Z');
+      const santiagoToday = todayISOInTimezone(now);
+      const santiagoYesterday = todayISOInTimezone(
+        new Date(new Date(santiagoToday + 'T12:00:00Z').getTime() - 24 * 60 * 60 * 1000),
+      );
+      expect(deliveryLabel(santiagoYesterday, now)).toEqual({ text: 'AYER', tone: 'error' });
+    });
+  });
+
+  // Review fix — mutating the tone away (e.g. `overdue` → `neutral`) left
+  // the suite green: the label text was covered, the tone was not,
+  // without resorting to a className assertion. `deliveryLabel` is
+  // exported so this is a behaviour assertion on its return value, not
+  // appearance. Tone split matches `4a`'s own: AYER is `error` (`:346`),
+  // HOY is `warning` (`:354`), a future date is `neutral`.
+  describe('deliveryLabel — tone', () => {
+    const now = new Date('2026-03-20T12:00:00');
+
+    it('is error for AYER and anything older, warning for HOY, neutral for a future date', () => {
+      expect(deliveryLabel('2026-03-19', now).tone).toBe('error'); // AYER
+      expect(deliveryLabel('2026-03-20', now).tone).toBe('warning'); // HOY
+      expect(deliveryLabel('2026-03-10', now).tone).toBe('error'); // older
+      expect(deliveryLabel('2026-03-25', now).tone).toBe('neutral'); // future
     });
   });
 
