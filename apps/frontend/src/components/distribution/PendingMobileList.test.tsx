@@ -480,6 +480,33 @@ describe('PendingMobileList (4d)', () => {
   // genuinely future-dated retention (not SIN ANDÉN) under the SAME zone_id.
   // The component must classify each order independently — regardless of
   // which one the hook happened to key the bucket's matchResult on.
+  // Fase 2 (spec-96) Task 2.3 — locks in the reasoning `isOrderFlagged`
+  // already implements: the SIN ANDÉN split is `determineDockZone`
+  // recomputed PER ORDER, never the bucket-level `matchResult.flagged`.
+  // This is deliberately the sharpest possible case — a bucket whose OWN
+  // flag says `false` (not flagged) containing one order that genuinely
+  // is. Trusting the bucket flag would silently swallow it into the
+  // normal ANDÉN CONS section; it must still surface under SIN ANDÉN.
+  it('a genuinely-unmapped order surfaces as SIN ANDÉN even when its bucket matchResult.flagged is false', () => {
+    const group: ZoneGroup = {
+      zone: zoneCons,
+      matchResult: {
+        zone_id: 'zone-cons',
+        zone_name: 'Consolidación',
+        zone_code: 'CONS',
+        is_consolidation: true,
+        reason: 'future_date',
+        flagged: false,
+      },
+      orders: [unmappedOrder()],
+    };
+    render(
+      <PendingMobileList groups={[group]} zones={allZones} canManualAssign onRequestSend={vi.fn()} now={NOW} />,
+    );
+    expect(screen.getByTestId('pending-group-zone-cons-sin-anden')).toBeInTheDocument();
+    expect(screen.queryByTestId('pending-group-zone-cons')).not.toBeInTheDocument();
+  });
+
   describe('a mixed consolidation bucket (unmapped comuna + future-dated retention)', () => {
     function mixedGroup(orders: ZoneGroup['orders'], keyedOnFlagged: boolean): ZoneGroup {
       return {
