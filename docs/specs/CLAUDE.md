@@ -369,6 +369,22 @@ orden es una pregunta distinta de la colisión, y se responde primero:
 | `3` | No se puede juzgar la superficie — el mensaje distingue campo `**Archivos:**` ausente de campo presente que no resolvió a ningún fichero (ver la nota de abajo) |
 | `4` | Dependencia declarada en `**Depende de:**` no satisfecha: la fase de la que depende no está `[done]` |
 
+> **El bloque `**Archivos:**` termina en la primera línea en blanco.**
+> `scripts/check-phase-overlap-parse.mjs:85-88` avanza con
+> `while (lines[end].trim() !== '')` y sólo busca rutas entre backticks dentro
+> de ese bloque. Así que **cualquier ruta que quede en un blockquote o un párrafo
+> posterior es invisible al guard**, aunque se lea perfectamente para un humano.
+>
+> Importa porque el guard decide si dos fases se pueden despachar en paralelo
+> leyendo esa lista: una lista truncada no produce documentación mala, produce un
+> **veredicto de seguridad falso**. Lo descubrió la fase 1 de `spec-96` el
+> 2026-09-12 intentando declarar un fichero extra en una nota aparte; se barrió
+> el corpus entero y ninguna otra fase tenía superficie real truncada en
+> silencio, pero la trampa sigue ahí para el siguiente.
+>
+> Regla práctica: **todos los ficheros van dentro del bloque, sin línea en blanco
+> de por medio.** Las notas explicativas van después, y no cuentan.
+
 Además, mientras el campo no está backfilleado en todo el corpus, el mismo
 guard escanea el cuerpo de la fase buscando menciones en prosa a
 `spec-N fase M` que no estén en `**Depende de:**`, y las **avisa
