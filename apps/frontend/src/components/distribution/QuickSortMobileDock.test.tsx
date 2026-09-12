@@ -24,6 +24,7 @@ const pkg: QuickSortPackageInfo = {
 
 function baseProps() {
   return {
+    operatorName: 'M. Rojas',
     destination,
     currentPackage: pkg,
     siblingsPending: 0,
@@ -211,13 +212,33 @@ describe('QuickSortMobileDock — accessibility floor', () => {
   // exclusive within `QuickSortMobileView`. A visually-hidden <h1> keeps
   // Decisión 4's visual geometry untouched while giving the route exactly
   // one top-level heading in every state.
-  it('carries exactly one visually-hidden <h1> naming the current state, in both the normal and rejected variants', () => {
+  it('carries exactly one <h1> naming the current state, in both the normal and rejected variants', () => {
     const { rerender } = render(<QuickSortMobileDock {...baseProps()} />);
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/A3/);
 
     rerender(<QuickSortMobileDock {...baseProps()} rejectedCode="B7" />);
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/incorrecto/i);
+  });
+
+  // spec-96 Fase 1, Task 1.1 (4h/4i) — the app used to render no visible
+  // screen header on step 2 at all, only an sr-only <h1>. Both artboards
+  // draw a real header row (back arrow, title, subtitle, status chip).
+  it('renders a real, visible header on both the normal (4h) and rejected (4i) states — not sr-only', () => {
+    const { rerender } = render(<QuickSortMobileDock {...baseProps()} />);
+    let heading = screen.getByRole('heading', { level: 1 });
+    expect(heading.closest('.sr-only')).toBeNull();
+    expect(heading.className).not.toMatch(/sr-only/);
+
+    rerender(<QuickSortMobileDock {...baseProps()} rejectedCode="B7" />);
+    heading = screen.getByRole('heading', { level: 1 });
+    expect(heading.closest('.sr-only')).toBeNull();
+    expect(heading.className).not.toMatch(/sr-only/);
+  });
+
+  it('the header carries a back control that cancels back to step 1, same as the footer action', () => {
+    const props = baseProps();
+    render(<QuickSortMobileDock {...props} />);
+    fireEvent.click(screen.getByLabelText('Volver'));
+    expect(props.onCancel).toHaveBeenCalled();
   });
 });

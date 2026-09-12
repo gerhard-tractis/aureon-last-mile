@@ -84,6 +84,7 @@ export function QuickSortMobileView() {
 
     return (
       <QuickSortMobileDock
+        operatorName={userName ?? null}
         destination={flow.destination}
         currentPackage={flow.currentPackage}
         siblingsPending={flow.siblingsPending}

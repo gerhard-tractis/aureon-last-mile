@@ -2,6 +2,7 @@
 
 import { ScanField } from '@/components/scan/ScanField';
 import { DockCapacityBar } from './DockCapacityBar';
+import { DistributionMobileHeader } from './DistributionMobileHeader';
 import { getDockCapacityStatus } from '@/lib/distribution/dock-capacity';
 import { cn } from '@/lib/utils';
 import type { ZoneMatchResult } from '@/lib/distribution/sectorization-engine';
@@ -25,8 +26,18 @@ import type { QuickSortPackageInfo, QuickSortScanEvent } from '@/hooks/distribut
  *
  * Order matches the spec top-to-bottom: destination card → incomplete-
  * order warning → capacity block → armed field → últimos escaneos.
+ *
+ * spec-96 Fase 1, Task 1.1 (`4h`/`4i`) — the screen used to render no
+ * visible header at all (an `sr-only` `<h1>` only). Both artboards draw a
+ * real header row — back arrow, title "Confirmar andén", subtitle, status
+ * chip ("LEÍDO"/"RECHAZADO") — so this now reuses `DistributionMobileHeader`
+ * (titled variant), the same component step 1 (`QuickSortMobile`) already
+ * uses. One shared header shape across all four scan states, rather than
+ * a second bespoke header that can drift from the first.
  */
 export interface QuickSortMobileDockProps {
+  /** Titled header's subtitle line — same operator name step 1 shows. */
+  operatorName: string | null;
   destination: ZoneMatchResult;
   currentPackage: QuickSortPackageInfo | null;
   siblingsPending: number;
@@ -61,6 +72,7 @@ function timeLabel(at: Date): string {
 }
 
 export function QuickSortMobileDock({
+  operatorName,
   destination,
   currentPackage,
   siblingsPending,
@@ -80,16 +92,17 @@ export function QuickSortMobileDock({
 
   return (
     <div className="flex min-h-0 flex-col gap-5 px-5 py-[22px] pb-[104px]">
-      {/* spec-68 Fase 6 accessibility sweep (6.3) — visually hidden: this
-          screen has no visible title by design (Decisión 4), but it is
-          `/app/distribution/quicksort`'s ONLY content whenever step 2 is
-          showing (step 1's <h1> unmounts), so the route still needs
-          exactly one top-level heading here. */}
-      <h1 className="sr-only">
-        {rejected
-          ? `Andén incorrecto — se esperaba ${destination.zone_code}`
-          : `Escanear andén — llevar a ${destination.zone_code}`}
-      </h1>
+      <DistributionMobileHeader
+        variant="titled"
+        title="Confirmar andén"
+        subtitle={`${operatorName ?? 'Operario'} · paso 2 de 2 · lote abierto`}
+        onBack={onCancel}
+        statusChip={
+          rejected
+            ? { label: 'RECHAZADO', tone: 'error' }
+            : { label: 'LEÍDO', tone: 'success' }
+        }
+      />
 
       <DestinationCard
         destination={destination}
